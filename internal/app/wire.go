@@ -90,9 +90,30 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 	objects := objectstore.NewGCS(objectstore.GCSConfig{Endpoint: cfg.StorageEndpoint})
 
-	idp := identity.NewFirebase(cfg.FirebaseProject)
-	if idp.UsingEmulator() {
-		log.Info("identidade apontada para o emulador do Firebase Auth")
+	// Identidade também é porta com dois adaptadores reais (ADR-0001): Firebase
+	// para GCP, OIDC genérico (Keycloak, Dex, Authentik) para self-hosted. Os
+	// dois passam pela mesma suíte de contrato.
+	var idp ports.IdentityProvider
+	switch cfg.IdentityBackend {
+	case "oidc":
+		idp = identity.NewOIDC(identity.OIDCConfig{
+			Issuer:         cfg.OIDCIssuer,
+			Audience:       cfg.OIDCAudience,
+			ClockSkew:      cfg.OIDCClockSkew,
+			KeysMinRefresh: cfg.OIDCKeysMinRefresh,
+		})
+		log.Info("identidade por OIDC", "emissor", cfg.OIDCIssuer)
+	default:
+		fb := identity.NewFirebase(cfg.FirebaseProject)
+		// O emulador emite `alg: none`, então a verificação de ASSINATURA é
+		// pulada nesse modo — e só nele. Vale registrar no boot: é a diferença
+		// entre o ambiente local e a produção, e foi exatamente esse tipo de
+		// diferença silenciosa que já deixou passar um bypass de autenticação.
+		if fb.UsingEmulator() {
+			log.Warn("identidade no EMULADOR: assinatura de token NÃO é verificada",
+				"projeto", cfg.FirebaseProject)
+		}
+		idp = fb
 	}
 
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,

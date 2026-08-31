@@ -98,6 +98,7 @@ type ObjectStore interface {
 // Firebase não cruzam esta fronteira — é o que permite trocar por Keycloak,
 // Zitadel ou Ory sem tocar no domínio.
 type Principal struct {
+	// Subject é o ÚNICO campo obrigatório (garantia 3).
 	Subject       string
 	Email         string
 	EmailVerified bool
@@ -106,6 +107,100 @@ type Principal struct {
 	Providers     []string
 }
 
+// IdentityProvider responde UMA pergunta: quem está chamando?
+//
+// A porta tem uma operação só de propósito. Emitir, renovar, revogar e
+// administrar usuário é trabalho do provedor de identidade, não do domínio; o
+// que o domínio precisa é que a resposta "quem é" tenha a MESMA forma vindo do
+// Firebase (GCP) ou de um Keycloak/Dex/Authentik dentro do cluster.
+//
+// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+//
+//  1. token que não se prova é KindUnauthorized, SEMPRE e só ele: vazio,
+//     malformado, sem as três partes, base64 ou JSON ilegível, algoritmo não
+//     aceito ("none" e HS* inclusive — trocar o algoritmo é a forma clássica de
+//     transformar chave pública em segredo compartilhado), assinatura inválida,
+//     assinado por chave desconhecida, expirado, ainda não válido (nbf), de
+//     outro emissor, de outra audiência, ou sem sujeito. Um Kind só, porque do
+//     ponto de vista do domínio existe uma decisão só: esta chamada não está
+//     autenticada;
+//
+//  2. a mensagem do erro NUNCA contém o token nem pedaço dele — nem prefixo,
+//     nem sufixo, nem o payload decodificado, nem a claim crua. Erro sobe para
+//     log, e token em log é credencial em repouso: quem lê o log entra como o
+//     dono. A mensagem descreve a CAUSA em português para o operador
+//     ("token expirado", "emissor inesperado"); o material do token fica fora;
+//
+//  3. com erro nil, Subject NUNCA é vazio. É o único campo obrigatório do
+//     Principal, e é a identidade estável do sujeito DENTRO do emissor —
+//     emissor diferente é espaço de identidades diferente, e é por isso que o
+//     domínio guarda Subject junto do emissor que o produziu, nunca sozinho;
+//
+//  4. Email, Name e AvatarURL são OPCIONAIS: vazio quer dizer "o emissor não
+//     informou", jamais erro. Login por telefone, por chave de acesso ou por
+//     SSO corporativo sem escopo de perfil não tem e-mail nenhum para dar, e um
+//     adaptador que exigisse e-mail tornaria a porta inutilizável nesses casos;
+//
+//  5. EmailVerified é FALSE quando o emissor não informa — não é erro. Ausência
+//     de afirmação não é afirmação: se o default fosse true, um emissor calado
+//     promoveria todo mundo a e-mail verificado, e a checagem que protege
+//     vinculação de conta por e-mail viraria carimbo;
+//
+//  6. Providers é INFORMATIVO: como o sujeito se autenticou e/ou quais
+//     identidades estão vinculadas, em nomes minúsculos, sem repetição e sem
+//     entrada vazia ("password", "google.com", "oidc"). Adaptador que não sabe
+//     dizer devolve lista VAZIA — nunca inventa, nunca devolve nome interno de
+//     fornecedor, nunca devolve nil "significando alguma coisa". Como um
+//     adaptador legítimo pode não saber, DECISÃO DE AUTORIZAÇÃO NÃO PODE
+//     DEPENDER DESTE CAMPO;
+//
+//  7. VerifyToken PODE fazer I/O — descobrir o emissor e buscar a chave pública
+//     é parte de verificar. Quando esse I/O falha (rede, emissor fora do ar,
+//     resposta ilegível, contexto cancelado ou prazo esgotado) o erro é
+//     KindUnavailable, NUNCA KindUnauthorized. Confundir os dois converte uma
+//     indisponibilidade do emissor em "seu login é inválido" para TODOS os
+//     usuários ao mesmo tempo, manda o usuário trocar senha que está certa e
+//     manda a equipe caçar o defeito no lugar errado;
+//
+//  8. a chave pública é CACHEADA, e revalidada quando aparece um `kid`
+//     desconhecido. As duas metades são obrigatórias: buscar a chave a cada
+//     requisição é negação de serviço contra o próprio emissor, e não
+//     revalidar transforma a rotação de chave — rotina no Keycloak e no
+//     Firebase — em queda total de login. A revalidação é limitada no tempo:
+//     um atacante que mande tokens com `kid` aleatório não pode virar um
+//     gerador de tráfego contra o emissor;
+//
+//  9. verificar não tem efeito colateral, é determinístico e é seguro para uso
+//     concorrente: o mesmo token, no mesmo instante, dá o mesmo resultado, e
+//     nada no provedor muda por tê-lo verificado;
+//
+//  10. o token chega CRU, com ou sem o prefixo "Bearer " que a borda HTTP
+//     carrega. Token vazio é KindUnauthorized decidido SEM I/O nenhum — quem
+//     chama sem credencial não pode custar uma ida ao emissor;
+//
+//  11. claim crua não cruza a porta. O domínio enxerga este struct e nada mais:
+//     nem mapa de claims, nem token original, nem bloco específico de
+//     fornecedor. É esta garantia que faz a troca de emissor ser fiação.
+//
+// FORA da porta, de propósito:
+//
+//   - EMISSÃO, renovação e revogação de token, e todo o CRUD de usuário. É a
+//     superfície mais assimétrica entre provedores e a que mais amarra: o
+//     domínio nunca precisou dela para responder "quem está chamando";
+//
+//   - CHECAGEM DE REVOGAÇÃO por requisição. O Firebase oferece (checkRevoked,
+//     com ida ao servidor a cada chamada); o OIDC genérico não oferece nada
+//     equivalente sem introspecção, que nem todo emissor publica. Prometer o
+//     que só um cumpre seria a abstração vazando — a expiração curta do token
+//     é o que limita a janela nos dois;
+//
+//   - PAPÉIS, custom claims e escopos. Autorização é do domínio (conta,
+//     hierarquia, papel), e trazer isso do emissor faria a política de acesso
+//     morar no provedor de identidade de cada instalação;
+//
+//   - MULTI-TENANT do provedor, tolerância de relógio, TTL de cache e URL de
+//     descoberta: são AJUSTE do adaptador, feitos no composition root por
+//     variável de ambiente. Não são vocabulário do domínio.
 type IdentityProvider interface {
 	VerifyToken(ctx context.Context, raw string) (*Principal, error)
 }

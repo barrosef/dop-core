@@ -42,6 +42,21 @@ type Config struct {
 
 	FirebaseProject string
 
+	// IdentityBackend escolhe o provedor de identidade (ADR-0001). firebase é o
+	// caminho do GCP; oidc é o de cluster self-hosted — Keycloak, Dex,
+	// Authentik — e não depende de fornecedor nenhum.
+	IdentityBackend string // firebase | oidc
+	// OIDCIssuer é o `iss` EXATO dos tokens, e a base da descoberta em
+	// /.well-known/openid-configuration.
+	OIDCIssuer string
+	// OIDCAudience é o client_id registrado no emissor. Vazio DESLIGA a
+	// checagem de audiência, e desligar aceita token emitido para outra
+	// aplicação do mesmo realm — é escolha, não default de conveniência.
+	OIDCAudience string
+	// Ajuste do adaptador, não vocabulário do domínio (ver ports.IdentityProvider).
+	OIDCClockSkew      time.Duration
+	OIDCKeysMinRefresh time.Duration
+
 	RelayInterval time.Duration
 	LogLevel      string
 }
@@ -66,8 +81,14 @@ func Load(mode string) (*Config, error) {
 		StorageBucket:   env("STORAGE_BUCKET", "dop-local.firebasestorage.app"),
 		StorageEndpoint: env("STORAGE_EMULATOR_HOST", ""),
 		FirebaseProject: env("FIREBASE_PROJECT", "dop-local"),
-		RelayInterval:   time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
-		LogLevel:        env("LOG_LEVEL", "info"),
+		IdentityBackend: env("IDENTITY_BACKEND", "firebase"),
+		OIDCIssuer:      env("OIDC_ISSUER", ""),
+		OIDCAudience:    env("OIDC_AUDIENCE", ""),
+		OIDCClockSkew:   time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
+		OIDCKeysMinRefresh: time.Duration(
+			envInt("OIDC_KEYS_MIN_REFRESH_SECONDS", 30)) * time.Second,
+		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
+		LogLevel:      env("LOG_LEVEL", "info"),
 	}
 	// Token da service account, quando rodando dentro do cluster.
 	if b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
@@ -75,6 +96,12 @@ func Load(mode string) (*Config, error) {
 	}
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL é obrigatória")
+	}
+	// Falha no BOOT, e não no primeiro login: emissor vazio faria o adaptador
+	// aceitar token de qualquer origem, e a descoberta apontaria para lugar
+	// nenhum. É o tipo de erro de configuração que precisa aparecer no deploy.
+	if c.IdentityBackend == "oidc" && c.OIDCIssuer == "" {
+		return nil, fmt.Errorf("OIDC_ISSUER é obrigatória quando IDENTITY_BACKEND=oidc")
 	}
 	return c, nil
 }
