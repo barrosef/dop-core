@@ -13,9 +13,10 @@ import (
 
 // Service concentra as regras de entrega. Recebe apenas PORTAS.
 type Service struct {
-	repo    Repository
-	demands Demands
-	clock   ports.Clock
+	repo      Repository
+	demands   Demands
+	clock     ports.Clock
+	providers GitProviders
 }
 
 // NewService exige as três portas.
@@ -25,7 +26,11 @@ type Service struct {
 // evidência ("a execução é deste commit e terminou quando?") seria
 // determinístico. Panic aqui é deliberado — erro de montagem se detecta no
 // boot, não em produção.
-func NewService(repo Repository, demands Demands, clock ports.Clock) *Service {
+// NewService recebe `providers` OPCIONAL: sem ele, o PR é registrado só na
+// nossa base e não é aberto no provedor. Isso é degradação DECLARADA — há
+// ambiente (teste, e o local sem credencial) em que não existe provedor —, e o
+// serviço avisa no PR devolvido em vez de fingir que abriu.
+func NewService(repo Repository, demands Demands, clock ports.Clock, providers GitProviders) *Service {
 	if repo == nil {
 		panic("delivery.NewService: repositório obrigatório")
 	}
@@ -35,7 +40,7 @@ func NewService(repo Repository, demands Demands, clock ports.Clock) *Service {
 	if clock == nil {
 		panic("delivery.NewService: relógio obrigatório — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, demands: demands, clock: clock}
+	return &Service{repo: repo, demands: demands, clock: clock, providers: providers}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -97,6 +102,10 @@ type OpenSpec struct {
 	URL          string
 	ExternalID   string
 	Reviewers    []Reviewer
+	// Título e corpo do PR no provedor. Vazios, o adaptador usa o nome do
+	// branch — PR sem título existe e é ruim, PR não aberto é pior.
+	Title string
+	Body  string
 }
 
 // OpenPullRequest é a ADR-0007 no ponto exato onde ela vale: não existe PR sem
@@ -136,6 +145,33 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 	if target == "" {
 		target = "main"
 	}
+
+	// O PR é aberto NO PROVEDOR antes de ser registrado aqui.
+	//
+	// A ordem importa: registrar primeiro deixaria a nossa base afirmando um PR
+	// que não existe, e é a nossa base que a fila de merge consulta. Falhar ao
+	// abrir é melhor que registrar mentira.
+	if s.providers != nil {
+		p, err := s.providers.For(ctx, accountID, spec.RepoID)
+		if err != nil {
+			return nil, err
+		}
+		aberto, err := p.OpenPullRequest(ctx, OpenPRSpec{
+			RepoExternalID: spec.Repo,
+			SourceBranch:   spec.SourceBranch,
+			TargetBranch:   target,
+			Title:          spec.Title,
+			Body:           spec.Body,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// O que o provedor devolve VENCE o que o chamador disse: id e URL são
+		// dele, e aceitar os do chamador deixaria a nossa base apontando para
+		// um PR que talvez não seja aquele.
+		spec.ExternalID, spec.URL = aberto.ExternalID, aberto.URL
+	}
+
 	pr := &PullRequest{
 		AccountID:    accountID,
 		DemandID:     spec.DemandID,

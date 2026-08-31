@@ -74,6 +74,38 @@ type Config struct {
 	OIDCClockSkew      time.Duration
 	OIDCKeysMinRefresh time.Duration
 
+	// ── provedor de código (ADR-0008, porta delivery.GitProvider) ──
+	//
+	// Repare no que NÃO está aqui: o TOKEN. Token de provedor é credencial de
+	// RECURSO (ADR-0013) — vive no cofre, atrás de ports.SecretStore, é
+	// diferente por conta e por recurso, e por isso não pode ser variável de
+	// ambiente do processo. O que está aqui é o AJUSTE do adaptador: endereço,
+	// prazos e política de merge, que são iguais para toda a instalação.
+	//
+	// GitBackend escolhe o adaptador padrão da instalação. Ele é só o default:
+	// a conexão de verdade é montada por recurso, porque o recurso é que diz
+	// qual provedor e qual credencial (ADR-0013).
+	GitBackend string // github | gitlab
+	// GitHubAPI e GitLabAPI apontam para o serviço público OU para uma
+	// instalação self-hosted (GitHub Enterprise, GitLab CE/EE). Existirem os
+	// dois ao mesmo tempo é proposital: uma conta pode ter recursos nos dois.
+	GitHubAPI string
+	// GitHubGraphQL é separado da REST de propósito: no GitHub Enterprise a
+	// URL do GraphQL é /api/graphql, e não a base REST com sufixo.
+	GitHubGraphQL string
+	GitLabAPI     string
+	// GitTimeout é o prazo de UMA chamada ao provedor.
+	GitTimeout time.Duration
+	// GitRebaseTimeout é o prazo do rebase INTEIRO, que é assíncrono nos dois
+	// provedores e que a porta promete entregar já resolvido (garantia 9).
+	// Separado de GitTimeout porque são grandezas diferentes: uma chamada que
+	// demora 30s está quebrada; um rebase que demora 30s é normal.
+	GitRebaseTimeout time.Duration
+	// GitMergeMethod é política do fluxo git (ADR-0013, recurso `git_flow`),
+	// não vocabulário do domínio — a fila da ADR-0008 precisa que o merge
+	// aconteça, não que ele aconteça de um jeito. Fica no adaptador.
+	GitMergeMethod string // merge | squash | rebase
+
 	RelayInterval time.Duration
 	LogLevel      string
 }
@@ -108,8 +140,17 @@ func Load(mode string) (*Config, error) {
 		OIDCClockSkew:   time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
 		OIDCKeysMinRefresh: time.Duration(
 			envInt("OIDC_KEYS_MIN_REFRESH_SECONDS", 30)) * time.Second,
-		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
-		LogLevel:      env("LOG_LEVEL", "info"),
+		GitBackend:    env("GIT_BACKEND", "github"),
+		GitHubAPI:     env("GITHUB_API", "https://api.github.com"),
+		GitHubGraphQL: env("GITHUB_GRAPHQL", "https://api.github.com/graphql"),
+		GitLabAPI:     env("GITLAB_API", "https://gitlab.com/api/v4"),
+		GitTimeout: time.Duration(
+			envInt("GIT_TIMEOUT_SECONDS", 30)) * time.Second,
+		GitRebaseTimeout: time.Duration(
+			envInt("GIT_REBASE_TIMEOUT_SECONDS", 180)) * time.Second,
+		GitMergeMethod: env("GIT_MERGE_METHOD", "merge"),
+		RelayInterval:  time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
+		LogLevel:       env("LOG_LEVEL", "info"),
 	}
 	// Token da service account, quando rodando dentro do cluster.
 	if b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
@@ -128,6 +169,23 @@ func Load(mode string) (*Config, error) {
 	// e só quebraria na primeira credencial gravada, com o processo já verde.
 	if c.SecretBackend == "gcp" && c.SecretProject == "" {
 		return nil, fmt.Errorf("SECRET_PROJECT é obrigatória quando SECRET_BACKEND=gcp")
+	}
+	// Mesmo raciocínio, no provedor de código: backend desconhecido faria o
+	// composition root cair no default e a instalação inteira falar com o
+	// provedor errado — descoberto na primeira tentativa de abrir PR, com o
+	// processo verde há semanas.
+	switch c.GitBackend {
+	case "github", "gitlab":
+	default:
+		return nil, fmt.Errorf("GIT_BACKEND desconhecido: %q (use github ou gitlab)", c.GitBackend)
+	}
+	// Método de merge fora do vocabulário viraria uma recusa do provedor no
+	// momento exato em que a fila da ADR-0008 tenta integrar — o pior momento
+	// possível para descobrir um erro de digitação em variável de ambiente.
+	switch c.GitMergeMethod {
+	case "merge", "squash", "rebase":
+	default:
+		return nil, fmt.Errorf("GIT_MERGE_METHOD desconhecido: %q (use merge, squash ou rebase)", c.GitMergeMethod)
 	}
 	return c, nil
 }

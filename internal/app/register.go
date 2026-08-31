@@ -98,7 +98,14 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterKnowledgeServiceServer(srv, appgrpc.NewKnowledgeServer(knowledgeSvc))
 
-	deliverySvc := delivery.NewService(postgres.NewDeliveryRepo(deps.Pool), deliveryDemands{demandSvc}, relogio)
+	// O provedor de git é resolvido POR REPOSITÓRIO (ADR-0013), não escolhido
+	// no boot — ver internal/app/gitproviders.go.
+	deliverySvc := delivery.NewService(
+		postgres.NewDeliveryRepo(deps.Pool),
+		deliveryDemands{demandSvc},
+		relogio,
+		gitProviders{deps.Pool, resourceSvc, deps.Secrets, deps.Cfg},
+	)
 	dopv1.RegisterDeliveryServiceServer(srv, appgrpc.NewDeliveryServer(deliverySvc))
 
 	// O launcher chega já escolhido por configuração (wire.go): o domínio

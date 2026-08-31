@@ -276,7 +276,7 @@ func cenario() (*delivery.Service, *fakeRepo, *fakeDemands) {
 		"dem-1": {ID: "dem-1", ProjectID: projeto, Active: true},
 		"dem-2": {ID: "dem-2", ProjectID: projeto, Active: true},
 	}}
-	return delivery.NewService(repo, dem, relogioFixo{agora}), repo, dem
+	return delivery.NewService(repo, dem, relogioFixo{agora}, nil), repo, dem
 }
 
 func comoAtor(id string) context.Context {
@@ -882,5 +882,5 @@ func TestServicoRecusaRelogioNulo(t *testing.T) {
 			t.Error("relógio nil precisa falhar no boot, não em produção")
 		}
 	}()
-	delivery.NewService(novoRepo(), &fakeDemands{}, nil)
+	delivery.NewService(novoRepo(), &fakeDemands{}, nil, nil)
 }
