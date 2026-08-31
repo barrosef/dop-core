@@ -2,8 +2,19 @@
 
 // A MESMA suíte de contrato, agora contra o Kubernetes de verdade.
 //
-//	kubectl proxy --port=8001 &
+//	kubectl proxy --port=8001 --reject-paths='^$' &
 //	go test ./test/contract/ -tags=integration -run TestSandboxContractK8s -v
+//
+// ── O `--reject-paths` NÃO É OPCIONAL ───────────────────────────────────────
+//
+// O `kubectl proxy` recusa por PADRÃO os caminhos de exec e attach: o default de
+// `--reject-paths` é `^/api/.*/pods/.*/exec,^/api/.*/pods/.*/attach`. Sem a flag,
+// os subtestes de Exec voltam 403 no aperto de mão, ANTES de qualquer WebSocket
+// existir — e o 403 do proxy não diz o que fazer. Está anotado aqui, no
+// cabeçalho de internal/adapter/sandbox/websocket.go e na mensagem de erro do
+// próprio adaptador, porque é o tipo de detalhe que custa uma tarde quando não
+// está escrito em lugar nenhum. Dentro do cluster (a implantação real, com
+// service account) a questão não existe: não há proxy no caminho.
 //
 // É esta execução que dá sentido à regra dos dois adaptadores: rodar a suíte só
 // contra o Docker provaria que o Docker é consistente consigo mesmo. As duas

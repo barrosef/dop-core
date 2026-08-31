@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
+	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
 // A fronteira que sustenta a arquitetura limpa: internal/domain não pode
@@ -115,4 +118,27 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Fatal("go.mod não encontrado")
 	return ""
+}
+
+// O domínio de agente REPETE o caminho do workspace em vez de importá-lo de
+// `ports` — importar o pacote de infraestrutura só por uma string colocaria a
+// porta de infra dentro do runtime, e a regra da casa (verificada pelos dois
+// testes acima) proíbe.
+//
+// A repetição é aceitável; a DIVERGÊNCIA silenciosa não é. Se os dois valores
+// se separarem, a ferramenta continua funcionando: o comando roda, o código de
+// saída volta, nenhum teste fica vermelho — e o agente lê no prompt que o
+// workspace está num caminho onde ele não está. Ele passa a procurar arquivo em
+// lugar errado e a concluir que o repositório está vazio.
+//
+// Este teste mora aqui porque este é o único pacote autorizado a enxergar os
+// dois lados (ver TestApenasAppConheceAdaptadores) — e é a mesma mecânica pela
+// qual `agent.Micros` não importa `cost`.
+func TestCaminhoDoWorkspaceEhOMesmoNosDoisLados(t *testing.T) {
+	if agent.SandboxWorkspaceHint != ports.SandboxWorkspacePath {
+		t.Fatalf("o runtime diz ao agente que o workspace está em %q e o substrato o monta "+
+			"em %q: o agente vai procurar arquivo onde ele não está e concluir que o "+
+			"repositório está vazio — sem nada falhar",
+			agent.SandboxWorkspaceHint, ports.SandboxWorkspacePath)
+	}
 }

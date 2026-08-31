@@ -373,6 +373,75 @@ type LogLine struct {
 	At     time.Time
 }
 
+// ───────────────────────── execução de comando ─────────────────────────
+
+// ExecRequest é UM comando a rodar dentro de um sandbox ATIVO.
+//
+// Repare no que NÃO está aqui, porque a ausência é o desenho:
+//
+//   - VARIÁVEL DE AMBIENTE. O Docker aceita `Env` no `/exec/create`; o
+//     `pods/exec` do Kubernetes não aceita nada além do comando. Cumpri-la no
+//     k8s exigiria prefixar `env K=V …` no argv — e valor em argv é visível no
+//     `ps` de qualquer processo do sandbox, que é onde roda código de agente.
+//     Capacidade que não mapeia fica fora (ADR-0001), e neste caso ficar fora é
+//     também a escolha segura: **a porta não tem por onde receber credencial**.
+//     Não é promessa de disciplina, é ausência de campo;
+//
+//   - DIRETÓRIO DE TRABALHO. Mesma assimetria: o Docker tem `WorkingDir`, o k8s
+//     não. Em vez de emular, os dois adaptadores fixam o diretório de trabalho
+//     do CONTÊINER em SandboxWorkspacePath no provisionamento, e o exec o
+//     herda. Vira garantia uniforme (14) em vez de campo que só um honra;
+//
+//   - STDIN, TTY e REDIMENSIONAMENTO. Isso é SESSÃO, não comando: é o terminal
+//     do dev, que é PTY do dop-app (spec §5) e continua fora desta porta. O que
+//     entrou é a execução de UM comando, sem interação, com código de saída —
+//     que é exatamente o que o laço de ferramenta do agente precisa.
+type ExecRequest struct {
+	// Command é argv. NÃO há shell implícito: quem quiser pipeline passa
+	// ["sh","-c","…"] e o shell fica visível na auditoria em vez de escondido
+	// dentro do adaptador.
+	Command []string
+	// TimeoutSeconds é o teto DESTE comando. Zero usa DefaultExecTimeout.
+	// Estourar não é erro da porta — ver a garantia 17.
+	TimeoutSeconds int
+	// MaxOutputBytes é o teto de CADA fluxo (stdout e stderr, separadamente).
+	// Zero usa DefaultExecMaxOutputBytes. Saída de ferramenta vira contexto de
+	// modelo, e contexto é dinheiro (ADR-0011): um `cat` de log de 200 MB sem
+	// teto não é um problema de memória, é uma fatura.
+	MaxOutputBytes int
+}
+
+// ExecResult é o que o comando produziu. Note que não há campo de erro: falha
+// do COMANDO é resultado, não falha da porta (garantia 15).
+type ExecResult struct {
+	// ExitCode é o código do processo. -1 significa que NÃO HOUVE código: o
+	// processo não terminou (TimedOut) ou o substrato não soube dizer. Zero
+	// afirmaria sucesso, que é outra coisa.
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	// Truncated: algum dos fluxos bateu em MaxOutputBytes. Quem monta o
+	// resultado para o modelo PRECISA dizer isso — um agente que conclui a
+	// partir de saída cortada em silêncio conclui errado.
+	Truncated bool
+	// TimedOut: o comando não terminou dentro do prazo. O que já saiu é
+	// entregue: um comando que pendurou depois de imprimir o essencial ainda
+	// informa.
+	TimedOut bool
+}
+
+const (
+	// DefaultExecTimeout é o prazo de um comando quando o chamador não escolhe.
+	// Vive na PORTA, e não em cada adaptador, porque um default por adaptador
+	// faria o mesmo comando ter prazos diferentes conforme onde o sandbox subiu
+	// — que é a divergência que a suíte de contrato existe para não deixar
+	// passar.
+	DefaultExecTimeout = 2 * time.Minute
+	// DefaultExecMaxOutputBytes é o teto de saída por fluxo. 64 KiB é da ordem
+	// de 16 mil tokens: cabe num turno sem dominá-lo.
+	DefaultExecMaxOutputBytes = 64 << 10
+)
+
 // SandboxLauncher é o substrato onde a demanda executa: microVM ou contêiner
 // com o agente, o workspace e um Docker interno (spec do substrato §1).
 //
@@ -419,11 +488,59 @@ type LogLine struct {
 //  12. erro do emit interrompe o Tail e sobe — é como o servidor descobre que
 //     o cliente sumiu.
 //
+// ── EXEC: por que ele ENTROU na porta (e o que continua fora) ────────────────
+//
+// Esta porta declarava, até a entrega do laço de ferramenta, que exec ficava de
+// fora: "o k8s exige upgrade de conexão (SPDY/WebSocket) com semântica própria
+// de stream; o Docker usa hijack de HTTP". Isso é verdade e continua verdade —
+// mas é uma afirmação sobre TRANSPORTE, e transporte é exatamente o que um
+// adaptador existe para absorver. A regra desta casa é outra: *fica de fora o
+// que não é cumprível por TODOS os adaptadores*. Rodar um comando dentro do
+// sandbox e devolver saída e código de saída é cumprível pelos dois — o k8s por
+// `pods/exec` sobre WebSocket (canais 1/2/3: stdout, stderr, status com o código
+// de saída), o Docker por `/exec/create` + `/exec/start` com o mesmo stream
+// multiplexado que o Tail já desmonta. O critério certo reprova a exclusão.
+//
+// A exclusão também custava caro: sem exec na porta, o agente CONVERSA e não
+// AGE. O caminho alternativo — um processo dentro do sandbox expondo uma API
+// para o núcleo chamar — é pior nas duas pontas: exigiria que o sandbox fosse
+// alcançável (a spec §5 diz o contrário: o agente fala de dentro para fora) e
+// exigiria uma credencial DENTRO do sandbox para autenticar essa chamada, que é
+// precisamente o que o sandbox não pode carregar.
+//
+// O que continua fora é a SESSÃO: stdin, TTY, redimensionamento, fluxo
+// bidirecional. Aquilo é o terminal do dev, é PTY do dop-app (spec §5), e aquilo
+// sim tem semântica que não mapeia. Entrou a fatia estreita: um comando, sem
+// interação, com prazo, com teto de saída e com código de saída.
+//
+// Garantias de Exec, também verificadas nos DOIS adaptadores:
+//
+//  13. Exec roda DENTRO do sandbox pedido: o comando enxerga o workspace sob
+//     SandboxWorkspacePath e o mesmo sistema de arquivos da execução corrente;
+//  14. o comando começa em SandboxWorkspacePath. Não é campo da requisição (ver
+//     ExecRequest): é o diretório de trabalho do contêiner, fixado no
+//     provisionamento pelos dois adaptadores;
+//  15. CÓDIGO DE SAÍDA DIFERENTE DE ZERO NÃO É ERRO DA PORTA. Volta em
+//     ExecResult.ExitCode com erro nil. É a garantia que sustenta o laço de
+//     ferramenta do agente: o modelo precisa VER que o comando falhou para
+//     corrigir, e um erro de transporte no lugar disso apagaria a diferença
+//     entre "o teste reprovou" e "o substrato caiu";
+//  16. stdout e stderr chegam SEPARADOS. Diferente do Tail — onde o k8s funde
+//     os dois no log do contêiner e a porta não promete nada —, aqui os dois
+//     substratos separam de verdade: canais 1 e 2 no k8s, quadros 1 e 2 no
+//     Docker;
+//  17. a saída é LIMITADA e o prazo é RESPEITADO, e nenhum dos dois é erro:
+//     Truncated e TimedOut são campos do resultado. Comando que despeja
+//     megabytes é cortado; comando que pendura é abandonado com o que já saiu;
+//  18. Exec de sandbox inexistente é KindNotFound e de sandbox SUSPENSO é
+//     KindPrecondition — nunca um código de saída inventado. Substrato sem
+//     execução não roda comando, e dizer isso é diferente de dizer que o
+//     comando falhou.
+//
 // FORA da porta, de propósito:
 //
-//   - EXEC dentro do sandbox. O k8s exige upgrade de conexão (SPDY/WebSocket)
-//     com semântica própria de stream; o Docker usa hijack de HTTP. O terminal
-//     do dev é PTY do dop-app (spec §5) e não passa por aqui;
+//   - SESSÃO INTERATIVA no sandbox (stdin, TTY, resize). Ver acima: é o PTY do
+//     dop-app, e a semântica de stream bidirecional não mapeia;
 //   - SNAPSHOT/restauração de microVM. O suporte no Kata é limitado e o desenho
 //     não depende dele (spec §3): entraria como capacidade que o domínio
 //     acabaria assumindo existir;
@@ -438,6 +555,12 @@ type SandboxLauncher interface {
 	Destroy(ctx context.Context, h SandboxHandle) error
 	Describe(ctx context.Context, h SandboxHandle) (*SandboxStatus, error)
 	Tail(ctx context.Context, h SandboxHandle, q LogQuery, emit func(LogLine) error) error
+	// Exec roda UM comando dentro do sandbox e espera ele terminar.
+	//
+	// O erro é reservado para falha do SUBSTRATO (sandbox inexistente,
+	// suspenso, cluster fora do ar). Tudo o que o comando fez — inclusive
+	// falhar — vem em ExecResult.
+	Exec(ctx context.Context, h SandboxHandle, req ExecRequest) (*ExecResult, error)
 }
 
 // ───────────────────────── Clock e IDs ─────────────────────────

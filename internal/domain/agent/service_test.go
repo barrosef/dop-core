@@ -17,10 +17,18 @@ type provedorFalso struct {
 	info     agent.ProviderInfo
 	resposta *agent.Reply
 	erro     error
+	// respostas é a FILA de respostas, uma por volta do laço. Quando ela
+	// acaba, a última se repete — é o que permite exercitar um agente que
+	// insiste em pedir ferramenta e bater o teto. Vazia, `resposta` vale para
+	// todas as voltas, que é o comportamento de antes do laço.
+	respostas []*agent.Reply
 
 	modeloPedido string
 	effortPedido agent.Effort
 	turnoPedido  agent.Turn
+	// turnos guarda TODOS os turnos enviados, e é o que permite perguntar se o
+	// resultado da ferramenta voltou para o modelo na volta seguinte.
+	turnos []agent.Turn
 }
 
 func (p *provedorFalso) Info() agent.ProviderInfo { return p.info }
@@ -32,10 +40,19 @@ func (p *provedorFalso) Render(t agent.Turn, model string, e agent.Effort) ([]by
 
 func (p *provedorFalso) Send(_ context.Context, t agent.Turn, model string, e agent.Effort) (*agent.Reply, error) {
 	p.modeloPedido, p.effortPedido, p.turnoPedido = model, e, t
+	p.turnos = append(p.turnos, t)
 	if p.erro != nil {
 		return nil, p.erro
 	}
-	r := *p.resposta
+	atual := p.resposta
+	if n := len(p.respostas); n > 0 {
+		i := len(p.turnos) - 1
+		if i >= n {
+			i = n - 1 // a última se repete: agente que insiste
+		}
+		atual = p.respostas[i]
+	}
+	r := *atual
 	if r.Capabilities == nil {
 		r.Capabilities = p.info.Capabilities
 	}
@@ -214,8 +231,13 @@ func TestAutoriaDaRespostaEhDoAgente(t *testing.T) {
 	}
 }
 
-// As cinco escritas derivam da MESMA chave: é o que faz reenviar a requisição
+// As escritas derivam TODAS da mesma chave: é o que faz reenviar a requisição
 // repetir zero efeitos.
+//
+// A do consumo carrega a VOLTA do laço no fim (`:usage:1`), e não é detalhe: com
+// ferramentas um turno consome uma vez por volta, e uma chave só faria o domínio
+// de custo descartar da segunda em diante como duplicata — o orçamento passaria
+// a enxergar uma fração do gasto real.
 func TestChavesDeIdempotenciaSaoDerivadas(t *testing.T) {
 	c := montar(t, agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1}},
 		respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
@@ -229,7 +251,7 @@ func TestChavesDeIdempotenciaSaoDerivadas(t *testing.T) {
 			t.Fatalf("mensagem %d com chave %q, esperava %q", i, c.conv.mensagens[i].chave, quero)
 		}
 	}
-	if c.cust.chavesUso[0] != "turno-42:usage" {
+	if c.cust.chavesUso[0] != "turno-42:usage:1" {
 		t.Fatalf("consumo com chave %q", c.cust.chavesUso[0])
 	}
 	if c.conv.achados[0].chave != "turno-42:finding" {

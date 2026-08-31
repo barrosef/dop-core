@@ -14,6 +14,20 @@
 //   - OS CINCO NÍVEIS DE EFFORT (D4), incluindo o `max` que a ADR-0007 exige no
 //     crítico.
 //
+// FERRAMENTAS, como este fornecedor as trata (D7–D11):
+//
+//   - D7: `tools: [{name, description, input_schema}]` — schema no TOPO do
+//     objeto, sem casca. E a declaração vai ANTES de `system` no corpo, que é a
+//     ordem canônica de cache deste fornecedor (tools → system → messages);
+//   - D8: a chamada é um bloco `tool_use` DENTRO de `content`, ao lado dos
+//     blocos de texto, e `input` já é OBJETO. Nada a decodificar — é o outro
+//     adaptador que tem esse trabalho;
+//   - D9: o resultado volta como bloco `tool_result` numa mensagem
+//     `role:"user"`, VÁRIOS na mesma mensagem, com `is_error` booleano nativo;
+//   - D10: paralelo por padrão, e o adaptador não manda flag nenhuma;
+//   - D11: `tool_use_id` órfão é 400. Por isso a fala do assistente com as
+//     chamadas é REENVIADA junto com os resultados, sempre.
+//
 // O que ele faz de diferente do óbvio:
 //
 //   - `thinking: adaptive`. O orçamento fixo de tokens de raciocínio
@@ -148,6 +162,7 @@ func (a *Anthropic) Info() agent.ProviderInfo {
 			agent.CapOperatorChannel,
 			agent.CapFullEffortRange,
 			agent.CapStructuredOutput,
+			agent.CapToolUse,
 		},
 		Prices: PrecosAnthropic(),
 	}
@@ -165,6 +180,33 @@ type antBlocoTexto struct {
 	Type         string       `json:"type"`
 	Text         string       `json:"text"`
 	CacheControl *antCacheCtl `json:"cache_control,omitempty"`
+}
+
+// antBloco é um bloco de `content` que pode ser texto, chamada ou resultado.
+//
+// Um struct com `omitempty` em tudo, e não três tipos com uma interface: os
+// campos são disjuntos por `type`, e a alternativa faria cada montagem deste
+// arquivo virar um type switch. `Input` é `any` porque o bloco de saída leva
+// objeto e o de entrada não leva nada.
+type antBloco struct {
+	Type string `json:"type"`
+	// texto
+	Text string `json:"text,omitempty"`
+	// tool_use
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
+	// tool_result
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   string `json:"content,omitempty"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+// antFerramenta é a DECLARAÇÃO (D7): schema no topo, sem casca de "function".
+type antFerramenta struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
 }
 
 type antCacheCtl struct {
@@ -191,8 +233,17 @@ type antOutputConfig struct {
 }
 
 type antPedido struct {
-	Model        string          `json:"model"`
-	MaxTokens    int             `json:"max_tokens"`
+	Model     string `json:"model"`
+	MaxTokens int    `json:"max_tokens"`
+	// Tools vem ANTES de System, e não é estética: a ordem canônica de cache
+	// deste fornecedor é tools → system → messages, e a suíte de contrato
+	// audita a ordem no corpo SERIALIZADO (garantia 15). Declaração depois da
+	// conversa não erra — só sai do trecho cacheável e cobra por isso.
+	//
+	// `omitempty` é a garantia 16: turno sem ferramenta não manda o campo.
+	// Array vazio ocupa lugar no prompt e convida o modelo a chamar o que não
+	// existe.
+	Tools        []antFerramenta `json:"tools,omitempty"`
 	System       []antBlocoTexto `json:"system"`
 	Messages     []antMensagem   `json:"messages"`
 	Thinking     antThinking     `json:"thinking"`
@@ -205,6 +256,13 @@ type antResposta struct {
 	Content    []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
+		// D8: a chamada vem DENTRO de content, e `input` já é objeto.
+		// `json.RawMessage` e não `map[string]any` porque um `input` que não
+		// seja objeto (o caso degenerado) precisa chegar como texto cru ao
+		// modelo, e não sumir num erro de decodificação.
+		ID    string          `json:"id"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
 	} `json:"content"`
 	Usage struct {
 		InputTokens              int64 `json:"input_tokens"`
@@ -247,8 +305,23 @@ func (a *Anthropic) render(t agent.Turn, model string, effort agent.Effort,
 			avisos = append(avisos,
 				"modelo sem canal de operador nativo: a instrução foi marcada dentro "+
 					"do turno do usuário (D3)")
+		case m.Role == agent.RoleToolResult:
+			// D9: os resultados vão como blocos `tool_result` numa mensagem
+			// `role:"user"` — VÁRIOS na mesma, que é o formato deste
+			// fornecedor. Mensagem PRÓPRIA e não misturada ao turno do
+			// usuário: saída de ferramenta é conteúdo não confiável (spec do
+			// substrato §6) e não pode ser confundida com a pergunta de quem
+			// pediu o trabalho.
+			mensagens = append(mensagens, antMensagem{
+				Role: "user", Content: antResultados(m.ToolResults),
+			})
 		case m.Role == agent.RoleAssistant:
-			mensagens = append(mensagens, antMensagem{Role: "assistant", Content: m.Text})
+			// D11: a fala do assistente REENVIA as chamadas junto. Sem elas, o
+			// `tool_use_id` do resultado seguinte fica órfão e o fornecedor
+			// devolve 400.
+			mensagens = append(mensagens, antMensagem{
+				Role: "assistant", Content: antConteudoAssistente(m),
+			})
 		default:
 			conteudoUsuario = append(conteudoUsuario, antBlocoTexto{Type: "text", Text: m.Text})
 		}
@@ -264,6 +337,7 @@ func (a *Anthropic) render(t agent.Turn, model string, effort agent.Effort,
 	pedido := antPedido{
 		Model:     model,
 		MaxTokens: t.MaxOutputTokens,
+		Tools:     antFerramentas(t.Tools),
 		// O PREFIXO, com o breakpoint no FIM DELE — e não no fim do prompt.
 		System: []antBlocoTexto{{
 			Type:         "text",
@@ -287,6 +361,60 @@ func (a *Anthropic) render(t agent.Turn, model string, effort agent.Effort,
 			"pedido ilegível: "+err.Error())
 	}
 	return corpo, avisos, nil
+}
+
+// antFerramentas traduz a declaração do domínio para a forma deste fornecedor
+// (D7). Lista vazia devolve nil, e o `omitempty` do pedido faz o resto: campo
+// AUSENTE, não array vazio (garantia 16).
+func antFerramentas(specs []agent.ToolSpec) []antFerramenta {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]antFerramenta, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, antFerramenta{
+			Name: s.Name, Description: s.Description, InputSchema: s.InputSchema,
+		})
+	}
+	return out
+}
+
+// antConteudoAssistente monta a fala do assistente com as chamadas junto (D11).
+//
+// O texto vem ANTES das chamadas porque é a ordem em que o modelo os produziu, e
+// remontar a história fora de ordem faz o modelo ler o próprio raciocínio ao
+// contrário.
+func antConteudoAssistente(m agent.Message) []antBloco {
+	blocos := make([]antBloco, 0, len(m.ToolCalls)+1)
+	if strings.TrimSpace(m.Text) != "" {
+		blocos = append(blocos, antBloco{Type: "text", Text: m.Text})
+	}
+	for _, c := range m.ToolCalls {
+		entrada := c.Input
+		if entrada == nil {
+			// Chamada que veio ilegível (D8) é reenviada com objeto VAZIO, e
+			// não omitida: o `tool_use_id` precisa existir para o resultado de
+			// erro correspondente ter par (D11). Omitir a chamada e mandar o
+			// resultado é o 400 clássico.
+			entrada = map[string]any{}
+		}
+		blocos = append(blocos, antBloco{
+			Type: "tool_use", ID: c.ID, Name: c.Name, Input: entrada,
+		})
+	}
+	return blocos
+}
+
+// antResultados monta os blocos `tool_result` (D9). O `is_error` é NATIVO aqui —
+// é o fornecedor que tem o booleano, e usá-lo é a metade fácil da garantia 21.
+func antResultados(rs []agent.ToolResult) []antBloco {
+	blocos := make([]antBloco, 0, len(rs))
+	for _, r := range rs {
+		blocos = append(blocos, antBloco{
+			Type: "tool_result", ToolUseID: r.CallID, Content: r.Content, IsError: r.IsError,
+		})
+	}
+	return blocos
 }
 
 // ── envio ───────────────────────────────────────────────────────────────────
@@ -336,9 +464,25 @@ func (a *Anthropic) Send(ctx context.Context, t agent.Turn, model string,
 	}
 
 	var texto strings.Builder
+	var chamadas []agent.ToolCall
 	for _, b := range out.Content {
-		if b.Type == "text" {
+		switch b.Type {
+		case "text":
 			texto.WriteString(b.Text)
+		case "tool_use":
+			// D8: aqui o `input` já é objeto — a decodificação é uma linha, e
+			// não a armadilha que ela é no outro adaptador. O caso degenerado
+			// existe mesmo assim (um `input` que não é objeto), e a resposta é
+			// a mesma dos dois lados: a chamada SOBE com Input nulo e um aviso,
+			// para o laço devolver o erro ao modelo em vez de matar o turno.
+			c := agent.ToolCall{ID: b.ID, Name: b.Name, RawInput: string(b.Input)}
+			if err := json.Unmarshal(b.Input, &c.Input); err != nil || c.Input == nil {
+				c.Input = nil
+				avisos = append(avisos,
+					"o modelo mandou argumentos ilegíveis para a ferramenta '"+b.Name+
+						"': a chamada foi devolvida a ele como erro (D8)")
+			}
+			chamadas = append(chamadas, c)
 		}
 	}
 
@@ -364,6 +508,7 @@ func (a *Anthropic) Send(ctx context.Context, t agent.Turn, model string,
 		Provider:   NomeAnthropic,
 		StopReason: parada,
 		Data:       decodificarTexto(texto.String()),
+		ToolCalls:  chamadas,
 		// Os cinco níveis existem aqui: o effort pedido é o aplicado (D4).
 		EffortApplied: effort,
 		Capabilities:  a.Info().Capabilities,

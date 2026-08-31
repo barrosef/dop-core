@@ -416,6 +416,68 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	return sb, nil
 }
 
+// ── execução de comando ──────────────────────────────────────────────────────
+
+// RunCommand roda um comando no sandbox VIVO da demanda.
+//
+// É por aqui que o agente age (ADR-0023 + spec do substrato §4): o runtime de
+// agente pergunta pela DEMANDA, que é o vocabulário dele, e este domínio resolve
+// demanda → sandbox → substrato. O runtime nunca vê um id de sandbox, nunca vê
+// `ports.SandboxLauncher` e nunca escolhe onde o comando roda.
+//
+// Três decisões que não são óbvias:
+//
+//  1. O ERRO É SÓ DO SUBSTRATO. Comando que sai com código != 0, que estoura o
+//     prazo ou que tem a saída cortada volta em `ExecResult` com erro nil —
+//     é a garantia 15 da porta, propagada intacta. O agente PRECISA ver que o
+//     teste reprovou para consertar; devolver isso como erro tiraria dele a
+//     única informação que resolve o problema;
+//
+//  2. TRABALHO DE AGENTE É ATIVIDADE. O toque adia a suspensão por ociosidade
+//     (spec §3). Sem ele, o varredor de economia derrubaria o sandbox debaixo
+//     de um agente que está justamente trabalhando nele — e o sintoma seria um
+//     laço de ferramenta que falha na volta seguinte por "sandbox suspenso",
+//     sem nada explicando por quê;
+//
+//  3. VIEWER NÃO RODA COMANDO. Rodar comando no sandbox é escrever no workspace
+//     da demanda e gastar o tempo de uma máquina que a conta paga. É a mesma
+//     linha que separa viewer de quem provisiona.
+func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.ExecRequest) (*ports.ExecResult, error) {
+	accountID, _, role, err := s.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(demandID) == "" {
+		return nil, errs.Invalid("demanda não informada")
+	}
+	if len(req.Command) == 0 {
+		return nil, errs.Invalid("comando não informado")
+	}
+	if role == identity.RoleViewer {
+		return nil, errs.Permission("viewer não executa comando no sandbox")
+	}
+
+	sb, err := s.repo.LiveByDemand(ctx, accountID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	if sb == nil {
+		// Demanda sem sandbox e demanda de outra conta saem iguais, pelo mesmo
+		// motivo de `load`: a segunda resposta confirmaria que o id existe.
+		return nil, errs.NotFound("sandbox da demanda %s", demandID)
+	}
+	if sb.State != StateActive {
+		return nil, errs.Precondition(
+			"o sandbox da demanda %s está em %q e não executa comando; retome-o antes",
+			demandID, sb.State)
+	}
+
+	if err := s.repo.TouchActivity(ctx, accountID, sb.ID); err != nil {
+		return nil, err
+	}
+	return s.launcher.Exec(ctx, sb.Handle(), req)
+}
+
 // ── logs ─────────────────────────────────────────────────────────────────────
 
 // streamTailLines é quanto de histórico acompanha a reconexão.

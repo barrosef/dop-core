@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
@@ -38,11 +39,23 @@ import (
 //
 // 3. PREFIXO ESTÁVEL PRIMEIRO, VOLÁTIL DEPOIS. Ver prompt.go.
 //
+// 3b. FERRAMENTAS SÃO DA FICHA (ADR-0010 §2), E O LAÇO É DAQUI. A ficha concede
+//    nomes; o catálogo do runtime (tools.go) resolve o que existe; o laço
+//    (toolloop.go) executa. Três coisas podem dar errado antes da primeira
+//    chamada, e as três VIRAM AVISO em vez de silêncio ou de erro: nome
+//    concedido que não existe, ficha que concede ferramenta numa instalação sem
+//    substrato, e modelo que pede ferramenta quando nenhuma foi declarada.
+//
 // 4. A MEDIÇÃO É IDEMPOTENTE, E A CHAVE É DERIVADA DO TURNO. Uma duplicata de
 //    registro de consumo não colide com nada: entraria como gasto legítimo e o
 //    orçamento viraria ficção. Todas as escritas deste ciclo derivam da MESMA
-//    chave (`:msg-in`, `:notice`, `:usage`, `:msg-out`, `:finding`), de modo que
-//    repetir a mesma requisição repete ZERO efeitos.
+//    chave (`:msg-in`, `:notice`, `:usage:<n>`, `:msg-out`, `:loop-notice`,
+//    `:finding`), de modo que repetir a mesma requisição repete ZERO efeitos.
+//
+//    O `<n>` do consumo é a VOLTA do laço, e é o que muda com ferramentas: um
+//    turno consome uma vez por volta, e uma chave só faria o domínio de custo
+//    descartar da segunda em diante como duplicata — o orçamento enxergaria um
+//    oitavo do gasto real num turno de oito voltas. Ver chaveDeUso.
 //
 //    Diferença deliberada em relação à versão do BFF: lá, sem chave do cliente,
 //    o runtime GERAVA uma — cada chamada virava um turno novo. Aqui a chave é
@@ -63,14 +76,18 @@ import (
 //    que é a verdade da demanda (ADR-0006) — mentir sobre quem fez o quê, numa
 //    plataforma cuja premissa inteira é distinguir os dois.
 //
-// 7. CONCLUIR EXIGE PUBLICAR ACHADO (spec §1). A recusa da conclusão vazia
-//    acontece em turn.go; aqui só se publica o que passou.
+// 7. CONCLUIR EXIGE PUBLICAR ACHADO (spec §1), E EXIGE TER TERMINADO. A recusa
+//    da conclusão vazia acontece em turn.go; a recusa da conclusão de um laço
+//    que parou no teto ou no orçamento acontece aqui. Achado é durável — vai
+//    para a memória do projeto e para o contexto dos irmãos —, e publicar um
+//    escrito no meio do trabalho é pior que não publicar nenhum.
 //
-// 8. ORÇAMENTO ESTOURADO PAUSA, NÃO MATA (ADR-0011 §2). O turno que já rodou é
-//    entregue inteiro — a resposta é publicada e o achado também —, e o resultado
-//    sai com `Paused` e o aviso que a caixa de atenção mostra. O próximo turno é
-//    que não sai. Abortar aqui seria o corte duro que a ADR recusou, e ainda por
-//    cima jogaria fora tokens já pagos.
+// 8. ORÇAMENTO ESTOURADO PAUSA, NÃO MATA (ADR-0011 §2), E AGORA EM DOIS NÍVEIS.
+//    Entre turnos, como sempre: o turno que já rodou é entregue inteiro e o
+//    PRÓXIMO não sai. E DENTRO do turno, que é novo: estourar no meio do laço
+//    para o laço na volta seguinte, com o que já rodou entregue. Abortar em
+//    qualquer um dos dois seria o corte duro que a ADR recusou, e ainda por cima
+//    jogaria fora tokens já pagos.
 // ════════════════════════════════════════════════════════════════════════════
 
 // Service executa turnos de agente. Recebe apenas PORTAS.
@@ -79,6 +96,41 @@ type Service struct {
 	knowledge Knowledge
 	routing   Routing
 	conv      Conversation
+	// sandbox é a ÚNICA porta opcional daqui. Nula = o agente conversa e não
+	// age; ver Option e a porta Sandbox.
+	sandbox Sandbox
+	// maxToolRounds é o teto de voltas de ferramenta por turno (ADR-0011).
+	maxToolRounds int
+}
+
+// Option ajusta o serviço na montagem.
+//
+// Por que opção variádica e não parâmetro do construtor, contrariando o estilo
+// dos outros serviços da casa: os quatro parâmetros obrigatórios são usados em
+// TODO turno, e por isso nulo neles é erro de montagem que merece panic. Estes
+// dois não são — uma instalação sem substrato de execução roda turnos, e o teto
+// tem um default do domínio que é a resposta certa na maioria das instalações.
+// Além disso, a fiação existente continua compilando: acrescentar capacidade não
+// pode custar uma mudança em quem não a usa.
+type Option func(*Service)
+
+// WithSandbox liga o substrato de execução — é o que transforma "plataforma que
+// MODELA trabalho de agente" em "plataforma que EXECUTA trabalho de agente".
+func WithSandbox(s Sandbox) Option {
+	return func(svc *Service) { svc.sandbox = s }
+}
+
+// WithMaxToolRounds ajusta o teto de voltas de ferramenta por turno.
+//
+// Valor <= 0 é IGNORADO e o default vale. Aceitar zero como "sem teto" seria
+// dar a quem esqueceu de configurar exatamente o comportamento que a ADR-0011
+// proíbe — e o esquecimento é o caso mais provável.
+func WithMaxToolRounds(n int) Option {
+	return func(svc *Service) {
+		if n > 0 {
+			svc.maxToolRounds = n
+		}
+	}
 }
 
 // NewService recusa dependência nula.
@@ -93,7 +145,9 @@ type Service struct {
 // cada um, e cada um tem o próprio relógio. Mais que isso: o prefixo do prompt
 // precisa ser livre de relógio (ADR-0012 §1, camada 2 de prompt.go), e um relógio
 // disponível no serviço seria um convite permanente a carimbar o prefixo.
-func NewService(providers Providers, knowledge Knowledge, routing Routing, conv Conversation) *Service {
+func NewService(providers Providers, knowledge Knowledge, routing Routing, conv Conversation,
+	opts ...Option) *Service {
+
 	switch {
 	case providers == nil:
 		panic("agent.NewService: fábrica de provedores obrigatória — sem ela não há com quem conversar")
@@ -104,7 +158,14 @@ func NewService(providers Providers, knowledge Knowledge, routing Routing, conv 
 	case conv == nil:
 		panic("agent.NewService: porta de demanda obrigatória — resposta que não vira mensagem some")
 	}
-	return &Service{providers: providers, knowledge: knowledge, routing: routing, conv: conv}
+	s := &Service{
+		providers: providers, knowledge: knowledge, routing: routing, conv: conv,
+		maxToolRounds: DefaultMaxToolRounds,
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // TurnRequest é um turno a executar numa thread.
@@ -124,6 +185,14 @@ type TurnRequest struct {
 	// usuário (ver D3).
 	OperatorNote    string
 	MaxOutputTokens int
+	// MaxToolRounds permite ao chamador ABAIXAR o teto de voltas deste turno.
+	// Zero usa o do serviço; valor MAIOR que o do serviço é ignorado.
+	//
+	// Só para baixo, e é a decisão que importa aqui: um teto que o cliente pode
+	// levantar não é teto, é sugestão — e a ADR-0011 §2 não pede sugestão. Quem
+	// quiser gastar mais muda a política da instalação, onde a mudança é
+	// visível, e não num campo de requisição que ninguém audita.
+	MaxToolRounds int
 }
 
 // RoutingView é a decisão que valeu, com a justificativa INTEIRA.
@@ -167,6 +236,19 @@ type TurnOutcome struct {
 	Finding          *FindingRef
 	Usage            TurnUsage
 	ContextTruncated bool
+	// ── o laço de ferramenta ───────────────────────────────────────────────
+	// ToolRounds é quantas VOLTAS o turno deu — quantas vezes o modelo foi
+	// chamado. Uma volta é o turno sem ferramenta nenhuma, que continua sendo
+	// o caso comum.
+	ToolRounds int
+	// ToolCalls é quantas ferramentas foram PEDIDAS no turno inteiro.
+	ToolCalls int
+	// LoopStop é por que o laço parou. `finished` é a única que significa "a
+	// resposta acima está completa" — ver LoopStop.
+	LoopStop LoopStop
+	// MaxToolRounds é o teto que valeu. Viaja junto porque "bati o teto" só é
+	// acionável para quem sabe qual era o teto.
+	MaxToolRounds int
 	// Paused: o orçamento estourou e a demanda vira item de decisão (ADR-0011 §2).
 	Paused   bool
 	Notice   string
@@ -180,11 +262,28 @@ type TurnOutcome struct {
 // efeitos — a mensagem não duplica, o consumo não conta duas vezes e o achado não
 // é publicado de novo.
 func chaves(turnKey string) map[string]string {
-	m := make(map[string]string, 5)
-	for _, alvo := range []string{"msg-in", "notice", "usage", "msg-out", "finding"} {
+	m := make(map[string]string, 6)
+	for _, alvo := range []string{"msg-in", "notice", "loop-notice", "msg-out", "finding"} {
 		m[alvo] = turnKey + ":" + alvo
 	}
 	return m
+}
+
+// chaveDeUso deriva a chave de idempotência da medição de UMA volta.
+//
+// A chave é `<turno>:usage:<n>` e não `<turno>:usage` porque com ferramentas um
+// turno consome VÁRIAS vezes, e uma chave só faria o domínio de custo descartar
+// da segunda volta em diante como duplicata — o orçamento passaria a enxergar
+// um oitavo do gasto real num turno de oito voltas.
+//
+// A repetição da mesma requisição continua repetindo zero efeitos: as voltas
+// recebem as mesmas chaves na mesma ordem. Uma repetição que precise de MAIS
+// voltas que a original grava linhas novas só para as voltas novas — e é o
+// certo, porque aqueles tokens foram gastos de verdade.
+func chaveDeUso(turnKey string) func(int) string {
+	return func(rodada int) string {
+		return turnKey + ":usage:" + strconv.Itoa(rodada)
+	}
 }
 
 // comoAgente devolve o contexto com a autoria trocada para o AGENTE.
@@ -273,49 +372,68 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		ids = append(ids, nota)
 	}
 
-	// 3. Prefixo estável primeiro, volátil depois (ADR-0012 §1).
-	turno := BuildTurn(pkg, thread.Key, thread.Card, req.Text, req.OperatorNote, req.MaxOutputTokens)
-	execucao, err := executeTurn(ctx, provider, turno, modelo, esforco)
+	// 3. Ferramentas concedidas a ESTA thread (ADR-0010 §2). Nome concedido que
+	// não existe no catálogo não para o turno: vira aviso, e a ficha do prompt
+	// lista só o que de fato existe (ver ficha()).
+	ferramentas, desconhecidas := ToolCatalog(thread.Card.Tools)
+	var avisos []string
+	if av := avisoDeFerramentasDesconhecidas(desconhecidas); av != "" {
+		avisos = append(avisos, av)
+	}
+	if len(ferramentas) > 0 && s.sandbox == nil {
+		// A ficha promete ação e a instalação não tem substrato. Declarar as
+		// ferramentas assim mesmo faria o agente planejar em cima delas e
+		// descobrir na primeira chamada; não declarar e não avisar faria a
+		// ficha parecer honrada. Sobra a terceira saída: não declarar e DIZER.
+		avisos = append(avisos, "a ficha desta thread concede ferramenta(s) ("+
+			nomesDe(ferramentas)+"), mas esta instalação não tem substrato de execução "+
+			"ligado: o turno rodou SEM ferramentas")
+		ferramentas = nil
+	}
+
+	// 4. Prefixo estável primeiro, volátil depois (ADR-0012 §1).
+	turno := BuildTurn(pkg, thread.Key, thread.Card, req.Text, req.OperatorNote,
+		req.MaxOutputTokens, ferramentas)
+
+	// 5. O laço: manda, executa ferramenta, mede CADA volta, decide se continua.
+	// A medição vem antes de publicar a resposta pelo mesmo motivo de sempre: se
+	// o processo morrer no meio, é melhor ter registrado tokens já pagos do que
+	// ter publicado uma resposta de graça.
+	//
+	// O laço roda com o `ctx` ORIGINAL, e não com o do agente (`comoAgente`).
+	// A troca de ator existe para a AUTORIA do que é publicado — quem falou —,
+	// e usá-la aqui trocaria também a AUTORIZAÇÃO: o comando passaria a ser
+	// executado em nome de uma thread, que não é membro de conta nenhuma. Quem
+	// autoriza rodar comando no sandbox é a pessoa que apertou o botão, e é a
+	// permissão dela que o domínio de execução confere.
+	teto := s.tetoDeVoltas(req.MaxToolRounds)
+	laco := laco{
+		provider: provider, sandbox: s.sandbox, routing: s.routing, info: info,
+		demandID: req.DemandID, threadID: thread.ID,
+		modelo: modelo, esforco: esforco, maxVoltas: teto,
+		chaveUso: chaveDeUso(idempotencyKey), permitidas: ferramentas,
+	}
+	res, err := laco.rodar(ctx, turno)
 	if err != nil {
 		return nil, err
 	}
+	execucao := res.exec
 	resposta := execucao.ModelReply
-	avisos := execucao.Warnings
+	avisos = append(avisos, res.avisos...)
+	conta := res.conta
 
-	// 4. Medição, idempotente e com os campos de cache (ADR-0011 §4). Vem ANTES
-	// de publicar a resposta: se o processo morrer no meio, é melhor ter
-	// registrado tokens já pagos do que ter publicado uma resposta de graça.
 	modeloEfetivo := resposta.Model
 	if modeloEfetivo == "" {
 		modeloEfetivo = modelo
 	}
-	preco, precoConhecido := info.PriceFor(modeloEfetivo)
-	if !precoConhecido {
+	if !res.precoConhecido {
 		avisos = append(avisos, fmt.Sprintf(
 			"sem tabela de preço para %q em %q: o consumo foi registrado em tokens, "+
 				"e o CUSTO ficou zerado por AUSÊNCIA de tabela — não por ser de graça",
 			modeloEfetivo, info.Name))
 	}
-	var custo Micros
-	if precoConhecido {
-		custo = preco.CostMicros(resposta.Usage)
-	}
-	conta, err := s.routing.RecordUsage(ctx, Consumption{
-		DemandID:            req.DemandID,
-		ThreadID:            thread.ID,
-		Model:               modeloEfetivo,
-		InputTokens:         resposta.Usage.InputTokens,
-		OutputTokens:        resposta.Usage.OutputTokens,
-		CacheReadTokens:     resposta.Usage.CacheReadTokens,
-		CacheCreationTokens: resposta.Usage.CacheCreationTokens,
-		CostMicros:          custo,
-		Currency:            preco.Currency,
-	}, ks["usage"])
-	if err != nil {
-		return nil, err
-	}
 
-	// 5 e 6. A resposta na thread, assinada pelo AGENTE.
+	// 6 e 7. A resposta na thread, assinada pelo AGENTE.
 	comoAgenteCtx := comoAgente(ctx, thread)
 	saida, err := s.conv.PostMessage(comoAgenteCtx, thread.ID, execucao.Reply, ks["msg-out"])
 	if err != nil {
@@ -323,10 +441,45 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 	}
 	ids = append(ids, saida)
 
-	// 7. Concluir exige publicar achado (spec §1) — e o achado também é do
+	// A parada do laço que NÃO foi "terminei" vira mensagem na thread, pela
+	// mesma razão do aviso de truncamento: quem lê a conversa precisa saber que
+	// a resposta acima é um trabalho interrompido, e não uma conclusão. Vai com
+	// a autoria do CHAMADOR e não do agente — é afirmação da plataforma sobre o
+	// agente, e assiná-la como ele seria pôr na boca dele algo que ele não disse.
+	if nota := LoopNotice(res.parada, res.rodadas, teto); nota != "" {
+		id, err := s.conv.PostMessage(ctx, thread.ID, nota, ks["loop-notice"])
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	// 8. Concluir exige publicar achado (spec §1) — e o achado também é do
 	// agente, pelo mesmo motivo da mensagem.
+	//
+	// `res.parada.Concluded()` é a segunda condição: um laço que bateu o teto ou
+	// parou por orçamento NÃO conclui, mesmo que a última fala do modelo diga
+	// que sim. Achado escrito antes de o trabalho terminar é pior que achado
+	// nenhum — ele é durável, entra na memória do projeto e no contexto dos
+	// irmãos, e passa a valer como verdade.
+	//
+	// SEGUNDA TRANCA, e vale registrar por quê: hoje ela é redundante. Toda
+	// parada que não é `finished` acontece com chamadas de ferramenta pendentes,
+	// e `executeTurn` já zera `concluded` na presença de chamadas (turn.go) — de
+	// modo que nenhum teste consegue exercitar ESTA linha isoladamente. Ela fica
+	// porque as duas regras são independentes e moram em lugares diferentes: "quem
+	// pede ferramenta não terminou" é sobre a RESPOSTA, "laço interrompido não
+	// conclui" é sobre o LAÇO. No dia em que a primeira mudar, é esta que impede
+	// um achado escrito no meio do trabalho de entrar na memória do projeto. A
+	// regra em si é testável, e está testada, na forma pura: LoopStop.Concluded.
+	concluiu := execucao.Concluded && res.parada.Concluded()
+	if execucao.Concluded && !res.parada.Concluded() {
+		avisos = append(avisos,
+			"o modelo marcou conclusão numa volta em que o laço PAROU por "+
+				string(res.parada)+": a conclusão foi RECUSADA e nenhum achado foi publicado")
+	}
 	var achadoRef *FindingRef
-	if execucao.Concluded && execucao.Finding != nil {
+	if concluiu && execucao.Finding != nil {
 		payload := map[string]any{}
 		for k, v := range execucao.Finding.Payload {
 			payload[k] = v
@@ -362,21 +515,44 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		},
 		Reply:      execucao.Reply,
 		MessageIDs: ids,
-		Concluded:  execucao.Concluded,
+		Concluded:  concluiu,
 		Finding:    achadoRef,
 		Usage: TurnUsage{
-			Usage:              resposta.Usage,
-			CostMicros:         custo,
-			Currency:           preco.Currency,
+			// A soma de TODAS as voltas, não a última: registrar só a última
+			// subestimaria o gasto de um turno de N voltas por um fator N, e
+			// orçamento que erra não é orçamento (ADR-0011 §2).
+			Usage:              res.usoTotal,
+			CostMicros:         res.custoTotal,
+			Currency:           res.moeda,
 			CacheCreationKnown: info.Supports(CapCacheCreationAccounting),
-			CostKnown:          precoConhecido,
+			CostKnown:          res.precoConhecido,
 		},
 		ContextTruncated: aviso != "",
+		ToolRounds:       res.rodadas,
+		ToolCalls:        res.chamadas,
+		LoopStop:         res.parada,
+		MaxToolRounds:    teto,
 		Paused:           conta.BudgetExceeded,
 		Notice:           avisoDeOrcamento(conta),
 		Budgets:          conta.Exceeded,
 		Warnings:         avisos,
 	}, nil
+}
+
+// tetoDeVoltas resolve o teto DESTE turno: o do serviço, que o chamador pode
+// ABAIXAR mas nunca levantar. Ver TurnRequest.MaxToolRounds.
+func (s *Service) tetoDeVoltas(pedido int) int {
+	teto := s.maxToolRounds
+	if teto <= 0 {
+		// Serviço montado por um caminho que não passou pelo construtor (um
+		// zero value, um duplo de teste): o default do domínio vale mesmo
+		// assim. "Sem teto" não é um estado que este serviço pode ter.
+		teto = DefaultMaxToolRounds
+	}
+	if pedido > 0 && pedido < teto {
+		teto = pedido
+	}
+	return teto
 }
 
 // modeloEEffort resolve (modelo concreto, effort, a ficha venceu?).

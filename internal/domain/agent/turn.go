@@ -96,10 +96,11 @@ func achadoDe(dados map[string]any) *Finding {
 
 // executeTurn é UMA volta: manda a conversa, lê a resposta, decide se concluiu.
 //
-// Não retenta e não faz laço de ferramenta — ferramentas estão fora da porta
-// nesta entrega. O que este "laço" faz é a volta completa de UM turno; o próximo
-// turno é decisão de quem chamou, e é assim que o orçamento consegue interrompê-lo
-// ENTRE uma volta e outra (ADR-0011 §2) em vez de no meio de uma.
+// Não retenta e é DELIBERADAMENTE uma volta só: quem encadeia voltas é o laço de
+// toolloop.go, que tem as portas para medir e para agir. Manter esta função sem
+// laço é o que permite ao orçamento interromper ENTRE uma volta e outra
+// (ADR-0011 §2) em vez de no meio de uma, e é o que mantém a interpretação da
+// resposta testável sem substrato e sem domínio de custo.
 func executeTurn(ctx context.Context, p AgentProvider, t Turn,
 	model string, effort Effort) (*TurnExecution, error) {
 
@@ -114,6 +115,14 @@ func executeTurn(ctx context.Context, p AgentProvider, t Turn,
 	avisos := append([]string(nil), resposta.Warnings...)
 
 	concluiu, _ := dados["concluded"].(bool)
+	if len(resposta.ToolCalls) > 0 {
+		// Pedir ferramenta É dizer "ainda não terminei", e o pedido vale mais
+		// que o campo: um modelo que marca `concluded` e no mesmo fôlego manda
+		// rodar o teste não concluiu nada. Sem aviso, de propósito — isto não é
+		// violação de contrato, é o campo chegando antes da hora numa resposta
+		// que o laço ainda vai continuar.
+		concluiu = false
+	}
 	var achado *Finding
 	if concluiu {
 		achado = achadoDe(dados)
@@ -129,6 +138,10 @@ func executeTurn(ctx context.Context, p AgentProvider, t Turn,
 	}
 
 	switch resposta.StopReason {
+	case StopToolUse:
+		// Parada NORMAL do laço: o modelo pediu ferramenta. Sem aviso — avisar
+		// a cada volta encheria o resultado de ruído e esconderia os avisos
+		// que exigem decisão.
 	case StopMaxTokens:
 		// Resposta cortada não é resposta concluída. Sem este aviso, um turno
 		// truncado pareceria apenas uma resposta curta.

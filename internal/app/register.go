@@ -132,6 +132,10 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 		agentKnowledge{knowledgeSvc},
 		agentRouting{costSvc},
 		agentConversation{demandSvc},
+		// Com o sandbox ligado, o agente deixa de só conversar e passa a AGIR:
+		// o laço de ferramentas roda comando dentro do ambiente isolado da
+		// demanda. É a peça que separa modelar trabalho de executar trabalho.
+		agent.WithSandbox(agentSandbox{executionSvc}),
 	)
 	dopv1.RegisterAgentServiceServer(srv, appgrpc.NewAgentServer(agentSvc))
 

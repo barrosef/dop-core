@@ -190,7 +190,13 @@ func avisoDeTruncamento(p ContextPackage) string {
 }
 
 // ficha é a ficha da thread (ADR-0010 §2): propósito, ferramentas, orçamento.
-func ficha(threadKey string, card AgentCard) string {
+//
+// As ferramentas listadas são as EFETIVAMENTE declaradas, e não as concedidas na
+// ficha. A diferença aparece quando alguém concede um nome que não existe no
+// catálogo: anunciar ao agente uma ferramenta que ele não pode chamar é fazê-lo
+// planejar em cima de uma capacidade inexistente e descobrir só na primeira
+// chamada — depois de já ter prometido ao humano que ia usá-la.
+func ficha(threadKey string, card AgentCard, tools []ToolSpec) string {
 	linhas := []string{"Thread: " + threadKey}
 	if threadKey == "" {
 		linhas = []string{"Thread: (sem chave)"}
@@ -204,13 +210,17 @@ func ficha(threadKey string, card AgentCard) string {
 	if card.Purpose != "" {
 		linhas = append(linhas, "Propósito: "+card.Purpose)
 	}
-	if len(card.Tools) > 0 {
-		// Cópia antes de ordenar (camada 3): ordenar o slice do chamador
-		// mudaria a ficha dele por efeito colateral, e a ordem em que as
-		// ferramentas chegam não é escolha de ninguém.
-		ferramentas := append([]string(nil), card.Tools...)
-		sort.Strings(ferramentas)
-		linhas = append(linhas, "Ferramentas concedidas: "+strings.Join(ferramentas, ", "))
+	if len(tools) > 0 {
+		// A lista já vem ORDENADA do catálogo (camada 3, ver ToolCatalog):
+		// ordenar aqui o slice do chamador mudaria a ficha dele por efeito
+		// colateral, e a ordem em que as ferramentas chegam não é escolha de
+		// ninguém — mas mudaria os bytes do prefixo.
+		nomes := make([]string, 0, len(tools))
+		for _, t := range tools {
+			nomes = append(nomes, t.Name)
+		}
+		sort.Strings(nomes)
+		linhas = append(linhas, "Ferramentas concedidas: "+strings.Join(nomes, ", "))
 	}
 	if card.BudgetMicros > 0 {
 		// Micros inteiros, sem divisão: a mesma regra do domínio de custo.
@@ -231,10 +241,10 @@ func ficha(threadKey string, card AgentCard) string {
 // solto: é o canal não-forjável, e é o que preserva o prefixo cacheado em vez de
 // reescrever o topo do prompt (ADR-0012 §1).
 func BuildTurn(pkg ContextPackage, threadKey string, card AgentCard,
-	text, operatorNote string, maxOutputTokens int) Turn {
+	text, operatorNote string, maxOutputTokens int, tools []ToolSpec) Turn {
 
 	prefixo := ContratoDoRuntime +
-		bloco("Ficha desta thread", ficha(threadKey, card)) +
+		bloco("Ficha desta thread", ficha(threadKey, card, tools)) +
 		bloco("Regras do projeto", regras(pkg)) +
 		bloco("Índice dos repositórios", artefatos(pkg.Index)) +
 		bloco("Memória do projeto", artefatos(pkg.Memories)) +
@@ -252,9 +262,15 @@ func BuildTurn(pkg ContextPackage, threadKey string, card AgentCard,
 		maxOutputTokens = DefaultMaxOutputTokens
 	}
 	return Turn{
-		StablePrefix:    prefixo,
-		Messages:        mensagens,
-		OutputSchema:    OutputSchema(),
+		StablePrefix: prefixo,
+		Messages:     mensagens,
+		OutputSchema: OutputSchema(),
+		// As ferramentas são PREFIXO conceitual — estáveis por thread — e o
+		// adaptador as põe antes das mensagens no corpo (garantia 15). Elas
+		// ficam num campo próprio, e não interpoladas no texto do prefixo,
+		// porque é o fornecedor quem precisa validá-las: schema descrito em
+		// prosa é schema que ninguém valida.
+		Tools:           tools,
 		MaxOutputTokens: maxOutputTokens,
 	}
 }

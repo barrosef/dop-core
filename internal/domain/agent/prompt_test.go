@@ -28,8 +28,8 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 	pkg := pacoteCheio()
 	card := agent.AgentCard{Purpose: "investigar", Tools: []string{"grep", "bash"}, BudgetMicros: 500}
 
-	primeiro := agent.BuildTurn(pkg, "principal", card, "primeira pergunta", "", 0)
-	segundo := agent.BuildTurn(pkg, "principal", card, "segunda pergunta, bem diferente",
+	primeiro := buildTurn(pkg, "principal", card, "primeira pergunta", "", 0)
+	segundo := buildTurn(pkg, "principal", card, "segunda pergunta, bem diferente",
 		"o operador manda parar", 0)
 
 	if primeiro.StablePrefix != segundo.StablePrefix {
@@ -56,26 +56,63 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 func TestMontagemDeterministica(t *testing.T) {
 	pkg := pacoteCheio()
 	card := agent.AgentCard{Purpose: "investigar", Tools: []string{"zsh", "grep", "bash", "curl"}}
-	base := agent.BuildTurn(pkg, "principal", card, "oi", "", 0)
+	base := buildTurn(pkg, "principal", card, "oi", "", 0)
 	for i := 0; i < 50; i++ {
-		if outro := agent.BuildTurn(pkg, "principal", card, "oi", "", 0); outro.StablePrefix != base.StablePrefix {
+		if outro := buildTurn(pkg, "principal", card, "oi", "", 0); outro.StablePrefix != base.StablePrefix {
 			t.Fatalf("prefixo não determinístico na tentativa %d", i)
 		}
 	}
-	// As ferramentas entram ORDENADAS — e a ordenação não pode ter mexido no
-	// slice de quem chamou, senão a ficha da thread mudaria por efeito colateral.
+	// A ficha do chamador não pode ser mexida por efeito colateral: ela é dado
+	// da thread, e reordená-la aqui mudaria os bytes do prefixo no turno
+	// seguinte sem que ninguém tivesse pedido.
 	if card.Tools[0] != "zsh" {
 		t.Fatalf("BuildTurn reordenou o slice do chamador: %v", card.Tools)
 	}
-	if !strings.Contains(base.StablePrefix, "bash, curl, grep, zsh") {
-		t.Fatalf("as ferramentas não saíram ordenadas:\n%s", base.StablePrefix)
+	// E o que a ficha ANUNCIA são as ferramentas DECLARADAS, não as concedidas:
+	// nenhuma destas quatro existe no catálogo do runtime, então o prefixo não
+	// pode prometer nenhuma. Anunciar uma ferramenta inexistente faz o agente
+	// planejar em cima dela e prometer ao humano que vai usá-la.
+	if strings.Contains(base.StablePrefix, "Ferramentas concedidas") {
+		t.Fatalf("a ficha anunciou ferramenta que o runtime não declara:\n%s", base.StablePrefix)
+	}
+}
+
+// A ficha anuncia o que foi DECLARADO, e a declaração vai no campo próprio do
+// turno — não interpolada no texto do prefixo, porque schema descrito em prosa é
+// schema que nenhum fornecedor valida.
+func TestFerramentasEntramNaFichaDaThread(t *testing.T) {
+	card := agent.AgentCard{Purpose: "implementar", Tools: []string{agent.ToolRunCommand}}
+	specs, desconhecidas := agent.ToolCatalog(card.Tools)
+	if len(specs) != 1 || len(desconhecidas) != 0 {
+		t.Fatalf("catálogo devolveu %d spec(s) e %d desconhecida(s)", len(specs), len(desconhecidas))
+	}
+
+	turno := agent.BuildTurn(agent.ContextPackage{}, "principal", card, "oi", "", 0, specs)
+	if len(turno.Tools) != 1 || turno.Tools[0].Name != agent.ToolRunCommand {
+		t.Fatalf("as ferramentas não chegaram ao turno: %+v", turno.Tools)
+	}
+	if !strings.Contains(turno.StablePrefix, "Ferramentas concedidas: "+agent.ToolRunCommand) {
+		t.Fatalf("a ficha não anunciou a ferramenta declarada:\n%s", turno.StablePrefix)
+	}
+	// O prefixo continua sendo do PREFIXO: a declaração viaja no campo, e o
+	// schema não pode ter vazado para o texto.
+	if strings.Contains(turno.StablePrefix, "additionalProperties") {
+		t.Fatal("o schema da ferramenta foi interpolado no prefixo: ele é do campo Tools, " +
+			"e é o fornecedor quem precisa validá-lo")
+	}
+	// Determinismo, que é a camada 3 de prompt.go valendo também aqui.
+	for i := 0; i < 20; i++ {
+		outro := agent.BuildTurn(agent.ContextPackage{}, "principal", card, "oi", "", 0, specs)
+		if outro.StablePrefix != turno.StablePrefix {
+			t.Fatalf("prefixo com ferramentas não é determinístico (tentativa %d)", i)
+		}
 	}
 }
 
 // A ordem do núcleo é PRIORIDADE, não sugestão: ordenar aqui daria estabilidade
 // pelo preço de desfazer a curadoria (ADR-0009 §3).
 func TestOrdemDaCuradoriaEhPreservada(t *testing.T) {
-	p := agent.BuildTurn(pacoteCheio(), "principal", agent.AgentCard{}, "oi", "", 0)
+	p := buildTurn(pacoteCheio(), "principal", agent.AgentCard{}, "oi", "", 0)
 	iEspecifica := strings.Index(p.StablePrefix, "zelar pelo padrão do projeto")
 	iGenerica := strings.Index(p.StablePrefix, "abrir PR contra develop")
 	if iEspecifica < 0 || iGenerica < 0 {
@@ -89,7 +126,7 @@ func TestOrdemDaCuradoriaEhPreservada(t *testing.T) {
 // Bloco vazio não vira título órfão — e o layout continua sendo
 // contrato → ficha → contexto.
 func TestPacoteVazioNaoGeraTituloOrfao(t *testing.T) {
-	p := agent.BuildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "oi", "", 0)
+	p := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "oi", "", 0)
 	for _, titulo := range []string{"Regras do projeto", "Índice dos repositórios",
 		"Memória do projeto", "Achados já publicados"} {
 		if strings.Contains(p.StablePrefix, titulo) {
@@ -107,7 +144,7 @@ func TestPacoteVazioNaoGeraTituloOrfao(t *testing.T) {
 // Artefato externalizado entra pela REFERÊNCIA: omitir daria a impressão de que
 // não existe material nenhum.
 func TestArtefatoExternalizadoEntraPelaReferencia(t *testing.T) {
-	p := agent.BuildTurn(pacoteCheio(), "principal", agent.AgentCard{}, "oi", "", 0)
+	p := buildTurn(pacoteCheio(), "principal", agent.AgentCard{}, "oi", "", 0)
 	if !strings.Contains(p.StablePrefix, "gs://artefatos/dop-api") {
 		t.Fatalf("a referência do artefato externalizado sumiu:\n%s", p.StablePrefix)
 	}
@@ -116,7 +153,7 @@ func TestArtefatoExternalizadoEntraPelaReferencia(t *testing.T) {
 // A intervenção do operador é VOLÁTIL, vem DEPOIS do turno do usuário e tem
 // papel próprio — nunca `user` (D3).
 func TestIntervencaoDoOperadorTemCanalProprio(t *testing.T) {
-	p := agent.BuildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{},
+	p := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{},
 		"pergunta", "  pare de mexer no schema  ", 0)
 	if len(p.Messages) != 2 {
 		t.Fatalf("esperava 2 mensagens, veio %d", len(p.Messages))
@@ -129,7 +166,7 @@ func TestIntervencaoDoOperadorTemCanalProprio(t *testing.T) {
 	}
 	// Nota em branco não vira mensagem vazia — que sairia como uma instrução
 	// de operador sem conteúdo, e o modelo teria de adivinhar o que fazer.
-	vazio := agent.BuildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "oi", "   ", 0)
+	vazio := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "oi", "   ", 0)
 	if len(vazio.Messages) != 1 {
 		t.Fatalf("nota em branco virou mensagem: %+v", vazio.Messages)
 	}
@@ -142,14 +179,14 @@ func TestAvisosDeTruncamento(t *testing.T) {
 	if s := agent.TruncationNotice(sem); s != "" {
 		t.Fatalf("aviso na thread sem truncamento: %q", s)
 	}
-	if p := agent.BuildTurn(sem, "principal", agent.AgentCard{}, "oi", "", 0); strings.Contains(
+	if p := buildTurn(sem, "principal", agent.AgentCard{}, "oi", "", 0); strings.Contains(
 		p.StablePrefix, "TRUNCADO") {
 		t.Fatal("aviso no prefixo sem truncamento")
 	}
 
 	com := agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1, Index: 2, Memories: 3, Findings: 4}}
 	naThread := agent.TruncationNotice(com)
-	noPrefixo := agent.BuildTurn(com, "principal", agent.AgentCard{}, "oi", "", 0).StablePrefix
+	noPrefixo := buildTurn(com, "principal", agent.AgentCard{}, "oi", "", 0).StablePrefix
 	if !strings.Contains(naThread, "1 regra(s)") || !strings.Contains(naThread, "4 achado(s)") {
 		t.Fatalf("o aviso da thread não conta o que ficou de fora: %q", naThread)
 	}
@@ -173,7 +210,18 @@ func TestSchemaDeSaidaNaoEhCompartilhado(t *testing.T) {
 }
 
 func TestTetoDeSaidaTemPadrao(t *testing.T) {
-	if p := agent.BuildTurn(agent.ContextPackage{}, "k", agent.AgentCard{}, "oi", "", 0); p.MaxOutputTokens != agent.DefaultMaxOutputTokens {
+	if p := buildTurn(agent.ContextPackage{}, "k", agent.AgentCard{}, "oi", "", 0); p.MaxOutputTokens != agent.DefaultMaxOutputTokens {
 		t.Fatalf("teto de saída zerado não caiu no padrão: %d", p.MaxOutputTokens)
 	}
+}
+
+// buildTurn é o BuildTurn SEM ferramentas — a forma que este arquivo exercita.
+//
+// A montagem do prompt e o catálogo de ferramentas são coisas separadas de
+// propósito, e os testes seguem a separação: aqui se prova o layout do prefixo,
+// em tools_test.go se prova o catálogo, e o encontro dos dois tem teste próprio
+// (ver TestFerramentasEntramNaFichaDaThread).
+func buildTurn(pkg agent.ContextPackage, threadKey string, card agent.AgentCard,
+	text, operatorNote string, maxOutputTokens int) agent.Turn {
+	return agent.BuildTurn(pkg, threadKey, card, text, operatorNote, maxOutputTokens, nil)
 }

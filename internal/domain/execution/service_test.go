@@ -737,6 +737,12 @@ type launcherFalso struct {
 	resumes        int
 	destroys       int
 	fases          map[string]ports.SandboxPhase
+	// execs guarda os comandos recebidos, e execSaida o que devolver. Comando
+	// que falha é RESULTADO nesta porta (garantia 15), então o duplo precisa
+	// saber devolver código != 0 sem devolver erro.
+	execs     []ports.ExecRequest
+	execSaida *ports.ExecResult
+	execErro  error
 }
 
 func (l *launcherFalso) tierEntregue(pedido ports.IsolationTier) ports.IsolationTier {
@@ -795,6 +801,23 @@ func (l *launcherFalso) Describe(_ context.Context, h ports.SandboxHandle) (*por
 	return &ports.SandboxStatus{Phase: fase, Tier: ports.TierNamespace}, nil
 }
 
+func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
+	l.execs = append(l.execs, req)
+	if l.execErro != nil {
+		return nil, l.execErro
+	}
+	if fase, ok := l.fases[h.ID]; !ok || fase != ports.PhaseActive {
+		// O adaptador real recusa por Describe antes de tentar; o duplo faz o
+		// mesmo para que o teste do domínio não passe por um caminho que a
+		// porta não permite.
+		return nil, errs.Precondition("sandbox %s não está ativo", h.ID)
+	}
+	if l.execSaida != nil {
+		return l.execSaida, nil
+	}
+	return &ports.ExecResult{ExitCode: 0, Stdout: "ok\n"}, nil
+}
+
 func (l *launcherFalso) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.LogQuery, emit func(ports.LogLine) error) error {
 	for _, ln := range l.linhas {
 		if err := emit(ln); err != nil {
@@ -850,4 +873,128 @@ func TestVarreduraDeSistemaAtravessaContasSemAfrouxarIsolamento(t *testing.T) {
 	if contas != 2 || suspensos != 2 {
 		t.Fatalf("esperava 2 contas e 2 suspensos, veio %d e %d", contas, suspensos)
 	}
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RunCommand — a ponte por onde o agente AGE (spec do substrato §4).
+//
+// A regra que estes testes protegem é a mesma da garantia 15 da porta, um andar
+// acima: erro é do SUBSTRATO; o que o comando fez, inclusive falhar, é resultado.
+// ═════════════════════════════════════════════════════════════════════════════
+
+func TestRunCommandRodaNoSandboxDaDemanda(t *testing.T) {
+	c := novoCenario(t)
+	sb := c.provisionado(t)
+
+	res, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{
+		Command: []string{"sh", "-c", "echo oi"},
+	})
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("código de saída %d", res.ExitCode)
+	}
+	if len(c.launcher.execs) != 1 {
+		t.Fatalf("o substrato recebeu %d comando(s)", len(c.launcher.execs))
+	}
+	// O runtime de agente pergunta pela DEMANDA; quem resolve demanda → sandbox
+	// é este domínio. O agente nunca vê um id de sandbox.
+	if sb.DemandID != "demanda-1" {
+		t.Fatalf("sandbox da demanda errada: %+v", sb)
+	}
+}
+
+// Comando que falha é RESULTADO. Se isto virar erro, o laço de ferramenta do
+// agente perde a única informação que o modelo consegue usar para corrigir.
+func TestRunCommandCodigoDeSaidaNaoEhErro(t *testing.T) {
+	c := novoCenario(t)
+	c.provisionado(t)
+	c.launcher.execSaida = &ports.ExecResult{ExitCode: 3, Stderr: "reprovou"}
+
+	res, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+	if err != nil {
+		t.Fatalf("código != 0 virou erro do domínio: %v", err)
+	}
+	if res.ExitCode != 3 || res.Stderr != "reprovou" {
+		t.Fatalf("o resultado do comando não chegou inteiro: %+v", res)
+	}
+}
+
+// Trabalho de agente é ATIVIDADE: sem o toque, o varredor de economia derruba o
+// sandbox debaixo do agente que está justamente trabalhando nele (spec §3).
+func TestRunCommandAdiaASuspensaoPorOciosidade(t *testing.T) {
+	c := novoCenario(t)
+	sb := c.provisionado(t)
+	c.repo.touches = 0
+
+	if _, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}}); err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	if c.repo.touches == 0 {
+		t.Fatalf("rodar comando não contou como atividade no sandbox %s: o varredor "+
+			"suspenderia o sandbox no meio do trabalho do agente", sb.ID)
+	}
+}
+
+func TestRunCommandRecusaOQueNaoPodeExecutar(t *testing.T) {
+	t.Run("demanda_sem_sandbox", func(t *testing.T) {
+		c := novoCenario(t)
+		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		if errs.KindOf(err) != errs.KindNotFound {
+			t.Fatalf("esperava KindNotFound, veio %v", err)
+		}
+	})
+
+	t.Run("sandbox_suspenso", func(t *testing.T) {
+		c := novoCenario(t)
+		sb := c.provisionado(t)
+		if _, err := c.svc.Suspend(c.ctx, sb.ID); err != nil {
+			t.Fatalf("Suspend: %v", err)
+		}
+		// Precondição, e nunca um código de saída inventado: substrato sem
+		// execução não roda comando, e dizer isso é diferente de dizer que o
+		// comando falhou.
+		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		if errs.KindOf(err) != errs.KindPrecondition {
+			t.Fatalf("esperava KindPrecondition, veio %v", err)
+		}
+		if len(c.launcher.execs) != 0 {
+			t.Fatal("o comando foi para o substrato mesmo com o sandbox suspenso")
+		}
+	})
+
+	t.Run("viewer_nao_executa", func(t *testing.T) {
+		c := novoCenario(t)
+		c.provisionado(t)
+		c.access.papel = identity.RoleViewer
+		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		if errs.KindOf(err) != errs.KindPermission {
+			t.Fatalf("esperava KindPermission, veio %v", err)
+		}
+	})
+
+	t.Run("comando_vazio", func(t *testing.T) {
+		c := novoCenario(t)
+		c.provisionado(t)
+		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{})
+		if errs.KindOf(err) != errs.KindInvalid {
+			t.Fatalf("esperava KindInvalid, veio %v", err)
+		}
+	})
+
+	t.Run("sandbox_de_outra_conta", func(t *testing.T) {
+		c := novoCenario(t)
+		c.provisionado(t)
+		outra := ctxutil.Into(context.Background(), ctxutil.Call{
+			AccountID: "conta-b", ActorID: "u2", ActorKind: ctxutil.ActorUser,
+		})
+		// Toda consulta filtra por conta: o sandbox da conta A não existe para
+		// a conta B, e a resposta é a mesma de "não existe" — a outra
+		// confirmaria que o id é real.
+		_, err := c.svc.RunCommand(outra, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		if errs.KindOf(err) != errs.KindNotFound {
+			t.Fatalf("esperava KindNotFound, veio %v", err)
+		}
+	})
 }

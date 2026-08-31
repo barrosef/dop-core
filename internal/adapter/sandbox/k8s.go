@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,8 +44,13 @@ const (
 )
 
 type K8s struct {
-	client    *http.Client
-	stream    *http.Client
+	client *http.Client
+	stream *http.Client
+	// tls é a MESMA configuração do transporte HTTP, guardada porque o exec
+	// não passa por `http.Client`: ele disca o socket na mão para poder falar
+	// WebSocket (ver websocket.go). Sem guardá-la, o exec confiaria só nas CAs
+	// públicas e falharia contra o certificado da CA do próprio cluster.
+	tls       *tls.Config
 	apiServer string
 	token     string
 	// workspaceSize é o tamanho do PVC do workspace. Não está na porta: é
@@ -79,6 +85,7 @@ func NewK8s(cfg K8sConfig) *K8s {
 		client: c,
 		// Timeout zero: seguir log dura o tempo do cliente.
 		stream:        &http.Client{Transport: k8sTransport()},
+		tls:           k8sTLS(),
 		apiServer:     strings.TrimRight(cfg.APIServer, "/"),
 		token:         cfg.Token,
 		workspaceSize: size,
@@ -93,6 +100,14 @@ var _ ports.SandboxLauncher = (*K8s)(nil)
 // próprio cluster, que não está em bundle nenhum, e o pod sobe verde para
 // quebrar só na primeira chamada de verdade.
 func k8sTransport() *http.Transport {
+	return &http.Transport{TLSClientConfig: k8sTLS()}
+}
+
+// k8sTLS existe separada porque DOIS caminhos precisam dela: o `http.Client` das
+// chamadas normais e o socket discado na mão do exec. Duplicar a montagem seria
+// a garantia de que um dos dois deixaria de confiar na CA do cluster no primeiro
+// ajuste, e a falha apareceria só na primeira chamada de verdade.
+func k8sTLS() *tls.Config {
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
@@ -100,7 +115,7 @@ func k8sTransport() *http.Transport {
 	if pem, err := os.ReadFile(k8sServiceAccountCA); err == nil {
 		pool.AppendCertsFromPEM(pem)
 	}
-	return &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 }
 
 func (k *K8s) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
@@ -337,6 +352,11 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		"name":  containerName,
 		"image": spec.Image,
 		"env":   env,
+		// O `pods/exec` NÃO aceita diretório de trabalho — só o comando. Fixar
+		// o do contêiner é o que faz o exec herdá-lo e o que torna a garantia
+		// 14 da porta a mesma nos dois substratos: comando de ferramenta
+		// começa no workspace, aqui e no Docker.
+		"workingDir": ports.SandboxWorkspacePath,
 		"volumeMounts": []map[string]any{
 			{"name": pvcName, "mountPath": ports.SandboxWorkspacePath},
 		},
@@ -608,6 +628,182 @@ func (k *K8s) workspaceExists(ctx context.Context, h ports.SandboxHandle) (bool,
 		return false, k8sFail(code, body, "leitura do workspace")
 	}
 	return true, nil
+}
+
+// ── exec ─────────────────────────────────────────────────────────────────────
+
+// wsProtocoloExec é o subprotocolo de canais do Kubernetes.
+//
+// `v4` e não `v5`: o v5 acrescenta só o fechamento de stdin, e este exec não tem
+// stdin. Pedir a versão maior sem precisar dela seria trocar compatibilidade com
+// cluster antigo por nada.
+const wsProtocoloExec = "v4.channel.k8s.io"
+
+// Os canais do subprotocolo. O 0 (stdin) e o 4 (resize) não são usados aqui —
+// é justamente o que separa "rodar um comando" de "abrir uma sessão".
+const (
+	canalStdout = 1
+	canalStderr = 2
+	canalStatus = 3
+)
+
+// Exec roda um comando dentro do contêiner do sandbox (garantias 13 a 18).
+//
+// O código de saída é o ponto delicado deste adaptador. Ele NÃO vem por HTTP e
+// NÃO vem no fim do stdout: vem no canal 3, como um `metav1.Status` em JSON, e
+// só ali. Um exec que leia stdout/stderr e feche a conexão funciona
+// perfeitamente e devolve o código de saída errado (zero) para todo comando que
+// falhou — que é exatamente a confusão que a garantia 15 existe para impedir.
+func (k *K8s) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
+	if len(req.Command) == 0 {
+		return nil, errs.Invalid("exec sem comando")
+	}
+	st, err := k.Describe(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	if st.Phase != ports.PhaseActive {
+		return nil, errs.Precondition(
+			"o sandbox %s está em %q e não executa comando; retome-o antes", h.ID, st.Phase)
+	}
+
+	prazo, teto := execLimites(req)
+	runCtx, cancel := context.WithTimeout(ctx, prazo)
+	defer cancel()
+
+	v := url.Values{}
+	v.Set("container", containerName)
+	v.Set("stdout", "true")
+	v.Set("stderr", "true")
+	// stdin DESLIGADO: ver o cabeçalho de websocket.go. Comando, não sessão.
+	v.Set("stdin", "false")
+	v.Set("tty", "false")
+	for _, arg := range req.Command {
+		v.Add("command", arg)
+	}
+	endereco := k.apiServer + "/api/v1/namespaces/" + h.Namespace + "/pods/" + podName +
+		"/exec?" + v.Encode()
+
+	cab := http.Header{}
+	if k.token != "" {
+		cab.Set("Authorization", "Bearer "+k.token)
+	}
+	ws, resp, err := wsDial(runCtx, endereco, cab, wsProtocoloExec, k.tls)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+		}
+		if runCtx.Err() != nil {
+			// Nem o aperto de mão coube no prazo. Continua sendo RESULTADO:
+			// quem pediu um prazo curto precisa ver "não coube", não um erro
+			// de infraestrutura que manda investigar o cluster.
+			return &ports.ExecResult{ExitCode: -1, TimedOut: true}, nil
+		}
+		return nil, err
+	}
+	if ws == nil {
+		corpo, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusForbidden &&
+			strings.Contains(strings.ToLower(string(corpo)), "reject") {
+			// O `kubectl proxy` recusa `/pods/*/exec` por padrão. A mensagem
+			// crua dele não diz o que fazer; esta diz.
+			return nil, errs.Permission(
+				"o proxy à frente da API recusou o caminho de exec — rode " +
+					"`kubectl proxy --port=8001 --reject-paths='^$'` ou aponte " +
+					"K8S_API_SERVER direto para o apiserver")
+		}
+		return nil, k8sFail(resp.StatusCode, corpo, "execução do comando no sandbox")
+	}
+	defer ws.Close()
+
+	saida, erroPadrao := &bufferComTeto{max: teto}, &bufferComTeto{max: teto}
+	var status []byte
+	for {
+		msg, err := ws.ReadMessage()
+		if err != nil {
+			break // EOF, fechamento ou socket derrubado pelo prazo
+		}
+		if len(msg) == 0 {
+			// O k8s abre cada canal com uma mensagem só com o byte do canal.
+			continue
+		}
+		dados := msg[1:]
+		switch msg[0] {
+		case canalStdout:
+			_, _ = saida.Write(dados)
+		case canalStderr:
+			_, _ = erroPadrao.Write(dados)
+		case canalStatus:
+			status = append(status, dados...)
+		}
+	}
+
+	if ctx.Err() != nil {
+		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+	}
+	res := &ports.ExecResult{
+		ExitCode:  -1,
+		Stdout:    saida.String(),
+		Stderr:    erroPadrao.String(),
+		Truncated: saida.cortou || erroPadrao.cortou,
+		TimedOut:  runCtx.Err() != nil,
+	}
+	if res.TimedOut {
+		// Sem status no canal 3, não houve término: o processo continua lá
+		// dentro. -1 e TimedOut dizem isso; zero afirmaria sucesso.
+		return res, nil
+	}
+	aplicarStatusDeExec(res, status)
+	return res, nil
+}
+
+// aplicarStatusDeExec lê o `metav1.Status` do canal 3.
+//
+// Três casos, e os três são RESULTADO, nunca erro da porta:
+//
+//   - Success → código 0;
+//   - Failure com causa ExitCode → o código que o processo devolveu;
+//   - Failure sem causa de código (o clássico "executable file not found") → -1,
+//     e a mensagem do substrato entra no stderr. Ela precisa chegar ao MODELO,
+//     que é quem consegue corrigir o comando; engoli-la deixaria o agente com
+//     uma saída vazia e nenhuma pista.
+func aplicarStatusDeExec(res *ports.ExecResult, bruto []byte) {
+	if len(bruto) == 0 {
+		return
+	}
+	var st struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+		Reason  string `json:"reason"`
+		Details struct {
+			Causes []struct {
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
+			} `json:"causes"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(bruto, &st); err != nil {
+		return
+	}
+	if st.Status == "Success" {
+		res.ExitCode = 0
+		return
+	}
+	for _, c := range st.Details.Causes {
+		if c.Reason == "ExitCode" {
+			if n, err := strconv.Atoi(strings.TrimSpace(c.Message)); err == nil {
+				res.ExitCode = n
+				return
+			}
+		}
+	}
+	if msg := strings.TrimSpace(st.Message); msg != "" {
+		if res.Stderr != "" && !strings.HasSuffix(res.Stderr, "\n") {
+			res.Stderr += "\n"
+		}
+		res.Stderr += msg
+	}
 }
 
 // ── logs ─────────────────────────────────────────────────────────────────────

@@ -79,6 +79,68 @@
 // duas viram `*Unavailable` (ver abaixo), porque indisponibilidade de terceiro
 // não pode chegar ao cliente como erro nosso: um erro interno genérico manda a
 // equipe errada investigar e manda o usuário esperar um conserto que não existe.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// FERRAMENTAS: OS CINCO EIXOS EM QUE OS DOIS DIVERGEM  (D7–D11)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Ferramentas ficaram FORA da porta na entrega anterior, e a razão registrada
+// era boa: "os formatos divergem em três eixos ao mesmo tempo, e um laço escrito
+// sobre a média dos dois seria um laço que nenhum dos dois executa bem". A razão
+// continua verdadeira — o que mudou é que os eixos foram nomeados um a um, cada
+// um ganhou subteste de contrato nos DOIS adaptadores, e a normalização deixou
+// de ser média para virar tradução. Eram três; olhando de perto, são cinco.
+//
+// D7 — DECLARAÇÃO. A Anthropic põe o schema NO TOPO do objeto da ferramenta:
+// `{name, description, input_schema}`. A OpenAI aninha: `{type:"function",
+// function:{name, description, parameters, strict}}` — nome diferente para o
+// mesmo campo (`parameters`, não `input_schema`), um nível a mais de aninhamento
+// e uma chave `type` que só existe lá. O terreno comum é NOME + DESCRIÇÃO +
+// SCHEMA, e é exatamente isso que `ToolSpec` carrega; cada adaptador monta a
+// casca dele. Consequência que vale registrar: a declaração é PREFIXO — muda por
+// thread, não por turno —, e por isso ela vai ANTES das mensagens no corpo, do
+// mesmo jeito que o prefixo estável (garantia 15 da porta).
+//
+// D8 — A CHAMADA NA RESPOSTA. Aqui a diferença não é de nome, é de TIPO. Na
+// Anthropic a chamada é um bloco `tool_use` DENTRO de `content`, ao lado dos
+// blocos de texto, e `input` já é um OBJETO JSON decodificado. Na OpenAI a
+// chamada vem num array `tool_calls` FORA de `content`, e `function.arguments` é
+// uma STRING que ainda precisa de `json.Unmarshal`. A armadilha é o caso
+// degenerado: o modelo pode emitir uma string que não é JSON válido. Ali, falhar
+// o turno seria a resposta errada — quem consegue corrigir o argumento é o
+// MODELO, e ele só corrige se receber o erro de volta. Por isso a porta manda a
+// chamada para cima com `Input` nulo e um aviso, e o laço responde com um
+// resultado de erro. É o gêmeo exato da regra do D2: o adaptador absorve a forma
+// do fornecedor e entrega a semântica do domínio.
+//
+// D9 — O RESULTADO DE VOLTA. A Anthropic recebe o resultado como bloco
+// `tool_result` dentro de uma mensagem `role:"user"` — vários resultados cabem
+// na MESMA mensagem, e há um booleano `is_error`. A OpenAI recebe UMA mensagem
+// `role:"tool"` POR resultado, com `tool_call_id`, e NÃO tem campo de erro:
+// falha de ferramenta é texto como qualquer outro. Duas consequências: o número
+// de mensagens no corpo difere entre os fornecedores para o mesmo turno do
+// domínio (por isso a suíte compara conteúdo, nunca contagem), e onde o booleano
+// não existe o adaptador PREFIXA o conteúdo de forma legível — perder a marca de
+// erro faria o modelo ler uma falha como saída normal e seguir em frente.
+//
+// D10 — PARALELISMO. Os dois emitem várias chamadas por volta, e por padrão. A
+// Anthropic desliga por `tool_choice.disable_parallel_tool_use`; a OpenAI por um
+// campo de topo, `parallel_tool_calls`. O padrão é o que queremos — várias
+// chamadas numa volta é uma volta a menos, e volta custa o turno inteiro
+// reenviado —, e nenhum dos dois adaptadores manda a flag. O que a porta garante
+// é a ORDEM: as chamadas chegam a `Reply.ToolCalls` na ordem em que o fornecedor
+// as emitiu, e os resultados voltam na ordem das chamadas. Reordenar é o que
+// transforma "rodei o teste e depois li o log" em "li o log e depois rodei o
+// teste" na leitura do modelo.
+//
+// D11 — FERRAMENTA NÃO DECLARADA. Nenhum dos dois impede o modelo de chamar um
+// nome que não foi declarado — os dois validam o CORPO que enviamos, não a
+// imaginação do modelo. E os dois recusam com 400 o inverso: um resultado cujo
+// id de chamada eles não conhecem (`tool_use_id` órfão na Anthropic,
+// `tool_call_id` sem par na OpenAI). Daí as duas regras do laço, que são
+// simétricas: chamada de ferramenta desconhecida vira RESULTADO DE ERRO com o
+// id que o fornecedor mandou — nunca erro do turno, nunca resultado silencioso —,
+// e resultado nenhum é inventado sem uma chamada que o justifique.
 package agent
 
 import (
@@ -152,13 +214,20 @@ const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	RoleOperator  Role = "operator"
+	// RoleToolResult é o que a FERRAMENTA devolveu. Papel próprio, e não fala
+	// de usuário, pela mesma razão de segurança do RoleOperator invertida: a
+	// saída de um comando é conteúdo NÃO CONFIÁVEL (spec do substrato §6) e não
+	// pode chegar ao modelo com a autoridade de quem pediu o trabalho. Um
+	// `README` malicioso lido por `cat` não pode virar instrução.
+	RoleToolResult Role = "tool_result"
 )
 
 // StopReason é por que o modelo parou, no vocabulário do DOMÍNIO (ver D5).
 //
-// Três coisas o domínio precisa distinguir e só três: terminou, foi cortado,
-// recusou. `StopToolUse` existe para que o dia em que ferramentas entrarem na
-// porta não mude este vocabulário; `StopUnknown` para que motivo novo de
+// Quatro coisas o domínio precisa distinguir: terminou, foi cortado, recusou e
+// PEDIU FERRAMENTA. O quarto já existia aqui antes de ferramentas entrarem na
+// porta — foi escrito para que o dia da entrada não mudasse este vocabulário, e
+// esse dia chegou sem mudá-lo. `StopUnknown` existe para que motivo novo de
 // fornecedor não vire erro — parar de trabalhar por causa de uma string
 // desconhecida seria pior que registrar que ela apareceu.
 type StopReason string
@@ -191,6 +260,12 @@ const (
 	// CapStructuredOutput: saída estruturada validada pelo fornecedor —
 	// o achado terso da ADR-0012 §2, sem re-parse do nosso lado.
 	CapStructuredOutput Capability = "structured_output"
+	// CapToolUse: o adaptador declara ferramentas, lê a chamada e devolve o
+	// resultado (D7–D11). Os DOIS fornecedores a têm — e ela existe mesmo
+	// assim, porque capacidade é DADO: um terceiro adaptador que não
+	// implementasse o laço precisa poder dizer isso em vez de deixar o runtime
+	// declarar ferramentas que ninguém executa.
+	CapToolUse Capability = "tool_use"
 )
 
 // Capabilities é o conjunto, como slice ordenado e não como mapa: ele viaja no
@@ -208,12 +283,74 @@ func (c Capabilities) Has(want Capability) bool {
 	return false
 }
 
+// ── ferramentas (D7–D11) ─────────────────────────────────────────────────────
+
+// ToolSpec é a DECLARAÇÃO de uma ferramenta, no terreno comum dos dois
+// fornecedores (D7): nome, descrição e schema de entrada.
+//
+// Não há campo para a casca de cada fornecedor — nem `type:"function"`, nem
+// `strict` — de propósito: o dia em que um deles aparecer aqui, a porta terá
+// virado o formato de um fornecedor com outro nome.
+type ToolSpec struct {
+	Name        string
+	Description string
+	// InputSchema é JSON Schema. Mapa, e não struct, porque o schema é dado do
+	// catálogo de ferramentas e não vocabulário desta porta — e `json.Marshal`
+	// ordena chave de mapa alfabeticamente, o que mantém a serialização
+	// determinística (garantia 4).
+	InputSchema map[string]any
+}
+
+// ToolCall é o que o modelo PEDIU.
+type ToolCall struct {
+	// ID é opaco e vem do fornecedor. Ele é o que liga a chamada ao resultado
+	// (D11): inventar um id aqui faria os dois fornecedores recusarem o turno
+	// seguinte com 400.
+	ID   string
+	Name string
+	// Input é o argumento JÁ DECODIFICADO. Nulo significa que o fornecedor
+	// mandou algo que não decodifica — na OpenAI, uma string que não é JSON
+	// (D8). Nulo NÃO é "sem argumentos": `map[string]any{}` é isso.
+	Input map[string]any
+	// RawInput é o argumento como veio, para quando `Input` é nulo. Ele entra
+	// no resultado de erro devolvido ao modelo — sem ele, o modelo receberia
+	// "seu argumento é inválido" sem saber qual argumento.
+	RawInput string
+}
+
+// ToolResult é o que a execução DEVOLVEU, pronto para voltar ao modelo.
+type ToolResult struct {
+	// CallID casa com ToolCall.ID.
+	CallID string
+	Name   string
+	// Content é o que o modelo vai LER. Texto, sempre: os dois fornecedores
+	// aceitam texto no resultado, e só um aceita estrutura.
+	Content string
+	// IsError diz que a ferramenta FALHOU. É campo próprio, e não um prefixo
+	// no texto, porque um dos fornecedores tem o booleano nativo — jogar fora a
+	// distinção para caber no menor dos dois seria o denominador comum que a
+	// ADR-0001 recusa. Quem não tem o campo escreve a marca no texto (D9).
+	IsError bool
+}
+
 // ── a conversa ───────────────────────────────────────────────────────────────
 
 // Message é uma fala: a parte VOLÁTIL da conversa, que vai depois do breakpoint.
+//
+// Os três campos extras são exclusivos por papel, e essa exclusividade é o
+// contrato: `ToolCalls` só em RoleAssistant, `ToolResults` só em RoleToolResult.
+// Um struct com os três em vez de três tipos é escolha deliberada — a alternativa
+// (interface + type switch) espalharia o conhecimento da forma da conversa por
+// todos os adaptadores, que é justamente o que a porta existe para evitar.
 type Message struct {
 	Role Role
 	Text string
+	// ToolCalls é o que o modelo pediu na volta ANTERIOR, reenviado como
+	// história. Sem ele, o fornecedor recebe um resultado sem a chamada que o
+	// justifica e recusa o turno (D11).
+	ToolCalls []ToolCall
+	// ToolResults são os resultados daquelas chamadas, na ORDEM delas (D10).
+	ToolResults []ToolResult
 }
 
 // Micros é valor monetário em 10^-6 da unidade da moeda — espelha `cost.Micros`.
@@ -278,9 +415,15 @@ type Turn struct {
 	// OutputSchema é o schema JSON da resposta: achado terso e validado pelo
 	// fornecedor (ADR-0012 §2). Nulo = texto livre.
 	OutputSchema map[string]any
-	// Tools é SEMPRE vazio nesta entrega — ver "O QUE FICOU DE FORA" na porta.
-	// O campo existe para que a assinatura não mude quando ferramentas entrarem.
-	Tools           []map[string]any
+	// Tools são as ferramentas DECLARADAS neste turno (D7). Vazio = o agente só
+	// conversa, e o adaptador NÃO manda o campo — array vazio no corpo é
+	// diferente de campo ausente, e mandá-lo convidaria o modelo a chamar o que
+	// não existe (garantia 16).
+	//
+	// A ordem importa e é do CATÁLOGO, já ordenada por nome (ver tools.go): a
+	// declaração é parte estável do prompt, e uma lista que muda de ordem entre
+	// turnos invalida o prefixo cacheado do mesmo jeito que um mapa iterado.
+	Tools           []ToolSpec
 	MaxOutputTokens int
 }
 
@@ -304,6 +447,9 @@ type Reply struct {
 	StopReason StopReason
 	// Data é a saída estruturada já decodificada, quando houve OutputSchema.
 	Data map[string]any
+	// ToolCalls são as ferramentas que o modelo pediu, NA ORDEM em que o
+	// fornecedor as emitiu (D10). Vazio quando ele só falou.
+	ToolCalls []ToolCall
 	// EffortApplied é o effort REALMENTE aplicado. Pode ser menor que o
 	// pedido — ver D4. Nunca é o pedido "por educação".
 	EffortApplied Effort

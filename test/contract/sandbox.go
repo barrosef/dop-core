@@ -308,6 +308,202 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 		})
 
+		// ── Exec: as garantias 13 a 18 ──────────────────────────────────────
+		//
+		// Elas entraram quando exec entrou na porta, e cada uma existe porque a
+		// implementação ingênua correspondente PASSA sem elas: um exec que lê
+		// só o stream devolve código de saída zero para todo comando que
+		// falhou; um que confia no `Env` do processo do núcleo entrega a
+		// credencial do processo ao código do agente; um que lê até o EOF sem
+		// teto transforma um `cat` de log numa fatura.
+
+		t.Run("13e14_exec_roda_dentro_do_sandbox_e_no_workspace", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+			// O sandbox de teste grava `marca` no workspace ao subir; esperar
+			// a linha dele é esperar o arquivo existir.
+			waitLog(t, l, spec.SandboxHandle, marcaAusente, env.Ready)
+
+			// `pwd` prova a garantia 14 (o diretório de trabalho é o workspace,
+			// e nenhum dos dois adaptadores recebeu isso por parâmetro — os
+			// dois o fixam no contêiner). `cat marca` sem caminho absoluto
+			// prova as duas de uma vez: só funciona se o comando começou lá.
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "pwd; cat marca"},
+			})
+			if res.ExitCode != 0 {
+				t.Fatalf("exit %d, stderr=%q", res.ExitCode, res.Stderr)
+			}
+			if !strings.Contains(res.Stdout, ports.SandboxWorkspacePath) {
+				t.Fatalf("o comando não começou em %s: pwd disse %q",
+					ports.SandboxWorkspacePath, res.Stdout)
+			}
+			if !strings.Contains(res.Stdout, "ok") {
+				t.Fatalf("o comando não enxergou o workspace do sandbox: %q", res.Stdout)
+			}
+		})
+
+		t.Run("15_codigo_de_saida_nao_e_erro_da_porta", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			// É a garantia que sustenta o laço de ferramenta inteiro: o modelo
+			// precisa VER que o comando falhou para corrigir. Um erro de
+			// transporte no lugar disto apagaria a diferença entre "o teste
+			// reprovou" e "o substrato caiu".
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "exit 7"},
+			})
+			if res.ExitCode != 7 {
+				t.Fatalf("CÓDIGO DE SAÍDA PERDIDO: veio %d, esperava 7 — um exec que lê só o "+
+					"stream devolve 0 para tudo, e o agente lê falha como sucesso", res.ExitCode)
+			}
+			// E o zero continua sendo zero: sem esta metade, um adaptador que
+			// devolvesse -1 sempre passaria na de cima.
+			if ok := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"true"},
+			}); ok.ExitCode != 0 {
+				t.Fatalf("comando bem-sucedido devolveu código %d", ok.ExitCode)
+			}
+		})
+
+		t.Run("16_stdout_e_stderr_separados", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			// Diferente do Tail, onde o k8s funde os dois e a porta não promete
+			// nada: no exec os dois substratos separam de verdade.
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "echo SAIDA-PADRAO; echo SAIDA-DE-ERRO 1>&2"},
+			})
+			if !strings.Contains(res.Stdout, "SAIDA-PADRAO") {
+				t.Fatalf("stdout não trouxe a linha de stdout: %q", res.Stdout)
+			}
+			if !strings.Contains(res.Stderr, "SAIDA-DE-ERRO") {
+				t.Fatalf("stderr não trouxe a linha de stderr: %q", res.Stderr)
+			}
+			if strings.Contains(res.Stdout, "SAIDA-DE-ERRO") {
+				t.Fatalf("os dois fluxos vieram fundidos em stdout: %q", res.Stdout)
+			}
+		})
+
+		t.Run("17_saida_limitada_e_prazo_respeitado", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			// ~22 KB de saída contra um teto de 1 KB. Shell puro de propósito:
+			// `yes | head` mata o produtor com SIGPIPE e mediria outra coisa.
+			grande := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c",
+					"i=0; while [ $i -lt 2000 ]; do echo 0123456789; i=$((i+1)); done"},
+				MaxOutputBytes: 1024,
+			})
+			if len(grande.Stdout) > 1024 {
+				t.Fatalf("SAÍDA SEM TETO: vieram %d bytes contra um teto de 1024. Saída de "+
+					"ferramenta vira contexto de modelo, e contexto é fatura (ADR-0011)",
+					len(grande.Stdout))
+			}
+			if !grande.Truncated {
+				t.Fatal("a saída foi cortada e Truncated veio falso: um agente que conclui a " +
+					"partir de saída cortada sem saber conclui errado")
+			}
+			// O código de saída continua vindo mesmo com a saída cortada — é o
+			// que prova que o adaptador continuou drenando o fluxo em vez de
+			// fechar a conexão no teto.
+			if grande.ExitCode != 0 {
+				t.Fatalf("com a saída cortada, o código de saída se perdeu: %d", grande.ExitCode)
+			}
+
+			inicio := time.Now()
+			pendurado := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "sleep 60"}, TimeoutSeconds: 3,
+			})
+			if !pendurado.TimedOut {
+				t.Fatal("o comando não terminou no prazo e TimedOut veio falso")
+			}
+			if pendurado.ExitCode == 0 {
+				t.Fatal("comando pendurado devolveu código 0: zero afirma sucesso, e não houve")
+			}
+			if decorrido := time.Since(inicio); decorrido > 40*time.Second {
+				t.Fatalf("o prazo de 3s foi ignorado: a chamada levou %s", decorrido)
+			}
+		})
+
+		t.Run("18_exec_em_suspenso_e_em_inexistente", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			cmd := ports.ExecRequest{Command: []string{"true"}}
+
+			// Inexistente: NotFound, como Describe.
+			if _, err := l.Exec(context.Background(), spec.SandboxHandle, cmd); errs.KindOf(err) != errs.KindNotFound {
+				t.Fatalf("exec em sandbox inexistente: esperava KindNotFound, veio %v", err)
+			}
+
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+			if err := l.Suspend(context.Background(), spec.SandboxHandle); err != nil {
+				t.Fatalf("Suspend: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
+
+			// Suspenso: PRECONDIÇÃO, e nunca um código de saída inventado.
+			// Substrato sem execução não roda comando, e dizer isso é diferente
+			// de dizer que o comando falhou.
+			res, err := l.Exec(context.Background(), spec.SandboxHandle, cmd)
+			if err == nil {
+				t.Fatalf("exec em sandbox SUSPENSO devolveu resultado: %+v", res)
+			}
+			if k := errs.KindOf(err); k != errs.KindPrecondition {
+				t.Fatalf("exec em sandbox suspenso: esperava KindPrecondition, veio %s: %v", k, err)
+			}
+		})
+
+		t.Run("exec_nao_leva_o_ambiente_do_nucleo_para_dentro", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			// O núcleo é o processo que TEM as credenciais — a chave do
+			// provedor de modelo sai do cofre e vive na memória dele
+			// (ADR-0023). O sandbox roda código de agente, que lê conteúdo não
+			// confiável (spec do substrato §6). Um adaptador que passasse
+			// `os.Environ()` para o exec — que é o caminho mais curto e o que
+			// um SDK faria por conveniência — entregaria as duas coisas uma à
+			// outra, e nada falharia.
+			const sentinela = "SENTINELA_DO_NUCLEO_NAO_PODE_ENTRAR_NO_SANDBOX"
+			t.Setenv("DOP_SENTINELA_DE_CREDENCIAL", sentinela)
+
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "env; echo ---; set"},
+			})
+			if strings.Contains(res.Stdout, sentinela) {
+				t.Fatal("O AMBIENTE DO PROCESSO DO NÚCLEO VAZOU PARA DENTRO DO SANDBOX: " +
+					"é lá que mora a credencial do provedor de agente, e é ali que roda o " +
+					"código que lê conteúdo não confiável")
+			}
+		})
+
 		t.Run("processo_desconhecido_no_tail_e_not_found", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
@@ -372,6 +568,26 @@ func newSpec(t *testing.T, l ports.SandboxLauncher, env SandboxEnv) ports.Sandbo
 		_ = l.Destroy(ctx, spec.SandboxHandle)
 	})
 	return spec
+}
+
+// execOK roda um comando e exige que a PORTA não tenha falhado.
+//
+// Repare no que ela NÃO checa: o código de saída. Erro aqui é falha do
+// substrato; o que o comando fez — inclusive falhar — é assunto de quem chamou.
+// Misturar os dois neste auxiliar apagaria a garantia 15 de todos os subtestes
+// que o usam.
+func execOK(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, req ports.ExecRequest) *ports.ExecResult {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	res, err := l.Exec(ctx, h, req)
+	if err != nil {
+		t.Fatalf("Exec(%v): %v", req.Command, err)
+	}
+	if res == nil {
+		t.Fatalf("Exec(%v) devolveu resultado nulo sem erro", req.Command)
+	}
+	return res
 }
 
 func randomID() string {

@@ -6,7 +6,9 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
+	"github.com/Digital-Business-One/dop-core/internal/domain/execution"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
+	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
@@ -190,4 +192,38 @@ func (a agentConversation) PublishFinding(ctx context.Context, demandID, threadI
 		return agent.FindingRef{}, err
 	}
 	return agent.FindingRef{ID: f.ID, Title: f.Title}, nil
+}
+
+// ── execution → agent ───────────────────────────────────────────────────────
+
+// agentSandbox liga o laço de ferramentas ao substrato.
+//
+// A conversão é mecânica de propósito: o domínio de agente fala
+// `SandboxCommand`, o de execução fala `ports.ExecRequest`, e nenhum dos dois
+// precisa conhecer o vocabulário do outro. Se um `if` de regra aparecer aqui,
+// a regra está no domínio errado.
+//
+// O CONTRATO DE ERRO desta cola é o ponto delicado: erro só quando o SUBSTRATO
+// falhou. Código de saída diferente de zero, prazo estourado e saída cortada
+// são RESULTADO — o modelo precisa vê-los para corrigir, e transformá-los em
+// erro do turno tiraria dele justamente a informação que o faria acertar na
+// volta seguinte.
+type agentSandbox struct{ exec *execution.Service }
+
+func (a agentSandbox) RunCommand(ctx context.Context, demandID string, cmd agent.SandboxCommand) (agent.SandboxOutput, error) {
+	r, err := a.exec.RunCommand(ctx, demandID, ports.ExecRequest{
+		Command:        cmd.Command,
+		TimeoutSeconds: cmd.TimeoutSeconds,
+		MaxOutputBytes: cmd.MaxOutputBytes,
+	})
+	if err != nil {
+		return agent.SandboxOutput{}, err
+	}
+	return agent.SandboxOutput{
+		ExitCode:  r.ExitCode,
+		Stdout:    r.Stdout,
+		Stderr:    r.Stderr,
+		Truncated: r.Truncated,
+		TimedOut:  r.TimedOut,
+	}, nil
 }

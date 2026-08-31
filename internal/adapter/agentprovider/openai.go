@@ -38,6 +38,33 @@
 // quem roteia para `max` e recebe `high` precisa saber que recebeu.
 //
 // D5 (parada) — `stop | length | tool_calls | content_filter`, normalizados.
+//
+// D7 (declaração) — Aqui a ferramenta vem embrulhada: `{type:"function",
+// function:{name, description, parameters}}`. Dois nomes diferentes para a mesma
+// coisa (`parameters`, não `input_schema`) e um nível a mais de aninhamento. É
+// só casca — e é por isso que o terreno comum da porta é nome + descrição +
+// schema, e não o formato de nenhum dos dois.
+//
+// D8 (chamada) — **AQUI ESTÁ A SEGUNDA ARMADILHA DESTE ARQUIVO**, irmã da dupla
+// contagem. A chamada vem em `tool_calls`, FORA de `content`, e
+// `function.arguments` é uma **STRING**, não um objeto: ela ainda precisa de
+// `json.Unmarshal`. E o modelo pode emitir uma string que não é JSON válido —
+// argumento cortado no meio, aspas erradas. Ali, falhar o turno seria a resposta
+// errada: quem conserta o argumento é o MODELO, e ele só conserta se receber o
+// erro de volta. Este adaptador devolve a chamada com `Input` nulo, `RawInput`
+// preenchido e um aviso; o laço a transforma em resultado de erro.
+//
+// D9 (resultado) — Uma mensagem `role:"tool"` POR resultado, com `tool_call_id`,
+// e SEM campo de erro. O booleano `IsError` da porta não tem onde caber, então
+// ele vira MARCA NO TEXTO. Perder a marca faria o modelo ler uma falha como
+// saída normal — que é a diferença entre "o teste passou" e "o teste nem rodou".
+//
+// D10 (paralelismo) — `parallel_tool_calls` é campo de topo aqui e o default é
+// verdadeiro, que é o que queremos; o adaptador não manda a flag.
+//
+// D11 (não declarada) — `tool_call_id` sem par é 400, igual ao outro. Por isso a
+// mensagem do assistente com `tool_calls` é sempre reenviada antes dos
+// resultados.
 package agentprovider
 
 import (
@@ -146,6 +173,7 @@ func (o *OpenAI) Info() agent.ProviderInfo {
 			// Sem CapFullEffortRange: xhigh e max não existem (D4).
 			agent.CapOperatorChannel,
 			agent.CapStructuredOutput,
+			agent.CapToolUse,
 		},
 		Prices: PrecosOpenAI(),
 	}
@@ -158,9 +186,40 @@ func (o *OpenAI) Info() agent.ProviderInfo {
 // primeiro, volátil depois. Aqui não há breakpoint para marcar — o que existe é
 // a disciplina de não deixar nada volátil antes do prefixo.
 
+// oaiChamadaFuncao é o corpo de uma chamada. `Arguments` é STRING — é o D8 no
+// tipo, e é por isso que ele aparece tanto na montagem quanto na leitura.
+type oaiChamadaFuncao struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type oaiChamada struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function oaiChamadaFuncao `json:"function"`
+}
+
 type oaiMensagem struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// ToolCalls só em `role:"assistant"`; ToolCallID só em `role:"tool"`. Os
+	// dois com `omitempty`: mandar `tool_calls: null` numa mensagem comum é
+	// recusado por algumas versões da API.
+	ToolCalls  []oaiChamada `json:"tool_calls,omitempty"`
+	ToolCallID string       `json:"tool_call_id,omitempty"`
+}
+
+// oaiFerramentaFuncao é o miolo da declaração (D7): `parameters`, não
+// `input_schema`.
+type oaiFerramentaFuncao struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+type oaiFerramenta struct {
+	Type     string              `json:"type"`
+	Function oaiFerramentaFuncao `json:"function"`
 }
 
 type oaiSchema struct {
@@ -175,11 +234,19 @@ type oaiFormato struct {
 }
 
 type oaiPedido struct {
-	Model               string        `json:"model"`
-	Messages            []oaiMensagem `json:"messages"`
-	MaxCompletionTokens int           `json:"max_completion_tokens"`
-	ReasoningEffort     string        `json:"reasoning_effort"`
-	ResponseFormat      *oaiFormato   `json:"response_format,omitempty"`
+	Model string `json:"model"`
+	// Tools ANTES de Messages, pela mesma razão da garantia 15: a declaração é
+	// estável por thread e o que é estável vem primeiro. Aqui o cache é
+	// automático (D1) e a ORDEM é a única alavanca que existe — deixar a
+	// declaração depois da conversa a tiraria do prefixo comum sem erro nenhum,
+	// só com fatura.
+	//
+	// `omitempty` é a garantia 16.
+	Tools               []oaiFerramenta `json:"tools,omitempty"`
+	Messages            []oaiMensagem   `json:"messages"`
+	MaxCompletionTokens int             `json:"max_completion_tokens"`
+	ReasoningEffort     string          `json:"reasoning_effort"`
+	ResponseFormat      *oaiFormato     `json:"response_format,omitempty"`
 }
 
 type oaiResposta struct {
@@ -187,6 +254,8 @@ type oaiResposta struct {
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
+			// D8: FORA de `content`, e com os argumentos como STRING.
+			ToolCalls []oaiChamada `json:"tool_calls"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -214,7 +283,22 @@ func (o *OpenAI) Render(t agent.Turn, model string, effort agent.Effort) ([]byte
 			// Canal de autoridade — NUNCA `user` (D3).
 			mensagens = append(mensagens, oaiMensagem{Role: "developer", Content: m.Text})
 		case agent.RoleAssistant:
-			mensagens = append(mensagens, oaiMensagem{Role: "assistant", Content: m.Text})
+			// D11: as chamadas voltam junto com a fala. Sem elas, o
+			// `tool_call_id` das mensagens `tool` seguintes fica órfão e a API
+			// recusa o turno.
+			mensagens = append(mensagens, oaiMensagem{
+				Role: "assistant", Content: m.Text, ToolCalls: oaiChamadas(m.ToolCalls),
+			})
+		case agent.RoleToolResult:
+			// D9: UMA mensagem por resultado — é a diferença de forma mais
+			// visível entre os dois fornecedores para o mesmo turno do
+			// domínio, e é por isso que a suíte de contrato compara CONTEÚDO e
+			// nunca contagem de mensagens.
+			for _, r := range m.ToolResults {
+				mensagens = append(mensagens, oaiMensagem{
+					Role: "tool", ToolCallID: r.CallID, Content: oaiTextoDeResultado(r),
+				})
+			}
 		default:
 			mensagens = append(mensagens, oaiMensagem{Role: "user", Content: m.Text})
 		}
@@ -234,6 +318,7 @@ func (o *OpenAI) Render(t agent.Turn, model string, effort agent.Effort) ([]byte
 
 	pedido := oaiPedido{
 		Model:               model,
+		Tools:               oaiFerramentas(t.Tools),
 		Messages:            mensagens,
 		MaxCompletionTokens: t.MaxOutputTokens,
 		ReasoningEffort:     string(aplicado),
@@ -251,6 +336,67 @@ func (o *OpenAI) Render(t agent.Turn, model string, effort agent.Effort) ([]byte
 			"pedido ilegível: "+err.Error())
 	}
 	return corpo, avisos, nil
+}
+
+// oaiFerramentas embrulha a declaração do domínio na casca deste fornecedor
+// (D7). Lista vazia devolve nil e o `omitempty` cuida do resto (garantia 16).
+func oaiFerramentas(specs []agent.ToolSpec) []oaiFerramenta {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]oaiFerramenta, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, oaiFerramenta{
+			Type: "function",
+			Function: oaiFerramentaFuncao{
+				Name: s.Name, Description: s.Description, Parameters: s.InputSchema,
+			},
+		})
+	}
+	return out
+}
+
+// oaiChamadas reenvia as chamadas na história (D11).
+//
+// `Arguments` volta a ser STRING, e é aqui que o `RawInput` ganha utilidade:
+// quando o argumento veio ilegível, é ele que é reenviado — reserializar o
+// `Input` nulo mandaria `null` no lugar do que o modelo escreveu, e o modelo
+// perderia a chance de ver o próprio erro.
+func oaiChamadas(calls []agent.ToolCall) []oaiChamada {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]oaiChamada, 0, len(calls))
+	for _, c := range calls {
+		args := c.RawInput
+		if c.Input != nil {
+			if b, err := json.Marshal(c.Input); err == nil {
+				args = string(b)
+			}
+		}
+		if args == "" {
+			args = "{}"
+		}
+		out = append(out, oaiChamada{
+			ID: c.ID, Type: "function",
+			Function: oaiChamadaFuncao{Name: c.Name, Arguments: args},
+		})
+	}
+	return out
+}
+
+// oaiTextoDeResultado é a metade DIFÍCIL da garantia 21.
+//
+// Este fornecedor não tem campo de erro na mensagem `tool` (D9): o booleano
+// `IsError` da porta não tem onde caber. Em vez de perdê-lo — o que faria o
+// modelo ler uma falha como saída normal e seguir afirmando o contrário do que
+// aconteceu —, a marca vai no TEXTO, em maiúsculas e na primeira linha, que é
+// onde o modelo a lê antes de qualquer outra coisa.
+func oaiTextoDeResultado(r agent.ToolResult) string {
+	if !r.IsError {
+		return r.Content
+	}
+	return "ERRO NA FERRAMENTA:\n" + r.Content
 }
 
 // ── envio ───────────────────────────────────────────────────────────────────
@@ -281,9 +427,27 @@ func (o *OpenAI) Send(ctx context.Context, t agent.Turn, model string,
 	}
 
 	var texto, motivo string
+	var chamadas []agent.ToolCall
 	if len(out.Choices) > 0 {
 		texto = out.Choices[0].Message.Content
 		motivo = out.Choices[0].FinishReason
+		for _, tc := range out.Choices[0].Message.ToolCalls {
+			// ── D8, a linha que impede o turno de morrer por argumento ruim ──
+			// `arguments` é STRING aqui. Ela pode não ser JSON válido, e nesse
+			// caso a chamada SOBE mesmo assim, com Input nulo e o texto cru
+			// junto: quem corrige o argumento é o modelo, e ele só corrige se
+			// receber o erro de volta.
+			c := agent.ToolCall{
+				ID: tc.ID, Name: tc.Function.Name, RawInput: tc.Function.Arguments,
+			}
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &c.Input); err != nil || c.Input == nil {
+				c.Input = nil
+				avisos = append(avisos,
+					"o modelo mandou argumentos ilegíveis para a ferramenta '"+
+						tc.Function.Name+"': a chamada foi devolvida a ele como erro (D8)")
+			}
+			chamadas = append(chamadas, c)
+		}
 	}
 
 	cacheados := out.Usage.PromptTokensDetails.CachedTokens
@@ -321,6 +485,7 @@ func (o *OpenAI) Send(ctx context.Context, t agent.Turn, model string,
 		Provider:      NomeOpenAI,
 		StopReason:    parada,
 		Data:          decodificarTexto(texto),
+		ToolCalls:     chamadas,
 		EffortApplied: aplicado,
 		Capabilities:  o.Info().Capabilities,
 		Warnings:      avisos,

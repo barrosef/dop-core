@@ -87,18 +87,58 @@ import "context"
 //     vitrine ao lado de um envio diferente, e as garantias 3, 5, 11, 12 e 13 —
 //     todas auditadas sobre `Render` — estariam olhando para o lugar errado.
 //
+// ── FERRAMENTAS: as garantias que sustentam o laço (D7–D11) ─────────────────
+//
+//  15. quem anuncia CapToolUse põe `Turn.Tools` NO FIO, e a declaração vem
+//     ANTES do texto volátil no corpo serializado. Declaração é prefixo: ela
+//     muda por thread, não por turno, e enfiá-la depois da conversa a tiraria
+//     do trecho cacheável pelo mesmo mecanismo da garantia 3 — sem erro nenhum,
+//     só com fatura;
+//
+//  16. turno SEM ferramentas não manda o campo. Array vazio é diferente de
+//     campo ausente: ele ocupa lugar no prompt e convida o modelo a chamar o
+//     que não existe;
+//
+//  17. a chamada chega NORMALIZADA em `Reply.ToolCalls`: id opaco, nome, e
+//     `Input` como MAPA — qualquer que seja o dialeto do fornecedor (objeto na
+//     Anthropic, string a decodificar na OpenAI — D8). E a ORDEM é a que o
+//     fornecedor emitiu (D10);
+//
+//  18. argumento ILEGÍVEL não derruba o turno. A chamada sobe com `Input` nulo,
+//     `RawInput` preenchido e aviso legível. Quem corrige o argumento é o
+//     modelo, e ele só corrige se receber o erro de volta (D8);
+//
+//  19. `StopReason` é `StopToolUse` quando o fornecedor pediu ferramenta —
+//     nos dois, com os nomes nativos que cada um usa (D5);
+//
+//  20. o resultado volta LIGADO à chamada: o id da chamada aparece no corpo
+//     serializado, e o conteúdo do resultado NUNCA é atribuído ao usuário. É a
+//     mesma regra da garantia 5, pelo motivo inverso: instrução de operador não
+//     pode virar dado, e saída de ferramenta — que é conteúdo não confiável,
+//     spec do substrato §6 — não pode virar instrução;
+//
+//  21. resultado marcado como ERRO chega legível ao modelo. Onde o fornecedor
+//     tem o booleano, ele é usado; onde não tem, a marca vai no texto (D9).
+//     Perder a marca faz o modelo ler uma falha como saída normal e seguir em
+//     frente afirmando o contrário do que aconteceu.
+//
 // ── O QUE FICOU DE FORA, EXPLICITAMENTE ─────────────────────────────────────
 //
 // A regra das portas deste projeto: o que não é cumprível por TODOS os
 // adaptadores não entra — porque uma porta que só um fornecedor honra é o
 // fornecedor com outro nome.
 //
-//   - FERRAMENTAS e o laço de tool use. Os formatos divergem em três eixos ao
-//     mesmo tempo: schema (`input_schema` × `parameters`), resultado (bloco
-//     `tool_result` no turno do usuário × mensagem `role:"tool"` própria) e
-//     paralelismo (por padrão × por flag). Um laço escrito sobre a média dos
-//     dois seria um laço que nenhum dos dois executa bem. `Turn.Tools` já
-//     existe, sempre vazio, para que a assinatura não mude quando entrar;
+//   - ESCOLHA FORÇADA DE FERRAMENTA (`tool_choice`). Os dois têm "auto", "any"
+//     e "obrigar uma ferramenta específica", com formas diferentes — mas o
+//     desligamento do paralelismo mora DENTRO desse campo em um deles e num
+//     campo de topo no outro (D10), e nenhum dos dois casos de uso apareceu. O
+//     laço trabalha com o padrão, que é o que queremos: várias chamadas por
+//     volta é uma volta a menos, e volta reenvia a conversa inteira;
+//
+//   - FERRAMENTAS DE SERVIDOR (busca na web, execução de código do fornecedor).
+//     Elas rodam na infraestrutura DELES, cobram à parte e não passam pelo
+//     sandbox — o oposto do ponto inteiro desta entrega, que é o agente agir
+//     dentro do sandbox isolado da demanda (spec do substrato §1);
 //
 //   - STREAMING. O acompanhamento ao vivo da plataforma é o log de eventos
 //     (ADR-0006): a mensagem publicada VIRA evento e chega ao cockpit pelo
@@ -155,6 +195,66 @@ type AgentProvider interface {
 // de uma demanda inteira, e o único lugar onde isso apareceria seria a fatura.
 type Providers interface {
 	For(ctx context.Context, resourceID string) (AgentProvider, error)
+}
+
+// ── a porta do substrato ─────────────────────────────────────────────────────
+
+// SandboxCommand é UM comando a rodar no sandbox da demanda, no vocabulário do
+// runtime.
+//
+// Repare no que NÃO tem aqui, e é a mesma ausência de `ports.ExecRequest`: não
+// há ambiente, não há diretório, não há credencial. **Não é disciplina, é
+// ausência de campo** — não existe por onde um segredo entrar no sandbox por
+// este caminho. O sandbox roda código de agente, que lê conteúdo não confiável
+// (spec do substrato §6): a chave do provedor de modelo mora no cofre, é lida
+// pelo composition root e usada no MESMO processo (ADR-0023), e este struct é a
+// fronteira que garante que ela não anda mais que isso.
+type SandboxCommand struct {
+	Command        []string
+	TimeoutSeconds int
+	MaxOutputBytes int
+}
+
+// SandboxOutput é o que o comando produziu. Sem campo de erro, e de propósito:
+// comando que falha é RESULTADO.
+type SandboxOutput struct {
+	ExitCode  int
+	Stdout    string
+	Stderr    string
+	Truncated bool
+	TimedOut  bool
+}
+
+// Failed responde a pergunta que o laço faz: isto foi falha?
+//
+// Código -1 significa "não houve código" (processo pendurado, substrato que não
+// soube dizer) e conta como falha: o modelo precisa tratar "não sei se terminou"
+// como problema, não como sucesso.
+func (o SandboxOutput) Failed() bool { return o.ExitCode != 0 || o.TimedOut }
+
+// Sandbox é a porta ESTREITA para o substrato de execução: UMA operação.
+//
+// Ela é a ponte entre o agente e o sandbox, e é a única porta OPCIONAL deste
+// serviço (ver NewService). Sem ela, o agente conversa; com ela, ele age. A
+// opcionalidade é real e não é frouxidão: uma instalação sem substrato ligado
+// continua rodando turnos — o que ela NÃO pode fazer é conceder ferramentas na
+// ficha e ver o agente calado sobre isso, e por isso a ausência vira aviso
+// legível no resultado do turno, nunca silêncio.
+//
+// O que esta porta esconde: qual sandbox atende a demanda, se ele está ativo, se
+// existe. O runtime pergunta pela DEMANDA — que é o vocabulário dele — e quem
+// resolve demanda → sandbox é o domínio de execução, do outro lado da cola.
+//
+// CONTRATO DO ERRO, e é o mais importante daqui:
+//
+//   - comando que sai com código != 0, que estoura o prazo ou que tem a saída
+//     cortada é SUCESSO desta porta, com os fatos em `SandboxOutput`. O modelo
+//     precisa VER que o comando falhou para corrigir;
+//   - erro é reservado para o SUBSTRATO: sandbox inexistente, suspenso, cluster
+//     fora do ar. O laço distingue os dois por `errs.Kind` (ver toolloop.go) e
+//     só o segundo mata o turno.
+type Sandbox interface {
+	RunCommand(ctx context.Context, demandID string, cmd SandboxCommand) (SandboxOutput, error)
 }
 
 // ── portas estreitas para os vizinhos ────────────────────────────────────────

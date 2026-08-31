@@ -324,6 +324,12 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 		"Image":  spec.Image,
 		"Env":    env,
 		"Labels": labelsFor(spec),
+		// O diretório de trabalho do CONTÊINER é o workspace, e é daqui que
+		// sai a garantia 14 da porta: o `pods/exec` do k8s não aceita
+		// diretório de trabalho, então em vez de emular no adaptador os dois
+		// fixam o do contêiner e deixam o exec herdá-lo. Um comando de
+		// ferramenta começa no mesmo lugar nos dois substratos.
+		"WorkingDir": ports.SandboxWorkspacePath,
 		// Tty falso mantém stdout e stderr SEPARADOS no stream de log. Com tty
 		// os dois se fundem e LogLine.Stream passaria a mentir.
 		"Tty": false,
@@ -515,6 +521,186 @@ func (d *Docker) volumeTier(ctx context.Context, h ports.SandboxHandle) (ports.I
 		return "", false, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker")
 	}
 	return ports.IsolationTier(vol.Labels[labelTier]), true, nil
+}
+
+// ── exec ─────────────────────────────────────────────────────────────────────
+
+// Exec roda um comando dentro do contêiner do sandbox (garantias 13 a 18).
+//
+// São TRÊS chamadas, e a terceira é a que muita implementação esquece:
+// `/exec/create` monta o processo, `/exec/start` devolve o stream com a saída, e
+// `/exec/{id}/json` é o ÚNICO lugar onde o código de saída aparece. Ler só o
+// stream entregaria a saída de um comando que falhou com um código de saída
+// zero inventado — que é exatamente a confusão que a garantia 15 existe para
+// impedir.
+func (d *Docker) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
+	if len(req.Command) == 0 {
+		return nil, errs.Invalid("exec sem comando")
+	}
+	// Fase ANTES de tentar: o Docker responde 409 para contêiner parado, e 409
+	// é "já existe" no tradutor de erro deste adaptador. Perguntar primeiro dá
+	// a mesma resposta do k8s — NotFound para inexistente, Precondition para
+	// suspenso (garantia 18) — em vez de deixar cada substrato escolher a sua.
+	st, err := d.Describe(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	if st.Phase != ports.PhaseActive {
+		return nil, errs.Precondition(
+			"o sandbox %s está em %q e não executa comando; retome-o antes", h.ID, st.Phase)
+	}
+
+	prazo, teto := execLimites(req)
+	runCtx, cancel := context.WithTimeout(ctx, prazo)
+	defer cancel()
+
+	code, body, err := d.do(runCtx, http.MethodPost, "/containers/"+d.containerName(h)+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			// Stdin fechado: exec desta porta é comando, não sessão. E Tty
+			// falso é o que MANTÉM stdout e stderr separados no stream
+			// (garantia 16) — com tty os dois se fundem.
+			"AttachStdin": false,
+			"Tty":         false,
+			"Cmd":         req.Command,
+		})
+	if err != nil {
+		return nil, err
+	}
+	if code == http.StatusConflict {
+		return nil, errs.Precondition(
+			"o sandbox %s não está em execução; retome-o antes de rodar comandos", h.ID)
+	}
+	if code >= 300 {
+		return nil, fail(code, body, "preparação do comando no sandbox")
+	}
+	var criado struct {
+		ID string `json:"Id"`
+	}
+	if err := json.Unmarshal(body, &criado); err != nil || criado.ID == "" {
+		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker ao criar o exec")
+	}
+
+	inicio, err := json.Marshal(map[string]any{"Detach": false, "Tty": false})
+	if err != nil {
+		return nil, errs.Wrap(errs.KindInternal, err, "pedido ilegível para o Docker")
+	}
+	httpReq, err := http.NewRequestWithContext(runCtx, http.MethodPost,
+		"http://docker/"+d.apiVer+"/exec/"+criado.ID+"/start", strings.NewReader(string(inicio)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	// `stream` e não `client`: o prazo desta chamada é o do comando, e o
+	// Timeout do cliente comum (30s) cortaria todo comando mais longo que isso
+	// sem nada que explicasse.
+	resp, err := d.stream.Do(httpReq)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+		}
+		if runCtx.Err() != nil {
+			// Prazo estourado antes de qualquer byte: ainda é RESULTADO.
+			return d.execResultado(ctx, criado.ID, "", "", false, true)
+		}
+		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao iniciar o comando no sandbox")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		out, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusConflict {
+			return nil, errs.Precondition(
+				"o sandbox %s não está em execução; retome-o antes de rodar comandos", h.ID)
+		}
+		return nil, fail(resp.StatusCode, out, "execução do comando no sandbox")
+	}
+
+	saida, erroPadrao := &bufferComTeto{max: teto}, &bufferComTeto{max: teto}
+	lerErr := demuxBruto(resp.Body, saida, erroPadrao)
+
+	if ctx.Err() != nil {
+		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+	}
+	expirou := runCtx.Err() != nil
+	if lerErr != nil && !expirou {
+		return nil, errs.Wrap(errs.KindUnavailable, lerErr, "fluxo do comando interrompido")
+	}
+	return d.execResultado(ctx, criado.ID,
+		saida.String(), erroPadrao.String(), saida.cortou || erroPadrao.cortou, expirou)
+}
+
+// execResultado consulta o código de saída e monta o resultado.
+//
+// O contexto vem SEM o prazo do comando de propósito: quando o comando estourou
+// o prazo, o contexto dele já está morto, e usá-lo aqui perderia justamente a
+// informação de que o processo continua rodando lá dentro.
+func (d *Docker) execResultado(ctx context.Context, execID, saida, erro string,
+	cortou, expirou bool) (*ports.ExecResult, error) {
+
+	res := &ports.ExecResult{
+		ExitCode: -1, Stdout: saida, Stderr: erro, Truncated: cortou, TimedOut: expirou,
+	}
+	insp, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	code, body, err := d.do(insp, http.MethodGet, "/exec/"+execID+"/json", nil)
+	if err != nil || code >= 300 {
+		// Sem o código de saída, -1 é a resposta honesta: zero afirmaria
+		// sucesso, e afirmar sucesso sem saber é a pior das três saídas.
+		return res, nil
+	}
+	var out struct {
+		Running  bool `json:"Running"`
+		ExitCode *int `json:"ExitCode"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return res, nil
+	}
+	if !out.Running && out.ExitCode != nil {
+		res.ExitCode = *out.ExitCode
+	}
+	if out.Running {
+		// O processo ficou de pé: é prazo estourado, mesmo que o stream tenha
+		// acabado antes. Dizer o contrário daria a um comando pendurado a cara
+		// de um comando que terminou sem saída.
+		res.TimedOut = true
+	}
+	return res, nil
+}
+
+// demuxBruto desmonta os quadros do Docker direto para dois buffers.
+//
+// Separado de `demux` porque as duas leituras querem coisas diferentes: o Tail
+// quer LINHAS carimbadas, o exec quer os BYTES exatos de cada fluxo. Reaproveitar
+// o de linhas aqui reconstruiria a saída com quebras que o comando não emitiu.
+func demuxBruto(r io.Reader, saida, erro *bufferComTeto) error {
+	header := make([]byte, 8)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+		size := binary.BigEndian.Uint32(header[4:8])
+		if size == 0 {
+			continue
+		}
+		alvo := saida
+		if header[0] == 2 {
+			alvo = erro
+		}
+		// Lê SEMPRE o quadro inteiro, mesmo depois de bater o teto: parar de
+		// ler deixaria o daemon escrevendo num cano cheio e o processo lá
+		// dentro travado. O teto corta o que é GUARDADO, não o que é lido.
+		if _, err := io.CopyN(alvo, r, int64(size)); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+	}
 }
 
 // ── logs ─────────────────────────────────────────────────────────────────────
@@ -724,6 +910,52 @@ func endpointsFromPorts(exposed map[string]any, running bool) []ports.SandboxEnd
 	}
 	return out
 }
+
+// execLimites resolve prazo e teto de saída a partir da requisição.
+//
+// Os defaults são da PORTA e não de cada adaptador: um default por adaptador
+// faria o mesmo comando ter prazos diferentes conforme onde o sandbox subiu, e
+// a suíte de contrato — que mede os dois com a mesma régua — não teria como
+// afirmar nada sobre nenhum dos dois.
+func execLimites(req ports.ExecRequest) (time.Duration, int) {
+	prazo := time.Duration(req.TimeoutSeconds) * time.Second
+	if req.TimeoutSeconds <= 0 {
+		prazo = ports.DefaultExecTimeout
+	}
+	teto := req.MaxOutputBytes
+	if teto <= 0 {
+		teto = ports.DefaultExecMaxOutputBytes
+	}
+	return prazo, teto
+}
+
+// bufferComTeto acumula até `max` bytes e ANOTA que cortou.
+//
+// Ele nunca devolve erro em Write: quem escreve nele é um laço de leitura de
+// stream, e interromper a leitura por causa do teto deixaria o processo do outro
+// lado travado num cano cheio. O teto limita o que é GUARDADO — a leitura segue
+// até o fim, e é isso que permite colher o código de saída depois.
+type bufferComTeto struct {
+	max    int
+	buf    []byte
+	cortou bool
+}
+
+func (b *bufferComTeto) Write(p []byte) (int, error) {
+	if espaco := b.max - len(b.buf); espaco > 0 {
+		if len(p) <= espaco {
+			b.buf = append(b.buf, p...)
+		} else {
+			b.buf = append(b.buf, p[:espaco]...)
+			b.cortou = true
+		}
+	} else if len(p) > 0 {
+		b.cortou = true
+	}
+	return len(p), nil
+}
+
+func (b *bufferComTeto) String() string { return string(b.buf) }
 
 // splitTimestamp separa o carimbo RFC3339 que os dois substratos prefixam
 // quando se pede timestamps. Linha sem carimbo devolve instante zero — e é o
