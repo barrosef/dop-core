@@ -1,0 +1,76 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+
+message Workspace {
+  string     id          = 1;
+  AccountRef account     = 2;
+  string     name        = 3;
+  string     key         = 4;
+  string     description = 5;
+  repeated string tags   = 6;
+  AuditStamp audit       = 7;
+}
+
+message Project {
+  string       id        = 1;
+  WorkspaceRef workspace = 2;
+  string       name      = 3;
+  string       description = 4;
+  // Recursos anexados: repos, task manager, fluxo git, workflow, skills.
+  repeated ProjectRepo  repos        = 5;
+  ProjectTaskManager    task_manager = 6;
+  repeated ResourceRef  resources    = 7;
+  repeated string       rules        = 8;
+  AuditStamp   audit     = 9;
+}
+
+// Provider é do REPOSITÓRIO, não do projeto (ADR-0013).
+message ProjectRepo {
+  string      id           = 1;
+  ResourceRef integration  = 2;
+  string      external_id  = 3;
+  string      name         = 4;
+  string      default_branch = 5;
+  repeated string pr_targets = 6;
+}
+
+message ProjectTaskManager {
+  ResourceRef integration       = 1;
+  string      external_space_id = 2;   // espaço do provedor (nunca "workspace" nu)
+  string      external_project_id = 3;
+  repeated string card_types    = 4;   // dinâmicos, vindos do provedor
+}
+
+service HierarchyService {
+  rpc ListWorkspaces (ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc GetWorkspace   (GetWorkspaceRequest)   returns (Workspace);
+  rpc CreateWorkspace(CreateWorkspaceRequest)returns (Workspace);
+  rpc UpdateWorkspace(UpdateWorkspaceRequest)returns (Workspace);
+  rpc ListProjects   (ListProjectsRequest)   returns (ListProjectsResponse);
+  rpc GetProject     (GetProjectRequest)     returns (Project);
+  rpc CreateProject  (CreateProjectRequest)  returns (Project);
+  rpc UpdateProject  (UpdateProjectRequest)  returns (Project);
+  // Árvore do cockpit em uma chamada.
+  rpc GetTree        (GetTreeRequest)        returns (GetTreeResponse);
+}
+
+message ListWorkspacesRequest  { CallContext ctx = 1; PageRequest page = 2; }
+message ListWorkspacesResponse { repeated Workspace workspaces = 1; PageResponse page = 2; }
+message GetWorkspaceRequest    { CallContext ctx = 1; string id = 2; }
+message CreateWorkspaceRequest { CallContext ctx = 1; string name = 2; string key = 3; string description = 4; repeated string tags = 5; string idempotency_key = 6; }
+message UpdateWorkspaceRequest { CallContext ctx = 1; Workspace workspace = 2; }
+message ListProjectsRequest    { CallContext ctx = 1; WorkspaceRef workspace = 2; }
+message ListProjectsResponse   { repeated Project projects = 1; }
+message GetProjectRequest      { CallContext ctx = 1; string id = 2; }
+message CreateProjectRequest   { CallContext ctx = 1; WorkspaceRef workspace = 2; string name = 3; string description = 4; string idempotency_key = 5; }
+message UpdateProjectRequest   { CallContext ctx = 1; Project project = 2; }
+message GetTreeRequest         { CallContext ctx = 1; }
+message GetTreeResponse {
+  message Node {
+    Workspace workspace = 1;
+    repeated Project projects = 2;
+  }
+  repeated Node nodes = 1;
+}

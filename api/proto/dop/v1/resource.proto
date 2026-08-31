@@ -1,0 +1,93 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/struct.proto";
+
+// Recurso é a unidade de posse e compartilhamento da conta (ADR-0013).
+message Resource {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_INTEGRATION = 1;
+    KIND_SKILL       = 2;
+    KIND_WORKFLOW    = 3;
+    KIND_GIT_FLOW    = 4;
+  }
+  string     id      = 1;
+  AccountRef account = 2;
+  Kind       kind    = 3;
+  string     name    = 4;
+  int32      version = 5;
+  google.protobuf.Struct config = 6;
+  // Ponteiro opaco ao SecretStore — NUNCA o segredo (ADR-0001).
+  string     credential_ref = 7;
+  AuditStamp audit   = 8;
+}
+
+// Detalhe das integrações (único kind com credencial).
+message IntegrationSpec {
+  enum Category {
+    CATEGORY_UNSPECIFIED = 0;
+    CATEGORY_GIT          = 1;
+    CATEGORY_TASK_MANAGER = 2;
+    CATEGORY_AGENT        = 3;
+  }
+  enum AuthMethod {
+    AUTH_METHOD_UNSPECIFIED = 0;
+    AUTH_METHOD_OAUTH_APP   = 1;   // credencial de organização — preferida em PJ
+    AUTH_METHOD_OAUTH_USER  = 2;
+    AUTH_METHOD_TOKEN       = 3;
+    AUTH_METHOD_SSH_KEY     = 4;
+  }
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_ACTIVE      = 1;
+    STATUS_EXPIRED     = 2;
+    STATUS_REVOKED     = 3;
+    STATUS_ERROR       = 4;
+  }
+  Category   category = 1;
+  string     provider = 2;   // github, gitlab, azure_devops, jira, claude, ...
+  string     base_url = 3;   // self-hosted
+  AuthMethod auth_method = 4;
+  Status     status   = 5;
+  UserRef    connected_by = 6;
+}
+
+message ResourceGrant {
+  string      id       = 1;
+  ResourceRef resource = 2;
+  UserRef     user     = 3;
+  string      level    = 4;  // use | manage
+}
+
+service ResourceService {
+  rpc ListResources  (ListResourcesRequest)  returns (ListResourcesResponse);
+  rpc GetResource    (GetResourceRequest)    returns (Resource);
+  rpc CreateResource (CreateResourceRequest) returns (Resource);
+  rpc UpdateResource (UpdateResourceRequest) returns (Resource);
+  rpc DeleteResource (DeleteResourceRequest) returns (DeleteResourceResponse);
+  rpc GrantResource  (GrantResourceRequest)  returns (ResourceGrant);
+  rpc RevokeGrant    (RevokeGrantRequest)    returns (RevokeGrantResponse);
+  // Credencial é escrita no SecretStore; o valor nunca volta numa leitura.
+  rpc SetCredential  (SetCredentialRequest)  returns (SetCredentialResponse);
+}
+
+message ListResourcesRequest  { CallContext ctx = 1; Resource.Kind kind = 2; PageRequest page = 3; }
+message ListResourcesResponse { repeated Resource resources = 1; PageResponse page = 2; }
+message GetResourceRequest    { CallContext ctx = 1; string id = 2; }
+message CreateResourceRequest {
+  CallContext ctx = 1;
+  Resource.Kind kind = 2;
+  string name = 3;
+  google.protobuf.Struct config = 4;
+  string idempotency_key = 5;
+}
+message UpdateResourceRequest { CallContext ctx = 1; string id = 2; google.protobuf.Struct config = 3; }
+message DeleteResourceRequest { CallContext ctx = 1; string id = 2; }
+message DeleteResourceResponse{ bool deleted = 1; }
+message GrantResourceRequest  { CallContext ctx = 1; string resource_id = 2; string user_id = 3; string level = 4; }
+message RevokeGrantRequest    { CallContext ctx = 1; string grant_id = 2; }
+message RevokeGrantResponse   { bool revoked = 1; }
+message SetCredentialRequest  { CallContext ctx = 1; string resource_id = 2; bytes secret = 3; }
+message SetCredentialResponse { string credential_ref = 1; }

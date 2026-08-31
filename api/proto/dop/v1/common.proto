@@ -1,0 +1,44 @@
+syntax = "proto3";
+package dop.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Referências tipadas — tenant nunca é string anônima (ADR-0017).
+message AccountRef   { string id = 1; }
+message WorkspaceRef { string id = 1; }
+message ProjectRef   { string id = 1; }
+message DemandRef    { string id = 1; }
+message UserRef      { string id = 1; }
+message ResourceRef  { string id = 1; }
+
+// Quem executou uma ação — humano, agente ou o próprio sistema.
+message ActorRef {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_USER        = 1;
+    KIND_AGENT       = 2;
+    KIND_SUBAGENT    = 3;
+    KIND_SYSTEM      = 4;
+  }
+  Kind   kind = 1;
+  string id   = 2;   // user_id, thread_id do agente, ou nome do componente
+  string name = 3;   // rótulo legível
+}
+
+// Contexto obrigatório de toda chamada: quem, em qual conta.
+// A borda preenche; o domínio confia (ADR-0016).
+message CallContext {
+  AccountRef account = 1;   // conta ativa — requisição sem ela é inválida
+  ActorRef   actor   = 2;
+}
+
+message PageRequest  { int32 size = 1; string token = 2; }
+message PageResponse { string next_token = 1; int32 total = 2; }
+
+message Money { string currency = 1; int64 amount_micros = 2; }
+
+message AuditStamp {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+  ActorRef                  created_by = 3;
+}

@@ -1,0 +1,128 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "dop/v1/workflow.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+enum DopStatus {
+  DOP_STATUS_UNSPECIFIED = 0;
+  DOP_STATUS_NEW         = 1;
+  DOP_STATUS_DOING       = 2;
+  DOP_STATUS_DONE        = 3;
+  DOP_STATUS_DELIVERED   = 4;
+}
+
+enum StageStatus {
+  STAGE_STATUS_UNSPECIFIED = 0;
+  STAGE_STATUS_PENDING     = 1;
+  STAGE_STATUS_RUNNING     = 2;
+  STAGE_STATUS_BLOCKED     = 3;
+  STAGE_STATUS_DONE        = 4;
+}
+
+message Demand {
+  string     id           = 1;
+  ProjectRef project      = 2;
+  string     external_key = 3;   // SUOPT-1315
+  string     title        = 4;
+  string     card_type    = 5;   // dinâmico, do provedor
+  string     provider_status = 6;
+  DopStatus  dop_status   = 7;
+  // Versão do fluxo CONGELADA ao iniciar (ADR-0014).
+  string     flow_id      = 8;
+  int32      flow_version = 9;
+  repeated DemandStage stages = 10;
+  AuditStamp audit        = 11;
+}
+
+message DemandStage {
+  string      key      = 1;
+  string      name     = 2;
+  StageType   type     = 3;
+  StageStatus status   = 4;
+  Gate        gate     = 5;
+  repeated Artifact artifacts = 6;
+  google.protobuf.Timestamp started_at  = 7;
+  google.protobuf.Timestamp finished_at = 8;
+}
+
+message Artifact {
+  string       id        = 1;
+  ArtifactKind kind      = 2;
+  string       name      = 3;
+  string       object_ref = 4;  // ponteiro no ObjectStore
+  int32        version   = 5;
+  AuditStamp   audit     = 6;
+}
+
+// Uma thread por agente — o dev conversa sem misturar timelines (ADR-0010).
+message Thread {
+  string   id      = 1;
+  DemandRef demand = 2;
+  string   key     = 3;   // principal, forense-db, logs
+  AgentCard card   = 4;
+  bool     blocked = 5;   // pergunta pendente → caixa de atenção
+  AuditStamp audit = 6;
+}
+
+// Ficha do agente: propósito, ferramentas, modelo e orçamento.
+message AgentCard {
+  string   purpose   = 1;
+  repeated string tools = 2;   // MCPs e skills concedidos
+  string   model     = 3;      // do cardápio das integrações de agente
+  string   effort    = 4;      // low | medium | high | xhigh | max
+  int64    budget_micros = 5;
+}
+
+message Message {
+  string   id     = 1;
+  string   thread_id = 2;
+  ActorRef author = 3;
+  string   text   = 4;
+  google.protobuf.Timestamp at = 5;
+}
+
+// Conclusão publicada por um agente — vira contexto dos irmãos e memória.
+message Finding {
+  string   id        = 1;
+  DemandRef demand   = 2;
+  string   thread_id = 3;
+  string   title     = 4;
+  google.protobuf.Struct payload = 5;
+  AuditStamp audit   = 6;
+}
+
+service DemandService {
+  rpc ListDemands  (ListDemandsRequest)  returns (ListDemandsResponse);
+  rpc GetDemand    (GetDemandRequest)    returns (Demand);
+  rpc StartDemand  (StartDemandRequest)  returns (Demand);   // resolve e congela o fluxo
+  rpc AdvanceStage (AdvanceStageRequest) returns (DemandStage);
+  rpc DecideGate   (DecideGateRequest)   returns (DemandStage);
+  rpc ListThreads  (ListThreadsRequest)  returns (ListThreadsResponse);
+  rpc CreateThread (CreateThreadRequest) returns (Thread);   // lançar subagente
+  rpc PostMessage  (PostMessageRequest)  returns (Message);
+  rpc PublishFinding(PublishFindingRequest) returns (Finding);
+  // Streaming: o BFF converte em SSE (ADR-0017).
+  rpc WatchDemand  (WatchDemandRequest)  returns (stream DemandEvent);
+}
+
+message ListDemandsRequest  { CallContext ctx = 1; ProjectRef project = 2; PageRequest page = 3; }
+message ListDemandsResponse { repeated Demand demands = 1; PageResponse page = 2; }
+message GetDemandRequest    { CallContext ctx = 1; string id = 2; }
+message StartDemandRequest  { CallContext ctx = 1; ProjectRef project = 2; string external_key = 3; string idempotency_key = 4; }
+message AdvanceStageRequest { CallContext ctx = 1; string demand_id = 2; string stage_key = 3; StageStatus status = 4; string idempotency_key = 5; }
+message DecideGateRequest   { CallContext ctx = 1; string demand_id = 2; string stage_key = 3; bool approved = 4; string comment = 5; string idempotency_key = 6; }
+message ListThreadsRequest  { CallContext ctx = 1; string demand_id = 2; }
+message ListThreadsResponse { repeated Thread threads = 1; }
+message CreateThreadRequest { CallContext ctx = 1; string demand_id = 2; string key = 3; AgentCard card = 4; string idempotency_key = 5; }
+message PostMessageRequest  { CallContext ctx = 1; string thread_id = 2; string text = 3; string idempotency_key = 4; }
+message PublishFindingRequest { CallContext ctx = 1; string demand_id = 2; string thread_id = 3; string title = 4; google.protobuf.Struct payload = 5; string idempotency_key = 6; }
+message WatchDemandRequest  { CallContext ctx = 1; string demand_id = 2; }
+message DemandEvent {
+  string   type       = 1;   // stage.advanced, message.posted, finding.published...
+  string   aggregate  = 2;
+  google.protobuf.Struct payload = 3;
+  google.protobuf.Timestamp at = 4;
+}

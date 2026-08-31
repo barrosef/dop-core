@@ -1,0 +1,14 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use: [STANDARD]
+  except:
+    # Retornamos a entidade diretamente (GetDemand → Demand) em vez de
+    # embrulhar em <Method>Response. É mais ergonômico para o consumidor e
+    # não impede evolução: campo novo entra na própria entidade.
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - PACKAGE_VERSION_SUFFIX
+breaking:
+  use: [FILE]

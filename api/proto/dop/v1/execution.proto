@@ -1,0 +1,72 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Declarado, nunca presumido — o cliente vê o que recebeu (spec do substrato §2).
+enum IsolationTier {
+  ISOLATION_TIER_UNSPECIFIED    = 0;
+  ISOLATION_TIER_HARDWARE       = 1;  // Kata/Firecracker — microVM
+  ISOLATION_TIER_KERNEL_EMULATED= 2;  // gVisor / Edera
+  ISOLATION_TIER_NAMESPACE      = 3;  // container com securityContext estrito
+}
+
+message Sandbox {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_PROVISIONING= 1;
+    STATE_ACTIVE      = 2;
+    STATE_SUSPENDED   = 3;
+    STATE_DESTROYED   = 4;
+  }
+  string        id        = 1;
+  DemandRef     demand    = 2;
+  State         state     = 3;
+  IsolationTier tier      = 4;
+  string        namespace = 5;
+  repeated SandboxEndpoint endpoints = 6;
+  google.protobuf.Timestamp last_active_at = 7;
+  AuditStamp    audit     = 8;
+}
+
+message SandboxEndpoint {
+  string name = 1;   // portal-frontend, portal-backend, mysql
+  string url  = 2;   // ingress da demanda
+  int32  port = 3;
+  string state = 4;  // running | stopped
+}
+
+service ExecutionService {
+  rpc ProvisionSandbox(ProvisionSandboxRequest) returns (Sandbox);
+  rpc SuspendSandbox  (SuspendSandboxRequest)   returns (Sandbox);
+  rpc ResumeSandbox   (ResumeSandboxRequest)    returns (Sandbox);
+  rpc DestroySandbox  (DestroySandboxRequest)   returns (DestroySandboxResponse);
+  rpc DescribeSandbox (DescribeSandboxRequest)  returns (Sandbox);
+  rpc StreamLogs      (StreamLogsRequest)       returns (stream LogLine);
+}
+
+message ProvisionSandboxRequest {
+  CallContext   ctx = 1;
+  string        demand_id = 2;
+  IsolationTier min_tier  = 3;   // política da conta; violação = RECUSA, não degrada
+  string idempotency_key  = 4;
+}
+message SuspendSandboxRequest  { CallContext ctx = 1; string id = 2; }
+message ResumeSandboxRequest   { CallContext ctx = 1; string id = 2; }
+message DestroySandboxRequest  { CallContext ctx = 1; string id = 2; }
+message DestroySandboxResponse { bool destroyed = 1; }
+message DescribeSandboxRequest { CallContext ctx = 1; string id = 2; }
+message StreamLogsRequest {
+  CallContext ctx = 1;
+  string sandbox_id = 2;
+  string source     = 3;  // app | test | infra
+  string service    = 4;
+  string test_type  = 5;  // aaa | e2e | integracao
+}
+message LogLine {
+  string source  = 1;
+  string service = 2;
+  string line    = 3;
+  google.protobuf.Timestamp at = 4;
+}

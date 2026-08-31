@@ -1,0 +1,50 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "dop/v1/demand.proto";
+import "google/protobuf/struct.proto";
+
+// Base de conhecimento do projeto em três camadas (ADR-0009).
+message KnowledgeArtifact {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_RULE        = 1;   // convenções que o agente obedece
+    KIND_INDEX       = 2;   // mapa do código
+    KIND_MEMORY      = 3;   // achados e lições de demandas passadas
+  }
+  string     id      = 1;
+  ProjectRef project = 2;
+  Kind       kind    = 3;
+  string     name    = 4;
+  int32      version = 5;
+  string     object_ref = 6;   // conteúdo no ObjectStore
+  google.protobuf.Struct meta = 7;
+  AuditStamp audit   = 8;
+}
+
+// Bagagem montada por demanda — cresce com a DEMANDA, não com o projeto.
+message ContextPackage {
+  DemandRef demand = 1;
+  repeated string rules = 2;
+  repeated KnowledgeArtifact index    = 3;
+  repeated KnowledgeArtifact memories = 4;
+  repeated Finding findings = 5;
+  int32  estimated_tokens = 6;   // medido por token counting na montagem
+}
+
+service KnowledgeService {
+  rpc BuildContextPackage(BuildContextPackageRequest) returns (ContextPackage);
+  rpc SearchMemory       (SearchMemoryRequest)        returns (SearchMemoryResponse);
+  rpc ReadIndex          (ReadIndexRequest)           returns (KnowledgeArtifact);
+  rpc PutArtifact        (PutArtifactRequest)         returns (KnowledgeArtifact);
+  rpc ListRules          (ListRulesRequest)           returns (ListRulesResponse);
+}
+
+message BuildContextPackageRequest { CallContext ctx = 1; string demand_id = 2; }
+message SearchMemoryRequest  { CallContext ctx = 1; ProjectRef project = 2; string query = 3; int32 limit = 4; }
+message SearchMemoryResponse { repeated KnowledgeArtifact artifacts = 1; repeated float scores = 2; }
+message ReadIndexRequest     { CallContext ctx = 1; ProjectRef project = 2; string repo = 3; }
+message PutArtifactRequest   { CallContext ctx = 1; KnowledgeArtifact artifact = 2; bytes content = 3; string idempotency_key = 4; }
+message ListRulesRequest     { CallContext ctx = 1; ProjectRef project = 2; }
+message ListRulesResponse    { repeated string rules = 1; }

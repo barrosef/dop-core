@@ -1,0 +1,126 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+message User {
+  string   id             = 1;
+  string   email          = 2;
+  string   name           = 3;
+  string   avatar_url     = 4;
+  repeated string providers = 5;  // password, google.com, github.com, linkedin.com
+  AuditStamp audit        = 6;
+}
+
+message Account {
+  enum Kind {
+    KIND_UNSPECIFIED  = 0;
+    KIND_PERSONAL     = 1;
+    KIND_ORGANIZATION = 2;
+  }
+  string id           = 1;
+  Kind   kind         = 2;
+  string handle       = 3;   // único na plataforma; PF e PJ dividem o namespace
+  string display_name = 4;
+  // Organização
+  string legal_id        = 10;  // CNPJ
+  string legal_name      = 11;
+  string verified_domain = 12;  // vazio = não verificada
+  AuditStamp audit       = 20;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_OWNER       = 1;
+  ROLE_ADMIN       = 2;
+  ROLE_DEVELOPER   = 3;
+  ROLE_VIEWER      = 4;
+}
+
+message Membership {
+  string     id       = 1;
+  UserRef    user     = 2;
+  AccountRef account  = 3;
+  Role       role     = 4;
+  AuditStamp audit    = 5;
+}
+
+message Invite {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_PENDING     = 1;
+    STATUS_ACCEPTED    = 2;
+    STATUS_EXPIRED     = 3;
+    STATUS_REVOKED     = 4;
+  }
+  string     id         = 1;
+  AccountRef account    = 2;
+  string     email      = 3;
+  Role       role       = 4;
+  // Concessões compostas NO CONVITE — sem defaults (ADR-0013)
+  repeated ResourceGrantSpec grants = 5;
+  Status     status     = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  AuditStamp audit      = 8;
+}
+
+message ResourceGrantSpec {
+  ResourceRef resource = 1;
+  string      level    = 2;  // use | manage
+}
+
+// ── serviço ─────────────────────────────────────────────────────
+service IdentityService {
+  rpc GetUser        (GetUserRequest)        returns (User);
+  rpc EnsureUser     (EnsureUserRequest)     returns (User);        // idempotente: 1º login
+  rpc ListAccounts   (ListAccountsRequest)   returns (ListAccountsResponse);
+  rpc GetAccount     (GetAccountRequest)     returns (Account);
+  rpc CreateAccount  (CreateAccountRequest)  returns (Account);
+  rpc ListMemberships(ListMembershipsRequest)returns (ListMembershipsResponse);
+  rpc CreateInvite   (CreateInviteRequest)   returns (Invite);
+  rpc AcceptInvite   (AcceptInviteRequest)   returns (Membership);
+  rpc RevokeInvite   (RevokeInviteRequest)   returns (Invite);
+  rpc UpdateMembership(UpdateMembershipRequest) returns (Membership);
+}
+
+message GetUserRequest    { CallContext ctx = 1; string id = 2; }
+message EnsureUserRequest {
+  // Principal normalizado vindo do IdentityProvider — claims de Firebase
+  // não cruzam esta fronteira (ADR-0001).
+  string subject        = 1;
+  string email          = 2;
+  bool   email_verified = 3;
+  string name           = 4;
+  string avatar_url     = 5;
+  string provider       = 6;
+  string idempotency_key = 7;
+}
+message ListAccountsRequest  { CallContext ctx = 1; UserRef user = 2; }
+message ListAccountsResponse { repeated Account accounts = 1; }
+message GetAccountRequest    { CallContext ctx = 1; string id = 2; }
+message CreateAccountRequest {
+  CallContext  ctx  = 1;
+  Account.Kind kind = 2;
+  string handle       = 3;
+  string display_name = 4;
+  string legal_id     = 5;
+  string idempotency_key = 6;
+}
+message ListMembershipsRequest  { CallContext ctx = 1; AccountRef account = 2; }
+message ListMembershipsResponse { repeated Membership memberships = 1; }
+message CreateInviteRequest {
+  CallContext ctx   = 1;
+  string      email = 2;
+  Role        role  = 3;
+  repeated ResourceGrantSpec grants = 4;
+  string idempotency_key = 5;
+}
+message AcceptInviteRequest { CallContext ctx = 1; string token = 2; string idempotency_key = 3; }
+message RevokeInviteRequest { CallContext ctx = 1; string id = 2; }
+message UpdateMembershipRequest {
+  CallContext ctx = 1;
+  string membership_id = 2;
+  Role   role = 3;
+  repeated ResourceGrantSpec grants = 4;
+}

@@ -1,0 +1,85 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+
+// Tipo semântico da etapa: decide o renderizador na tela e o comportamento
+// do agente. Vocabulário da plataforma; composição é livre (ADR-0014).
+enum StageType {
+  STAGE_TYPE_UNSPECIFIED     = 0;
+  STAGE_TYPE_CONTEXT         = 1;
+  STAGE_TYPE_SPEC            = 2;
+  STAGE_TYPE_PLAN            = 3;
+  STAGE_TYPE_IMPLEMENTATION  = 4;
+  STAGE_TYPE_TEST            = 5;
+  STAGE_TYPE_HUMAN_VALIDATION= 6;
+  STAGE_TYPE_FINALIZATION    = 7;
+  STAGE_TYPE_GENERIC         = 8;
+}
+
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_DOCUMENT    = 1;
+  ARTIFACT_KIND_SPEC        = 2;
+  ARTIFACT_KIND_PLAN        = 3;
+  ARTIFACT_KIND_TEST_PLAN   = 4;
+  ARTIFACT_KIND_DIAGRAM     = 5;
+  ARTIFACT_KIND_REPORT      = 6;
+}
+
+enum Gate {
+  GATE_UNSPECIFIED = 0;
+  GATE_NONE        = 1;
+  GATE_HUMAN       = 2;
+}
+
+message StageSpec {
+  string       key       = 1;
+  string       name      = 2;   // livre, do autor
+  StageType    type      = 3;
+  repeated ArtifactKind artifacts = 4;
+  Gate         gate      = 5;
+  repeated string subtypes = 6;  // ex.: teste → aaa, e2e, integracao
+}
+
+message Flow {
+  string    id      = 1;
+  string    name    = 2;
+  string    description = 3;
+  int32     version = 4;
+  // Escopo dono na cadeia: platform | account | workspace | project | demand
+  string    owner_scope = 5;
+  string    owner_id    = 6;
+  repeated StageSpec stages = 7;
+  AuditStamp audit    = 8;
+}
+
+// Resultado da cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda.
+message EffectiveFlow {
+  Flow   flow          = 1;
+  string resolved_from = 2;  // rastro visível: "projeto ◂ workspace ◂ conta"
+}
+
+service WorkflowService {
+  rpc ListFlows     (ListFlowsRequest)     returns (ListFlowsResponse);
+  rpc GetFlow       (GetFlowRequest)       returns (Flow);
+  rpc CreateFlow    (CreateFlowRequest)    returns (Flow);
+  rpc UpdateFlow    (UpdateFlowRequest)    returns (Flow);   // gera versão nova
+  rpc ValidateFlow  (ValidateFlowRequest)  returns (ValidateFlowResponse);
+  rpc ResolveFlow   (ResolveFlowRequest)   returns (EffectiveFlow);
+  rpc PromoteFlow   (PromoteFlowRequest)   returns (Flow);
+}
+
+message ListFlowsRequest  { CallContext ctx = 1; string owner_scope = 2; string owner_id = 3; }
+message ListFlowsResponse { repeated Flow flows = 1; }
+message GetFlowRequest    { CallContext ctx = 1; string id = 2; }
+message CreateFlowRequest { CallContext ctx = 1; Flow flow = 2; string idempotency_key = 3; }
+message UpdateFlowRequest { CallContext ctx = 1; Flow flow = 2; }
+message ValidateFlowRequest  { CallContext ctx = 1; Flow flow = 2; }
+message ValidateFlowResponse {
+  bool valid = 1;
+  repeated string errors   = 2;
+  repeated string warnings = 3;  // ex.: fluxo sem etapa spec
+}
+message ResolveFlowRequest { CallContext ctx = 1; string scope = 2; string scope_id = 3; }
+message PromoteFlowRequest { CallContext ctx = 1; string flow_id = 2; string target_scope = 3; string target_id = 4; }

@@ -1,0 +1,76 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/struct.proto";
+
+message PullRequest {
+  string    id      = 1;
+  DemandRef demand  = 2;
+  string    repo    = 3;
+  string    source_branch = 4;
+  string    target_branch = 5;
+  string    url     = 6;
+  bool      merged  = 7;
+  bool      has_conflict = 8;
+  repeated Reviewer reviewers = 9;
+  AuditStamp audit  = 10;
+}
+
+message Reviewer {
+  string name     = 1;
+  string initials = 2;
+  string status   = 3;  // approved | rejected | pending
+}
+
+// Fila por repositório: rebase → re-verificação → merge, um por vez (ADR-0008).
+message MergeQueueEntry {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_QUEUED      = 1;
+    STATE_REBASING    = 2;
+    STATE_VERIFYING   = 3;
+    STATE_MERGED      = 4;
+    STATE_CONFLICT    = 5;
+  }
+  string    id       = 1;
+  string    repo_id  = 2;
+  DemandRef demand   = 3;
+  int32     position = 4;
+  State     state    = 5;
+  repeated string overlapping_files = 6;  // detecção do techlead
+}
+
+// Decisão do dev sobre uma transversal, aplicada pelos agentes (ADR-0015).
+message Directive {
+  enum Kind {
+    KIND_UNSPECIFIED      = 0;
+    KIND_CHERRY_PICK      = 1;  // "1 faz cherry-pick da 0 quando ela commitar"
+    KIND_MERGE_ORDER      = 2;
+    KIND_FILE_PARTITION   = 3;
+    KIND_CROSS_VERIFY     = 4;
+  }
+  string     id      = 1;
+  ProjectRef project = 2;
+  Kind       kind    = 3;
+  google.protobuf.Struct payload = 4;
+  ActorRef   decided_by = 5;
+  AuditStamp audit   = 6;
+}
+
+service DeliveryService {
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+  rpc GetMergeQueue   (GetMergeQueueRequest)    returns (GetMergeQueueResponse);
+  rpc EnqueueMerge    (EnqueueMergeRequest)     returns (MergeQueueEntry);
+  rpc ListDirectives  (ListDirectivesRequest)   returns (ListDirectivesResponse);
+  rpc DecideDirective (DecideDirectiveRequest)  returns (Directive);
+}
+
+message ListPullRequestsRequest  { CallContext ctx = 1; string demand_id = 2; ProjectRef project = 3; }
+message ListPullRequestsResponse { repeated PullRequest pull_requests = 1; }
+message GetMergeQueueRequest     { CallContext ctx = 1; string repo_id = 2; }
+message GetMergeQueueResponse    { repeated MergeQueueEntry entries = 1; }
+message EnqueueMergeRequest      { CallContext ctx = 1; string repo_id = 2; string demand_id = 3; string idempotency_key = 4; }
+message ListDirectivesRequest    { CallContext ctx = 1; ProjectRef project = 2; }
+message ListDirectivesResponse   { repeated Directive directives = 1; }
+message DecideDirectiveRequest   { CallContext ctx = 1; string directive_id = 2; google.protobuf.Struct decision = 3; string idempotency_key = 4; }
