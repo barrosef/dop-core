@@ -106,6 +106,13 @@ message AttentionUpdate {
   }
   Change        change = 1;
   AttentionItem item   = 2;
+  // O evento do LOG que gerou este aviso.
+  //
+  // É o cursor de retomada: sem ele o cliente recebe o aviso e não tem o que
+  // devolver em `since_event_id` numa reconexão. O id do ITEM não serve —
+  // ele não é posição no log, e mandá-lo de volta como cursor pede ao núcleo
+  // uma coisa que não existe.
+  string event_id = 3;
 }
 
 service AttentionService {

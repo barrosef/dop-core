@@ -39,14 +39,15 @@ func (s *AttentionServer) ListAttention(ctx context.Context, req *dopv1.ListAtte
 func (s *AttentionServer) WatchAttention(req *dopv1.WatchAttentionRequest, stream dopv1.AttentionService_WatchAttentionServer) error {
 	ctx := stream.Context() // contexto de chamada posto por StreamCallContext
 	agora := timeNow()
-	return s.svc.Watch(ctx, req.GetSinceEventId(), func(change string, it attention.Item) error {
+	return s.svc.Watch(ctx, req.GetSinceEventId(), func(change, eventID string, it attention.Item) error {
 		c := dopv1.AttentionUpdate_CHANGE_OPENED
 		if change == "resolved" {
 			c = dopv1.AttentionUpdate_CHANGE_RESOLVED
 		}
 		return stream.Send(&dopv1.AttentionUpdate{
-			Change: c,
-			Item:   attentionToProto(it, it.Priority(agora)),
+			Change:  c,
+			Item:    attentionToProto(it, it.Priority(agora)),
+			EventId: eventID,
 		})
 	})
 }

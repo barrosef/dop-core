@@ -695,6 +695,22 @@ func (r *repoFalso) TouchActivity(_ context.Context, accountID, id string) error
 	return nil
 }
 
+func (r *repoFalso) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	corte := time.Duration(olderThanSeconds) * time.Second
+	vistas := map[string]bool{}
+	var out []string
+	for _, s := range r.linhas {
+		if s.State == execution.StateActive && r.agora().Sub(s.LastActiveAt) >= corte &&
+			!vistas[s.AccountID] {
+			vistas[s.AccountID] = true
+			out = append(out, s.AccountID)
+		}
+	}
+	return out, nil
+}
+
 func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSeconds int) ([]execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -807,4 +823,31 @@ func (d *demandasFalsas) DemandAccount(_ context.Context, demandID string) (stri
 		return "", errs.NotFound("demanda")
 	}
 	return acc, nil
+}
+
+// O scheduler é ator de SISTEMA e não tem conta ativa. A varredura visita conta
+// por conta, e cada visita continua acontecendo DENTRO de uma conta — o
+// isolamento não é afrouxado, só a ordem de visita é decidida por fora.
+func TestVarreduraDeSistemaAtravessaContasSemAfrouxarIsolamento(t *testing.T) {
+	repo := novoRepo()
+	launcher := &launcherFalso{tiers: []ports.IsolationTier{ports.TierNamespace}}
+	relogio := &relogioFixo{t: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)}
+
+	// Duas contas, cada uma com um sandbox parado além do limite.
+	for _, conta := range []string{"acc-1", "acc-2"} {
+		id := "sb-" + conta
+		repo.linhas[id] = &execution.Sandbox{
+			ID: id, AccountID: conta, State: execution.StateActive,
+			LastActiveAt: relogio.t.Add(-2 * execution.IdleTimeout),
+		}
+	}
+
+	varredor := execution.NewSweeper(repo, launcher, relogio)
+	contas, suspensos, err := varredor.SweepAllAccounts(context.Background())
+	if err != nil {
+		t.Fatalf("varredura: %v", err)
+	}
+	if contas != 2 || suspensos != 2 {
+		t.Fatalf("esperava 2 contas e 2 suspensos, veio %d e %d", contas, suspensos)
+	}
 }

@@ -515,3 +515,54 @@ func (s *Service) SweepIdle(ctx context.Context) (int, error) {
 	}
 	return suspended, nil
 }
+
+// NewSweeper monta o serviço só para VARRER.
+//
+// O scheduler não atende ninguém: ele não autoriza chamador nem consulta
+// demanda, só suspende o que está parado. Montar o grafo inteiro lá dentro para
+// satisfazer construtor exigiria inventar dependências que a varredura não usa
+// — e dependência inventada é dependência que um dia alguém passa a usar.
+//
+// O serviço devolvido PANICA se alguém chamar Provision ou qualquer coisa que
+// precise de ator: é erro de montagem, e falhar alto é melhor que autorizar com
+// um duplo vazio.
+func NewSweeper(repo Repository, launcher ports.SandboxLauncher, clock ports.Clock) *Service {
+	if repo == nil || launcher == nil || clock == nil {
+		panic("execution.NewSweeper: repositório, launcher e relógio são obrigatórios")
+	}
+	return &Service{repo: repo, launcher: launcher, clock: clock}
+}
+
+// SweepAllAccounts é o varredor de economia rodando como SISTEMA.
+//
+// O scheduler não tem conta ativa — e todo o resto deste domínio exige uma. A
+// saída é visitar conta por conta: `AccountsWithIdle` diz QUAIS têm o que
+// varrer, e cada varredura acontece com aquela conta no contexto, pelo mesmo
+// caminho que uma chamada de usuário faria. O isolamento não é afrouxado; o que
+// muda é quem decide a ordem de visita.
+//
+// Erro numa conta não interrompe as outras: sandbox ocioso de uma conta não
+// deve ficar aceso porque a conta anterior tem um problema.
+func (s *Service) SweepAllAccounts(ctx context.Context) (contas, suspensos int, err error) {
+	ids, err := s.repo.AccountsWithIdle(ctx, int(IdleTimeout.Seconds()))
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, accountID := range ids {
+		// Ator de sistema, com a conta da vez: é o mesmo Call que o
+		// interceptor montaria, e é o que faz MustAccount funcionar sem abrir
+		// exceção no domínio.
+		porConta := ctxutil.Into(ctx, ctxutil.Call{
+			AccountID: accountID,
+			ActorID:   "scheduler",
+			ActorKind: ctxutil.ActorSystem,
+		})
+		n, err := s.SweepIdle(porConta)
+		if err != nil {
+			continue
+		}
+		contas++
+		suspensos += n
+	}
+	return contas, suspensos, nil
+}

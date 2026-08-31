@@ -242,6 +242,31 @@ func (r *ExecutionRepo) TouchActivity(ctx context.Context, accountID, id string)
 
 // ListIdle alimenta o varredor de economia. O corte vem do DOMÍNIO em segundos
 // — o SQL não tem opinião sobre quanto tempo é "ocioso".
+// AccountsWithIdle NÃO devolve sandbox nenhum — só as contas que têm algum
+// parado. Devolver as linhas aqui seria dar ao chamador de sistema a leitura
+// que a porta nega a todo mundo.
+func (r *ExecutionRepo) AccountsWithIdle(ctx context.Context, olderThanSeconds int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT account_id::text
+		  FROM sandboxes
+		 WHERE state = 'active'
+		   AND last_active_at < now() - make_interval(secs => $1)`, olderThanSeconds)
+	if err != nil {
+		return nil, Translate(err, "contas com sandbox ocioso")
+	}
+	defer rows.Close()
+
+	var contas []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, Translate(err, "conta com sandbox ocioso")
+		}
+		contas = append(contas, id)
+	}
+	return contas, Translate(rows.Err(), "contas com sandbox ocioso")
+}
+
 func (r *ExecutionRepo) ListIdle(ctx context.Context, accountID string, olderThanSeconds int) ([]execution.Sandbox, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+sandboxCols+`

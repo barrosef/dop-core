@@ -469,9 +469,16 @@ func (x *WatchAttentionRequest) GetSinceEventId() string {
 // AttentionUpdate é a mudança, não a fila inteira: reenviar a caixa toda a cada
 // alteração desperdiçaria banda e faria a tela piscar.
 type AttentionUpdate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Change        AttentionUpdate_Change `protobuf:"varint,1,opt,name=change,proto3,enum=dop.v1.AttentionUpdate_Change" json:"change,omitempty"`
-	Item          *AttentionItem         `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Change AttentionUpdate_Change `protobuf:"varint,1,opt,name=change,proto3,enum=dop.v1.AttentionUpdate_Change" json:"change,omitempty"`
+	Item   *AttentionItem         `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
+	// O evento do LOG que gerou este aviso.
+	//
+	// É o cursor de retomada: sem ele o cliente recebe o aviso e não tem o que
+	// devolver em `since_event_id` numa reconexão. O id do ITEM não serve —
+	// ele não é posição no log, e mandá-lo de volta como cursor pede ao núcleo
+	// uma coisa que não existe.
+	EventId       string `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -520,6 +527,13 @@ func (x *AttentionUpdate) GetItem() *AttentionItem {
 	return nil
 }
 
+func (x *AttentionUpdate) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
 var File_dop_v1_attention_proto protoreflect.FileDescriptor
 
 const file_dop_v1_attention_proto_rawDesc = "" +
@@ -561,10 +575,11 @@ const file_dop_v1_attention_proto_rawDesc = "" +
 	"open_total\x18\x03 \x01(\x05R\topenTotal\"d\n" +
 	"\x15WatchAttentionRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12$\n" +
-	"\x0esince_event_id\x18\x02 \x01(\tR\fsinceEventId\"\xbe\x01\n" +
+	"\x0esince_event_id\x18\x02 \x01(\tR\fsinceEventId\"\xd9\x01\n" +
 	"\x0fAttentionUpdate\x126\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x1e.dop.v1.AttentionUpdate.ChangeR\x06change\x12)\n" +
-	"\x04item\x18\x02 \x01(\v2\x15.dop.v1.AttentionItemR\x04item\"H\n" +
+	"\x04item\x18\x02 \x01(\v2\x15.dop.v1.AttentionItemR\x04item\x12\x19\n" +
+	"\bevent_id\x18\x03 \x01(\tR\aeventId\"H\n" +
 	"\x06Change\x12\x16\n" +
 	"\x12CHANGE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rCHANGE_OPENED\x10\x01\x12\x13\n" +

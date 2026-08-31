@@ -52,6 +52,22 @@ type Repository interface {
 	// ListIdle alimenta o varredor de economia: ativos parados desde antes do
 	// corte. Filtra por conta como todo o resto.
 	ListIdle(ctx context.Context, accountID string, olderThanSeconds int) ([]Sandbox, error)
+
+	// AccountsWithIdle é a ÚNICA consulta deste domínio que atravessa contas, e
+	// existe por um motivo estrutural: o varredor de economia roda no
+	// scheduler, que é ator de SISTEMA e não tem conta ativa — enquanto todo o
+	// resto do domínio exige uma.
+	//
+	// A saída dela não é dado de conta nenhuma: é a lista de contas que TÊM o
+	// que varrer. Cada varredura continua acontecendo dentro de UMA conta, com
+	// ela no contexto, então o isolamento não é afrouxado — o que muda é só
+	// quem decide a ordem de visita.
+	//
+	// Sem isso, ou o scheduler ganharia acesso irrestrito, ou sandbox ocioso
+	// nunca suspenderia. A spec do substrato é explícita sobre o custo do
+	// segundo caso: "sandbox ocioso é o que separa paralelismo real de máquina
+	// afogada".
+	AccountsWithIdle(ctx context.Context, olderThanSeconds int) ([]string, error)
 }
 
 // Access é a porta ESTREITA para o domínio de identidade: o substrato precisa

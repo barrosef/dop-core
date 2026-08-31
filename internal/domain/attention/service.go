@@ -60,7 +60,7 @@ func (s *Service) List(ctx context.Context, demandID string, includeResolved boo
 // Reusa o fan-out do domínio de evento pela porta `Watcher`: uma segunda
 // implementação de fan-out seria uma segunda chance de errar isolamento entre
 // contas.
-func (s *Service) Watch(ctx context.Context, sinceEventID string, emit func(change string, it Item) error) error {
+func (s *Service) Watch(ctx context.Context, sinceEventID string, emit func(change, eventID string, it Item) error) error {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return err
 	}
@@ -71,11 +71,11 @@ func (s *Service) Watch(ctx context.Context, sinceEventID string, emit func(chan
 		d := Apply(e)
 		switch {
 		case d.Open != nil:
-			return emit("opened", *d.Open)
+			return emit("opened", e.ID, *d.Open)
 		case d.Close != nil:
 			// O fechamento não carrega o item inteiro — quem fecha conhece o
 			// ALVO, não o id. O cliente casa pelo alvo, como a projeção faz.
-			return emit("resolved", Item{
+			return emit("resolved", e.ID, Item{
 				AccountID: e.AccountID, Kind: d.Close.Kind,
 				TargetKind: d.Close.TargetKind, TargetID: d.Close.TargetID,
 			})

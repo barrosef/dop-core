@@ -20,6 +20,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
+	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
@@ -102,17 +103,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 
 	// O launcher chega já escolhido por configuração (wire.go): o domínio
 	// provisiona sandbox sem saber se o substrato é Docker ou Kubernetes.
-	executionSvc := execution.NewService(
-		postgres.NewExecutionRepo(deps.Pool),
-		deps.Launcher,
-		identitySvc,
-		executionDemands{demandSvc},
-		relogio,
-		execution.Config{
-			DevboxImage:   deps.Cfg.DevboxImage,
-			IngressDomain: deps.Cfg.IngressDomain,
-		},
-	)
+	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
 	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
 	// A caixa de atenção é PROJEÇÃO, e o serviço dela é só leitura + streaming:
@@ -125,6 +116,26 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	dopv1.RegisterAttentionServiceServer(srv, appgrpc.NewAttentionServer(attentionSvc))
 
 	return nil
+}
+
+// buildExecution monta o serviço de execução.
+//
+// Existe como função porque DOIS processos precisam dele: o `serve`, que atende
+// as RPCs, e o `sched`, que varre sandboxes ociosos. Construir nos dois lugares
+// separadamente é como as duas montagens divergem — uma ganha uma dependência
+// nova e a outra não, e o comportamento passa a depender do modo.
+func buildExecution(deps *Deps, id *identity.Service, dm *demand.Service, relogio ports.Clock) *execution.Service {
+	return execution.NewService(
+		postgres.NewExecutionRepo(deps.Pool),
+		deps.Launcher,
+		id,
+		executionDemands{dm},
+		relogio,
+		execution.Config{
+			DevboxImage:   deps.Cfg.DevboxImage,
+			IngressDomain: deps.Cfg.IngressDomain,
+		},
+	)
 }
 
 // RegisterProjections assina os consumidores que constroem as projeções:
@@ -154,8 +165,25 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 }
 
 // RegisterLauncher assina os comandos de sandbox no cluster de execução.
-func RegisterLauncher(ctx context.Context, _ *Deps) error {
-	logging.From(ctx).Info("launcher registrado", "assinaturas", 0)
+// RegisterLauncher prepara o substrato de execução no processo de launcher.
+//
+// Hoje o ciclo de vida do sandbox é dirigido por CHAMADA (ProvisionSandbox e
+// companhia) e por VARREDURA (o scheduler suspende os ociosos). Não há
+// assinatura de evento: provisionar automaticamente ao iniciar demanda é
+// política que ainda não foi decidida, e criar sandbox — que custa dinheiro —
+// por evento sem essa decisão seria inventar governança de gasto.
+//
+// Quando a política existir, é aqui que a assinatura entra.
+func RegisterLauncher(ctx context.Context, deps *Deps) error {
+	log := logging.From(ctx)
+	tiers, err := deps.Launcher.SupportedTiers(ctx)
+	if err != nil {
+		// Não saber qual isolamento o substrato oferece é motivo para NÃO
+		// subir: `isolationTier` é declarado e conferido, e um launcher que
+		// não sabe responder aceitaria qualquer coisa mais tarde.
+		return err
+	}
+	log.Info("launcher pronto", "substrato", deps.Cfg.SandboxBackend, "isolamentos", tiers)
 	return nil
 }
 
@@ -178,6 +206,21 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 	}
 	if len(criadas) > 0 {
 		log.Info("partições criadas", "particoes", criadas)
+	}
+
+	// Varredura de economia: sandbox parado além do limite suspende. O pod
+	// morre, o workspace sobrevive no volume. A spec do substrato é direta
+	// sobre o custo de não fazer isso — "sandbox ocioso é o que separa
+	// paralelismo real de máquina afogada".
+	{
+		varredor := execution.NewSweeper(
+			postgres.NewExecutionRepo(deps.Pool), deps.Launcher, clock.NewSystem())
+		contas, suspensos, err := varredor.SweepAllAccounts(ctx)
+		if err != nil {
+			log.Error("varredura de sandboxes ociosos falhou", logging.FieldError, err.Error())
+		} else if suspensos > 0 {
+			log.Info("sandboxes ociosos suspensos", "contas", contas, "sandboxes", suspensos)
+		}
 	}
 
 	log.Debug("ciclo do scheduler")
