@@ -78,6 +78,19 @@ func TestConviteExpiraPorTempo(t *testing.T) {
 
 // ── duplo em memória ────────────────────────────────────────────────────────
 
+// relogioFixo é o duplo do Clock. Mora aqui, e não em internal/adapter/clock,
+// porque o teste de arquitetura reprova QUALQUER import de adaptador sob
+// internal/domain — inclusive em arquivo _test.go. A suíte de contrato
+// (test/contract/clock.go) é quem garante que este duplo e o relógio de
+// verdade cumprem as mesmas garantias.
+type relogioFixo struct{ t time.Time }
+
+func (r relogioFixo) Now() time.Time { return r.t }
+
+// instante base dos testes: fixo, para que expiração de convite (14 dias) seja
+// verificável por igualdade em vez de por tolerância.
+var agora = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+
 type fakeRepo struct {
 	users    map[string]*identity.User // por subject
 	byID     map[string]*identity.User
@@ -199,7 +212,7 @@ func (f *fakeRepo) RevokeInvite(context.Context, string, string) (*identity.Invi
 
 func TestEnsureUserCriaContaPessoal(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, nil)
+	svc := identity.NewService(repo, relogioFixo{agora})
 
 	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
 		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", Providers: []string{"password"},
@@ -222,7 +235,7 @@ func TestEnsureUserCriaContaPessoal(t *testing.T) {
 
 func TestEnsureUserEIdempotente(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, nil)
+	svc := identity.NewService(repo, relogioFixo{agora})
 	ctx := context.Background()
 	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}}
 
@@ -241,7 +254,7 @@ func TestEnsureUserEIdempotente(t *testing.T) {
 
 func TestAccountLinkingAcumulaProvedores(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, nil)
+	svc := identity.NewService(repo, relogioFixo{agora})
 	ctx := context.Background()
 
 	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}})
@@ -258,7 +271,7 @@ func TestAccountLinkingAcumulaProvedores(t *testing.T) {
 
 func TestCreateInviteExigePermissao(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, nil)
+	svc := identity.NewService(repo, relogioFixo{agora})
 	ctx := context.Background()
 
 	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
@@ -287,7 +300,7 @@ func TestCreateInviteExigePermissao(t *testing.T) {
 
 func TestCreateInviteRecusaNivelInvalido(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, nil)
+	svc := identity.NewService(repo, relogioFixo{agora})
 	ctx := context.Background()
 	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
 	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID})
@@ -299,10 +312,41 @@ func TestCreateInviteRecusaNivelInvalido(t *testing.T) {
 }
 
 func TestOperacaoSemContaAtivaERecusada(t *testing.T) {
-	svc := identity.NewService(newFakeRepo(), nil)
+	svc := identity.NewService(newFakeRepo(), relogioFixo{agora})
 	// Sem AccountID: regra do SP-0 — requisição sem conta ativa é inválida.
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
 	if _, _, err := svc.CreateInvite(ctx, "a@b.com", identity.RoleViewer, nil); err == nil {
 		t.Error("operação sem conta ativa deveria ser recusada")
+	}
+}
+
+// A expiração do convite era, até aqui, verificável só por tolerância — o
+// serviço lia o relógio de parede por dentro. Com a porta injetada dá para
+// afirmar o instante exato, e para atravessar a fronteira dos 14 dias sem
+// dormir.
+func TestConviteExpiraExatamenteEmQuatorzeDias(t *testing.T) {
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, relogioFixo{agora})
+	ctx := context.Background()
+
+	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
+	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID, ActorKind: ctxutil.ActorUser})
+
+	convite, _, err := svc.CreateInvite(ctx, "novo@dop.dev", identity.RoleDeveloper, nil)
+	if err != nil {
+		t.Fatalf("criar convite: %v", err)
+	}
+
+	if quer := agora.Add(identity.InviteTTL); !convite.ExpiresAt.Equal(quer) {
+		t.Fatalf("expiração em %v, esperada %v", convite.ExpiresAt, quer)
+	}
+
+	// Um instante ANTES do vencimento ainda serve; no vencimento, não. A
+	// fronteira é fechada em cima: `now.Before(ExpiresAt)`.
+	if !convite.IsUsable(convite.ExpiresAt.Add(-time.Nanosecond)) {
+		t.Error("convite deveria valer no último instante antes de expirar")
+	}
+	if convite.IsUsable(convite.ExpiresAt) {
+		t.Error("convite não pode valer no exato instante da expiração")
 	}
 }

@@ -61,19 +61,49 @@ func StreamLogging() grpc.StreamServerInterceptor {
 // context.Context. A BORDA preenche; o domínio confia (ADR-0016).
 func UnaryCallContext() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
-		md, _ := metadata.FromIncomingContext(ctx)
-		call := ctxutil.Call{
-			RequestID: first(md, "x-request-id"),
-			AccountID: first(md, "x-account-id"),
-			ActorID:   first(md, "x-actor-id"),
-			ActorName: first(md, "x-actor-name"),
-			ActorKind: ctxutil.ActorKind(first(md, "x-actor-kind")),
-		}
-		if call.ActorKind == "" {
-			call.ActorKind = ctxutil.ActorUser
-		}
-		return h(ctxutil.Into(ctx, call), req)
+		return h(callFromMD(ctx), req)
 	}
+}
+
+// StreamCallContext faz pelo streaming o que UnaryCallContext faz pelo unário.
+//
+// Sem ele, uma RPC de streaming não enxerga x-account-id nenhum, e o isolamento
+// multi-tenant do fluxo passaria a depender do CallContext declarado no corpo
+// do pedido — campo que o servidor NÃO lê (ADR-0017, conv. 5). Ou seja: o
+// buraco não seria "stream sem contexto", seria "stream com contexto que o
+// cliente escolhe". Contexto é preocupação transversal nos dois tipos de RPC.
+//
+// grpc.ServerStream não deixa trocar o Context, então embrulhamos o stream.
+func StreamCallContext() grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
+		return h(srv, &streamComContexto{ServerStream: ss, ctx: callFromMD(ss.Context())})
+	}
+}
+
+// streamComContexto existe só para sobrescrever Context(): é o único ponto de
+// extensão que a interface oferece.
+type streamComContexto struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *streamComContexto) Context() context.Context { return s.ctx }
+
+// callFromMD é a leitura dos metadados, compartilhada pelos dois interceptores
+// — duplicá-la é como as duas pontas divergem sem ninguém notar.
+func callFromMD(ctx context.Context) context.Context {
+	md, _ := metadata.FromIncomingContext(ctx)
+	call := ctxutil.Call{
+		RequestID: first(md, "x-request-id"),
+		AccountID: first(md, "x-account-id"),
+		ActorID:   first(md, "x-actor-id"),
+		ActorName: first(md, "x-actor-name"),
+		ActorKind: ctxutil.ActorKind(first(md, "x-actor-kind")),
+	}
+	if call.ActorKind == "" {
+		call.ActorKind = ctxutil.ActorUser
+	}
+	return ctxutil.Into(ctx, call)
 }
 
 // UnaryRecover impede que um pânico derrube o processo inteiro.

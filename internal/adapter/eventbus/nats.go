@@ -79,8 +79,13 @@ func NewNATS(ctx context.Context, url string) (*NATS, error) {
 func (n *NATS) Publish(ctx context.Context, e ports.Event) error {
 	payload := e.Payload
 	if len(payload) == 0 {
-		b, _ := json.Marshal(e)
-		payload = b
+		// Sem envelope pronto (quem publica direto, sem passar pelo outbox):
+		// monta um. Aqui havia json.Marshal(e) — que é o MESMO bug que o
+		// Envelope existe para matar, só do lado do publicador: ports.Event
+		// serializa Payload []byte em base64 e com nomes de campo que o
+		// consumidor não sabe ler, então AccountID, AggregateID e OccurredAt
+		// chegavam vazios do outro lado, sem erro nenhum.
+		payload = envelopeDe(e)
 	}
 	// MsgId dá desduplicação no lado do broker: o relay pode republicar sem
 	// gerar entrega dupla dentro da janela de dedup do JetStream.

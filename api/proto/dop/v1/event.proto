@@ -1,0 +1,52 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// O log de eventos é a VERDADE (ADR-0006). Dossiê, timeline e caixa de atenção
+// são projeções dele. Este contrato existe para que o cockpit não precise ficar
+// perguntando "mudou alguma coisa?" de segundo em segundo: o núcleo empurra o
+// evento assim que ele acontece, e a projeção do lado do BFF acompanha.
+
+// EventEnvelope é o evento como ele sai do log — os MESMOS campos da tabela
+// `events` e de ports.Event, sem vocabulário novo. O que muda é só a forma do
+// payload: aqui ele é Struct, porque o consumidor lê JSON e não deve precisar
+// desserializar bytes opacos para saber o que aconteceu.
+message EventEnvelope {
+  string     id           = 1;
+  // Referência tipada em vez de id nu: tenant nunca é string anônima (ADR-0017).
+  // Evento sem conta (`identity.user.ensured`, migração 0003) NÃO é transmitido
+  // a ninguém, então este campo está sempre preenchido no fio.
+  AccountRef account      = 2;
+  string     aggregate    = 3;   // demand, project, workspace, resource...
+  string     aggregate_id = 4;
+  string     type         = 5;   // dop.hierarchy.project.created
+  google.protobuf.Struct    payload     = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+// ── serviço ─────────────────────────────────────────────────────
+service EventService {
+  // Watch entrega os eventos da conta conforme acontecem.
+  rpc WatchEvents (WatchEventsRequest) returns (stream EventEnvelope);
+}
+
+message WatchEventsRequest {
+  CallContext ctx = 1;
+
+  // Filtros opcionais. Vazio = tudo o que a conta produzir. Existem para que a
+  // caixa de atenção não precise receber (e descartar) o log inteiro.
+  repeated string aggregate = 2;   // demand, project
+  repeated string types     = 3;   // dop.hierarchy.project.created
+
+  // Cursor de replay: o ÚLTIMO evento que o cliente já processou. O servidor
+  // drena do log tudo que veio depois dele e só então emenda no fluxo ao vivo,
+  // sem buraco e sem duplicata. Vazio = só o que vier daqui pra frente.
+  //
+  // É string, e não timestamp, porque o id é o que o cliente já tem em mãos
+  // (veio no envelope anterior) e porque `occurred_at` sozinho não desempata
+  // eventos do mesmo instante.
+  string since_event_id = 4;
+}

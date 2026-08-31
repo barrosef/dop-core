@@ -29,10 +29,12 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(UnaryLogging(), UnaryCallContext(), UnaryRecover()),
-		grpc.ChainStreamInterceptor(StreamLogging()),
+		grpc.ChainStreamInterceptor(StreamLogging(), StreamCallContext()),
 	)
 	// Registro dos serviços de domínio entra aqui conforme forem implementados.
-	RegisterServices(srv, deps)
+	if err := RegisterServices(ctx, srv, deps); err != nil {
+		return err
+	}
 
 	hs := health.NewServer()
 	healthpb.RegisterHealthServer(srv, hs)

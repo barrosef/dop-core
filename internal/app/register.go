@@ -6,9 +6,11 @@ import (
 	"google.golang.org/grpc"
 
 	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
+	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
@@ -19,11 +21,18 @@ import (
 //
 // Este é o composition root em ação: o domínio recebe PORTAS (repositório,
 // SecretStore), os adaptadores concretos são escolhidos aqui.
-func RegisterServices(srv *grpc.Server, deps *Deps) {
+// Recebe ctx porque o serviço de eventos abre UMA assinatura por processo, e
+// essa assinatura vive enquanto o processo viver — é o contexto do servidor
+// que a encerra, não o de um cliente.
+func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// identity é a raiz: hierarquia e recursos autorizam CONTRA ela. Por isso
 	// nasce primeiro e é passada adiante como porta (resource.Access), não
 	// como dependência concreta.
-	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), nil)
+	// O relógio é porta, e agora é obrigatório: o serviço recusa nil, porque
+	// aceitar nil era o que mantinha a abstração de enfeite.
+	relogio := clock.NewSystem()
+
+	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), relogio)
 	dopv1.RegisterIdentityServiceServer(srv, appgrpc.NewIdentityServer(identitySvc))
 
 	hierarchySvc := hierarchy.NewService(postgres.NewHierarchyRepo(deps.Pool))
@@ -33,6 +42,18 @@ func RegisterServices(srv *grpc.Server, deps *Deps) {
 	// domínio de recursos guarda credencial sem saber se o cofre é k8s ou GCP.
 	resourceSvc := resource.NewService(postgres.NewResourceRepo(deps.Pool), identitySvc, deps.Secrets)
 	dopv1.RegisterResourceServiceServer(srv, appgrpc.NewResourceServer(resourceSvc))
+
+	// Eventos ao vivo: UMA assinatura no barramento por processo, com fan-out
+	// em memória para os assinantes. Uma assinatura POR CLIENTE criaria um
+	// consumidor durável no broker por aba aberta do cockpit — e a porta não
+	// tem como removê-los.
+	eventSvc := event.NewService(postgres.NewEventRepo(deps.Pool), deps.Bus, relogio)
+	if err := eventSvc.Start(ctx, "", []string{"dop.>"}); err != nil {
+		return err
+	}
+	dopv1.RegisterEventServiceServer(srv, appgrpc.NewEventServer(eventSvc))
+
+	return nil
 }
 
 // RegisterProjections assina os consumidores que constroem as projeções:

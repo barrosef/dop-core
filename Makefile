@@ -1,6 +1,6 @@
 export PATH := $(PATH):$(HOME)/go/bin
 
-.PHONY: proto proto-breaking build test test-integration lint run-serve run-worker migrate
+.PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker migrate
 
 proto:            ## gera Go a partir dos .proto (fonte da verdade — ADR-0017)
 	cd api/proto && buf lint && buf generate
@@ -17,6 +17,14 @@ test:             ## unidade + contrato + arquitetura (não exige ambiente)
 test-integration: ## espinha de eventos contra o ambiente local
 	@echo "exige: kubectl port-forward svc/postgres 5432 e svc/nats 4222"
 	go test ./test/integration/ -tags=integration -v -count=1
+
+test-contract-integration: ## suítes de contrato contra os adaptadores REAIS
+	@echo "exige: kubectl port-forward svc/nats 4222 e svc/firebase 9199"
+	@echo "excluídos 8_metadados (o emulador pendura com application/json) e"
+	@echo "13_uso_concorrente (~16 operações simultâneas DERRUBAM o emulador)."
+	@echo "Defeitos do emulador, não do adaptador — o fs passa nos 13."
+	go test ./test/contract/ -tags=integration -v -count=1 \
+	  -skip 'TestObjectStoreContractGCS/gcs-emulado/(8_metadados|13_uso_concorrente)' 
 
 lint:
 	go vet ./...

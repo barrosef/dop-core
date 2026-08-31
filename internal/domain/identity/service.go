@@ -19,16 +19,19 @@ type Service struct {
 	clock ports.Clock
 }
 
+// NewService exige um relógio. Aceitar nil era o que mantinha a porta de
+// enfeite: o serviço caía em time.Now() por dentro, nenhum teste de expiração
+// era determinístico, e ninguém percebia que a abstração não estava provada.
+// Panic aqui é deliberado — é erro de montagem, detectado no boot, não em
+// produção às três da manhã.
 func NewService(repo Repository, clock ports.Clock) *Service {
+	if clock == nil {
+		panic("identity.NewService: relógio obrigatório — use clock.NewSystem()")
+	}
 	return &Service{repo: repo, clock: clock}
 }
 
-func (s *Service) now() time.Time {
-	if s.clock != nil {
-		return s.clock.Now()
-	}
-	return time.Now().UTC()
-}
+func (s *Service) now() time.Time { return s.clock.Now() }
 
 // EnsureUser é chamada em TODO primeiro login e precisa ser idempotente.
 //

@@ -68,7 +68,12 @@ func NewGCS(cfg GCSConfig) *GCS {
 	if ep == "" {
 		ep = "https://storage.googleapis.com"
 	}
-	return &GCS{client: c, endpoint: strings.TrimRight(ep, "/"), token: cfg.Token}
+	// normalizeHost também aqui, e não só em ResolveEmulatorHost: a convenção
+	// do Firebase é host:porta SEM esquema, e é essa forma que chega por
+	// configuração (wire.go lê STORAGE_EMULATOR_HOST direto para cfg.Endpoint).
+	// Sem isto o url.Parse falha com "first path segment cannot contain colon"
+	// — e só na PRIMEIRA gravação, com o processo verde até lá.
+	return &GCS{client: c, endpoint: normalizeHost(ep), token: cfg.Token}
 }
 
 func (g *GCS) auth(req *http.Request) {
