@@ -12,6 +12,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
+	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
@@ -93,6 +94,9 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 		knowledge.Budget{},
 	)
 	dopv1.RegisterKnowledgeServiceServer(srv, appgrpc.NewKnowledgeServer(knowledgeSvc))
+
+	deliverySvc := delivery.NewService(postgres.NewDeliveryRepo(deps.Pool), deliveryDemands{demandSvc}, relogio)
+	dopv1.RegisterDeliveryServiceServer(srv, appgrpc.NewDeliveryServer(deliverySvc))
 
 	return nil
 }

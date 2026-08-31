@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
@@ -115,5 +116,26 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 		// retomada (o agente refaz investigação que já fora feita) mas continua
 		// correto. Preencher exige listagem de achados por demanda, que o
 		// repositório ainda não expõe, e os repos do projeto via hierarquia.
+	}, nil
+}
+
+// ── demand → delivery ───────────────────────────────────────────────────────
+
+// deliveryDemands é somente LEITURA, e isso é a regra da ADR-0015 §5 virada
+// tipo: a entrega não tem como parar demanda nenhuma, porque a porta não
+// oferece um jeito. `Active` existe para o evento contar a verdade — "a
+// diretriz foi decidida e a demanda 1 continua andando" —, nunca para decidir
+// se ela para.
+type deliveryDemands struct{ d *demand.Service }
+
+func (a deliveryDemands) Demand(ctx context.Context, _ string, id string) (*delivery.DemandInfo, error) {
+	dm, err := a.d.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &delivery.DemandInfo{
+		ID:        dm.ID,
+		ProjectID: dm.ProjectID,
+		Active:    dm.Status != demand.StatusDelivered,
 	}, nil
 }
