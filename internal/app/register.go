@@ -11,10 +11,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
+	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
+	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
+	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
+	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
@@ -53,6 +57,42 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 		return err
 	}
 	dopv1.RegisterEventServiceServer(srv, appgrpc.NewEventServer(eventSvc))
+
+	// O repositório de fluxo satisfaz DUAS portas — o conteúdo e a cadeia de
+	// ancestrais. São perguntas diferentes que a mesma tabela responde; separar
+	// as portas mantém o domínio dizendo o que precisa, não de quem precisa.
+	wfRepo := postgres.NewWorkflowRepo(deps.Pool)
+	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio)
+	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
+
+	// O roteador é POLÍTICA deste pacote, não porta: nil escolhe o padrão
+	// escrito na ADR-0011, que é rascunho a calibrar com telemetria (P-7).
+	costSvc := cost.NewService(postgres.NewCostRepo(deps.Pool), relogio, cost.NewRouter(nil))
+	dopv1.RegisterCostServiceServer(srv, appgrpc.NewCostServer(costSvc))
+
+	// A demanda congela o fluxo resolvido e assiste ao próprio log de eventos.
+	// Nenhuma das duas coisas ela sabe fazer sozinha — e nenhuma das duas ela
+	// precisa saber de quem vem (ver internal/app/glue.go).
+	demandSvc := demand.NewService(
+		postgres.NewDemandRepo(deps.Pool),
+		demandFlows{workflowSvc},
+		demandWatcher{eventSvc},
+		relogio,
+	)
+	dopv1.RegisterDemandServiceServer(srv, appgrpc.NewDemandServer(demandSvc))
+
+	// Embedder nulo é DECLARADO, não esquecido: sem serviço de embedding
+	// ligado, a busca cai no caminho lexical (trigrama). O dia em que houver
+	// um, é aqui que ele entra — e só aqui.
+	knowledgeSvc := knowledge.NewService(
+		postgres.NewKnowledgeRepo(deps.Pool),
+		deps.Objects,
+		knowledgeDemands{demandSvc},
+		nil,
+		relogio,
+		knowledge.Budget{},
+	)
+	dopv1.RegisterKnowledgeServiceServer(srv, appgrpc.NewKnowledgeServer(knowledgeSvc))
 
 	return nil
 }

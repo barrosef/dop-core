@@ -1,0 +1,756 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
+	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+)
+
+// DeliveryRepo implementa delivery.Repository. É o ÚNICO lugar com SQL de
+// entrega — o domínio nunca vê uma query.
+//
+// Três coisas valem para a leitura deste arquivo inteiro:
+//
+//   - account_id entra em TODA cláusula WHERE. Onde o filtro não cabe na
+//     tabela (o repositório vive em project_repos, que não tem conta), ele vem
+//     por join com projects. Isolamento multi-tenant é constraint, não
+//     confiança no chamador;
+//   - toda mudança de estado grava o evento na MESMA transação, por InTx +
+//     Emit: commit ⇒ estado e evento, ou nenhum dos dois (ADR-0019);
+//   - a chave de idempotência é consultada ANTES de escrever e gravada na
+//     linha, com índice único parcial por conta. Repetir a chamada devolve a
+//     mesma linha em vez de duplicar efeito (ADR-0017).
+type DeliveryRepo struct{ pool *pgxpool.Pool }
+
+func NewDeliveryRepo(pool *pgxpool.Pool) *DeliveryRepo { return &DeliveryRepo{pool: pool} }
+
+// ─────────────────────────── evidência ───────────────────────────
+
+const verificationCols = `id, account_id, demand_id::text, repo_id::text, commit_sha,
+	kind::text, suite, outcome::text, total, passed, failed,
+	sandbox_id, log_ref, detail, attempts, started_at, ended_at`
+
+func scanVerification(row pgx.Row) (*delivery.VerificationRun, error) {
+	var r delivery.VerificationRun
+	var kind, outcome string
+	var detail []byte
+	var started *time.Time
+	if err := row.Scan(&r.ID, &r.AccountID, &r.DemandID, &r.RepoID, &r.Commit,
+		&kind, &r.Suite, &outcome, &r.Total, &r.Passed, &r.Failed,
+		&r.SandboxID, &r.LogRef, &detail, &r.Attempts, &started, &r.EndedAt); err != nil {
+		return nil, err
+	}
+	r.Kind = delivery.CheckKind(kind)
+	r.Outcome = delivery.Outcome(outcome)
+	if started != nil {
+		r.StartedAt = *started
+	}
+	r.Detail = map[string]any{}
+	_ = json.Unmarshal(detail, &r.Detail)
+	return &r, nil
+}
+
+// RecordVerification grava a execução. Rodar a MESMA suíte de novo no mesmo
+// commit atualiza a linha e incrementa attempts — quantas vezes se tentou é
+// parte da evidência, não ruído a esconder.
+func (d *DeliveryRepo) RecordVerification(ctx context.Context, run *delivery.VerificationRun, idemKey string) (*delivery.VerificationRun, error) {
+	// started_at é opcional: o instante zero de Go não é NULL de SQL, e gravar
+	// "ano 1" como início de execução seria dado falso.
+	var startedAt any
+	if !run.StartedAt.IsZero() {
+		startedAt = run.StartedAt
+	}
+
+	var saved *delivery.VerificationRun
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO verification_runs (account_id, demand_id, repo_id, commit_sha,
+			       kind, suite, outcome, total, passed, failed, sandbox_id, log_ref,
+			       detail, attempts, started_at, ended_at, idempotency_key)
+			VALUES ($1, $2::uuid, $3::uuid, $4, $5::verification_kind, $6,
+			        $7::verification_outcome, $8, $9, $10, $11, $12, $13, 1,
+			        $14, $15, NULLIF($16,''))
+			ON CONFLICT (account_id, demand_id, repo_id, commit_sha, kind, suite)
+			DO UPDATE SET outcome = EXCLUDED.outcome, total = EXCLUDED.total,
+			              passed = EXCLUDED.passed, failed = EXCLUDED.failed,
+			              sandbox_id = EXCLUDED.sandbox_id, log_ref = EXCLUDED.log_ref,
+			              detail = EXCLUDED.detail, ended_at = EXCLUDED.ended_at,
+			              attempts = verification_runs.attempts + 1
+			RETURNING `+verificationCols,
+			run.AccountID, run.DemandID, run.RepoID, run.Commit,
+			string(run.Kind), run.Suite, string(run.Outcome),
+			run.Total, run.Passed, run.Failed, run.SandboxID, run.LogRef,
+			mustJSON(run.Detail), startedAt, run.EndedAt, idemKey)
+		var err error
+		saved, err = scanVerification(row)
+		if err != nil {
+			return Translate(err, "execução de verificação")
+		}
+		// O resultado de cada execução é evento (ADR-0007 §1): é dele que a
+		// timeline e as métricas de qualidade da spec se alimentam.
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "delivery", AggregateID: saved.DemandID,
+			Type: "dop.delivery.verification.recorded",
+			Payload: mustJSON(map[string]any{
+				"run_id": saved.ID, "repo_id": saved.RepoID, "commit": saved.Commit,
+				"kind": saved.Kind, "suite": saved.Suite, "outcome": saved.Outcome,
+				"attempts": saved.Attempts, "log_ref": saved.LogRef,
+			}),
+		})
+	})
+	return saved, err
+}
+
+// EvidenceFor devolve as execuções daquele commit exato. Ausência não é erro:
+// evidência vazia é resposta legítima — e é a que faz a fila recusar.
+func (d *DeliveryRepo) EvidenceFor(ctx context.Context, accountID, demandID, repoID, commit string) (delivery.Evidence, error) {
+	ev := delivery.Evidence{DemandID: demandID, RepoID: repoID, Commit: commit}
+	rows, err := d.pool.Query(ctx, `
+		SELECT `+verificationCols+`
+		  FROM verification_runs
+		 WHERE account_id = $1 AND demand_id = $2::uuid
+		   AND repo_id = $3::uuid AND commit_sha = $4
+		 ORDER BY kind, suite`, accountID, demandID, repoID, commit)
+	if err != nil {
+		return ev, Translate(err, "evidência de verificação")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		r, err := scanVerification(rows)
+		if err != nil {
+			return ev, Translate(err, "evidência de verificação")
+		}
+		ev.Runs = append(ev.Runs, *r)
+	}
+	return ev, rows.Err()
+}
+
+// ─────────────────────────── pull requests ───────────────────────────
+
+const prCols = `p.id, p.account_id, p.demand_id::text, p.repo_id::text, p.repo_name,
+	p.source_branch, p.target_branch, p.head_commit, p.url, p.external_id,
+	p.merged, p.has_conflict, p.reviewers, p.created_at, p.updated_at`
+
+type reviewerRow struct {
+	Name     string `json:"name"`
+	Initials string `json:"initials"`
+	Status   string `json:"status"`
+}
+
+func scanPR(row pgx.Row) (*delivery.PullRequest, error) {
+	var pr delivery.PullRequest
+	var reviewers []byte
+	if err := row.Scan(&pr.ID, &pr.AccountID, &pr.DemandID, &pr.RepoID, &pr.Repo,
+		&pr.SourceBranch, &pr.TargetBranch, &pr.HeadCommit, &pr.URL, &pr.ExternalID,
+		&pr.Merged, &pr.HasConflict, &reviewers, &pr.CreatedAt, &pr.UpdatedAt); err != nil {
+		return nil, err
+	}
+	var rows []reviewerRow
+	_ = json.Unmarshal(reviewers, &rows)
+	for _, r := range rows {
+		pr.Reviewers = append(pr.Reviewers, delivery.Reviewer{
+			Name: r.Name, Initials: r.Initials, Status: r.Status})
+	}
+	return &pr, nil
+}
+
+// ListPullRequests filtra por conta sempre; projeto entra por join, porque o
+// vínculo PR→projeto passa pelo repositório.
+func (d *DeliveryRepo) ListPullRequests(ctx context.Context, accountID string, f delivery.PRFilter) ([]delivery.PullRequest, error) {
+	rows, err := d.pool.Query(ctx, `
+		SELECT `+prCols+`
+		  FROM pull_requests p
+		  JOIN project_repos r ON r.id = p.repo_id
+		 WHERE p.account_id = $1
+		   -- NULLIF antes do cast: filtro vazio precisa virar NULL, não
+		   -- ''::uuid. O Postgres não garante curto-circuito no OR, e um cast
+		   -- de string vazia para uuid derrubaria a consulta sem filtro.
+		   AND ($2::text = '' OR p.demand_id  = NULLIF($2,'')::uuid)
+		   AND ($3::text = '' OR r.project_id = NULLIF($3,'')::uuid)
+		   AND ($4::text = '' OR p.repo_id    = NULLIF($4,'')::uuid)
+		   AND (NOT $5::bool OR p.merged = false)
+		 ORDER BY p.created_at DESC, p.id`,
+		accountID, f.DemandID, f.ProjectID, f.RepoID, f.OnlyOpen)
+	if err != nil {
+		return nil, Translate(err, "pull requests")
+	}
+	defer rows.Close()
+
+	var out []delivery.PullRequest
+	for rows.Next() {
+		pr, err := scanPR(rows)
+		if err != nil {
+			return nil, Translate(err, "pull requests")
+		}
+		out = append(out, *pr)
+	}
+	return out, rows.Err()
+}
+
+func (d *DeliveryRepo) PullRequestByID(ctx context.Context, accountID, id string) (*delivery.PullRequest, error) {
+	pr, err := scanPR(d.pool.QueryRow(ctx,
+		`SELECT `+prCols+` FROM pull_requests p WHERE p.id = $1 AND p.account_id = $2`, id, accountID))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "pull request")
+	}
+	return pr, nil
+}
+
+// PullRequestOf devolve (nil, nil) quando não há PR: quem decide se a ausência
+// é erro é o domínio — e lá ela vira "sem verde, sem PR".
+func (d *DeliveryRepo) PullRequestOf(ctx context.Context, accountID, demandID, repoID string) (*delivery.PullRequest, error) {
+	pr, err := scanPR(d.pool.QueryRow(ctx, `
+		SELECT `+prCols+`
+		  FROM pull_requests p
+		 WHERE p.account_id = $1 AND p.demand_id = $2::uuid AND p.repo_id = $3::uuid`,
+		accountID, demandID, repoID))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "pull request")
+	}
+	return pr, nil
+}
+
+// OpenPullRequest conta com a trigger `assert_pr_tem_verde` como último
+// anteparo: o serviço já recusou antes, com a mensagem que diz o que falta, mas
+// a regra da ADR-0007 não pode depender de nenhum caminho de código específico.
+// A exceção da trigger volta como failed_precondition pelo Translate.
+func (d *DeliveryRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest, idemKey string) (*delivery.PullRequest, error) {
+	if existing, err := d.prByIdemKey(ctx, pr.AccountID, idemKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	var saved *delivery.PullRequest
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO pull_requests (account_id, demand_id, repo_id, repo_name,
+			       source_branch, target_branch, head_commit, url, external_id,
+			       reviewers, idempotency_key)
+			VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, NULLIF($11,''))
+			RETURNING `+prColsBare,
+			pr.AccountID, pr.DemandID, pr.RepoID, pr.Repo,
+			pr.SourceBranch, pr.TargetBranch, pr.HeadCommit, pr.URL, pr.ExternalID,
+			mustJSON(reviewersJSON(pr.Reviewers)), idemKey)
+		var err error
+		saved, err = scanPR(row)
+		if err != nil {
+			return Translate(err, "pull request")
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "delivery", AggregateID: saved.ID,
+			Type: "dop.delivery.pull_request.opened",
+			Payload: mustJSON(map[string]any{
+				"demand_id": saved.DemandID, "repo_id": saved.RepoID,
+				"url": saved.URL, "head_commit": saved.HeadCommit,
+				"source_branch": saved.SourceBranch, "target_branch": saved.TargetBranch,
+			}),
+		})
+	})
+	return saved, err
+}
+
+// prColsBare é o mesmo conjunto de prCols sem o alias — o RETURNING de um
+// INSERT não conhece o alias `p` do SELECT.
+const prColsBare = `id, account_id, demand_id::text, repo_id::text, repo_name,
+	source_branch, target_branch, head_commit, url, external_id,
+	merged, has_conflict, reviewers, created_at, updated_at`
+
+func reviewersJSON(rs []delivery.Reviewer) []reviewerRow {
+	out := make([]reviewerRow, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, reviewerRow{Name: r.Name, Initials: r.Initials, Status: r.Status})
+	}
+	return out
+}
+
+// ─────────────────────────── fila de merge ───────────────────────────
+
+const queueCols = `id, account_id, repo_id::text, demand_id::text, pull_request_id::text,
+	seq, priority, state::text, overlapping_files, conflict, enqueued_at, updated_at`
+
+type conflictRow struct {
+	Files      []string  `json:"files"`
+	BaseCommit string    `json:"base_commit"`
+	Attempts   int       `json:"attempts"`
+	Detail     string    `json:"detail"`
+	ReportedAt time.Time `json:"reported_at"`
+}
+
+func scanQueueEntry(row pgx.Row) (*delivery.MergeQueueEntry, error) {
+	var e delivery.MergeQueueEntry
+	var state string
+	var conflict []byte
+	if err := row.Scan(&e.ID, &e.AccountID, &e.RepoID, &e.DemandID, &e.PullRequestID,
+		&e.Seq, &e.Priority, &state, &e.OverlappingFiles, &conflict,
+		&e.EnqueuedAt, &e.UpdatedAt); err != nil {
+		return nil, err
+	}
+	e.State = delivery.QueueState(state)
+	if len(conflict) > 0 {
+		var c conflictRow
+		if json.Unmarshal(conflict, &c) == nil {
+			e.Conflict = &delivery.ConflictReport{
+				Files: c.Files, BaseCommit: c.BaseCommit, Attempts: c.Attempts,
+				Detail: c.Detail, ReportedAt: c.ReportedAt,
+			}
+		}
+	}
+	return &e, nil
+}
+
+// QueueOfRepo devolve a fila já em (priority, seq) — a mesma ordem que o
+// domínio reaplica. O ORDER BY aqui é conveniência do índice; a REGRA de quem
+// vai antes mora no domínio, onde é testável sem banco.
+func (d *DeliveryRepo) QueueOfRepo(ctx context.Context, accountID, repoID string, includeMerged bool) ([]delivery.MergeQueueEntry, error) {
+	rows, err := d.pool.Query(ctx, `
+		SELECT `+queueCols+`
+		  FROM merge_queue_entries
+		 WHERE account_id = $1 AND repo_id = $2::uuid
+		   AND ($3::bool OR state <> 'merged')
+		 ORDER BY priority, seq`, accountID, repoID, includeMerged)
+	if err != nil {
+		return nil, Translate(err, "fila de merge")
+	}
+	defer rows.Close()
+
+	var out []delivery.MergeQueueEntry
+	for rows.Next() {
+		e, err := scanQueueEntry(rows)
+		if err != nil {
+			return nil, Translate(err, "fila de merge")
+		}
+		out = append(out, *e)
+	}
+	return out, rows.Err()
+}
+
+func (d *DeliveryRepo) QueueEntryByID(ctx context.Context, accountID, id string) (*delivery.MergeQueueEntry, error) {
+	e, err := scanQueueEntry(d.pool.QueryRow(ctx,
+		`SELECT `+queueCols+` FROM merge_queue_entries WHERE id = $1 AND account_id = $2`,
+		id, accountID))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "entrada da fila de merge")
+	}
+	return e, nil
+}
+
+// Enqueue atribui a sequência do repositório SOB LOCK da linha do repositório.
+//
+// É o lock que torna a ordem determinística sob concorrência: sem ele, dois
+// enfileiramentos simultâneos leriam o mesmo MAX(seq) e um dos dois quebraria
+// na UNIQUE (repo_id, seq) — a constraint salvaria a integridade, mas ao preço
+// de um erro que o cliente teria de reprocessar. O mesmo SELECT confirma que o
+// repositório é DA CONTA: project_repos não tem account_id, o vínculo vem por
+// projects.
+func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry, idemKey string) (*delivery.MergeQueueEntry, error) {
+	if existing, err := d.queueByIdemKey(ctx, e.AccountID, idemKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	var saved *delivery.MergeQueueEntry
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		var lockedRepo string
+		err := tx.QueryRow(ctx, `
+			SELECT r.id FROM project_repos r
+			  JOIN projects p ON p.id = r.project_id
+			 WHERE r.id = $1::uuid AND p.account_id = $2
+			 FOR UPDATE OF r`, e.RepoID, e.AccountID).Scan(&lockedRepo)
+		if NoRows(err) {
+			return errs.NotFound("repositório do projeto")
+		}
+		if err != nil {
+			return Translate(err, "repositório do projeto")
+		}
+
+		row := tx.QueryRow(ctx, `
+			INSERT INTO merge_queue_entries (account_id, repo_id, demand_id,
+			       pull_request_id, seq, priority, state, overlapping_files,
+			       enqueued_at, idempotency_key)
+			VALUES ($1, $2::uuid, $3::uuid, $4::uuid,
+			        (SELECT COALESCE(max(seq), 0) + 1 FROM merge_queue_entries WHERE repo_id = $2::uuid),
+			        $5, $6::merge_queue_state, $7, $8, NULLIF($9,''))
+			RETURNING `+queueCols,
+			e.AccountID, e.RepoID, e.DemandID, e.PullRequestID,
+			e.Priority, string(e.State), e.OverlappingFiles, e.EnqueuedAt, idemKey)
+		saved, err = scanQueueEntry(row)
+		if err != nil {
+			// UNIQUE (repo_id, pull_request_id) vira 409: o mesmo PR entrando
+			// duas vezes é retry do cliente, não estado novo.
+			return Translate(err, "entrada da fila de merge")
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "merge_queue", AggregateID: saved.ID,
+			Type: "dop.delivery.merge.enqueued",
+			Payload: mustJSON(map[string]any{
+				"repo_id": saved.RepoID, "demand_id": saved.DemandID,
+				"pull_request_id": saved.PullRequestID,
+				"seq":             saved.Seq, "priority": saved.Priority,
+			}),
+		})
+	})
+	return saved, err
+}
+
+// SetQueueState move a entrada e emite o evento correspondente.
+//
+// Conflito tem tipo de evento PRÓPRIO — é ele que alimenta a caixa de atenção
+// (ADR-0008 §2). Um `state_changed` genérico obrigaria todo consumidor a
+// inspecionar o payload para descobrir que ali havia gente para ser chamada.
+func (d *DeliveryRepo) SetQueueState(ctx context.Context, accountID, entryID string, to delivery.QueueState, c *delivery.ConflictReport, idemKey string) (*delivery.MergeQueueEntry, error) {
+	var saved *delivery.MergeQueueEntry
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		var conflict any
+		if c != nil {
+			conflict = mustJSON(conflictRow{
+				Files: c.Files, BaseCommit: c.BaseCommit, Attempts: c.Attempts,
+				Detail: c.Detail, ReportedAt: c.ReportedAt,
+			})
+		}
+		row := tx.QueryRow(ctx, `
+			UPDATE merge_queue_entries
+			   SET state = $3::merge_queue_state,
+			       conflict = COALESCE($4::jsonb, conflict),
+			       idempotency_key = COALESCE(NULLIF($5,''), idempotency_key),
+			       updated_at = now()
+			 WHERE id = $1 AND account_id = $2
+			 RETURNING `+queueCols,
+			entryID, accountID, string(to), conflict, idemKey)
+		var err error
+		saved, err = scanQueueEntry(row)
+		if err != nil {
+			return Translate(err, "entrada da fila de merge")
+		}
+
+		tipo := "dop.delivery.merge.state_changed"
+		payload := map[string]any{
+			"repo_id": saved.RepoID, "demand_id": saved.DemandID,
+			"pull_request_id": saved.PullRequestID, "state": saved.State,
+			"seq": saved.Seq, "priority": saved.Priority,
+		}
+		if saved.State.NeedsHuman() && saved.Conflict != nil {
+			tipo = "dop.delivery.merge.conflict_escalated"
+			payload["files"] = saved.Conflict.Files
+			payload["base_commit"] = saved.Conflict.BaseCommit
+			payload["attempts"] = saved.Conflict.Attempts
+			payload["detail"] = saved.Conflict.Detail
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "merge_queue", AggregateID: saved.ID,
+			Type: tipo, Payload: mustJSON(payload),
+		})
+	})
+	return saved, err
+}
+
+// ─────────────────────────── diretrizes ───────────────────────────
+
+const directiveCols = `id, account_id, project_id::text, kind::text, summary, payload,
+	affected_demands::text[], options, recommended, status::text,
+	COALESCE(decided_option,''), COALESCE(rationale,''), COALESCE(decided_by::text,''),
+	decided_at, created_at, updated_at`
+
+// As chaves JSON abaixo são as MESMAS que a trigger
+// `assert_diretriz_coordena_sem_pausar` inspeciona. Divergir aqui faria a
+// trigger deixar passar instrução que ela deveria barrar — por isso ficam
+// declaradas em um só lugar.
+type instructionRow struct {
+	DemandID string         `json:"demand_id"`
+	Action   string         `json:"action"`
+	When     string         `json:"when,omitempty"`
+	Payload  map[string]any `json:"payload,omitempty"`
+}
+
+type optionRow struct {
+	Key          string           `json:"key"`
+	Summary      string           `json:"summary"`
+	Instructions []instructionRow `json:"instructions"`
+}
+
+func scanDirective(row pgx.Row) (*delivery.Directive, error) {
+	var d delivery.Directive
+	var kind, status string
+	var payload, options []byte
+	var option, rationale, decidedBy string
+	var decidedAt *time.Time
+	if err := row.Scan(&d.ID, &d.AccountID, &d.ProjectID, &kind, &d.Summary, &payload,
+		&d.AffectedDemands, &options, &d.Recommended, &status,
+		&option, &rationale, &decidedBy, &decidedAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	d.Kind = delivery.DirectiveKind(kind)
+	d.Status = delivery.DirectiveStatus(status)
+	d.Payload = map[string]any{}
+	_ = json.Unmarshal(payload, &d.Payload)
+
+	var opts []optionRow
+	_ = json.Unmarshal(options, &opts)
+	for _, o := range opts {
+		opt := delivery.DirectiveOption{Key: o.Key, Summary: o.Summary}
+		for _, i := range o.Instructions {
+			opt.Instructions = append(opt.Instructions, delivery.Instruction{
+				DemandID: i.DemandID, Action: delivery.DirectiveKind(i.Action),
+				When: i.When, Payload: i.Payload,
+			})
+		}
+		d.Options = append(d.Options, opt)
+	}
+	if decidedAt != nil {
+		d.Decision = &delivery.Decision{
+			Option: option, Rationale: rationale, DecidedBy: decidedBy, DecidedAt: *decidedAt,
+		}
+	}
+	return &d, nil
+}
+
+func (d *DeliveryRepo) ListDirectives(ctx context.Context, accountID, projectID string) ([]delivery.Directive, error) {
+	rows, err := d.pool.Query(ctx, `
+		SELECT `+directiveCols+`
+		  FROM directives
+		 WHERE account_id = $1 AND project_id = $2::uuid
+		 ORDER BY status, created_at DESC`, accountID, projectID)
+	if err != nil {
+		return nil, Translate(err, "diretrizes")
+	}
+	defer rows.Close()
+
+	var out []delivery.Directive
+	for rows.Next() {
+		dir, err := scanDirective(rows)
+		if err != nil {
+			return nil, Translate(err, "diretrizes")
+		}
+		out = append(out, *dir)
+	}
+	return out, rows.Err()
+}
+
+func (d *DeliveryRepo) DirectiveByID(ctx context.Context, accountID, id string) (*delivery.Directive, error) {
+	dir, err := scanDirective(d.pool.QueryRow(ctx,
+		`SELECT `+directiveCols+` FROM directives WHERE id = $1 AND account_id = $2`, id, accountID))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "diretriz")
+	}
+	return dir, nil
+}
+
+// CreateDirective é o techlead acionando a caixa de atenção com item de
+// decisão pronto (ADR-0015 §3) — daí o evento próprio.
+func (d *DeliveryRepo) CreateDirective(ctx context.Context, dir *delivery.Directive, idemKey string) (*delivery.Directive, error) {
+	if existing, err := d.directiveByIdemKey(ctx, dir.AccountID, idemKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	var saved *delivery.Directive
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO directives (account_id, project_id, kind, summary, payload,
+			       affected_demands, options, recommended, status, idempotency_key)
+			VALUES ($1, $2::uuid, $3::directive_kind, $4, $5, $6::uuid[], $7, $8,
+			        'proposed', NULLIF($9,''))
+			RETURNING `+directiveCols,
+			dir.AccountID, dir.ProjectID, string(dir.Kind), dir.Summary,
+			mustJSON(dir.Payload), dir.AffectedDemands,
+			mustJSON(optionsJSON(dir.Options)), dir.Recommended, idemKey)
+		var err error
+		saved, err = scanDirective(row)
+		if err != nil {
+			return Translate(err, "diretriz")
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "directive", AggregateID: saved.ID,
+			Type: "dop.delivery.directive.proposed",
+			Payload: mustJSON(map[string]any{
+				"project_id": saved.ProjectID, "kind": saved.Kind,
+				"summary": saved.Summary, "recommended": saved.Recommended,
+				"options": chavesDasOpcoes(saved.Options), "demands": saved.AffectedDemands,
+			}),
+		})
+	})
+	return saved, err
+}
+
+// DecideDirective grava a decisão E aplica, na MESMA transação, a única
+// coordenação que a entrega sabe executar sozinha: a ordem preferencial na fila
+// (ADR-0015 §6).
+//
+// Repare no que o UPDATE da fila faz e no que NÃO faz: mexe em `priority`. Não
+// há coluna de demanda para tocar, não há estado de demanda a mudar — a
+// coordenação reordena o merge e a demanda que perdeu a vez continua correndo.
+// As demais instruções viajam no evento, para quem é dono delas.
+func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string, dec delivery.Decision, ins []delivery.Instruction, idemKey string) (*delivery.Directive, error) {
+	var saved *delivery.Directive
+	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			UPDATE directives
+			   SET status = 'decided', decided_option = $3, rationale = $4,
+			       decided_by = NULLIF($5,'')::uuid, decided_at = $6,
+			       idempotency_key = COALESCE(NULLIF($7,''), idempotency_key),
+			       updated_at = now()
+			 WHERE id = $1 AND account_id = $2 AND status = 'proposed'
+			 RETURNING `+directiveCols,
+			id, accountID, dec.Option, dec.Rationale, dec.DecidedBy, dec.DecidedAt, idemKey)
+		var err error
+		saved, err = scanDirective(row)
+		if err != nil {
+			return Translate(err, "diretriz")
+		}
+
+		for _, i := range ins {
+			if i.Action != delivery.DirectiveMergeOrder {
+				continue
+			}
+			prioridade, ok := numero(i.Payload["priority"])
+			if !ok {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE merge_queue_entries
+				   SET priority = $3, updated_at = now()
+				 WHERE account_id = $1 AND demand_id = $2::uuid AND state <> 'merged'`,
+				accountID, i.DemandID, prioridade); err != nil {
+				return Translate(err, "ordem da fila de merge")
+			}
+		}
+
+		return Emit(ctx, tx, ports.Event{
+			AccountID: saved.AccountID, Aggregate: "directive", AggregateID: saved.ID,
+			Type: "dop.delivery.directive.decided",
+			Payload: mustJSON(map[string]any{
+				"project_id": saved.ProjectID, "kind": saved.Kind,
+				"option": dec.Option, "rationale": dec.Rationale,
+				"decided_by": dec.DecidedBy, "actor_kind": dec.ActorKind,
+				// As instruções viajam no evento: é assim que a coordenação
+				// chega às demandas sem que a entrega escreva no estado delas.
+				"instructions": instructionsJSON(ins),
+			}),
+		})
+	})
+	return saved, err
+}
+
+// ─────────────────────────── auxiliares ───────────────────────────
+
+func optionsJSON(opts []delivery.DirectiveOption) []optionRow {
+	out := make([]optionRow, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, optionRow{
+			Key: o.Key, Summary: o.Summary, Instructions: instructionsJSON(o.Instructions),
+		})
+	}
+	return out
+}
+
+func instructionsJSON(ins []delivery.Instruction) []instructionRow {
+	out := make([]instructionRow, 0, len(ins))
+	for _, i := range ins {
+		out = append(out, instructionRow{
+			DemandID: i.DemandID, Action: string(i.Action), When: i.When, Payload: i.Payload,
+		})
+	}
+	return out
+}
+
+func chavesDasOpcoes(opts []delivery.DirectiveOption) []string {
+	out := make([]string, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, o.Key)
+	}
+	return out
+}
+
+// numero aceita o que vier do Struct do contrato: JSON não tem int, e o
+// payload da instrução passa por jsonb no caminho de volta.
+func numero(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
+}
+
+// ── releitura por chave de idempotência ──
+//
+// A repetição é lida ANTES de escrever. O índice único parcial por conta é o
+// que garante que duas tentativas simultâneas não criem duas linhas; esta
+// leitura é o que faz a segunda tentativa devolver a MESMA resposta em vez de
+// um conflito que o cliente teria de interpretar.
+
+func (d *DeliveryRepo) prByIdemKey(ctx context.Context, accountID, idemKey string) (*delivery.PullRequest, error) {
+	if idemKey == "" {
+		return nil, nil
+	}
+	pr, err := scanPR(d.pool.QueryRow(ctx,
+		`SELECT `+prCols+` FROM pull_requests p
+		  WHERE p.account_id = $1 AND p.idempotency_key = $2`, accountID, idemKey))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "pull request")
+	}
+	return pr, nil
+}
+
+func (d *DeliveryRepo) queueByIdemKey(ctx context.Context, accountID, idemKey string) (*delivery.MergeQueueEntry, error) {
+	if idemKey == "" {
+		return nil, nil
+	}
+	e, err := scanQueueEntry(d.pool.QueryRow(ctx,
+		`SELECT `+queueCols+` FROM merge_queue_entries
+		  WHERE account_id = $1 AND idempotency_key = $2`, accountID, idemKey))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "entrada da fila de merge")
+	}
+	return e, nil
+}
+
+func (d *DeliveryRepo) directiveByIdemKey(ctx context.Context, accountID, idemKey string) (*delivery.Directive, error) {
+	if idemKey == "" {
+		return nil, nil
+	}
+	dir, err := scanDirective(d.pool.QueryRow(ctx,
+		`SELECT `+directiveCols+` FROM directives
+		  WHERE account_id = $1 AND idempotency_key = $2`, accountID, idemKey))
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "diretriz")
+	}
+	return dir, nil
+}
+
+var _ delivery.Repository = (*DeliveryRepo)(nil)

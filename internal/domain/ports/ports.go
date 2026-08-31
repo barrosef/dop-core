@@ -162,6 +162,189 @@ type EventBus interface {
 	Close() error
 }
 
+// ───────────────────────── SandboxLauncher ─────────────────────────
+
+// IsolationTier é o nível de isolamento do substrato onde a demanda executa.
+//
+// É DECLARADO, nunca presumido. Quem provisiona diz qual quer; o launcher
+// entrega EXATAMENTE aquele ou recusa. Não existe degradação silenciosa: um
+// sandbox que pediu microVM e recebeu container continua parecendo saudável, e
+// a diferença só aparece no dia do incidente. RuntimeClass de Kata falta na
+// maioria das distribuições (spec do substrato §2 e R-4) — por isso a ausência
+// precisa virar recusa com mensagem, não um nível a menos sem aviso.
+type IsolationTier string
+
+const (
+	TierUnspecified    IsolationTier = ""
+	TierHardware       IsolationTier = "hardware"        // Kata/Firecracker — microVM
+	TierKernelEmulated IsolationTier = "kernel_emulated" // gVisor / Edera
+	TierNamespace      IsolationTier = "namespace"       // container com securityContext estrito
+)
+
+func ValidIsolationTier(t IsolationTier) bool {
+	switch t {
+	case TierHardware, TierKernelEmulated, TierNamespace:
+		return true
+	}
+	return false
+}
+
+// SandboxWorkspacePath é onde o workspace da demanda é montado DENTRO do
+// sandbox, idêntico em todo adaptador.
+//
+// É constante da PORTA, e não campo da spec, porque é o único caminho cuja
+// sobrevivência à suspensão é prometida. Se cada adaptador escolhesse o seu,
+// "o trabalho sobrevive ao suspender" viraria promessa que depende de qual
+// implantação atendeu a chamada — que é exatamente o tipo de diferença que a
+// suíte de contrato existe para não deixar passar.
+const SandboxWorkspacePath = "/workspace"
+
+// SandboxHandle identifica um sandbox JÁ provisionado. O ID é do domínio: o
+// adaptador nunca inventa identidade, só a carimba no que cria.
+type SandboxHandle struct {
+	ID        string
+	Namespace string // dop-<id-curto> — um por demanda (spec §1)
+}
+
+// SandboxSpec é tudo o que o substrato precisa para materializar um sandbox.
+// Repare no que NÃO está aqui: nada de kubeconfig, socket, runtimeClassName,
+// nome de imagem de registry interno ou limite de cgroup. Isso é vocabulário de
+// fornecedor e mora do lado de lá da porta.
+type SandboxSpec struct {
+	SandboxHandle
+	AccountID string
+	DemandID  string
+	Tier      IsolationTier
+	Image     string
+	// Command vazio = entrypoint da imagem. Existe porque o substrato precisa
+	// ser exercitável com uma imagem genérica na suíte de contrato — sem ele,
+	// provar as garantias exigiria uma imagem de devbox publicada, e a suíte
+	// deixaria de rodar no laptop de quem mexe no adaptador.
+	Command []string
+	Env     map[string]string
+}
+
+// SandboxPhase é o que o SUBSTRATO enxerga. Não é o estado do domínio: aqui não
+// existe "destruído", porque para o launcher destruído e nunca existido são a
+// mesma coisa — a memória de um sandbox destruído vive no Postgres.
+type SandboxPhase string
+
+const (
+	PhaseProvisioning SandboxPhase = "provisioning"
+	PhaseActive       SandboxPhase = "active"
+	PhaseSuspended    SandboxPhase = "suspended"
+)
+
+// SandboxEndpoint é uma porta publicada pela pilha da demanda.
+//
+// Não tem URL de propósito: a URL é `<serviço>--<demanda>.<domínio>` (spec §5),
+// e o domínio do ingress é política da instalação, não fato do substrato. Se
+// cada adaptador montasse a URL, a mesma regra de nomeação existiria em dois
+// lugares e divergiria no primeiro dia em que o domínio mudasse.
+type SandboxEndpoint struct {
+	Name  string
+	Port  int32
+	State string // running | stopped
+}
+
+type SandboxStatus struct {
+	// Phase e Tier são o que o substrato ESTÁ entregando agora — não o que foi
+	// pedido. É essa distinção que torna "declarado, nunca presumido"
+	// verificável depois do provisionamento, e não só no momento dele.
+	Phase     SandboxPhase
+	Tier      IsolationTier
+	Endpoints []SandboxEndpoint
+}
+
+// LogQuery seleciona o que sair pelo Tail. Service nomeia um processo DENTRO do
+// sandbox (contêiner do pod, serviço do compose); vazio = o processo principal.
+type LogQuery struct {
+	Service   string
+	TailLines int  // 0 = tudo o que o substrato ainda guarda
+	Follow    bool // false = devolve o que já existe e retorna
+}
+
+// LogLine é uma linha crua do substrato. Classificação de origem (app, test,
+// infra) NÃO está aqui: é convenção do que roda dentro do sandbox, e mora no
+// domínio, onde muda em um lugar só.
+type LogLine struct {
+	Service string
+	// Stream é stdout ou stderr — quando o substrato separa os dois. O
+	// Kubernetes não separa (funde tudo no log do contêiner) e devolve sempre
+	// "stdout"; o Docker separa. Por isso a suíte de contrato não promete nada
+	// sobre este campo: quem depender dele estará dependendo do adaptador.
+	Stream string
+	Text   string
+	At     time.Time
+}
+
+// SandboxLauncher é o substrato onde a demanda executa: microVM ou contêiner
+// com o agente, o workspace e um Docker interno (spec do substrato §1).
+//
+// Duas coisas vivem dentro de um sandbox, e a porta inteira gira em torno da
+// diferença entre elas: a EXECUÇÃO, efêmera e barata de recriar, e o WORKSPACE,
+// que é o trabalho da demanda e não se recria. Suspender derruba a primeira e
+// preserva o segundo; destruir leva os dois e não volta.
+//
+// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+//
+//  1. Launch entrega o tier PEDIDO ou falha. Status.Tier é sempre igual a
+//     Spec.Tier quando o erro é nil — degradar em silêncio é proibido, e um
+//     tier que o substrato não oferece vira KindPrecondition com mensagem
+//     dizendo o que falta;
+//  2. tier recusado NÃO deixa rastro: depois da recusa, Describe devolve
+//     KindNotFound. Recusa que provisiona metade é pior que recusa nenhuma;
+//  3. SupportedTiers responde o que ESTE substrato oferece agora — é o que
+//     permite ao domínio recusar antes de gravar estado. Nunca devolve lista
+//     vazia sem erro: substrato que não oferece nível nenhum é substrato
+//     indisponível (KindUnavailable);
+//  4. Launch é IDEMPOTENTE por SandboxHandle.ID: relançar a mesma spec devolve
+//     o sandbox existente em vez de criar um segundo. Sem isso, um retry de
+//     rede duplicaria microVM — e a conta chega no fim do mês;
+//  5. Suspend derruba a execução e PRESERVA tudo o que está sob
+//     SandboxWorkspacePath. Nada FORA desse caminho é prometido: o adaptador
+//     k8s apaga o pod inteiro na suspensão e só o PVC sobrevive, enquanto o
+//     Docker mantém a camada gravável do contêiner. Prometer o que só um
+//     cumpre seria a abstração vazando;
+//  6. Resume recria a execução SOBRE o workspace existente e devolve a fase
+//     ativa. Depois de Resume, o que estava no workspace continua lá;
+//  7. Suspend e Resume são idempotentes: suspender suspenso e retomar ativo
+//     não erram e não mudam nada;
+//  8. Destroy é IRREVERSÍVEL e idempotente: leva execução e workspace, e
+//     destruir o que não existe devolve nil. Depois dele, Describe devolve
+//     KindNotFound e Resume RECUSA — não há caminho de volta pela porta;
+//  9. Describe, Suspend e Resume de sandbox inexistente devolvem KindNotFound.
+//     Só Destroy trata ausência como sucesso, porque só nele a ausência é o
+//     resultado desejado;
+//  10. sandboxes coexistem sem interferência: operação em um jamais altera ou
+//     revela o outro, mesmo com a mesma imagem e o mesmo comando (spec §1);
+//  11. Tail entrega as linhas do sandbox e MORRE JUNTO com o chamador: com o
+//     contexto cancelado, retorna sem erro e sem deixar goroutine viva. Com
+//     Follow=false, retorna ao fim do que existe;
+//  12. erro do emit interrompe o Tail e sobe — é como o servidor descobre que
+//     o cliente sumiu.
+//
+// FORA da porta, de propósito:
+//
+//   - EXEC dentro do sandbox. O k8s exige upgrade de conexão (SPDY/WebSocket)
+//     com semântica própria de stream; o Docker usa hijack de HTTP. O terminal
+//     do dev é PTY do dop-app (spec §5) e não passa por aqui;
+//   - SNAPSHOT/restauração de microVM. O suporte no Kata é limitado e o desenho
+//     não depende dele (spec §3): entraria como capacidade que o domínio
+//     acabaria assumindo existir;
+//   - LIMITES de cpu/memória. Não mapeiam entre um cgroup do Docker e um
+//     ResourceQuota de namespace com LimitRange sem virar o denominador comum
+//     do primeiro fornecedor que inspirou a porta.
+type SandboxLauncher interface {
+	SupportedTiers(ctx context.Context) ([]IsolationTier, error)
+	Launch(ctx context.Context, spec SandboxSpec) (*SandboxStatus, error)
+	Suspend(ctx context.Context, h SandboxHandle) error
+	Resume(ctx context.Context, spec SandboxSpec) (*SandboxStatus, error)
+	Destroy(ctx context.Context, h SandboxHandle) error
+	Describe(ctx context.Context, h SandboxHandle) (*SandboxStatus, error)
+	Tail(ctx context.Context, h SandboxHandle, q LogQuery, emit func(LogLine) error) error
+}
+
 // ───────────────────────── Clock e IDs ─────────────────────────
 // Pequenas, mas reais: é o que torna o domínio determinístico em teste.
 
