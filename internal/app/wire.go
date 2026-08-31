@@ -14,6 +14,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/config"
@@ -29,6 +30,7 @@ type Deps struct {
 	Secrets  ports.SecretStore
 	Objects  ports.ObjectStore
 	Identity ports.IdentityProvider
+	Launcher ports.SandboxLauncher
 	Cfg      *config.Config
 }
 
@@ -65,6 +67,22 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
+	// O substrato de execução também é porta com dois adaptadores REAIS
+	// (ADR-0001): Docker para o desenvolvimento local sem cluster, k8s para o
+	// cluster de execução. Os dois passam pela mesma suíte de contrato.
+	var launcher ports.SandboxLauncher
+	switch cfg.SandboxBackend {
+	case "docker":
+		launcher = sandbox.NewDocker(sandbox.DockerConfig{Socket: cfg.DockerSocket})
+	default:
+		launcher = sandbox.NewK8s(sandbox.K8sConfig{
+			APIServer:     cfg.K8sAPIServer,
+			Token:         cfg.K8sToken,
+			WorkspaceSize: cfg.WorkspaceSize,
+			StorageClass:  cfg.StorageClass,
+		})
+	}
+
 	// Ponte STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST (ADR-0020).
 	// Sem ela, upload local vai para o bucket REAL.
 	if ep := objectstore.ResolveEmulatorHost(); ep != "" {
@@ -77,7 +95,8 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		log.Info("identidade apontada para o emulador do Firebase Auth")
 	}
 
-	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects, Identity: idp, Cfg: cfg}
+	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
+		Identity: idp, Launcher: launcher, Cfg: cfg}
 	cleanup := func() {
 		_ = bus.Close()
 		pool.Close()

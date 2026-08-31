@@ -21,6 +21,17 @@ type Config struct {
 	// Escolha de adaptadores por ambiente.
 	SecretBackend string // k8s | gcp | memory
 	ObjectBackend string // gcs (real ou emulado)
+	// SandboxBackend escolhe o substrato de execução. Docker é o caminho do
+	// desenvolvimento local sem cluster; k8s é o do cluster de execução.
+	SandboxBackend string // k8s | docker
+	DockerSocket   string
+	WorkspaceSize  string
+	StorageClass   string
+
+	// DevboxImage roda como usuário arbitrário NÃO-root desde a primeira
+	// imagem: OKD recusa root por SCC, e isso é requisito de imagem.
+	DevboxImage   string
+	IngressDomain string
 
 	K8sAPIServer string
 	K8sNamespace string
@@ -44,6 +55,12 @@ func Load(mode string) (*Config, error) {
 		NATSUrl:         env("NATS_URL", "nats://nats.dop-local.svc:4222"),
 		SecretBackend:   env("SECRET_BACKEND", "k8s"),
 		ObjectBackend:   env("OBJECT_BACKEND", "gcs"),
+		SandboxBackend:  env("SANDBOX_BACKEND", "k8s"),
+		DockerSocket:    env("DOCKER_SOCKET", "/var/run/docker.sock"),
+		WorkspaceSize:   env("SANDBOX_WORKSPACE_SIZE", "10Gi"),
+		StorageClass:    env("SANDBOX_STORAGE_CLASS", ""),
+		DevboxImage:     env("DEVBOX_IMAGE", "dop-registry:5000/dop/devbox:0.1.0"),
+		IngressDomain:   env("INGRESS_DOMAIN", "localtest.me:8080"),
 		K8sAPIServer:    env("KUBERNETES_API", "https://kubernetes.default.svc"),
 		K8sNamespace:    env("SECRET_NAMESPACE", "dop-local"),
 		StorageBucket:   env("STORAGE_BUCKET", "dop-local.firebasestorage.app"),

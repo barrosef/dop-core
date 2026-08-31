@@ -15,6 +15,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
+	"github.com/Digital-Business-One/dop-core/internal/domain/execution"
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
@@ -97,6 +98,21 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 
 	deliverySvc := delivery.NewService(postgres.NewDeliveryRepo(deps.Pool), deliveryDemands{demandSvc}, relogio)
 	dopv1.RegisterDeliveryServiceServer(srv, appgrpc.NewDeliveryServer(deliverySvc))
+
+	// O launcher chega já escolhido por configuração (wire.go): o domínio
+	// provisiona sandbox sem saber se o substrato é Docker ou Kubernetes.
+	executionSvc := execution.NewService(
+		postgres.NewExecutionRepo(deps.Pool),
+		deps.Launcher,
+		identitySvc,
+		executionDemands{demandSvc},
+		relogio,
+		execution.Config{
+			DevboxImage:   deps.Cfg.DevboxImage,
+			IngressDomain: deps.Cfg.IngressDomain,
+		},
+	)
+	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
 	return nil
 }

@@ -184,3 +184,20 @@ func (a deliveryDemands) Demand(ctx context.Context, _ string, id string) (*deli
 		Active:    dm.Status != demand.StatusDelivered,
 	}, nil
 }
+
+// ── demand → execution ──────────────────────────────────────────────────────
+
+// executionDemands responde de quem é a demanda, e só isso.
+//
+// Demanda inexistente e demanda de OUTRA conta chegam aqui como o MESMO erro,
+// porque `demand.Service.Get` já filtra por conta: distinguir os dois casos
+// vazaria a existência de ids alheios para quem ficasse tentando.
+type executionDemands struct{ d *demand.Service }
+
+func (a executionDemands) DemandAccount(ctx context.Context, demandID string) (string, error) {
+	dm, err := a.d.Get(ctx, demandID)
+	if err != nil {
+		return "", err
+	}
+	return dm.AccountID, nil
+}

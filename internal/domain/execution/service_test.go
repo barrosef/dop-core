@@ -168,6 +168,34 @@ func TestChaveDeIdempotenciaNaoDuplicaSandbox(t *testing.T) {
 	}
 }
 
+// TestProvisionamentoInterrompidoERetomado cobre a queda entre as DUAS
+// transações do provisionamento: a linha ficou em provisioning e o substrato
+// nunca subiu. A repetição precisa terminar o serviço, não devolver ao cliente
+// um sandbox pela metade que ninguém mais conserta.
+func TestProvisionamentoInterrompidoERetomado(t *testing.T) {
+	f := novoCenario(t)
+	f.launcher.falhasNoLaunch = 1
+
+	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, ""); err == nil {
+		t.Fatal("a primeira tentativa deveria ter falhado")
+	}
+	meio := f.repo.only(t)
+	if meio.State != execution.StateProvisioning {
+		t.Fatalf("o rastro da tentativa sumiu: estado %q", meio.State)
+	}
+
+	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	if err != nil {
+		t.Fatalf("a repetição deveria terminar o provisionamento: %v", err)
+	}
+	if sb.ID != meio.ID {
+		t.Errorf("a repetição criou outro sandbox: %s != %s", sb.ID, meio.ID)
+	}
+	if sb.State != execution.StateActive {
+		t.Errorf("estado após retomar o provisionamento: %q", sb.State)
+	}
+}
+
 func TestUmaDemandaUmSandbox(t *testing.T) {
 	f := novoCenario(t)
 	a, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
@@ -684,14 +712,15 @@ func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSecon
 // ── launcher ─────────────────────────────────────────────────────────────────
 
 type launcherFalso struct {
-	tiers    []ports.IsolationTier
-	entrega  ports.IsolationTier // vazio = entrega o que foi pedido
-	sumiu    bool
-	linhas   []ports.LogLine
-	launches int
-	resumes  int
-	destroys int
-	fases    map[string]ports.SandboxPhase
+	falhasNoLaunch int
+	tiers          []ports.IsolationTier
+	entrega        ports.IsolationTier // vazio = entrega o que foi pedido
+	sumiu          bool
+	linhas         []ports.LogLine
+	launches       int
+	resumes        int
+	destroys       int
+	fases          map[string]ports.SandboxPhase
 }
 
 func (l *launcherFalso) tierEntregue(pedido ports.IsolationTier) ports.IsolationTier {
@@ -707,6 +736,10 @@ func (l *launcherFalso) SupportedTiers(context.Context) ([]ports.IsolationTier, 
 
 func (l *launcherFalso) Launch(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	l.launches++
+	if l.falhasNoLaunch > 0 {
+		l.falhasNoLaunch--
+		return nil, errs.New(errs.KindUnavailable, "o substrato não respondeu")
+	}
 	if l.fases == nil {
 		l.fases = map[string]ports.SandboxPhase{}
 	}

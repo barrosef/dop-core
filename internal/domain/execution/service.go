@@ -150,7 +150,14 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 				"a demanda já tem sandbox com isolamento %q; destrua-o antes de pedir %q",
 				live.Tier, tier)
 		}
-		return live, nil
+		// Linha em provisioning é rastro de uma tentativa que não terminou —
+		// uma queda entre as duas transações. Devolvê-la como está entregaria
+		// ao cliente um sandbox pela metade que nunca mais seria consertado;
+		// retomar dali é o que torna a segunda transação idempotente de fato.
+		if live.State != StateProvisioning {
+			return live, nil
+		}
+		return s.finishProvision(ctx, accountID, live, tier)
 	}
 
 	if err := s.requireTierSupported(ctx, tier); err != nil {
@@ -172,7 +179,14 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 		return nil, err
 	}
 
-	status, err := s.launcher.Launch(ctx, s.specFor(created))
+	return s.finishProvision(ctx, accountID, created, tier)
+}
+
+// finishProvision executa a SEGUNDA metade do provisionamento: sobe o sandbox e
+// registra o que o substrato entregou. Vive separada porque é exatamente o
+// trecho que precisa ser refeito quando a primeira tentativa morreu no meio.
+func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
+	status, err := s.launcher.Launch(ctx, s.specFor(sb))
 	if err != nil {
 		// A linha fica em provisioning de propósito: ela é o rastro de que
 		// alguém tentou. Apagá-la aqui esconderia um sandbox meio subido.
@@ -181,15 +195,14 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 	if status.Tier != tier {
 		// O adaptador quebrou a garantia 1 da porta. Desfazer é obrigatório:
 		// entregar isolamento diferente do declarado é pior que não entregar.
-		_ = s.launcher.Destroy(ctx, created.Handle())
-		_, _ = s.repo.Transition(ctx, accountID, created.ID, DestroyTransition)
+		_ = s.launcher.Destroy(ctx, sb.Handle())
+		_, _ = s.repo.Transition(ctx, accountID, sb.ID, DestroyTransition)
 		return nil, errs.Internal(
 			"o substrato entregou isolamento %q para um pedido de %q — sandbox descartado",
 			status.Tier, tier)
 	}
-
-	return s.repo.MarkProvisioned(ctx, accountID, created.ID, status.Tier,
-		s.endpoints(created.DemandID, status.Endpoints))
+	return s.repo.MarkProvisioned(ctx, accountID, sb.ID, status.Tier,
+		s.endpoints(sb.DemandID, status.Endpoints))
 }
 
 // requireTierSupported traduz "esse cluster não tem Kata" em recusa com
@@ -324,10 +337,11 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(status.Endpoints) > 0 {
-		return s.repo.MarkProvisioned(ctx, accountID, sb.ID, sb.Tier,
-			s.endpoints(sb.DemandID, status.Endpoints))
-	}
+	// Os endpoints do retorno vêm do substrato, mas NÃO são regravados: fazer
+	// isso emitiria um segundo "provisionado" para um sandbox que só foi
+	// retomado, e toda projeção passaria a contar dois provisionamentos onde
+	// houve um. Endpoint é estado corrente, lido pelo Describe.
+	resumed.Endpoints = s.endpoints(sb.DemandID, status.Endpoints)
 	return resumed, nil
 }
 
@@ -404,6 +418,14 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
+// streamTailLines é quanto de histórico acompanha a reconexão.
+//
+// Sem teto, abrir os logs de um sandbox que roda há horas despejaria o log
+// inteiro antes da primeira linha nova — e o dev que só queria ver o que está
+// acontecendo agora esperaria por megabytes. O histórico profundo é assunto da
+// projeção de timeline, não deste fluxo.
+const streamTailLines = 500
+
 // Emitter entrega uma linha ao cliente. Erro dele encerra o fluxo — é como o
 // servidor descobre que o cliente sumiu.
 type Emitter func(LogLine) error
@@ -439,7 +461,7 @@ func (s *Service) StreamLogs(ctx context.Context, sandboxID string, f LogFilter,
 	}
 
 	return s.launcher.Tail(ctx, sb.Handle(),
-		ports.LogQuery{Service: f.Service, Follow: true},
+		ports.LogQuery{Service: f.Service, Follow: true, TailLines: streamTailLines},
 		func(raw ports.LogLine) error {
 			src, tt, text := Classify(raw.Text)
 			line := LogLine{
