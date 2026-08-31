@@ -53,10 +53,30 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 
 	// ── escolha dos adaptadores por configuração ──
+	// closers acumula o que precisa ser fechado no cleanup do processo.
+	var closers []func() error
+
 	var secrets ports.SecretStore
 	switch cfg.SecretBackend {
 	case "memory":
 		secrets = secretstore.NewMemory()
+	case "gcp":
+		// A garantia 1 da porta (leitura-após-escrita) NÃO é cumprível no GCP
+		// real com este desenho — ver ADR-0021. O adaptador confirma por número
+		// de versão, que é forte, e depois espera o alias `latest` alcançar;
+		// se não convergir, recusa com KindUnavailable em vez de devolver
+		// "não existe" para uma credencial que acabou de ser gravada.
+		gcp, err := secretstore.NewGCP(ctx, secretstore.GCPConfig{
+			ProjectID:   cfg.SecretProject,
+			Endpoint:    cfg.SecretEndpoint,
+			Propagation: cfg.SecretPropagation,
+		})
+		if err != nil {
+			pool.Close()
+			return nil, nil, err
+		}
+		closers = append(closers, gcp.Close)
+		secrets = gcp
 	default: // k8s — usado no local e em self-hosted; não há emulador do Secret Manager
 		// Sem Client: quem sabe que o apiserver usa a CA do cluster é o
 		// adaptador, não o composition root. O campo existe para teste.
@@ -119,6 +139,12 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
 		Identity: idp, Launcher: launcher, Cfg: cfg}
 	cleanup := func() {
+		// Adaptadores que abrem conexão própria registram o fechamento aqui.
+		// A porta não tem Close — fechar é preocupação de quem MONTA, não do
+		// domínio, que não deve saber que existe conexão no meio.
+		for _, fechar := range closers {
+			_ = fechar()
+		}
 		_ = bus.Close()
 		pool.Close()
 	}

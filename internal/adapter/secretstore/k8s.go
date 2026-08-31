@@ -11,8 +11,10 @@ package secretstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -79,9 +81,36 @@ func defaultClient() *http.Client {
 // secretName mapeia a referência lógica para um nome de Secret válido.
 // O isolamento entre contas está no nome — referência da conta A jamais
 // resolve segredo da conta B (garantia 5 do contrato).
+// secretName mapeia a referência lógica para um nome de Secret válido.
+//
+// O isolamento entre contas está no NOME (garantia 5 da porta), e por isso ele
+// termina numa impressão digital da tupla CRUA.
+//
+// Sem ela havia colisão de verdade: `sanitize` emite `-`, o mesmo caractere que
+// separava os campos, então {conta:"a-b", tipo:"c"} e {conta:"a", tipo:"b-c"}
+// produziam o MESMO Secret — `dop-a-b-c-d` para os dois. Uma conta leria o
+// segredo da outra. Trocar o separador não resolve: `sanitize` transforma
+// qualquer caractere fora do alfabeto no separador, seja ele qual for. Só o
+// hash da tupla original torna a garantia uma propriedade, e não uma aposta no
+// formato dos identificadores.
+//
+// O prefixo legível continua porque `kubectl get secret` sem ele é ilegível.
 func (k *K8s) secretName(ref ports.SecretRef) string {
-	return fmt.Sprintf("dop-%s-%s-%s",
-		sanitize(ref.AccountID), sanitize(ref.Kind), sanitize(ref.OwnerID))
+	return fmt.Sprintf("dop-%s-%s-%s-%s",
+		sanitize(ref.AccountID), sanitize(ref.Kind), sanitize(ref.OwnerID),
+		fingerprintK8s(ref))
+}
+
+// fingerprintK8s distingue tuplas que sanitize confundiria. O COMPRIMENTO de
+// cada campo entra no hash: sem ele, {"ab",""} e {"a","b"} colidiriam de novo,
+// agora por concatenação.
+func fingerprintK8s(r ports.SecretRef) string {
+	h := sha256.New()
+	for _, s := range []string{r.AccountID, r.Kind, r.OwnerID} {
+		fmt.Fprintf(h, "%d:", len(s))
+		_, _ = h.Write([]byte(s))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func sanitize(s string) string {

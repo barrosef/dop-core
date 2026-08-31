@@ -8,17 +8,50 @@ package contract
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strconv"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
 // SecretStoreSuite verifica as seis garantias documentadas na porta.
+// refSeq garante unicidade mesmo dentro do mesmo nanossegundo.
+var refSeq atomic.Int64
+
 func SecretStoreSuite(t *testing.T, name string, newStore func(t *testing.T) ports.SecretStore) {
 	t.Run(name, func(t *testing.T) {
-		refA := ports.SecretRef{AccountID: "acct-a", Kind: "integration_credential", OwnerID: "res-1"}
-		refB := ports.SecretRef{AccountID: "acct-b", Kind: "integration_credential", OwnerID: "res-1"}
+		// Contas ÚNICAS por execução, e não literais fixos.
+		//
+		// A primeira versão usava "acct-a"/"acct-b" fixos, e a suíte passava —
+		// contra o duplo em memória, onde `newStore` devolve um cofre novo a
+		// cada subteste. Contra um backend REAL, `newStore` devolve um cliente
+		// novo para o MESMO cofre, e o segredo gravado no subteste 1 fazia o
+		// subteste de `Exists` falhar por encontrar o que ele mesmo deixara.
+		//
+		// Era a suíte escrita em cima do duplo: ela verificava a porta, mas
+		// carregava junto uma suposição que só o duplo cumpria. Adaptador real
+		// nenhum passaria — e nenhum estava sendo rodado, o que fechava o
+		// círculo.
+		//
+		// Limpar no fim não bastaria: subteste que falha no meio deixa
+		// resíduo, e a execução seguinte falharia por causa da anterior.
+		id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), refSeq.Add(1))
+		refA := ports.SecretRef{AccountID: "acct-a-" + id, Kind: "integration_credential", OwnerID: "res-1"}
+		refB := ports.SecretRef{AccountID: "acct-b-" + id, Kind: "integration_credential", OwnerID: "res-1"}
 		val := ports.SecretValue("token-super-secreto")
+
+		// A limpeza pega o cofre AGORA, não no fim: `newStore` pode pular a
+		// suíte quando a infra não responde, e pular dentro de um Cleanup
+		// marcaria o teste como SKIP depois de todos os subtestes terem
+		// PASSADO — saída que mente sobre o que aconteceu.
+		limpeza := newStore(t)
+		t.Cleanup(func() {
+			_ = limpeza.Delete(context.Background(), refA)
+			_ = limpeza.Delete(context.Background(), refB)
+		})
 
 		t.Run("1_leitura_apos_escrita_imediata", func(t *testing.T) {
 			s := newStore(t)
@@ -99,11 +132,19 @@ func SecretStoreSuite(t *testing.T, name string, newStore func(t *testing.T) por
 		t.Run("exists_reflete_estado", func(t *testing.T) {
 			s := newStore(t)
 			ctx := context.Background()
-			if ok, _ := s.Exists(ctx, refA); ok {
+			// Referência PRÓPRIA: este é o único subteste que afirma algo
+			// sobre a AUSÊNCIA, e `refA` já foi gravada pelos anteriores. No
+			// duplo isso não aparecia porque cada subteste ganhava um cofre
+			// novo; num cofre real, ausência exige uma chave que ninguém tocou.
+			refNova := refA
+			refNova.OwnerID = "res-exists-" + strconv.FormatInt(refSeq.Add(1), 10)
+			t.Cleanup(func() { _ = s.Delete(context.Background(), refNova) })
+
+			if ok, _ := s.Exists(ctx, refNova); ok {
 				t.Fatal("Exists deveria ser falso antes do Put")
 			}
-			_ = s.Put(ctx, refA, val)
-			if ok, _ := s.Exists(ctx, refA); !ok {
+			_ = s.Put(ctx, refNova, val)
+			if ok, _ := s.Exists(ctx, refNova); !ok {
 				t.Fatal("Exists deveria ser verdadeiro após o Put")
 			}
 		})

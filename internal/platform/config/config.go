@@ -21,6 +21,23 @@ type Config struct {
 	// Escolha de adaptadores por ambiente.
 	SecretBackend string // k8s | gcp | memory
 	ObjectBackend string // gcs (real ou emulado)
+
+	// SecretProject é o projeto GCP que hospeda os segredos. Só usado com
+	// SECRET_BACKEND=gcp.
+	SecretProject string
+	// SecretEndpoint aponta o adaptador do GCP para o EMULADOR ("host:porta").
+	// Vazio = Secret Manager de verdade, com credencial padrão do ambiente.
+	//
+	// Não existe variável oficial de emulador para o Secret Manager — o Google
+	// publica STORAGE_EMULATOR_HOST e PUBSUB_EMULATOR_HOST, mas nenhuma aqui, e
+	// a biblioteca oficial não lê nenhuma. Esta é NOSSA, e por isso precisa ser
+	// passada explicitamente ao adaptador.
+	SecretEndpoint string
+	// SecretPropagation é quanto o Put espera o alias `latest` enxergar a
+	// versão recém-gravada antes de desistir. No emulador é instantâneo; no
+	// GCP real o alias é eventualmente consistente e esta espera é o que
+	// separa "leitura-após-escrita" de promessa vazia (ver o adaptador).
+	SecretPropagation time.Duration
 	// SandboxBackend escolhe o substrato de execução. Docker é o caminho do
 	// desenvolvimento local sem cluster; k8s é o do cluster de execução.
 	SandboxBackend string // k8s | docker
@@ -63,13 +80,17 @@ type Config struct {
 
 func Load(mode string) (*Config, error) {
 	c := &Config{
-		Mode:            mode,
-		GRPCPort:        envInt("GRPC_PORT", 9090),
-		HTTPPort:        envInt("HTTP_PORT", 9091),
-		DatabaseURL:     env("DATABASE_URL", "postgres://dop:dop-local-dev@postgres.dop-local.svc:5432/dop?sslmode=disable"),
-		NATSUrl:         env("NATS_URL", "nats://nats.dop-local.svc:4222"),
-		SecretBackend:   env("SECRET_BACKEND", "k8s"),
-		ObjectBackend:   env("OBJECT_BACKEND", "gcs"),
+		Mode:           mode,
+		GRPCPort:       envInt("GRPC_PORT", 9090),
+		HTTPPort:       envInt("HTTP_PORT", 9091),
+		DatabaseURL:    env("DATABASE_URL", "postgres://dop:dop-local-dev@postgres.dop-local.svc:5432/dop?sslmode=disable"),
+		NATSUrl:        env("NATS_URL", "nats://nats.dop-local.svc:4222"),
+		SecretBackend:  env("SECRET_BACKEND", "k8s"),
+		ObjectBackend:  env("OBJECT_BACKEND", "gcs"),
+		SecretProject:  env("SECRET_PROJECT", ""),
+		SecretEndpoint: env("SECRET_MANAGER_EMULATOR_HOST", ""),
+		SecretPropagation: time.Duration(
+			envInt("SECRET_PROPAGATION_SECONDS", 30)) * time.Second,
 		SandboxBackend:  env("SANDBOX_BACKEND", "k8s"),
 		DockerSocket:    env("DOCKER_SOCKET", "/var/run/docker.sock"),
 		WorkspaceSize:   env("SANDBOX_WORKSPACE_SIZE", "10Gi"),
@@ -102,6 +123,11 @@ func Load(mode string) (*Config, error) {
 	// nenhum. É o tipo de erro de configuração que precisa aparecer no deploy.
 	if c.IdentityBackend == "oidc" && c.OIDCIssuer == "" {
 		return nil, fmt.Errorf("OIDC_ISSUER é obrigatória quando IDENTITY_BACKEND=oidc")
+	}
+	// Mesmo motivo: sem projeto o adaptador montaria nomes "projects//secrets/…"
+	// e só quebraria na primeira credencial gravada, com o processo já verde.
+	if c.SecretBackend == "gcp" && c.SecretProject == "" {
+		return nil, fmt.Errorf("SECRET_PROJECT é obrigatória quando SECRET_BACKEND=gcp")
 	}
 	return c, nil
 }

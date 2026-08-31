@@ -19,7 +19,8 @@ test-integration: ## espinha de eventos contra o ambiente local
 	go test ./test/integration/ -tags=integration -v -count=1
 
 test-contract-integration: ## suítes de contrato contra os adaptadores REAIS
-	@echo "exige: kubectl port-forward svc/nats 4222 e svc/firebase 9199"
+	@echo "exige: kubectl port-forward svc/nats 4222, svc/firebase 9199 e"
+	@echo "       svc/secretmanager 8085:9090 (gRPC do emulador do Secret Manager)"
 	@echo "excluídos 8_metadados (o emulador pendura com application/json) e"
 	@echo "13_uso_concorrente (~16 operações simultâneas DERRUBAM o emulador)."
 	@echo "Defeitos do emulador, não do adaptador — o fs passa nos 13."
