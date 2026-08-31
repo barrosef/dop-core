@@ -112,6 +112,24 @@ func (s *DemandServer) PublishFinding(ctx context.Context, req *dopv1.PublishFin
 	return findingToProto(f), nil
 }
 
+func (s *DemandServer) ListFindings(ctx context.Context, req *dopv1.ListFindingsRequest) (*dopv1.ListFindingsResponse, error) {
+	achados, err := s.svc.Findings(ctx, req.GetDemandId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dopv1.Finding, 0, len(achados))
+	for i := range achados {
+		// O filtro por thread mora AQUI e não no repositório de propósito: a
+		// consulta é por demanda, e a thread é um recorte da mesma resposta.
+		// Uma segunda consulta ao banco por um filtro barato não se paga.
+		if t := req.GetThreadId(); t != "" && achados[i].ThreadID != t {
+			continue
+		}
+		out = append(out, findingToProto(&achados[i]))
+	}
+	return &dopv1.ListFindingsResponse{Findings: out}, nil
+}
+
 // WatchDemand é streaming server-side puro: o BFF converte em SSE (ADR-0017).
 //
 // A política de replay, de isolamento por conta e de consumidor lento é do

@@ -153,6 +153,16 @@ func packageToProto(p *knowledge.Package) *dopv1.ContextPackage {
 		Memories:        make([]*dopv1.KnowledgeArtifact, 0, len(p.Memories)),
 		Findings:        make([]*dopv1.Finding, 0, len(p.Findings)),
 		EstimatedTokens: int32(p.EstimatedTokens),
+		// O descarte por camada viaja SEMPRE, inclusive zerado: "nada foi
+		// descartado" e "não sei dizer" são fatos diferentes, e o mapa vazio
+		// já significa o segundo. Sem isto a tela não tem como avisar que o
+		// contexto foi truncado, e finge que coube tudo.
+		Dropped: map[string]int32{
+			"rules":    int32(p.Dropped.Rules),
+			"findings": int32(p.Dropped.Findings),
+			"index":    int32(p.Dropped.Index),
+			"memories": int32(p.Dropped.Memories),
+		},
 	}
 	for i := range p.Index {
 		out.Index = append(out.Index, artifactToProto(&p.Index[i]))

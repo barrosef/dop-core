@@ -31,6 +31,12 @@ message ContextPackage {
   repeated KnowledgeArtifact memories = 4;
   repeated Finding findings = 5;
   int32  estimated_tokens = 6;   // medido por token counting na montagem
+
+  // Quanto ficou de FORA por orçamento, por camada. É informação de primeira
+  // classe (ADR-0012): sem ela a tela não tem como dizer "o contexto foi
+  // truncado", e finge que coube tudo — que é a forma mais cara de mentir para
+  // quem está decidindo se o agente tem o que precisa.
+  map<string, int32> dropped = 7;
 }
 
 service KnowledgeService {

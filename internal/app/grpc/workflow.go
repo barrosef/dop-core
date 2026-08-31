@@ -79,9 +79,25 @@ func (s *WorkflowServer) ResolveFlow(ctx context.Context, req *dopv1.ResolveFlow
 	if err != nil {
 		return nil, err
 	}
+	// A procedência sai ESTRUTURADA, além da frase. A frase continua para log
+	// e mensagem de erro; a estrutura existe para o consumidor não ter que
+	// interpretar texto — contrato que obriga parsing quebra no dia em que
+	// alguém melhora a redação.
+	contribuintes := make([]*dopv1.ScopeRef, 0, len(eff.Contributors))
+	for _, c := range eff.Contributors {
+		contribuintes = append(contribuintes, &dopv1.ScopeRef{Scope: string(c.Scope), Id: c.ID})
+	}
+	origens := make([]*dopv1.StageOrigin, 0, len(eff.Origins))
+	for _, o := range eff.Origins {
+		origens = append(origens, &dopv1.StageOrigin{
+			Key: o.Key, Scope: string(o.From.Scope), ScopeId: o.From.ID,
+		})
+	}
 	return &dopv1.EffectiveFlow{
 		Flow:         flowToProto(&eff.Flow),
 		ResolvedFrom: eff.ResolvedFrom,
+		Contributors: contribuintes,
+		Origins:      origens,
 	}, nil
 }
 

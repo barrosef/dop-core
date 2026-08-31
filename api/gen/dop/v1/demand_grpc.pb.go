@@ -28,6 +28,7 @@ const (
 	DemandService_CreateThread_FullMethodName   = "/dop.v1.DemandService/CreateThread"
 	DemandService_PostMessage_FullMethodName    = "/dop.v1.DemandService/PostMessage"
 	DemandService_PublishFinding_FullMethodName = "/dop.v1.DemandService/PublishFinding"
+	DemandService_ListFindings_FullMethodName   = "/dop.v1.DemandService/ListFindings"
 	DemandService_WatchDemand_FullMethodName    = "/dop.v1.DemandService/WatchDemand"
 )
 
@@ -44,6 +45,14 @@ type DemandServiceClient interface {
 	CreateThread(ctx context.Context, in *CreateThreadRequest, opts ...grpc.CallOption) (*Thread, error)
 	PostMessage(ctx context.Context, in *PostMessageRequest, opts ...grpc.CallOption) (*Message, error)
 	PublishFinding(ctx context.Context, in *PublishFindingRequest, opts ...grpc.CallOption) (*Finding, error)
+	// Os achados JÁ publicados na demanda.
+	//
+	// A leitura existia só no domínio Go, e a borda ficava sem como mostrar o
+	// quadro de achados — que é o que impede um agente (ou um humano) de refazer
+	// investigação que outro já concluiu (ADR-0009). Ler pelo pacote de contexto
+	// não serve: aquele é truncado por orçamento de tokens e a montagem grava um
+	// evento de medição, então abrir uma tela viraria linha de custo.
+	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
 	// Streaming: o BFF converte em SSE (ADR-0017).
 	WatchDemand(ctx context.Context, in *WatchDemandRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DemandEvent], error)
 }
@@ -146,6 +155,16 @@ func (c *demandServiceClient) PublishFinding(ctx context.Context, in *PublishFin
 	return out, nil
 }
 
+func (c *demandServiceClient) ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFindingsResponse)
+	err := c.cc.Invoke(ctx, DemandService_ListFindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *demandServiceClient) WatchDemand(ctx context.Context, in *WatchDemandRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DemandEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DemandService_ServiceDesc.Streams[0], DemandService_WatchDemand_FullMethodName, cOpts...)
@@ -178,6 +197,14 @@ type DemandServiceServer interface {
 	CreateThread(context.Context, *CreateThreadRequest) (*Thread, error)
 	PostMessage(context.Context, *PostMessageRequest) (*Message, error)
 	PublishFinding(context.Context, *PublishFindingRequest) (*Finding, error)
+	// Os achados JÁ publicados na demanda.
+	//
+	// A leitura existia só no domínio Go, e a borda ficava sem como mostrar o
+	// quadro de achados — que é o que impede um agente (ou um humano) de refazer
+	// investigação que outro já concluiu (ADR-0009). Ler pelo pacote de contexto
+	// não serve: aquele é truncado por orçamento de tokens e a montagem grava um
+	// evento de medição, então abrir uma tela viraria linha de custo.
+	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
 	// Streaming: o BFF converte em SSE (ADR-0017).
 	WatchDemand(*WatchDemandRequest, grpc.ServerStreamingServer[DemandEvent]) error
 	mustEmbedUnimplementedDemandServiceServer()
@@ -216,6 +243,9 @@ func (UnimplementedDemandServiceServer) PostMessage(context.Context, *PostMessag
 }
 func (UnimplementedDemandServiceServer) PublishFinding(context.Context, *PublishFindingRequest) (*Finding, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishFinding not implemented")
+}
+func (UnimplementedDemandServiceServer) ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFindings not implemented")
 }
 func (UnimplementedDemandServiceServer) WatchDemand(*WatchDemandRequest, grpc.ServerStreamingServer[DemandEvent]) error {
 	return status.Error(codes.Unimplemented, "method WatchDemand not implemented")
@@ -403,6 +433,24 @@ func _DemandService_PublishFinding_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DemandService_ListFindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DemandServiceServer).ListFindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DemandService_ListFindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DemandServiceServer).ListFindings(ctx, req.(*ListFindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DemandService_WatchDemand_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WatchDemandRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -456,6 +504,10 @@ var DemandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PublishFinding",
 			Handler:    _DemandService_PublishFinding_Handler,
+		},
+		{
+			MethodName: "ListFindings",
+			Handler:    _DemandService_ListFindings_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

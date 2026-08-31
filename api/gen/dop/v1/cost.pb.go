@@ -140,11 +140,14 @@ func (x *UsageEvent) GetAt() *timestamppb.Timestamp {
 }
 
 type Budget struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"` // account | demand
-	ScopeId       string                 `protobuf:"bytes,2,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
-	LimitMicros   int64                  `protobuf:"varint,3,opt,name=limit_micros,json=limitMicros,proto3" json:"limit_micros,omitempty"`
-	SpentMicros   int64                  `protobuf:"varint,4,opt,name=spent_micros,json=spentMicros,proto3" json:"spent_micros,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Scope       string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"` // account | demand
+	ScopeId     string                 `protobuf:"bytes,2,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
+	LimitMicros int64                  `protobuf:"varint,3,opt,name=limit_micros,json=limitMicros,proto3" json:"limit_micros,omitempty"`
+	SpentMicros int64                  `protobuf:"varint,4,opt,name=spent_micros,json=spentMicros,proto3" json:"spent_micros,omitempty"`
+	// A moeda viaja SEMPRE junto do valor. Micros sem moeda é número sem
+	// unidade, e a borda estava tendo que inventar ou deixar em branco.
+	Currency      string `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -205,6 +208,13 @@ func (x *Budget) GetSpentMicros() int64 {
 		return x.SpentMicros
 	}
 	return 0
+}
+
+func (x *Budget) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
 }
 
 // tarefa → (modelo, effort). Rascunho, calibra com telemetria (P-7).
@@ -697,12 +707,13 @@ const file_dop_v1_cost_proto_rawDesc = "" +
 	"\x15cache_creation_tokens\x18\b \x01(\x03R\x13cacheCreationTokens\x12!\n" +
 	"\x04cost\x18\t \x01(\v2\r.dop.v1.MoneyR\x04cost\x12*\n" +
 	"\x02at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x7f\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x9b\x01\n" +
 	"\x06Budget\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x19\n" +
 	"\bscope_id\x18\x02 \x01(\tR\ascopeId\x12!\n" +
 	"\flimit_micros\x18\x03 \x01(\x03R\vlimitMicros\x12!\n" +
-	"\fspent_micros\x18\x04 \x01(\x03R\vspentMicros\"t\n" +
+	"\fspent_micros\x18\x04 \x01(\x03R\vspentMicros\x12\x1a\n" +
+	"\bcurrency\x18\x05 \x01(\tR\bcurrency\"t\n" +
 	"\x0fRoutingDecision\x12\x1b\n" +
 	"\ttask_kind\x18\x01 \x01(\tR\btaskKind\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12\x16\n" +

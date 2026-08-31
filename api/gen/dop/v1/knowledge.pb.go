@@ -184,8 +184,13 @@ type ContextPackage struct {
 	Memories        []*KnowledgeArtifact   `protobuf:"bytes,4,rep,name=memories,proto3" json:"memories,omitempty"`
 	Findings        []*Finding             `protobuf:"bytes,5,rep,name=findings,proto3" json:"findings,omitempty"`
 	EstimatedTokens int32                  `protobuf:"varint,6,opt,name=estimated_tokens,json=estimatedTokens,proto3" json:"estimated_tokens,omitempty"` // medido por token counting na montagem
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Quanto ficou de FORA por orçamento, por camada. É informação de primeira
+	// classe (ADR-0012): sem ela a tela não tem como dizer "o contexto foi
+	// truncado", e finge que coube tudo — que é a forma mais cara de mentir para
+	// quem está decidindo se o agente tem o que precisa.
+	Dropped       map[string]int32 `protobuf:"bytes,7,rep,name=dropped,proto3" json:"dropped,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContextPackage) Reset() {
@@ -258,6 +263,13 @@ func (x *ContextPackage) GetEstimatedTokens() int32 {
 		return x.EstimatedTokens
 	}
 	return 0
+}
+
+func (x *ContextPackage) GetDropped() map[string]int32 {
+	if x != nil {
+		return x.Dropped
+	}
+	return nil
 }
 
 type BuildContextPackageRequest struct {
@@ -676,14 +688,18 @@ const file_dop_v1_knowledge_proto_rawDesc = "" +
 	"\tKIND_RULE\x10\x01\x12\x0e\n" +
 	"\n" +
 	"KIND_INDEX\x10\x02\x12\x0f\n" +
-	"\vKIND_MEMORY\x10\x03\"\x91\x02\n" +
+	"\vKIND_MEMORY\x10\x03\"\x8c\x03\n" +
 	"\x0eContextPackage\x12)\n" +
 	"\x06demand\x18\x01 \x01(\v2\x11.dop.v1.DemandRefR\x06demand\x12\x14\n" +
 	"\x05rules\x18\x02 \x03(\tR\x05rules\x12/\n" +
 	"\x05index\x18\x03 \x03(\v2\x19.dop.v1.KnowledgeArtifactR\x05index\x125\n" +
 	"\bmemories\x18\x04 \x03(\v2\x19.dop.v1.KnowledgeArtifactR\bmemories\x12+\n" +
 	"\bfindings\x18\x05 \x03(\v2\x0f.dop.v1.FindingR\bfindings\x12)\n" +
-	"\x10estimated_tokens\x18\x06 \x01(\x05R\x0festimatedTokens\"`\n" +
+	"\x10estimated_tokens\x18\x06 \x01(\x05R\x0festimatedTokens\x12=\n" +
+	"\adropped\x18\a \x03(\v2#.dop.v1.ContextPackage.DroppedEntryR\adropped\x1a:\n" +
+	"\fDroppedEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"`\n" +
 	"\x1aBuildContextPackageRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
 	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\"\x96\x01\n" +
@@ -731,7 +747,7 @@ func file_dop_v1_knowledge_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_knowledge_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dop_v1_knowledge_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_dop_v1_knowledge_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_dop_v1_knowledge_proto_goTypes = []any{
 	(KnowledgeArtifact_Kind)(0),        // 0: dop.v1.KnowledgeArtifact.Kind
 	(*KnowledgeArtifact)(nil),          // 1: dop.v1.KnowledgeArtifact
@@ -743,47 +759,49 @@ var file_dop_v1_knowledge_proto_goTypes = []any{
 	(*PutArtifactRequest)(nil),         // 7: dop.v1.PutArtifactRequest
 	(*ListRulesRequest)(nil),           // 8: dop.v1.ListRulesRequest
 	(*ListRulesResponse)(nil),          // 9: dop.v1.ListRulesResponse
-	(*ProjectRef)(nil),                 // 10: dop.v1.ProjectRef
-	(*structpb.Struct)(nil),            // 11: google.protobuf.Struct
-	(*AuditStamp)(nil),                 // 12: dop.v1.AuditStamp
-	(*DemandRef)(nil),                  // 13: dop.v1.DemandRef
-	(*Finding)(nil),                    // 14: dop.v1.Finding
-	(*CallContext)(nil),                // 15: dop.v1.CallContext
+	nil,                                // 10: dop.v1.ContextPackage.DroppedEntry
+	(*ProjectRef)(nil),                 // 11: dop.v1.ProjectRef
+	(*structpb.Struct)(nil),            // 12: google.protobuf.Struct
+	(*AuditStamp)(nil),                 // 13: dop.v1.AuditStamp
+	(*DemandRef)(nil),                  // 14: dop.v1.DemandRef
+	(*Finding)(nil),                    // 15: dop.v1.Finding
+	(*CallContext)(nil),                // 16: dop.v1.CallContext
 }
 var file_dop_v1_knowledge_proto_depIdxs = []int32{
-	10, // 0: dop.v1.KnowledgeArtifact.project:type_name -> dop.v1.ProjectRef
+	11, // 0: dop.v1.KnowledgeArtifact.project:type_name -> dop.v1.ProjectRef
 	0,  // 1: dop.v1.KnowledgeArtifact.kind:type_name -> dop.v1.KnowledgeArtifact.Kind
-	11, // 2: dop.v1.KnowledgeArtifact.meta:type_name -> google.protobuf.Struct
-	12, // 3: dop.v1.KnowledgeArtifact.audit:type_name -> dop.v1.AuditStamp
-	13, // 4: dop.v1.ContextPackage.demand:type_name -> dop.v1.DemandRef
+	12, // 2: dop.v1.KnowledgeArtifact.meta:type_name -> google.protobuf.Struct
+	13, // 3: dop.v1.KnowledgeArtifact.audit:type_name -> dop.v1.AuditStamp
+	14, // 4: dop.v1.ContextPackage.demand:type_name -> dop.v1.DemandRef
 	1,  // 5: dop.v1.ContextPackage.index:type_name -> dop.v1.KnowledgeArtifact
 	1,  // 6: dop.v1.ContextPackage.memories:type_name -> dop.v1.KnowledgeArtifact
-	14, // 7: dop.v1.ContextPackage.findings:type_name -> dop.v1.Finding
-	15, // 8: dop.v1.BuildContextPackageRequest.ctx:type_name -> dop.v1.CallContext
-	15, // 9: dop.v1.SearchMemoryRequest.ctx:type_name -> dop.v1.CallContext
-	10, // 10: dop.v1.SearchMemoryRequest.project:type_name -> dop.v1.ProjectRef
-	1,  // 11: dop.v1.SearchMemoryResponse.artifacts:type_name -> dop.v1.KnowledgeArtifact
-	15, // 12: dop.v1.ReadIndexRequest.ctx:type_name -> dop.v1.CallContext
-	10, // 13: dop.v1.ReadIndexRequest.project:type_name -> dop.v1.ProjectRef
-	15, // 14: dop.v1.PutArtifactRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 15: dop.v1.PutArtifactRequest.artifact:type_name -> dop.v1.KnowledgeArtifact
-	15, // 16: dop.v1.ListRulesRequest.ctx:type_name -> dop.v1.CallContext
-	10, // 17: dop.v1.ListRulesRequest.project:type_name -> dop.v1.ProjectRef
-	3,  // 18: dop.v1.KnowledgeService.BuildContextPackage:input_type -> dop.v1.BuildContextPackageRequest
-	4,  // 19: dop.v1.KnowledgeService.SearchMemory:input_type -> dop.v1.SearchMemoryRequest
-	6,  // 20: dop.v1.KnowledgeService.ReadIndex:input_type -> dop.v1.ReadIndexRequest
-	7,  // 21: dop.v1.KnowledgeService.PutArtifact:input_type -> dop.v1.PutArtifactRequest
-	8,  // 22: dop.v1.KnowledgeService.ListRules:input_type -> dop.v1.ListRulesRequest
-	2,  // 23: dop.v1.KnowledgeService.BuildContextPackage:output_type -> dop.v1.ContextPackage
-	5,  // 24: dop.v1.KnowledgeService.SearchMemory:output_type -> dop.v1.SearchMemoryResponse
-	1,  // 25: dop.v1.KnowledgeService.ReadIndex:output_type -> dop.v1.KnowledgeArtifact
-	1,  // 26: dop.v1.KnowledgeService.PutArtifact:output_type -> dop.v1.KnowledgeArtifact
-	9,  // 27: dop.v1.KnowledgeService.ListRules:output_type -> dop.v1.ListRulesResponse
-	23, // [23:28] is the sub-list for method output_type
-	18, // [18:23] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	15, // 7: dop.v1.ContextPackage.findings:type_name -> dop.v1.Finding
+	10, // 8: dop.v1.ContextPackage.dropped:type_name -> dop.v1.ContextPackage.DroppedEntry
+	16, // 9: dop.v1.BuildContextPackageRequest.ctx:type_name -> dop.v1.CallContext
+	16, // 10: dop.v1.SearchMemoryRequest.ctx:type_name -> dop.v1.CallContext
+	11, // 11: dop.v1.SearchMemoryRequest.project:type_name -> dop.v1.ProjectRef
+	1,  // 12: dop.v1.SearchMemoryResponse.artifacts:type_name -> dop.v1.KnowledgeArtifact
+	16, // 13: dop.v1.ReadIndexRequest.ctx:type_name -> dop.v1.CallContext
+	11, // 14: dop.v1.ReadIndexRequest.project:type_name -> dop.v1.ProjectRef
+	16, // 15: dop.v1.PutArtifactRequest.ctx:type_name -> dop.v1.CallContext
+	1,  // 16: dop.v1.PutArtifactRequest.artifact:type_name -> dop.v1.KnowledgeArtifact
+	16, // 17: dop.v1.ListRulesRequest.ctx:type_name -> dop.v1.CallContext
+	11, // 18: dop.v1.ListRulesRequest.project:type_name -> dop.v1.ProjectRef
+	3,  // 19: dop.v1.KnowledgeService.BuildContextPackage:input_type -> dop.v1.BuildContextPackageRequest
+	4,  // 20: dop.v1.KnowledgeService.SearchMemory:input_type -> dop.v1.SearchMemoryRequest
+	6,  // 21: dop.v1.KnowledgeService.ReadIndex:input_type -> dop.v1.ReadIndexRequest
+	7,  // 22: dop.v1.KnowledgeService.PutArtifact:input_type -> dop.v1.PutArtifactRequest
+	8,  // 23: dop.v1.KnowledgeService.ListRules:input_type -> dop.v1.ListRulesRequest
+	2,  // 24: dop.v1.KnowledgeService.BuildContextPackage:output_type -> dop.v1.ContextPackage
+	5,  // 25: dop.v1.KnowledgeService.SearchMemory:output_type -> dop.v1.SearchMemoryResponse
+	1,  // 26: dop.v1.KnowledgeService.ReadIndex:output_type -> dop.v1.KnowledgeArtifact
+	1,  // 27: dop.v1.KnowledgeService.PutArtifact:output_type -> dop.v1.KnowledgeArtifact
+	9,  // 28: dop.v1.KnowledgeService.ListRules:output_type -> dop.v1.ListRulesResponse
+	24, // [24:29] is the sub-list for method output_type
+	19, // [19:24] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_knowledge_proto_init() }
@@ -799,7 +817,7 @@ func file_dop_v1_knowledge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_knowledge_proto_rawDesc), len(file_dop_v1_knowledge_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

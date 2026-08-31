@@ -386,17 +386,92 @@ func (x *Flow) GetAudit() *AuditStamp {
 }
 
 // Resultado da cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda.
-type EffectiveFlow struct {
+// StageOrigin diz DE ONDE cada etapa veio na resolução.
+//
+// Sem isso, ninguém consegue depurar por que uma demanda seguiu um fluxo que
+// ninguém lembra de ter escrito — e a herança de cinco níveis torna isso comum,
+// não excepcional.
+type StageOrigin struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Flow          *Flow                  `protobuf:"bytes,1,opt,name=flow,proto3" json:"flow,omitempty"`
-	ResolvedFrom  string                 `protobuf:"bytes,2,opt,name=resolved_from,json=resolvedFrom,proto3" json:"resolved_from,omitempty"` // rastro visível: "projeto ◂ workspace ◂ conta"
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`     // a chave da etapa, como aparece em Flow.stages
+	Scope         string                 `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"` // platform | account | workspace | project | demand
+	ScopeId       string                 `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StageOrigin) Reset() {
+	*x = StageOrigin{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StageOrigin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StageOrigin) ProtoMessage() {}
+
+func (x *StageOrigin) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StageOrigin.ProtoReflect.Descriptor instead.
+func (*StageOrigin) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StageOrigin) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *StageOrigin) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *StageOrigin) GetScopeId() string {
+	if x != nil {
+		return x.ScopeId
+	}
+	return ""
+}
+
+type EffectiveFlow struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Flow  *Flow                  `protobuf:"bytes,1,opt,name=flow,proto3" json:"flow,omitempty"`
+	// Rastro legível, para log e mensagem de erro: "projeto ◂ workspace ◂ conta".
+	ResolvedFrom string `protobuf:"bytes,2,opt,name=resolved_from,json=resolvedFrom,proto3" json:"resolved_from,omitempty"`
+	// Os níveis que CONTRIBUÍRAM, do mais específico para o mais geral.
+	Contributors []*ScopeRef `protobuf:"bytes,3,rep,name=contributors,proto3" json:"contributors,omitempty"`
+	// A procedência POR ETAPA, na mesma ordem de flow.stages.
+	//
+	// Existe porque `resolved_from` é uma frase, e a borda estava tendo que
+	// fazer parsing dela para marcar "herdado da conta" na linha da etapa.
+	// Contrato que obriga o consumidor a interpretar texto é contrato que
+	// quebra quando alguém melhora a redação.
+	Origins       []*StageOrigin `protobuf:"bytes,4,rep,name=origins,proto3" json:"origins,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EffectiveFlow) Reset() {
 	*x = EffectiveFlow{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	mi := &file_dop_v1_workflow_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +483,7 @@ func (x *EffectiveFlow) String() string {
 func (*EffectiveFlow) ProtoMessage() {}
 
 func (x *EffectiveFlow) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	mi := &file_dop_v1_workflow_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +496,7 @@ func (x *EffectiveFlow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffectiveFlow.ProtoReflect.Descriptor instead.
 func (*EffectiveFlow) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{2}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *EffectiveFlow) GetFlow() *Flow {
@@ -438,6 +513,74 @@ func (x *EffectiveFlow) GetResolvedFrom() string {
 	return ""
 }
 
+func (x *EffectiveFlow) GetContributors() []*ScopeRef {
+	if x != nil {
+		return x.Contributors
+	}
+	return nil
+}
+
+func (x *EffectiveFlow) GetOrigins() []*StageOrigin {
+	if x != nil {
+		return x.Origins
+	}
+	return nil
+}
+
+// ScopeRef endereça um nível da hierarquia. `id` é vazio no catálogo da
+// plataforma, que não pertence a conta nenhuma.
+type ScopeRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScopeRef) Reset() {
+	*x = ScopeRef{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScopeRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScopeRef) ProtoMessage() {}
+
+func (x *ScopeRef) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScopeRef.ProtoReflect.Descriptor instead.
+func (*ScopeRef) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ScopeRef) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *ScopeRef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 type ListFlowsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
@@ -449,7 +592,7 @@ type ListFlowsRequest struct {
 
 func (x *ListFlowsRequest) Reset() {
 	*x = ListFlowsRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[3]
+	mi := &file_dop_v1_workflow_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -461,7 +604,7 @@ func (x *ListFlowsRequest) String() string {
 func (*ListFlowsRequest) ProtoMessage() {}
 
 func (x *ListFlowsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[3]
+	mi := &file_dop_v1_workflow_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +617,7 @@ func (x *ListFlowsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowsRequest.ProtoReflect.Descriptor instead.
 func (*ListFlowsRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{3}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListFlowsRequest) GetCtx() *CallContext {
@@ -507,7 +650,7 @@ type ListFlowsResponse struct {
 
 func (x *ListFlowsResponse) Reset() {
 	*x = ListFlowsResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	mi := &file_dop_v1_workflow_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -519,7 +662,7 @@ func (x *ListFlowsResponse) String() string {
 func (*ListFlowsResponse) ProtoMessage() {}
 
 func (x *ListFlowsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	mi := &file_dop_v1_workflow_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -532,7 +675,7 @@ func (x *ListFlowsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowsResponse.ProtoReflect.Descriptor instead.
 func (*ListFlowsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{4}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListFlowsResponse) GetFlows() []*Flow {
@@ -552,7 +695,7 @@ type GetFlowRequest struct {
 
 func (x *GetFlowRequest) Reset() {
 	*x = GetFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[5]
+	mi := &file_dop_v1_workflow_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -564,7 +707,7 @@ func (x *GetFlowRequest) String() string {
 func (*GetFlowRequest) ProtoMessage() {}
 
 func (x *GetFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[5]
+	mi := &file_dop_v1_workflow_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -577,7 +720,7 @@ func (x *GetFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFlowRequest.ProtoReflect.Descriptor instead.
 func (*GetFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{5}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetFlowRequest) GetCtx() *CallContext {
@@ -605,7 +748,7 @@ type CreateFlowRequest struct {
 
 func (x *CreateFlowRequest) Reset() {
 	*x = CreateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[6]
+	mi := &file_dop_v1_workflow_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +760,7 @@ func (x *CreateFlowRequest) String() string {
 func (*CreateFlowRequest) ProtoMessage() {}
 
 func (x *CreateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[6]
+	mi := &file_dop_v1_workflow_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +773,7 @@ func (x *CreateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFlowRequest.ProtoReflect.Descriptor instead.
 func (*CreateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{6}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateFlowRequest) GetCtx() *CallContext {
@@ -664,7 +807,7 @@ type UpdateFlowRequest struct {
 
 func (x *UpdateFlowRequest) Reset() {
 	*x = UpdateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[7]
+	mi := &file_dop_v1_workflow_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +819,7 @@ func (x *UpdateFlowRequest) String() string {
 func (*UpdateFlowRequest) ProtoMessage() {}
 
 func (x *UpdateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[7]
+	mi := &file_dop_v1_workflow_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +832,7 @@ func (x *UpdateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFlowRequest.ProtoReflect.Descriptor instead.
 func (*UpdateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{7}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdateFlowRequest) GetCtx() *CallContext {
@@ -716,7 +859,7 @@ type ValidateFlowRequest struct {
 
 func (x *ValidateFlowRequest) Reset() {
 	*x = ValidateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[8]
+	mi := &file_dop_v1_workflow_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +871,7 @@ func (x *ValidateFlowRequest) String() string {
 func (*ValidateFlowRequest) ProtoMessage() {}
 
 func (x *ValidateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[8]
+	mi := &file_dop_v1_workflow_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +884,7 @@ func (x *ValidateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateFlowRequest.ProtoReflect.Descriptor instead.
 func (*ValidateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{8}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ValidateFlowRequest) GetCtx() *CallContext {
@@ -769,7 +912,7 @@ type ValidateFlowResponse struct {
 
 func (x *ValidateFlowResponse) Reset() {
 	*x = ValidateFlowResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[9]
+	mi := &file_dop_v1_workflow_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -781,7 +924,7 @@ func (x *ValidateFlowResponse) String() string {
 func (*ValidateFlowResponse) ProtoMessage() {}
 
 func (x *ValidateFlowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[9]
+	mi := &file_dop_v1_workflow_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -794,7 +937,7 @@ func (x *ValidateFlowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateFlowResponse.ProtoReflect.Descriptor instead.
 func (*ValidateFlowResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{9}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ValidateFlowResponse) GetValid() bool {
@@ -829,7 +972,7 @@ type ResolveFlowRequest struct {
 
 func (x *ResolveFlowRequest) Reset() {
 	*x = ResolveFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[10]
+	mi := &file_dop_v1_workflow_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +984,7 @@ func (x *ResolveFlowRequest) String() string {
 func (*ResolveFlowRequest) ProtoMessage() {}
 
 func (x *ResolveFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[10]
+	mi := &file_dop_v1_workflow_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +997,7 @@ func (x *ResolveFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveFlowRequest.ProtoReflect.Descriptor instead.
 func (*ResolveFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{10}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ResolveFlowRequest) GetCtx() *CallContext {
@@ -890,7 +1033,7 @@ type PromoteFlowRequest struct {
 
 func (x *PromoteFlowRequest) Reset() {
 	*x = PromoteFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[11]
+	mi := &file_dop_v1_workflow_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +1045,7 @@ func (x *PromoteFlowRequest) String() string {
 func (*PromoteFlowRequest) ProtoMessage() {}
 
 func (x *PromoteFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[11]
+	mi := &file_dop_v1_workflow_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +1058,7 @@ func (x *PromoteFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteFlowRequest.ProtoReflect.Descriptor instead.
 func (*PromoteFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{11}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PromoteFlowRequest) GetCtx() *CallContext {
@@ -967,10 +1110,19 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"ownerScope\x12\x19\n" +
 	"\bowner_id\x18\x06 \x01(\tR\aownerId\x12)\n" +
 	"\x06stages\x18\a \x03(\v2\x11.dop.v1.StageSpecR\x06stages\x12(\n" +
-	"\x05audit\x18\b \x01(\v2\x12.dop.v1.AuditStampR\x05audit\"V\n" +
+	"\x05audit\x18\b \x01(\v2\x12.dop.v1.AuditStampR\x05audit\"P\n" +
+	"\vStageOrigin\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x19\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"\xbb\x01\n" +
 	"\rEffectiveFlow\x12 \n" +
 	"\x04flow\x18\x01 \x01(\v2\f.dop.v1.FlowR\x04flow\x12#\n" +
-	"\rresolved_from\x18\x02 \x01(\tR\fresolvedFrom\"u\n" +
+	"\rresolved_from\x18\x02 \x01(\tR\fresolvedFrom\x124\n" +
+	"\fcontributors\x18\x03 \x03(\v2\x10.dop.v1.ScopeRefR\fcontributors\x12-\n" +
+	"\aorigins\x18\x04 \x03(\v2\x13.dop.v1.StageOriginR\aorigins\"0\n" +
+	"\bScopeRef\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"u\n" +
 	"\x10ListFlowsRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1f\n" +
 	"\vowner_scope\x18\x02 \x01(\tR\n" +
@@ -1053,63 +1205,67 @@ func file_dop_v1_workflow_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_workflow_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_dop_v1_workflow_proto_goTypes = []any{
 	(StageType)(0),               // 0: dop.v1.StageType
 	(ArtifactKind)(0),            // 1: dop.v1.ArtifactKind
 	(Gate)(0),                    // 2: dop.v1.Gate
 	(*StageSpec)(nil),            // 3: dop.v1.StageSpec
 	(*Flow)(nil),                 // 4: dop.v1.Flow
-	(*EffectiveFlow)(nil),        // 5: dop.v1.EffectiveFlow
-	(*ListFlowsRequest)(nil),     // 6: dop.v1.ListFlowsRequest
-	(*ListFlowsResponse)(nil),    // 7: dop.v1.ListFlowsResponse
-	(*GetFlowRequest)(nil),       // 8: dop.v1.GetFlowRequest
-	(*CreateFlowRequest)(nil),    // 9: dop.v1.CreateFlowRequest
-	(*UpdateFlowRequest)(nil),    // 10: dop.v1.UpdateFlowRequest
-	(*ValidateFlowRequest)(nil),  // 11: dop.v1.ValidateFlowRequest
-	(*ValidateFlowResponse)(nil), // 12: dop.v1.ValidateFlowResponse
-	(*ResolveFlowRequest)(nil),   // 13: dop.v1.ResolveFlowRequest
-	(*PromoteFlowRequest)(nil),   // 14: dop.v1.PromoteFlowRequest
-	(*AuditStamp)(nil),           // 15: dop.v1.AuditStamp
-	(*CallContext)(nil),          // 16: dop.v1.CallContext
+	(*StageOrigin)(nil),          // 5: dop.v1.StageOrigin
+	(*EffectiveFlow)(nil),        // 6: dop.v1.EffectiveFlow
+	(*ScopeRef)(nil),             // 7: dop.v1.ScopeRef
+	(*ListFlowsRequest)(nil),     // 8: dop.v1.ListFlowsRequest
+	(*ListFlowsResponse)(nil),    // 9: dop.v1.ListFlowsResponse
+	(*GetFlowRequest)(nil),       // 10: dop.v1.GetFlowRequest
+	(*CreateFlowRequest)(nil),    // 11: dop.v1.CreateFlowRequest
+	(*UpdateFlowRequest)(nil),    // 12: dop.v1.UpdateFlowRequest
+	(*ValidateFlowRequest)(nil),  // 13: dop.v1.ValidateFlowRequest
+	(*ValidateFlowResponse)(nil), // 14: dop.v1.ValidateFlowResponse
+	(*ResolveFlowRequest)(nil),   // 15: dop.v1.ResolveFlowRequest
+	(*PromoteFlowRequest)(nil),   // 16: dop.v1.PromoteFlowRequest
+	(*AuditStamp)(nil),           // 17: dop.v1.AuditStamp
+	(*CallContext)(nil),          // 18: dop.v1.CallContext
 }
 var file_dop_v1_workflow_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
 	1,  // 1: dop.v1.StageSpec.artifacts:type_name -> dop.v1.ArtifactKind
 	2,  // 2: dop.v1.StageSpec.gate:type_name -> dop.v1.Gate
 	3,  // 3: dop.v1.Flow.stages:type_name -> dop.v1.StageSpec
-	15, // 4: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
+	17, // 4: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
 	4,  // 5: dop.v1.EffectiveFlow.flow:type_name -> dop.v1.Flow
-	16, // 6: dop.v1.ListFlowsRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 7: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
-	16, // 8: dop.v1.GetFlowRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 9: dop.v1.CreateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 10: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
-	16, // 11: dop.v1.UpdateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 12: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
-	16, // 13: dop.v1.ValidateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 14: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
-	16, // 15: dop.v1.ResolveFlowRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 16: dop.v1.PromoteFlowRequest.ctx:type_name -> dop.v1.CallContext
-	6,  // 17: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
-	8,  // 18: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
-	9,  // 19: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
-	10, // 20: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
-	11, // 21: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
-	13, // 22: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
-	14, // 23: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
-	7,  // 24: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
-	4,  // 25: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
-	4,  // 26: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
-	4,  // 27: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
-	12, // 28: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
-	5,  // 29: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
-	4,  // 30: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
-	24, // [24:31] is the sub-list for method output_type
-	17, // [17:24] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	7,  // 6: dop.v1.EffectiveFlow.contributors:type_name -> dop.v1.ScopeRef
+	5,  // 7: dop.v1.EffectiveFlow.origins:type_name -> dop.v1.StageOrigin
+	18, // 8: dop.v1.ListFlowsRequest.ctx:type_name -> dop.v1.CallContext
+	4,  // 9: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
+	18, // 10: dop.v1.GetFlowRequest.ctx:type_name -> dop.v1.CallContext
+	18, // 11: dop.v1.CreateFlowRequest.ctx:type_name -> dop.v1.CallContext
+	4,  // 12: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
+	18, // 13: dop.v1.UpdateFlowRequest.ctx:type_name -> dop.v1.CallContext
+	4,  // 14: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
+	18, // 15: dop.v1.ValidateFlowRequest.ctx:type_name -> dop.v1.CallContext
+	4,  // 16: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
+	18, // 17: dop.v1.ResolveFlowRequest.ctx:type_name -> dop.v1.CallContext
+	18, // 18: dop.v1.PromoteFlowRequest.ctx:type_name -> dop.v1.CallContext
+	8,  // 19: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
+	10, // 20: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
+	11, // 21: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
+	12, // 22: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
+	13, // 23: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
+	15, // 24: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
+	16, // 25: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
+	9,  // 26: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
+	4,  // 27: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
+	4,  // 28: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
+	4,  // 29: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
+	14, // 30: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
+	6,  // 31: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
+	4,  // 32: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
+	26, // [26:33] is the sub-list for method output_type
+	19, // [19:26] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_workflow_proto_init() }
@@ -1124,7 +1280,7 @@ func file_dop_v1_workflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_workflow_proto_rawDesc), len(file_dop_v1_workflow_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

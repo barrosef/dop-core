@@ -23,6 +23,9 @@ message Budget {
   string scope_id = 2;
   int64  limit_micros = 3;
   int64  spent_micros = 4;
+  // A moeda viaja SEMPRE junto do valor. Micros sem moeda é número sem
+  // unidade, e a borda estava tendo que inventar ou deixar em branco.
+  string currency = 5;
 }
 
 // tarefa → (modelo, effort). Rascunho, calibra com telemetria (P-7).

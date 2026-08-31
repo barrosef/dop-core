@@ -55,9 +55,37 @@ message Flow {
 }
 
 // Resultado da cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda.
+// StageOrigin diz DE ONDE cada etapa veio na resolução.
+//
+// Sem isso, ninguém consegue depurar por que uma demanda seguiu um fluxo que
+// ninguém lembra de ter escrito — e a herança de cinco níveis torna isso comum,
+// não excepcional.
+message StageOrigin {
+  string key   = 1;  // a chave da etapa, como aparece em Flow.stages
+  string scope = 2;  // platform | account | workspace | project | demand
+  string scope_id = 3;
+}
+
 message EffectiveFlow {
   Flow   flow          = 1;
-  string resolved_from = 2;  // rastro visível: "projeto ◂ workspace ◂ conta"
+  // Rastro legível, para log e mensagem de erro: "projeto ◂ workspace ◂ conta".
+  string resolved_from = 2;
+  // Os níveis que CONTRIBUÍRAM, do mais específico para o mais geral.
+  repeated ScopeRef contributors = 3;
+  // A procedência POR ETAPA, na mesma ordem de flow.stages.
+  //
+  // Existe porque `resolved_from` é uma frase, e a borda estava tendo que
+  // fazer parsing dela para marcar "herdado da conta" na linha da etapa.
+  // Contrato que obriga o consumidor a interpretar texto é contrato que
+  // quebra quando alguém melhora a redação.
+  repeated StageOrigin origins = 4;
+}
+
+// ScopeRef endereça um nível da hierarquia. `id` é vazio no catálogo da
+// plataforma, que não pertence a conta nenhuma.
+message ScopeRef {
+  string scope = 1;
+  string id    = 2;
 }
 
 service WorkflowService {

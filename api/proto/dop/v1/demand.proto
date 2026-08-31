@@ -104,6 +104,14 @@ service DemandService {
   rpc CreateThread (CreateThreadRequest) returns (Thread);   // lançar subagente
   rpc PostMessage  (PostMessageRequest)  returns (Message);
   rpc PublishFinding(PublishFindingRequest) returns (Finding);
+  // Os achados JÁ publicados na demanda.
+  //
+  // A leitura existia só no domínio Go, e a borda ficava sem como mostrar o
+  // quadro de achados — que é o que impede um agente (ou um humano) de refazer
+  // investigação que outro já concluiu (ADR-0009). Ler pelo pacote de contexto
+  // não serve: aquele é truncado por orçamento de tokens e a montagem grava um
+  // evento de medição, então abrir uma tela viraria linha de custo.
+  rpc ListFindings (ListFindingsRequest) returns (ListFindingsResponse);
   // Streaming: o BFF converte em SSE (ADR-0017).
   rpc WatchDemand  (WatchDemandRequest)  returns (stream DemandEvent);
 }
@@ -118,6 +126,18 @@ message ListThreadsRequest  { CallContext ctx = 1; string demand_id = 2; }
 message ListThreadsResponse { repeated Thread threads = 1; }
 message CreateThreadRequest { CallContext ctx = 1; string demand_id = 2; string key = 3; AgentCard card = 4; string idempotency_key = 5; }
 message PostMessageRequest  { CallContext ctx = 1; string thread_id = 2; string text = 3; string idempotency_key = 4; }
+message ListFindingsRequest {
+  CallContext ctx = 1;
+  string demand_id = 2;
+  // Vazio traz os achados da demanda inteira; preenchido, os de uma thread.
+  string thread_id = 3;
+  PageRequest page = 4;
+}
+message ListFindingsResponse {
+  repeated Finding findings = 1;
+  PageResponse page = 2;
+}
+
 message PublishFindingRequest { CallContext ctx = 1; string demand_id = 2; string thread_id = 3; string title = 4; google.protobuf.Struct payload = 5; string idempotency_key = 6; }
 message WatchDemandRequest  { CallContext ctx = 1; string demand_id = 2; }
 message DemandEvent {

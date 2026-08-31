@@ -166,6 +166,10 @@ func budgetToProto(b *cost.Budget) *dopv1.Budget {
 		ScopeId:     b.ScopeID,
 		LimitMicros: int64(b.LimitMicros),
 		SpentMicros: int64(b.SpentMicros),
+		// Micros sem moeda é número sem unidade. A borda estava tendo que
+		// inventar ou deixar em branco — e valor monetário sem unidade é como
+		// se soma dólar com real sem ninguém perceber.
+		Currency: b.Currency,
 	}
 }
 

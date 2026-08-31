@@ -1397,6 +1397,127 @@ func (x *PostMessageRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+type ListFindingsRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Ctx      *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	DemandId string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
+	// Vazio traz os achados da demanda inteira; preenchido, os de uma thread.
+	ThreadId      string       `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	Page          *PageRequest `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFindingsRequest) Reset() {
+	*x = ListFindingsRequest{}
+	mi := &file_dop_v1_demand_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFindingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFindingsRequest) ProtoMessage() {}
+
+func (x *ListFindingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_demand_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFindingsRequest.ProtoReflect.Descriptor instead.
+func (*ListFindingsRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_demand_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListFindingsRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *ListFindingsRequest) GetDemandId() string {
+	if x != nil {
+		return x.DemandId
+	}
+	return ""
+}
+
+func (x *ListFindingsRequest) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *ListFindingsRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListFindingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Findings      []*Finding             `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
+	Page          *PageResponse          `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFindingsResponse) Reset() {
+	*x = ListFindingsResponse{}
+	mi := &file_dop_v1_demand_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFindingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFindingsResponse) ProtoMessage() {}
+
+func (x *ListFindingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_demand_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFindingsResponse.ProtoReflect.Descriptor instead.
+func (*ListFindingsResponse) Descriptor() ([]byte, []int) {
+	return file_dop_v1_demand_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListFindingsResponse) GetFindings() []*Finding {
+	if x != nil {
+		return x.Findings
+	}
+	return nil
+}
+
+func (x *ListFindingsResponse) GetPage() *PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 type PublishFindingRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
@@ -1411,7 +1532,7 @@ type PublishFindingRequest struct {
 
 func (x *PublishFindingRequest) Reset() {
 	*x = PublishFindingRequest{}
-	mi := &file_dop_v1_demand_proto_msgTypes[17]
+	mi := &file_dop_v1_demand_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1423,7 +1544,7 @@ func (x *PublishFindingRequest) String() string {
 func (*PublishFindingRequest) ProtoMessage() {}
 
 func (x *PublishFindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_demand_proto_msgTypes[17]
+	mi := &file_dop_v1_demand_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1436,7 +1557,7 @@ func (x *PublishFindingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishFindingRequest.ProtoReflect.Descriptor instead.
 func (*PublishFindingRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_demand_proto_rawDescGZIP(), []int{17}
+	return file_dop_v1_demand_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PublishFindingRequest) GetCtx() *CallContext {
@@ -1491,7 +1612,7 @@ type WatchDemandRequest struct {
 
 func (x *WatchDemandRequest) Reset() {
 	*x = WatchDemandRequest{}
-	mi := &file_dop_v1_demand_proto_msgTypes[18]
+	mi := &file_dop_v1_demand_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1503,7 +1624,7 @@ func (x *WatchDemandRequest) String() string {
 func (*WatchDemandRequest) ProtoMessage() {}
 
 func (x *WatchDemandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_demand_proto_msgTypes[18]
+	mi := &file_dop_v1_demand_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1516,7 +1637,7 @@ func (x *WatchDemandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDemandRequest.ProtoReflect.Descriptor instead.
 func (*WatchDemandRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_demand_proto_rawDescGZIP(), []int{18}
+	return file_dop_v1_demand_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WatchDemandRequest) GetCtx() *CallContext {
@@ -1545,7 +1666,7 @@ type DemandEvent struct {
 
 func (x *DemandEvent) Reset() {
 	*x = DemandEvent{}
-	mi := &file_dop_v1_demand_proto_msgTypes[19]
+	mi := &file_dop_v1_demand_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1557,7 +1678,7 @@ func (x *DemandEvent) String() string {
 func (*DemandEvent) ProtoMessage() {}
 
 func (x *DemandEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_demand_proto_msgTypes[19]
+	mi := &file_dop_v1_demand_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1570,7 +1691,7 @@ func (x *DemandEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DemandEvent.ProtoReflect.Descriptor instead.
 func (*DemandEvent) Descriptor() ([]byte, []int) {
-	return file_dop_v1_demand_proto_rawDescGZIP(), []int{19}
+	return file_dop_v1_demand_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DemandEvent) GetType() string {
@@ -1708,7 +1829,15 @@ const file_dop_v1_demand_proto_rawDesc = "" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
 	"\tthread_id\x18\x02 \x01(\tR\bthreadId\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"\xea\x01\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"\x9f\x01\n" +
+	"\x13ListFindingsRequest\x12%\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\x12\x1b\n" +
+	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12'\n" +
+	"\x04page\x18\x04 \x01(\v2\x13.dop.v1.PageRequestR\x04page\"m\n" +
+	"\x14ListFindingsResponse\x12+\n" +
+	"\bfindings\x18\x01 \x03(\v2\x0f.dop.v1.FindingR\bfindings\x12(\n" +
+	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\"\xea\x01\n" +
 	"\x15PublishFindingRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
 	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\x12\x1b\n" +
@@ -1735,7 +1864,7 @@ const file_dop_v1_demand_proto_rawDesc = "" +
 	"\x14STAGE_STATUS_PENDING\x10\x01\x12\x18\n" +
 	"\x14STAGE_STATUS_RUNNING\x10\x02\x12\x18\n" +
 	"\x14STAGE_STATUS_BLOCKED\x10\x03\x12\x15\n" +
-	"\x11STAGE_STATUS_DONE\x10\x042\x8e\x05\n" +
+	"\x11STAGE_STATUS_DONE\x10\x042\xd9\x05\n" +
 	"\rDemandService\x12F\n" +
 	"\vListDemands\x12\x1a.dop.v1.ListDemandsRequest\x1a\x1b.dop.v1.ListDemandsResponse\x125\n" +
 	"\tGetDemand\x12\x18.dop.v1.GetDemandRequest\x1a\x0e.dop.v1.Demand\x129\n" +
@@ -1746,7 +1875,8 @@ const file_dop_v1_demand_proto_rawDesc = "" +
 	"\vListThreads\x12\x1a.dop.v1.ListThreadsRequest\x1a\x1b.dop.v1.ListThreadsResponse\x12;\n" +
 	"\fCreateThread\x12\x1b.dop.v1.CreateThreadRequest\x1a\x0e.dop.v1.Thread\x12:\n" +
 	"\vPostMessage\x12\x1a.dop.v1.PostMessageRequest\x1a\x0f.dop.v1.Message\x12@\n" +
-	"\x0ePublishFinding\x12\x1d.dop.v1.PublishFindingRequest\x1a\x0f.dop.v1.Finding\x12@\n" +
+	"\x0ePublishFinding\x12\x1d.dop.v1.PublishFindingRequest\x1a\x0f.dop.v1.Finding\x12I\n" +
+	"\fListFindings\x12\x1b.dop.v1.ListFindingsRequest\x1a\x1c.dop.v1.ListFindingsResponse\x12@\n" +
 	"\vWatchDemand\x12\x1a.dop.v1.WatchDemandRequest\x1a\x13.dop.v1.DemandEvent0\x01B\x91\x01\n" +
 	"\n" +
 	"com.dop.v1B\vDemandProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
@@ -1764,7 +1894,7 @@ func file_dop_v1_demand_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_demand_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_dop_v1_demand_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_dop_v1_demand_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_dop_v1_demand_proto_goTypes = []any{
 	(DopStatus)(0),                // 0: dop.v1.DopStatus
 	(StageStatus)(0),              // 1: dop.v1.StageStatus
@@ -1785,89 +1915,97 @@ var file_dop_v1_demand_proto_goTypes = []any{
 	(*ListThreadsResponse)(nil),   // 16: dop.v1.ListThreadsResponse
 	(*CreateThreadRequest)(nil),   // 17: dop.v1.CreateThreadRequest
 	(*PostMessageRequest)(nil),    // 18: dop.v1.PostMessageRequest
-	(*PublishFindingRequest)(nil), // 19: dop.v1.PublishFindingRequest
-	(*WatchDemandRequest)(nil),    // 20: dop.v1.WatchDemandRequest
-	(*DemandEvent)(nil),           // 21: dop.v1.DemandEvent
-	(*ProjectRef)(nil),            // 22: dop.v1.ProjectRef
-	(*AuditStamp)(nil),            // 23: dop.v1.AuditStamp
-	(StageType)(0),                // 24: dop.v1.StageType
-	(Gate)(0),                     // 25: dop.v1.Gate
-	(*timestamppb.Timestamp)(nil), // 26: google.protobuf.Timestamp
-	(ArtifactKind)(0),             // 27: dop.v1.ArtifactKind
-	(*DemandRef)(nil),             // 28: dop.v1.DemandRef
-	(*ActorRef)(nil),              // 29: dop.v1.ActorRef
-	(*structpb.Struct)(nil),       // 30: google.protobuf.Struct
-	(*CallContext)(nil),           // 31: dop.v1.CallContext
-	(*PageRequest)(nil),           // 32: dop.v1.PageRequest
-	(*PageResponse)(nil),          // 33: dop.v1.PageResponse
+	(*ListFindingsRequest)(nil),   // 19: dop.v1.ListFindingsRequest
+	(*ListFindingsResponse)(nil),  // 20: dop.v1.ListFindingsResponse
+	(*PublishFindingRequest)(nil), // 21: dop.v1.PublishFindingRequest
+	(*WatchDemandRequest)(nil),    // 22: dop.v1.WatchDemandRequest
+	(*DemandEvent)(nil),           // 23: dop.v1.DemandEvent
+	(*ProjectRef)(nil),            // 24: dop.v1.ProjectRef
+	(*AuditStamp)(nil),            // 25: dop.v1.AuditStamp
+	(StageType)(0),                // 26: dop.v1.StageType
+	(Gate)(0),                     // 27: dop.v1.Gate
+	(*timestamppb.Timestamp)(nil), // 28: google.protobuf.Timestamp
+	(ArtifactKind)(0),             // 29: dop.v1.ArtifactKind
+	(*DemandRef)(nil),             // 30: dop.v1.DemandRef
+	(*ActorRef)(nil),              // 31: dop.v1.ActorRef
+	(*structpb.Struct)(nil),       // 32: google.protobuf.Struct
+	(*CallContext)(nil),           // 33: dop.v1.CallContext
+	(*PageRequest)(nil),           // 34: dop.v1.PageRequest
+	(*PageResponse)(nil),          // 35: dop.v1.PageResponse
 }
 var file_dop_v1_demand_proto_depIdxs = []int32{
-	22, // 0: dop.v1.Demand.project:type_name -> dop.v1.ProjectRef
+	24, // 0: dop.v1.Demand.project:type_name -> dop.v1.ProjectRef
 	0,  // 1: dop.v1.Demand.dop_status:type_name -> dop.v1.DopStatus
 	3,  // 2: dop.v1.Demand.stages:type_name -> dop.v1.DemandStage
-	23, // 3: dop.v1.Demand.audit:type_name -> dop.v1.AuditStamp
-	24, // 4: dop.v1.DemandStage.type:type_name -> dop.v1.StageType
+	25, // 3: dop.v1.Demand.audit:type_name -> dop.v1.AuditStamp
+	26, // 4: dop.v1.DemandStage.type:type_name -> dop.v1.StageType
 	1,  // 5: dop.v1.DemandStage.status:type_name -> dop.v1.StageStatus
-	25, // 6: dop.v1.DemandStage.gate:type_name -> dop.v1.Gate
+	27, // 6: dop.v1.DemandStage.gate:type_name -> dop.v1.Gate
 	4,  // 7: dop.v1.DemandStage.artifacts:type_name -> dop.v1.Artifact
-	26, // 8: dop.v1.DemandStage.started_at:type_name -> google.protobuf.Timestamp
-	26, // 9: dop.v1.DemandStage.finished_at:type_name -> google.protobuf.Timestamp
-	27, // 10: dop.v1.Artifact.kind:type_name -> dop.v1.ArtifactKind
-	23, // 11: dop.v1.Artifact.audit:type_name -> dop.v1.AuditStamp
-	28, // 12: dop.v1.Thread.demand:type_name -> dop.v1.DemandRef
+	28, // 8: dop.v1.DemandStage.started_at:type_name -> google.protobuf.Timestamp
+	28, // 9: dop.v1.DemandStage.finished_at:type_name -> google.protobuf.Timestamp
+	29, // 10: dop.v1.Artifact.kind:type_name -> dop.v1.ArtifactKind
+	25, // 11: dop.v1.Artifact.audit:type_name -> dop.v1.AuditStamp
+	30, // 12: dop.v1.Thread.demand:type_name -> dop.v1.DemandRef
 	6,  // 13: dop.v1.Thread.card:type_name -> dop.v1.AgentCard
-	23, // 14: dop.v1.Thread.audit:type_name -> dop.v1.AuditStamp
-	29, // 15: dop.v1.Message.author:type_name -> dop.v1.ActorRef
-	26, // 16: dop.v1.Message.at:type_name -> google.protobuf.Timestamp
-	28, // 17: dop.v1.Finding.demand:type_name -> dop.v1.DemandRef
-	30, // 18: dop.v1.Finding.payload:type_name -> google.protobuf.Struct
-	23, // 19: dop.v1.Finding.audit:type_name -> dop.v1.AuditStamp
-	31, // 20: dop.v1.ListDemandsRequest.ctx:type_name -> dop.v1.CallContext
-	22, // 21: dop.v1.ListDemandsRequest.project:type_name -> dop.v1.ProjectRef
-	32, // 22: dop.v1.ListDemandsRequest.page:type_name -> dop.v1.PageRequest
+	25, // 14: dop.v1.Thread.audit:type_name -> dop.v1.AuditStamp
+	31, // 15: dop.v1.Message.author:type_name -> dop.v1.ActorRef
+	28, // 16: dop.v1.Message.at:type_name -> google.protobuf.Timestamp
+	30, // 17: dop.v1.Finding.demand:type_name -> dop.v1.DemandRef
+	32, // 18: dop.v1.Finding.payload:type_name -> google.protobuf.Struct
+	25, // 19: dop.v1.Finding.audit:type_name -> dop.v1.AuditStamp
+	33, // 20: dop.v1.ListDemandsRequest.ctx:type_name -> dop.v1.CallContext
+	24, // 21: dop.v1.ListDemandsRequest.project:type_name -> dop.v1.ProjectRef
+	34, // 22: dop.v1.ListDemandsRequest.page:type_name -> dop.v1.PageRequest
 	2,  // 23: dop.v1.ListDemandsResponse.demands:type_name -> dop.v1.Demand
-	33, // 24: dop.v1.ListDemandsResponse.page:type_name -> dop.v1.PageResponse
-	31, // 25: dop.v1.GetDemandRequest.ctx:type_name -> dop.v1.CallContext
-	31, // 26: dop.v1.StartDemandRequest.ctx:type_name -> dop.v1.CallContext
-	22, // 27: dop.v1.StartDemandRequest.project:type_name -> dop.v1.ProjectRef
-	31, // 28: dop.v1.AdvanceStageRequest.ctx:type_name -> dop.v1.CallContext
+	35, // 24: dop.v1.ListDemandsResponse.page:type_name -> dop.v1.PageResponse
+	33, // 25: dop.v1.GetDemandRequest.ctx:type_name -> dop.v1.CallContext
+	33, // 26: dop.v1.StartDemandRequest.ctx:type_name -> dop.v1.CallContext
+	24, // 27: dop.v1.StartDemandRequest.project:type_name -> dop.v1.ProjectRef
+	33, // 28: dop.v1.AdvanceStageRequest.ctx:type_name -> dop.v1.CallContext
 	1,  // 29: dop.v1.AdvanceStageRequest.status:type_name -> dop.v1.StageStatus
-	31, // 30: dop.v1.DecideGateRequest.ctx:type_name -> dop.v1.CallContext
-	31, // 31: dop.v1.ListThreadsRequest.ctx:type_name -> dop.v1.CallContext
+	33, // 30: dop.v1.DecideGateRequest.ctx:type_name -> dop.v1.CallContext
+	33, // 31: dop.v1.ListThreadsRequest.ctx:type_name -> dop.v1.CallContext
 	5,  // 32: dop.v1.ListThreadsResponse.threads:type_name -> dop.v1.Thread
-	31, // 33: dop.v1.CreateThreadRequest.ctx:type_name -> dop.v1.CallContext
+	33, // 33: dop.v1.CreateThreadRequest.ctx:type_name -> dop.v1.CallContext
 	6,  // 34: dop.v1.CreateThreadRequest.card:type_name -> dop.v1.AgentCard
-	31, // 35: dop.v1.PostMessageRequest.ctx:type_name -> dop.v1.CallContext
-	31, // 36: dop.v1.PublishFindingRequest.ctx:type_name -> dop.v1.CallContext
-	30, // 37: dop.v1.PublishFindingRequest.payload:type_name -> google.protobuf.Struct
-	31, // 38: dop.v1.WatchDemandRequest.ctx:type_name -> dop.v1.CallContext
-	30, // 39: dop.v1.DemandEvent.payload:type_name -> google.protobuf.Struct
-	26, // 40: dop.v1.DemandEvent.at:type_name -> google.protobuf.Timestamp
-	9,  // 41: dop.v1.DemandService.ListDemands:input_type -> dop.v1.ListDemandsRequest
-	11, // 42: dop.v1.DemandService.GetDemand:input_type -> dop.v1.GetDemandRequest
-	12, // 43: dop.v1.DemandService.StartDemand:input_type -> dop.v1.StartDemandRequest
-	13, // 44: dop.v1.DemandService.AdvanceStage:input_type -> dop.v1.AdvanceStageRequest
-	14, // 45: dop.v1.DemandService.DecideGate:input_type -> dop.v1.DecideGateRequest
-	15, // 46: dop.v1.DemandService.ListThreads:input_type -> dop.v1.ListThreadsRequest
-	17, // 47: dop.v1.DemandService.CreateThread:input_type -> dop.v1.CreateThreadRequest
-	18, // 48: dop.v1.DemandService.PostMessage:input_type -> dop.v1.PostMessageRequest
-	19, // 49: dop.v1.DemandService.PublishFinding:input_type -> dop.v1.PublishFindingRequest
-	20, // 50: dop.v1.DemandService.WatchDemand:input_type -> dop.v1.WatchDemandRequest
-	10, // 51: dop.v1.DemandService.ListDemands:output_type -> dop.v1.ListDemandsResponse
-	2,  // 52: dop.v1.DemandService.GetDemand:output_type -> dop.v1.Demand
-	2,  // 53: dop.v1.DemandService.StartDemand:output_type -> dop.v1.Demand
-	3,  // 54: dop.v1.DemandService.AdvanceStage:output_type -> dop.v1.DemandStage
-	3,  // 55: dop.v1.DemandService.DecideGate:output_type -> dop.v1.DemandStage
-	16, // 56: dop.v1.DemandService.ListThreads:output_type -> dop.v1.ListThreadsResponse
-	5,  // 57: dop.v1.DemandService.CreateThread:output_type -> dop.v1.Thread
-	7,  // 58: dop.v1.DemandService.PostMessage:output_type -> dop.v1.Message
-	8,  // 59: dop.v1.DemandService.PublishFinding:output_type -> dop.v1.Finding
-	21, // 60: dop.v1.DemandService.WatchDemand:output_type -> dop.v1.DemandEvent
-	51, // [51:61] is the sub-list for method output_type
-	41, // [41:51] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	33, // 35: dop.v1.PostMessageRequest.ctx:type_name -> dop.v1.CallContext
+	33, // 36: dop.v1.ListFindingsRequest.ctx:type_name -> dop.v1.CallContext
+	34, // 37: dop.v1.ListFindingsRequest.page:type_name -> dop.v1.PageRequest
+	8,  // 38: dop.v1.ListFindingsResponse.findings:type_name -> dop.v1.Finding
+	35, // 39: dop.v1.ListFindingsResponse.page:type_name -> dop.v1.PageResponse
+	33, // 40: dop.v1.PublishFindingRequest.ctx:type_name -> dop.v1.CallContext
+	32, // 41: dop.v1.PublishFindingRequest.payload:type_name -> google.protobuf.Struct
+	33, // 42: dop.v1.WatchDemandRequest.ctx:type_name -> dop.v1.CallContext
+	32, // 43: dop.v1.DemandEvent.payload:type_name -> google.protobuf.Struct
+	28, // 44: dop.v1.DemandEvent.at:type_name -> google.protobuf.Timestamp
+	9,  // 45: dop.v1.DemandService.ListDemands:input_type -> dop.v1.ListDemandsRequest
+	11, // 46: dop.v1.DemandService.GetDemand:input_type -> dop.v1.GetDemandRequest
+	12, // 47: dop.v1.DemandService.StartDemand:input_type -> dop.v1.StartDemandRequest
+	13, // 48: dop.v1.DemandService.AdvanceStage:input_type -> dop.v1.AdvanceStageRequest
+	14, // 49: dop.v1.DemandService.DecideGate:input_type -> dop.v1.DecideGateRequest
+	15, // 50: dop.v1.DemandService.ListThreads:input_type -> dop.v1.ListThreadsRequest
+	17, // 51: dop.v1.DemandService.CreateThread:input_type -> dop.v1.CreateThreadRequest
+	18, // 52: dop.v1.DemandService.PostMessage:input_type -> dop.v1.PostMessageRequest
+	21, // 53: dop.v1.DemandService.PublishFinding:input_type -> dop.v1.PublishFindingRequest
+	19, // 54: dop.v1.DemandService.ListFindings:input_type -> dop.v1.ListFindingsRequest
+	22, // 55: dop.v1.DemandService.WatchDemand:input_type -> dop.v1.WatchDemandRequest
+	10, // 56: dop.v1.DemandService.ListDemands:output_type -> dop.v1.ListDemandsResponse
+	2,  // 57: dop.v1.DemandService.GetDemand:output_type -> dop.v1.Demand
+	2,  // 58: dop.v1.DemandService.StartDemand:output_type -> dop.v1.Demand
+	3,  // 59: dop.v1.DemandService.AdvanceStage:output_type -> dop.v1.DemandStage
+	3,  // 60: dop.v1.DemandService.DecideGate:output_type -> dop.v1.DemandStage
+	16, // 61: dop.v1.DemandService.ListThreads:output_type -> dop.v1.ListThreadsResponse
+	5,  // 62: dop.v1.DemandService.CreateThread:output_type -> dop.v1.Thread
+	7,  // 63: dop.v1.DemandService.PostMessage:output_type -> dop.v1.Message
+	8,  // 64: dop.v1.DemandService.PublishFinding:output_type -> dop.v1.Finding
+	20, // 65: dop.v1.DemandService.ListFindings:output_type -> dop.v1.ListFindingsResponse
+	23, // 66: dop.v1.DemandService.WatchDemand:output_type -> dop.v1.DemandEvent
+	56, // [56:67] is the sub-list for method output_type
+	45, // [45:56] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_demand_proto_init() }
@@ -1883,7 +2021,7 @@ func file_dop_v1_demand_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_demand_proto_rawDesc), len(file_dop_v1_demand_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
