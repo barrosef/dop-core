@@ -11,6 +11,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
+	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
 	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
@@ -121,6 +122,18 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 		relogio,
 	)
 	dopv1.RegisterAttentionServiceServer(srv, appgrpc.NewAttentionServer(attentionSvc))
+
+	// O runtime de agente vive AQUI, e não no BFF (ADR-0023): a credencial do
+	// provedor sai do cofre e é usada no mesmo processo, sem atravessar rede
+	// nenhuma. O BFF é a camada exposta à internet — e comprometê-la não pode
+	// entregar as credenciais de agente de todas as contas.
+	agentSvc := agent.NewService(
+		agentProviders{resourceSvc, deps.Secrets},
+		agentKnowledge{knowledgeSvc},
+		agentRouting{costSvc},
+		agentConversation{demandSvc},
+	)
+	dopv1.RegisterAgentServiceServer(srv, appgrpc.NewAgentServer(agentSvc))
 
 	return nil
 }

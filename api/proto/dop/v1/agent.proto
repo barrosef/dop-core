@@ -1,0 +1,119 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "dop/v1/cost.proto";
+
+// Execução de turno de agente — o runtime vive no NÚCLEO (ADR-0023).
+//
+// A credencial do provedor NÃO aparece neste contrato, em campo nenhum, em
+// nenhuma direção. É o ponto inteiro da decisão: ela é lida do cofre e usada no
+// mesmo processo, e a borda pede um turno sem nunca ter tido acesso à chave.
+
+// A decisão de roteamento que valeu neste turno, com a justificativa INTEIRA.
+// Sem ela ninguém audita "por que esta demanda rodou no modelo caro?"
+// (ADR-0011 §3).
+message TurnRouting {
+  string task_kind = 1;   // mechanical | investigation | implementation | critic
+  // A CLASSE, e não só o nome. Ela existe aqui porque a fronteira de rede a
+  // comia: o consumidor que precisasse dela tinha de reconstruí-la a partir do
+  // nome do modelo, e adivinhar errado trocava o modelo em silêncio.
+  string model_class = 2;   // cheap | medium | strong
+  string model       = 3;
+  string effort      = 4;   // pedido:   low | medium | high | xhigh | max
+  // O effort REALMENTE aplicado. Pode ser MENOR que o pedido quando o
+  // fornecedor não tem os cinco níveis (ADR-0022 D4) — e em trabalho crítico
+  // (ADR-0007) essa diferença é decisão de produto, não detalhe.
+  string effort_applied = 5;
+  string reason         = 6;
+  // A ficha da thread (ADR-0010 §2) venceu o roteador.
+  bool from_agent_card  = 7;
+}
+
+// O consumo do turno, com as quatro parcelas DISJUNTAS (ADR-0022 D2).
+//
+// Disjuntas é o contrato: input_tokens NÃO inclui o que veio do cache. Provedor
+// que reporta de forma inclusiva é normalizado pelo adaptador — somar campos
+// inclusivos inflaria a medição da ADR-0011 sem nada falhar.
+message TurnUsage {
+  int64 input_tokens          = 1;
+  int64 output_tokens         = 2;
+  int64 cache_read_tokens     = 3;
+  int64 cache_creation_tokens = 4;
+  Money cost                  = 5;
+  // Falso = o provedor NÃO reporta criação de cache. O zero acima significa
+  // então "não dá para saber", nunca "nada foi escrito" (ADR-0022 D1). Sem este
+  // campo, quem lê a telemetria não tem como distinguir os dois.
+  bool cache_creation_known = 6;
+  // Falso = não há tabela de preço para este modelo. O custo fica zerado por
+  // AUSÊNCIA de tabela, não por ter sido de graça — orçamento alimentado com
+  // zeros é a ficção que a ADR-0011 §2 existe para impedir.
+  bool cost_known = 7;
+}
+
+message TurnFinding {
+  string id    = 1;
+  string title = 2;
+}
+
+message TurnOutcome {
+  DemandRef demand    = 1;
+  string    thread_id = 2;
+  string    provider  = 3;
+  TurnRouting routing = 4;
+  // A fala do agente, já como texto para gente ler.
+  string reply = 5;
+  // As mensagens publicadas na thread, na ordem em que entraram. A primeira é
+  // a do humano: a pergunta entra ANTES da chamada ao modelo, para que a
+  // conversa mostre o que foi perguntado mesmo se o fornecedor cair.
+  repeated string message_ids = 6;
+  bool concluded = 7;
+  // Presente somente quando concluiu: concluir EXIGE publicar achado, e achado
+  // vazio publicado seria o registro durável de nada.
+  TurnFinding finding = 8;
+  TurnUsage   usage   = 9;
+  // O pacote de contexto veio TRUNCADO por orçamento de tokens (ADR-0012). O
+  // aviso também entra na thread — contexto truncado que não aparece na
+  // conversa é a origem de uma conclusão errada que ninguém explica depois.
+  bool context_truncated = 10;
+  // Orçamento estourado: a demanda PAUSA e vira item de decisão (ADR-0011 §2).
+  // O turno que já rodou é entregue inteiro; o próximo é que não sai.
+  bool   paused = 11;
+  string notice = 12;
+  repeated Budget budgets = 13;
+  // Avisos legíveis: effort rebaixado, resposta cortada, conclusão recusada,
+  // criação de cache não reportada.
+  repeated string warnings = 14;
+}
+
+service AgentService {
+  // Executa UM turno. O próximo é decisão de quem chamou — é assim que o
+  // orçamento consegue interromper ENTRE turnos, e não no meio de um.
+  rpc RunTurn(RunTurnRequest) returns (TurnOutcome);
+}
+
+message RunTurnRequest {
+  CallContext ctx       = 1;
+  string      demand_id = 2;
+  string      thread_id = 3;
+  string      text      = 4;
+  // Vocabulário ABERTO: o roteador trata o desconhecido caindo no caro e DIZ
+  // que caiu. Vazio é que não passa — sem tipo de trabalho não há decisão a
+  // auditar.
+  string task_kind = 5;
+  // O recurso de categoria `agent` (ADR-0013) que atende este turno. Vazio = o
+  // provedor da conta, e só quando ele é ÚNICO: com dois, escolher por conta
+  // própria trocaria fornecedor, preço e cache no meio da demanda.
+  string resource_id = 6;
+  // Intervenção do OPERADOR, vinda da caixa de atenção. Entra pelo canal de
+  // autoridade do fornecedor, NUNCA como texto de usuário (ADR-0022 D3):
+  // achatar os dois papéis é o caminho clássico de injeção de prompt.
+  string operator_note     = 7;
+  int32  max_output_tokens = 8;
+  // OBRIGATÓRIA. As cinco escritas do turno (mensagem de entrada, aviso,
+  // consumo, resposta, achado) derivam dela, de modo que repetir a requisição
+  // repete ZERO efeitos. Gerar uma aqui transformaria um retry de rede em
+  // consumo em dobro — e duplicata de consumo não colide com nada, entraria
+  // como gasto legítimo (ADR-0011).
+  string idempotency_key = 9;
+}
