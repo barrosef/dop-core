@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -81,6 +82,27 @@ func RegisterLauncher(ctx context.Context, _ *Deps) error {
 // RunScheduledTasks executa o ciclo periódico: polling de PRs, suspensão de
 // sandboxes ociosos, criação de partições futuras de events, expiração de
 // convites e limpeza da tabela de idempotência.
-func RunScheduledTasks(ctx context.Context, _ *Deps) {
-	logging.From(ctx).Debug("ciclo do scheduler")
+func RunScheduledTasks(ctx context.Context, deps *Deps) {
+	log := logging.From(ctx)
+
+	// Partições futuras PRIMEIRO, antes de qualquer outra tarefa: sem elas,
+	// na virada do mês toda escrita de evento falha — e falha no caminho do
+	// outbox, derrubando qualquer operação que mude estado. As migrações
+	// criam partições fixas e param; quem continua daqui é isto.
+	criadas, err := postgres.EnsureMonthlyPartitions(ctx, deps.Pool, time.Now().UTC(), partitionsAhead)
+	if err != nil {
+		// Não derruba o ciclo: o próximo tenta de novo, e há meses de folga
+		// antes de a falta virar problema. Mas sobe como ERRO, porque é o
+		// aviso que separa "meses de folga" de "amanhã para tudo".
+		log.Error("falha ao garantir partições futuras", logging.FieldError, err.Error())
+	}
+	if len(criadas) > 0 {
+		log.Info("partições criadas", "particoes", criadas)
+	}
+
+	log.Debug("ciclo do scheduler")
 }
+
+// partitionsAhead é folga, não previsão: com 3 meses o scheduler pode ficar
+// fora do ar semanas sem que ninguém perceba a diferença.
+const partitionsAhead = 3
