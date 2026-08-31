@@ -88,7 +88,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	knowledgeSvc := knowledge.NewService(
 		postgres.NewKnowledgeRepo(deps.Pool),
 		deps.Objects,
-		knowledgeDemands{demandSvc},
+		knowledgeDemands{demandSvc, hierarchySvc},
 		nil,
 		relogio,
 		knowledge.Budget{},

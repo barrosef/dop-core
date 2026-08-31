@@ -553,3 +553,22 @@ func (s *Service) Watch(ctx context.Context, demandID string, emit func(ports.Ev
 		return emit(e)
 	})
 }
+
+// Findings devolve os achados publicados na demanda.
+//
+// Sem RPC própria no contrato ainda; existe porque o montador de pacote de
+// contexto precisa deles (ADR-0009) e o quadro de achados é justamente o que
+// impede um agente de refazer investigação que outro já concluiu.
+func (s *Service) Findings(ctx context.Context, demandID string) ([]Finding, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Passa pelo Get antes: garante que a demanda é DESTA conta, e não só que
+	// existe — filtrar só no ListFindings deixaria o id alheio devolver vazio
+	// em vez de negar, que é vazamento de existência.
+	if _, err := s.Get(ctx, demandID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListFindings(ctx, accountID, demandID)
+}

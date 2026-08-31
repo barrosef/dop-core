@@ -68,6 +68,13 @@ type Repository interface {
 
 	// ── achados ──
 	CreateFinding(ctx context.Context, f *Finding, ev Emission, idemKey string) (*Finding, error)
+	// ListFindings devolve os achados JÁ PUBLICADOS na demanda.
+	//
+	// Existe para o pacote de contexto (ADR-0009): sem os achados, um agente
+	// que retoma a demanda refaz investigação que outro já concluiu — que é
+	// exatamente o desperdício que o quadro de achados existe para evitar.
+	ListFindings(ctx context.Context, accountID, demandID string) ([]Finding, error)
+
 	// HasFinding responde se a thread já publicou achado — é o que destrava a
 	// conclusão dela.
 	HasFinding(ctx context.Context, accountID, threadID string) (bool, error)

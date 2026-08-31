@@ -6,6 +6,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
+	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
@@ -99,7 +100,8 @@ func (a workflowAccess) RoleOf(ctx context.Context, userID, accountID string) (s
 // título, spec, repositórios e achados — que moram em três lugares. Juntar isso
 // é trabalho de composição, não de nenhum dos dois domínios.
 type knowledgeDemands struct {
-	demands *demand.Service
+	demands   *demand.Service
+	hierarchy *hierarchy.Service
 }
 
 func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID string) (*knowledge.DemandContext, error) {
@@ -107,16 +109,59 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 	if err != nil {
 		return nil, err
 	}
+
+	// Os achados JÁ publicados são a camada de retomada: sem eles, um agente
+	// que pega a demanda no meio refaz investigação que outro concluiu — o
+	// desperdício exato que o quadro de achados existe para evitar (ADR-0009).
+	achados, err := a.demands.Findings(ctx, demandID)
+	if err != nil {
+		return nil, err
+	}
+	convertidos := make([]knowledge.Finding, 0, len(achados))
+	for _, f := range achados {
+		convertidos = append(convertidos, knowledge.Finding{
+			ID:       f.ID,
+			ThreadID: f.ThreadID,
+			Title:    f.Title,
+			Summary:  resumoDoAchado(f),
+		})
+	}
+
+	// Os repositórios recortam o índice de código: o pacote traz o índice DOS
+	// REPOS DA DEMANDA, nunca do projeto inteiro. Falhar aqui não vale a
+	// viagem — sem a lista, o índice sai vazio em vez de sair errado.
+	var repos []string
+	if p, err := a.hierarchy.GetProject(ctx, d.ProjectID); err == nil {
+		for _, r := range p.Repos {
+			repos = append(repos, r.ID)
+		}
+	}
+
 	return &knowledge.DemandContext{
 		DemandID:  d.ID,
 		ProjectID: d.ProjectID,
 		Title:     d.Title,
-		// Spec, Repos e Findings ficam vazios por ora, e isso é DEGRADAÇÃO
-		// declarada, não esquecimento: o pacote de contexto perde a camada de
-		// retomada (o agente refaz investigação que já fora feita) mas continua
-		// correto. Preencher exige listagem de achados por demanda, que o
-		// repositório ainda não expõe, e os repos do projeto via hierarquia.
+		// Spec continua vazia: ela é ARTEFATO de etapa, e o armazenamento de
+		// artefato por etapa ainda não existe. Degradação declarada, não
+		// esquecimento — o pacote perde a spec, não fica incorreto.
+		Repos:    repos,
+		Findings: convertidos,
 	}, nil
+}
+
+// resumoDoAchado extrai o texto do achado do payload livre.
+//
+// O payload é `map[string]any` porque o formato do achado é do agente que o
+// publicou, não da plataforma. Aceitar as duas chaves mais prováveis e cair no
+// título é melhor do que exigir esquema — achado sem resumo ainda vale mais no
+// contexto do que achado ausente.
+func resumoDoAchado(f demand.Finding) string {
+	for _, chave := range []string{"summary", "resumo"} {
+		if v, ok := f.Payload[chave].(string); ok && v != "" {
+			return v
+		}
+	}
+	return f.Title
 }
 
 // ── demand → delivery ───────────────────────────────────────────────────────

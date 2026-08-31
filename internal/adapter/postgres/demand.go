@@ -302,7 +302,10 @@ func (r *DemandRepo) CreateThread(ctx context.Context, t *demand.Thread, ev dema
 			                            model, effort, budget_micros, state, created_by)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 			RETURNING `+threadCols,
-			t.AccountID, t.DemandID, t.Key, t.Card.Purpose, t.Card.Tools,
+			// tagsOf porque a coluna é NOT NULL com DEFAULT '{}': um slice nil
+			// vira NULL explícito, e NULL explícito IGNORA o default. Ficha de
+			// agente sem ferramentas é caso comum, não erro.
+			t.AccountID, t.DemandID, t.Key, t.Card.Purpose, tagsOf(t.Card.Tools),
 			t.Card.Model, t.Card.Effort, t.Card.BudgetMicros, string(t.State), t.CreatedBy))
 		if err != nil {
 			return nil, Translate(err, "thread da demanda")
@@ -382,6 +385,38 @@ func (r *DemandRepo) HasFinding(ctx context.Context, accountID, threadID string)
 		return false, Translate(err, "achados da thread")
 	}
 	return exists, nil
+}
+
+// ListFindings devolve os achados da demanda, do mais antigo para o mais novo.
+//
+// A ordem é cronológica de propósito: o pacote de contexto corta pelo orçamento
+// e, se o corte tirasse o achado mais VELHO, tiraria justamente o que fundamenta
+// os seguintes.
+func (r *DemandRepo) ListFindings(ctx context.Context, accountID, demandID string) ([]demand.Finding, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, account_id, demand_id, thread_id, title, payload, created_by, created_at
+		  FROM demand_findings
+		 WHERE demand_id = $1 AND account_id = $2
+		 ORDER BY created_at, id`, demandID, accountID)
+	if err != nil {
+		return nil, Translate(err, "achados da demanda")
+	}
+	defer rows.Close()
+
+	var achados []demand.Finding
+	for rows.Next() {
+		var f demand.Finding
+		var payload []byte
+		if err := rows.Scan(&f.ID, &f.AccountID, &f.DemandID, &f.ThreadID,
+			&f.Title, &payload, &f.CreatedBy, &f.CreatedAt); err != nil {
+			return nil, Translate(err, "achado da demanda")
+		}
+		if len(payload) > 0 {
+			_ = json.Unmarshal(payload, &f.Payload)
+		}
+		achados = append(achados, f)
+	}
+	return achados, Translate(rows.Err(), "achados da demanda")
 }
 
 // ── estado + evento + idempotência, numa transação só ────────────────────────

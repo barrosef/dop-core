@@ -546,6 +546,16 @@ func (f *fakeRepo) CreateFinding(_ context.Context, fd *demand.Finding, ev deman
 	return &saved, nil
 }
 
+func (f *fakeRepo) ListFindings(_ context.Context, accountID, demandID string) ([]demand.Finding, error) {
+	var achados []demand.Finding
+	for _, fd := range f.findings {
+		if fd.AccountID == accountID && fd.DemandID == demandID {
+			achados = append(achados, fd)
+		}
+	}
+	return achados, nil
+}
+
 func (f *fakeRepo) HasFinding(_ context.Context, accountID, threadID string) (bool, error) {
 	for _, fd := range f.findings {
 		if fd.AccountID == accountID && fd.ThreadID == threadID {
