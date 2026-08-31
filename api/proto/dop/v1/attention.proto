@@ -1,0 +1,114 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// A caixa de atenção: a fila ÚNICA, entre todas as demandas da conta ativa,
+// que responde "onde eu sou necessário, e em que ordem".
+//
+// Não é o chat — é o que leva ao chat certo. Cinco demandas com três threads
+// cada são quinze conversas; sem esta fila, o modelo multi-agente afoga o dev,
+// e os dois sobem juntos ou nenhum sobe (spec conversação-e-atenção, R-2).
+//
+// **É PROJEÇÃO, não sistema.** Todo item nasce de um evento do log (ADR-0006) e
+// morre de outro. Por isso não existe RPC para criar, marcar como lido ou
+// descartar item: item que some sem o problema ter sido resolvido é mentira
+// confortável, e caixa que mente vira caixa ignorada — que é o risco R-1 da
+// spec. Quem fecha o item é o fato: o portão decidido, a thread destravada, a
+// diretriz resolvida.
+//
+// O que ENTRA é só o que exige DECISÃO HUMANA. Status e progresso ficam no
+// cockpit; despejá-los aqui é o caminho curto para a caixa virar ruído.
+
+message AttentionItem {
+  // Kind é a natureza do item, e é ela que determina o impacto na ordenação.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // Thread bloqueada esperando resposta do humano (ADR-0010).
+    KIND_THREAD_BLOCKED = 1;
+    // Etapa parada num portão humano — spec aguardando aprovação.
+    KIND_GATE_PENDING = 2;
+    // PR aguardando revisão, com a evidência junto (ADR-0007).
+    KIND_PR_REVIEW = 3;
+    // Conflito que a fila de merge escalou para decisão humana (ADR-0008).
+    KIND_MERGE_CONFLICT = 4;
+    // Transversal detectada pelo techlead, com opções e recomendação prontas
+    // (ADR-0015). NÃO pausa a demanda que já está andando.
+    KIND_DIRECTIVE = 5;
+    // Demanda pausada por estouro de orçamento (ADR-0011).
+    KIND_BUDGET_EXCEEDED = 6;
+    // Integração da conta quebrada — o trabalho para até alguém reconectar.
+    KIND_INTEGRATION_BROKEN = 7;
+  }
+
+  string     id      = 1;
+  AccountRef account = 2;
+  Kind       kind    = 3;
+
+  // Onde clicar leva. `target_kind` diz o que é (thread, stage, pull_request,
+  // directive, demand, resource) e `target_id` qual — o cockpit resolve a rota.
+  // Guardar a rota pronta aqui amarraria o backend ao desenho da tela.
+  string target_kind = 4;
+  string target_id   = 5;
+
+  // A demanda a que o item pertence, quando pertence a alguma: é por ela que a
+  // caixa agrupa. Vazia em item de conta (integração quebrada, por exemplo).
+  DemandRef demand = 6;
+
+  string title   = 7;
+  string summary = 8;
+
+  // Priority é DERIVADA (impacto do tipo, depois idade), nunca informada por
+  // quem emite o evento — senão cada domínio decidiria a própria urgência e a
+  // fila deixaria de ter uma ordem só. Menor número = mais urgente.
+  int32 priority = 9;
+
+  google.protobuf.Timestamp opened_at = 10;
+  // Preenchido quando o fato que abriu o item foi resolvido. Item resolvido sai
+  // da caixa mas PERMANECE na projeção: é dele que sai quanto tempo o dev levou
+  // para responder.
+  google.protobuf.Timestamp resolved_at = 11;
+}
+
+message ListAttentionRequest {
+  CallContext ctx = 1;
+  // Vazio = só os abertos, que é o caso da caixa. Resolvidos entram por
+  // pedido explícito, para histórico.
+  bool include_resolved = 2;
+  // Filtro opcional por demanda — a visão de uma demanda só.
+  DemandRef demand = 3;
+  PageRequest page = 4;
+}
+
+message ListAttentionResponse {
+  repeated AttentionItem items = 1;
+  PageResponse page = 2;
+  // Quantos itens ABERTOS existem na conta, independente da página. É o número
+  // do badge; contar a página daria um badge que muda ao paginar.
+  int32 open_total = 3;
+}
+
+message WatchAttentionRequest {
+  CallContext ctx = 1;
+  // Cursor de retomada, como em WatchEvents: o cliente que caiu volta de onde
+  // parou em vez de recomeçar ou perder item.
+  string since_event_id = 2;
+}
+
+// AttentionUpdate é a mudança, não a fila inteira: reenviar a caixa toda a cada
+// alteração desperdiçaria banda e faria a tela piscar.
+message AttentionUpdate {
+  enum Change {
+    CHANGE_UNSPECIFIED = 0;
+    CHANGE_OPENED   = 1;
+    CHANGE_RESOLVED = 2;
+  }
+  Change        change = 1;
+  AttentionItem item   = 2;
+}
+
+service AttentionService {
+  rpc ListAttention  (ListAttentionRequest)  returns (ListAttentionResponse);
+  rpc WatchAttention (WatchAttentionRequest) returns (stream AttentionUpdate);
+}

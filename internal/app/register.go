@@ -11,6 +11,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
+	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
@@ -114,6 +115,15 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
+	// A caixa de atenção é PROJEÇÃO, e o serviço dela é só leitura + streaming:
+	// item nasce e morre de evento, nunca de RPC.
+	attentionSvc := attention.NewService(
+		postgres.NewAttentionRepo(deps.Pool),
+		attentionWatcher{eventSvc},
+		relogio,
+	)
+	dopv1.RegisterAttentionServiceServer(srv, appgrpc.NewAttentionServer(attentionSvc))
+
 	return nil
 }
 
@@ -129,7 +139,17 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 		return err
 	}
 
-	log.Info("projeções registradas", "total", 1, "consumidores", []string{"timeline"})
+	// Caixa de atenção: assina SÓ os assuntos que a regra sabe traduzir. Assinar
+	// `dop.>` e descartar a maioria seria desperdiçar entrega; assinar de menos
+	// faria o item nunca chegar, em silêncio — há teste no domínio garantindo
+	// que os assuntos cobrem todos os eventos tratados.
+	caixa := projection.NewAttention(deps.Pool)
+	if err := deps.Bus.Subscribe(ctx, "", "attention", attention.Subjects(), caixa.Handle); err != nil {
+		return err
+	}
+
+	log.Info("projeções registradas", "total", 2,
+		"consumidores", []string{"timeline", "attention"})
 	return nil
 }
 

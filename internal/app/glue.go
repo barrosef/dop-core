@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
+	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
 	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
@@ -200,4 +203,35 @@ func (a executionDemands) DemandAccount(ctx context.Context, demandID string) (s
 		return "", err
 	}
 	return dm.AccountID, nil
+}
+
+// ── event → attention ───────────────────────────────────────────────────────
+
+// attentionWatcher entrega à caixa o mesmo fan-out do domínio de evento, com
+// replay, isolamento por conta e política de consumidor lento já resolvidos.
+type attentionWatcher struct{ ev *event.Service }
+
+func (a attentionWatcher) Watch(ctx context.Context, since string, aggregates, types []string, emit func(attention.Event) error) error {
+	return a.ev.Watch(ctx, since, event.Filter{Aggregates: aggregates, Types: types}, func(e ports.Event) error {
+		// O payload chega como bytes do envelope; a regra da caixa trabalha com
+		// mapa. Decodificar aqui — e não no domínio — mantém o domínio sem
+		// saber que existe JSON no meio do caminho.
+		var env struct {
+			ID          string         `json:"id"`
+			AccountID   string         `json:"account_id"`
+			Aggregate   string         `json:"aggregate"`
+			AggregateID string         `json:"aggregate_id"`
+			Type        string         `json:"type"`
+			Payload     map[string]any `json:"payload"`
+			OccurredAt  time.Time      `json:"occurred_at"`
+		}
+		if err := json.Unmarshal(e.Payload, &env); err != nil {
+			return nil // ilegível não melhora com retry
+		}
+		return emit(attention.Event{
+			ID: env.ID, AccountID: env.AccountID, Aggregate: env.Aggregate,
+			AggregateID: env.AggregateID, Type: env.Type,
+			OccurredAt: env.OccurredAt, Payload: env.Payload,
+		})
+	})
 }
