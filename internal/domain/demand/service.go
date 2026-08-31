@@ -254,6 +254,11 @@ func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, t
 		Payload: map[string]any{
 			"stage_key": st.Key, "stage_type": string(st.Type),
 			"from": string(from), "to": string(to),
+			// O PORTÃO viaja no evento: a caixa de atenção precisa distinguir
+			// "etapa parada esperando gente" de "etapa parada por outro
+			// motivo", e sem isto ela teria que consultar a demanda para
+			// decidir — projeção que consulta o estado deixa de ser projeção.
+			"gate":       string(st.Gate),
 			"dop_status": string(d.ProjectStatus()),
 		},
 	}, idemKey)

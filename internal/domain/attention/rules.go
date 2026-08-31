@@ -78,7 +78,13 @@ func Apply(e Event) Decision {
 		// Só entra quando a etapa PAROU num portão humano. Etapa avançando é
 		// progresso, e progresso é cockpit — se toda transição virasse item, a
 		// caixa encheria de coisa que ninguém precisa decidir.
-		if str(e.Payload, "status", "") != "blocked" {
+		//
+		// O campo é `to`, o estado PARA ONDE a etapa foi. A primeira versão
+		// lia `status`, que o evento nunca teve: a caixa só sabia FECHAR um
+		// item que nunca abria, e o teste de unidade não pegou porque fabricava
+		// o evento com o formato suposto em vez do formato emitido. É o teste
+		// de integração no fim deste domínio que fecha esse buraco.
+		if str(e.Payload, "to", "") != "blocked" {
 			return Decision{}
 		}
 		if str(e.Payload, "gate", "") == "none" {

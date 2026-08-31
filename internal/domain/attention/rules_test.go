@@ -32,7 +32,7 @@ func TestThreadBloqueadaAbreItemQueLevaAThread(t *testing.T) {
 // O risco R-1 em forma de teste: progresso não é atenção.
 func TestEtapaAvancandoNaoEnchaACaixa(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
-		"stage_key": "implementacao", "status": "running",
+		"stage_key": "implementacao", "to": "running",
 	}))
 	if d.Open != nil {
 		t.Fatal("etapa avançando é progresso, e progresso é cockpit — não caixa")
@@ -41,7 +41,7 @@ func TestEtapaAvancandoNaoEnchaACaixa(t *testing.T) {
 
 func TestEtapaBloqueadaEmPortaoHumanoAbreItem(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
-		"stage_key": "spec", "status": "blocked", "gate": "human",
+		"stage_key": "spec", "to": "blocked", "gate": "human",
 	}))
 	if d.Open == nil || d.Open.Kind != attention.KindGatePending {
 		t.Fatal("etapa parada em portão humano exige decisão — tem que abrir item")
@@ -50,7 +50,7 @@ func TestEtapaBloqueadaEmPortaoHumanoAbreItem(t *testing.T) {
 
 func TestEtapaBloqueadaSemPortaoNaoAbreItem(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
-		"stage_key": "teste", "status": "blocked", "gate": "none",
+		"stage_key": "teste", "to": "blocked", "gate": "none",
 	}))
 	if d.Open != nil {
 		t.Fatal("bloqueio sem portão não é decisão humana pendente")
