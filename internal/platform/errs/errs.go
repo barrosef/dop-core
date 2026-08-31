@@ -49,10 +49,24 @@ func Conflict(msg string, a ...any) *Error     { return New(KindConflict, msg, a
 func Precondition(msg string, a ...any) *Error { return New(KindPrecondition, msg, a...) }
 func Internal(msg string, a ...any) *Error     { return New(KindInternal, msg, a...) }
 
+// classifiers permite que outros pacotes registrem a tradução dos seus erros
+// sentinela, sem que este pacote precise importá-los (o que criaria ciclo).
+var classifiers []func(error) (Kind, bool)
+
+// RegisterClassifier associa um erro sentinela a um Kind.
+func RegisterClassifier(f func(error) (Kind, bool)) {
+	classifiers = append(classifiers, f)
+}
+
 func KindOf(err error) Kind {
 	var e *Error
 	if errors.As(err, &e) {
 		return e.Kind
+	}
+	for _, c := range classifiers {
+		if k, ok := c(err); ok {
+			return k
+		}
 	}
 	return KindInternal
 }

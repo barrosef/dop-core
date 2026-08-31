@@ -36,14 +36,25 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 		e.Payload = []byte(`{}`)
 	}
 
+	// Nem todo evento tem conta: `user.ensured` ocorre no primeiro login, antes
+	// de a conta pessoal existir. String vazia não é UUID — vai NULL.
+	var accountID any
+	if e.AccountID != "" {
+		accountID = e.AccountID
+	}
+	var actorID any
+	if call.ActorID != "" {
+		actorID = call.ActorID
+	}
+
 	var id string
 	err := tx.QueryRow(ctx, `
 		INSERT INTO events (account_id, aggregate, aggregate_id, type, payload,
 		                    actor_kind, actor_id, request_id, occurred_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		RETURNING id`,
-		e.AccountID, e.Aggregate, e.AggregateID, e.Type, e.Payload,
-		string(call.ActorKind), call.ActorID, call.RequestID, e.OccurredAt,
+		accountID, e.Aggregate, e.AggregateID, e.Type, e.Payload,
+		string(call.ActorKind), actorID, call.RequestID, e.OccurredAt,
 	).Scan(&id)
 	if err != nil {
 		return errs.Wrap(errs.KindInternal, err, "falha ao gravar evento")

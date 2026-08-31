@@ -11,10 +11,14 @@ package secretstore
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
@@ -34,12 +38,42 @@ type K8sConfig struct {
 	Client    *http.Client
 }
 
+// serviceAccountCA é onde o kubelet monta a CA do cluster em todo pod.
+const serviceAccountCA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
 func NewK8s(cfg K8sConfig) *K8s {
 	c := cfg.Client
 	if c == nil {
-		c = http.DefaultClient
+		c = defaultClient()
 	}
 	return &K8s{client: c, apiServer: strings.TrimRight(cfg.APIServer, "/"), token: cfg.Token, namespace: cfg.Namespace}
+}
+
+// defaultClient confia na CA do cluster ALÉM das públicas.
+//
+// O certificado do apiserver é assinado pela CA do próprio cluster, que não
+// está em bundle nenhum: com o pool padrão toda chamada morre em
+// "x509: certificate signed by unknown authority". A falha é traiçoeira
+// porque nada no boot toca a API — o pod sobe verde e só quebra na PRIMEIRA
+// credencial gravada, longe da causa.
+//
+// Fora do cluster o arquivo não existe e caímos no pool do sistema, que é o
+// certo para apiserver com certificado público e para o adaptador do GCP.
+func defaultClient() *http.Client {
+	c := &http.Client{Timeout: 10 * time.Second}
+	pem, err := os.ReadFile(serviceAccountCA)
+	if err != nil {
+		return c
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return c
+	}
+	c.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+	return c
 }
 
 // secretName mapeia a referência lógica para um nome de Secret válido.

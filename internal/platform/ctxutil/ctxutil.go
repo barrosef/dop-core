@@ -5,6 +5,8 @@ package ctxutil
 import (
 	"context"
 	"errors"
+
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
 type ActorKind string
@@ -28,6 +30,17 @@ type Call struct {
 // ErrNoAccount sinaliza requisição sem conta ativa — inválida por definição
 // (regra do SP-0, materializada aqui e no @account_scoped do BFF).
 var ErrNoAccount = errors.New("requisição sem conta ativa")
+
+// Requisição sem conta ativa é erro do CLIENTE, não falha interna: precisa
+// chegar como 400, não como 500.
+func init() {
+	errs.RegisterClassifier(func(err error) (errs.Kind, bool) {
+		if errors.Is(err, ErrNoAccount) {
+			return errs.KindInvalid, true
+		}
+		return "", false
+	})
+}
 
 type ctxKey struct{}
 

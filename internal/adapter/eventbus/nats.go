@@ -28,6 +28,20 @@ const (
 	MaxDeliver = 5
 )
 
+// Envelope é o FORMATO DE FIO do evento: o que o relay publica e o que o
+// consumidor recebe. Explícito de propósito — antes ele era implícito e o
+// consumidor tentava desserializar em ports.Event, cujo Payload []byte espera
+// base64; o envelope tem payload como OBJETO. Silenciava toda entrega.
+type Envelope struct {
+	ID          string          `json:"id"`
+	AccountID   string          `json:"account_id"`
+	Aggregate   string          `json:"aggregate"`
+	AggregateID string          `json:"aggregate_id"`
+	Type        string          `json:"type"`
+	Payload     json.RawMessage `json:"payload"`
+	OccurredAt  time.Time       `json:"occurred_at"`
+}
+
 type NATS struct {
 	conn   *nats.Conn
 	js     jetstream.JetStream
@@ -101,12 +115,23 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 
 	log := logging.From(ctx).With("consumer", durable)
 	_, err = cons.Consume(func(msg jetstream.Msg) {
-		var e ports.Event
-		if err := json.Unmarshal(msg.Data(), &e); err != nil {
+		var env Envelope
+		if err := json.Unmarshal(msg.Data(), &env); err != nil {
 			// Mensagem ilegível nunca melhora com retry — descarta com registro.
 			log.Error("evento ilegível, descartado", "error", err, "subject", msg.Subject())
 			_ = msg.Term()
 			return
+		}
+		// O handler recebe os campos já desembrulhados; Payload carrega o
+		// envelope inteiro, para quem quiser o dado cru.
+		e := ports.Event{
+			ID:          env.ID,
+			AccountID:   env.AccountID,
+			Aggregate:   env.Aggregate,
+			AggregateID: env.AggregateID,
+			Type:        env.Type,
+			Payload:     msg.Data(),
+			OccurredAt:  env.OccurredAt,
 		}
 		if err := h(ctx, e); err != nil {
 			md, _ := msg.Metadata()

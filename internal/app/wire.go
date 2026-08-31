@@ -8,8 +8,6 @@ package app
 
 import (
 	"context"
-	"net/http"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -58,11 +56,12 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	case "memory":
 		secrets = secretstore.NewMemory()
 	default: // k8s — usado no local e em self-hosted; não há emulador do Secret Manager
+		// Sem Client: quem sabe que o apiserver usa a CA do cluster é o
+		// adaptador, não o composition root. O campo existe para teste.
 		secrets = secretstore.NewK8s(secretstore.K8sConfig{
 			APIServer: cfg.K8sAPIServer,
 			Token:     cfg.K8sToken,
 			Namespace: cfg.K8sNamespace,
-			Client:    &http.Client{Timeout: 10 * time.Second},
 		})
 	}
 

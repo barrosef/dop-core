@@ -19,12 +19,12 @@ func TestDominioNaoImportaInfra(t *testing.T) {
 	domainDir := filepath.Join(root, "internal", "domain")
 
 	proibido := []string{
-		"/internal/adapter",              // a regra central
-		"google.golang.org/grpc",         // protocolo é da borda
-		"github.com/jackc/pgx",           // banco é adaptador
-		"github.com/nats-io",             // broker é adaptador
-		"cloud.google.com/go",            // SDK de fornecedor
-		"k8s.io/client-go",               // idem
+		"/internal/adapter",      // a regra central
+		"google.golang.org/grpc", // protocolo é da borda
+		"github.com/jackc/pgx",   // banco é adaptador
+		"github.com/nats-io",     // broker é adaptador
+		"cloud.google.com/go",    // SDK de fornecedor
+		"k8s.io/client-go",       // idem
 	}
 
 	var violacoes []string
