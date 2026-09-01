@@ -2,92 +2,94 @@ package workflow
 
 import "context"
 
-// Repository é a PORTA de persistência do domínio de fluxo.
+// Repository is the flow domain's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in internal/adapter/postgres.
+// The domain never sees SQL.
 //
-// Toda operação recebe accountID explicitamente: isolamento multi-tenant é
-// parâmetro obrigatório da porta, não algo que o adaptador possa esquecer. A
-// única exceção é o CATÁLOGO DA PLATAFORMA, que não tem dono — leitura o
-// enxerga sempre, escrita nunca o alcança.
+// Every operation takes accountID explicitly: multi-tenant isolation is a
+// required parameter of the port, not something the adapter could forget. The
+// only exception is the PLATFORM CATALOGUE, which has no owner — reads always
+// see it, writes never reach it.
 //
-// Repare no que NÃO existe aqui: nenhuma operação que altere uma versão
-// gravada. Não é esquecimento — é a invariante do domínio expressa na forma da
-// porta. O caminho para mudar um fluxo é AppendVersion, e só.
+// Note what does NOT exist here: no operation that alters a stored version. It
+// is not an oversight — it is the domain's invariant expressed in the shape of
+// the port. The way to change a flow is AppendVersion, and only that.
 type Repository interface {
-	// List devolve os fluxos da conta. scope vazio lista todos os níveis;
-	// ownerID vazio lista todos os donos daquele nível.
+	// List returns the account's flows. An empty scope lists every level; an
+	// empty ownerID lists every owner at that level.
 	List(ctx context.Context, accountID string, scope Scope, ownerID string) ([]Flow, error)
 
-	// ByID devolve a versão CORRENTE do fluxo.
+	// ByID returns the flow's CURRENT version.
 	ByID(ctx context.Context, accountID, id string) (*Flow, error)
 
-	// VersionOf devolve uma versão específica — congelada, exatamente como foi
-	// gravada. É por aqui que uma demanda em andamento lê o fluxo que ela
-	// congelou ao iniciar (ADR-0014 §4).
+	// VersionOf returns a specific version — frozen, exactly as it was written.
+	// This is how a demand in progress reads the flow it froze on start
+	// (ADR-0014 §4).
 	VersionOf(ctx context.Context, accountID, id string, version int32) (*Flow, error)
 
-	// ByOwners devolve a versão corrente do fluxo de CADA nível pedido, numa
-	// consulta só.
+	// ByOwners returns the current version of EACH requested level's flow, in a
+	// single query.
 	//
-	// Existe como operação própria — e não como laço sobre ByID — porque a
-	// resolução acontece a cada abertura de demanda e a cadeia tem cinco
-	// níveis: seriam cinco idas ao banco na tela mais quente do produto.
-	// Níveis sem fluxo declarado simplesmente não voltam.
+	// It exists as an operation of its own — and not as a loop over ByID —
+	// because resolution happens every time a demand is opened and the chain has
+	// five levels: that would be five round trips on the product's hottest
+	// screen. Levels with no declared flow simply do not come back.
 	ByOwners(ctx context.Context, accountID string, refs []ScopeRef) ([]Flow, error)
 
-	// Create grava o fluxo e a versão 1. idempotencyKey é obrigatória: repetir
-	// a chamada devolve o que já foi criado em vez de criar um segundo fluxo.
+	// Create writes the flow and version 1. idempotencyKey is required: repeating
+	// the call returns what was already created instead of creating a second
+	// flow.
 	Create(ctx context.Context, f *Flow, idempotencyKey string) (*Flow, error)
 
-	// AppendVersion grava a versão SEGUINTE sem tocar na anterior. baseVersion
-	// é a versão sobre a qual o autor trabalhou: se o fluxo já avançou, a
-	// escrita é recusada como conflito em vez de sobrescrever o trabalho alheio.
+	// AppendVersion writes the NEXT version without touching the previous one.
+	// baseVersion is the version the author worked on: if the flow has already
+	// moved on, the write is refused as a conflict instead of overwriting
+	// somebody else's work.
 	AppendVersion(ctx context.Context, accountID string, f *Flow, baseVersion int32, idempotencyKey string) (*Flow, error)
 
-	// Promote publica o conteúdo de src no nível alvo: cria o fluxo do alvo se
-	// ele não tiver nenhum, ou acrescenta uma versão ao que já existe.
+	// Promote publishes src's content at the target level: it creates the
+	// target's flow if it has none, or appends a version to the one that exists.
 	//
-	// Publica, não move: o fluxo de origem continua onde está. Mover apagaria
-	// o fluxo sob os pés das demandas que já o adotaram.
+	// It publishes, it does not move: the source flow stays where it is. Moving
+	// would pull the flow out from under the demands that already adopted it.
 	Promote(ctx context.Context, accountID string, src *Flow, target ScopeRef, idempotencyKey string) (*Flow, error)
 }
 
-// Ancestry é a porta ESTREITA para a árvore da conta: dado um nível concreto,
-// qual é a cadeia de níveis acima dele.
+// Ancestry is the NARROW port into the account's tree: given a concrete level,
+// what is the chain of levels above it.
 //
-// Este domínio precisa de UMA coisa da hierarquia e da demanda — a linhagem —
-// e não de projeto, workspace nem demanda como entidades. Declarar a porta com
-// essa superfície é o que impede o fluxo de virar cliente de outros dois
-// domínios por causa de uma consulta.
+// This domain needs ONE thing from hierarchy and from demand — the lineage — and
+// not project, workspace or demand as entities. Declaring the port with that
+// surface is what keeps flow from becoming a client of two other domains over a
+// single query.
 //
-// A cadeia volta do MAIS GENÉRICO ao MAIS ESPECÍFICO, incluindo o alvo, e
-// sempre começando na plataforma:
+// The chain comes back from the MOST GENERIC to the MOST SPECIFIC, including the
+// target, and always starting at the platform:
 //
-//	demanda d ⇒ [plataforma, conta a, workspace w, projeto p, demanda d]
+//	demand d ⇒ [platform, account a, workspace w, project p, demand d]
 //
-// Alvo que não existe, ou que pertence a outra conta, é NotFound: quem não é
-// da conta nem deveria descobrir que o id existe.
+// A target that does not exist, or that belongs to another account, is NotFound:
+// somebody outside the account should not even discover that the id exists.
 type Ancestry interface {
 	ChainOf(ctx context.Context, accountID string, target ScopeRef) ([]ScopeRef, error)
 }
 
-// Access é a porta ESTREITA para o domínio de identidade: promover um fluxo
-// para o nível acima exige `manage`, e para saber isso basta o PAPEL do ator na
-// conta ativa. Nada além disso.
+// Access is the NARROW port into the identity domain: promoting a flow to the
+// level above requires `manage`, and knowing that only takes the actor's ROLE in
+// the active account. Nothing beyond that.
 //
-// O papel viaja como string simples de propósito. O vocabulário é do domínio de
-// identidade, e importar o tipo dele aqui acoplaria os dois pacotes por uma
-// única comparação — o composition root liga com três linhas de cola e cada
-// domínio continua entendendo apenas o que precisa.
+// The role travels as a plain string on purpose. The vocabulary belongs to the
+// identity domain, and importing its type here would couple the two packages
+// over a single comparison — the composition root wires it with three lines of
+// glue and each domain keeps understanding only what it needs.
 type Access interface {
 	RoleOf(ctx context.Context, userID, accountID string) (string, error)
 }
 
-// Papéis com `manage` implícito sobre o conteúdo da conta (ADR-0013): owner e
-// admin. Sem isso, ninguém consegue consertar um fluxo publicado por quem já
-// saiu da empresa.
+// Roles with implicit `manage` over the account's content (ADR-0013): owner and
+// admin. Without it, nobody can fix a flow published by somebody who has already
+// left the company.
 const (
 	RoleOwner = "owner"
 	RoleAdmin = "admin"

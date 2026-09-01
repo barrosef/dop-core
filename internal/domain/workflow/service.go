@@ -12,7 +12,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/idem"
 )
 
-// Service concentra as regras do fluxo de trabalho. Recebe apenas PORTAS.
+// Service concentrates the work flow rules. It takes only PORTS.
 type Service struct {
 	repo   Repository
 	tree   Ancestry
@@ -20,72 +20,74 @@ type Service struct {
 	clock  ports.Clock
 }
 
-// NewService exige um relógio. Aceitar nil era o que mantinha a porta de
-// enfeite: o serviço caía em time.Now() por dentro e nenhum teste de
-// versionamento era determinístico. Panic aqui é deliberado — é erro de
-// montagem, detectado no boot.
+// NewService requires a clock. Accepting nil is what kept the port decorative:
+// the service fell back to time.Now() internally and no versioning test was
+// deterministic. The panic here is deliberate — it is a wiring error, caught at
+// boot.
 func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock) *Service {
 	if clock == nil {
-		panic("workflow.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("workflow.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, tree: tree, access: access, clock: clock}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
 
-// ── leitura ──────────────────────────────────────────────────────────────────
+// ── reads ────────────────────────────────────────────────────────────────────
 
-// List lista os fluxos visíveis da conta. Conteúdo (fluxo, skill, git_flow) em
-// conta PJ é ABERTO dentro da conta por default (ADR-0014 §6): quem está na
-// conta vê o que a conta escreveu. Credencial é risco, fluxo é conhecimento.
+// List lists the account's visible flows. Content (flow, skill, git_flow) in an
+// organization account is OPEN within the account by default (ADR-0014 §6):
+// whoever is in the account sees what the account wrote. A credential is risk, a
+// flow is knowledge.
 func (s *Service) List(ctx context.Context, scope Scope, ownerID string) ([]Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if scope != "" && !ValidScope(scope) {
-		return nil, errs.Invalid("nível desconhecido: %q", scope)
+		return nil, errs.Invalid("unknown level: %q", scope)
 	}
 	return s.repo.List(ctx, accountID, scope, strings.TrimSpace(ownerID))
 }
 
-// Get devolve a versão CORRENTE do fluxo.
+// Get returns the flow's CURRENT version.
 func (s *Service) Get(ctx context.Context, id string) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return nil, errs.Invalid("identificador do fluxo não informado")
+		return nil, errs.Invalid("flow identifier not provided")
 	}
 	return s.repo.ByID(ctx, accountID, id)
 }
 
-// GetVersion devolve uma versão congelada, exatamente como foi gravada.
+// GetVersion returns a frozen version, exactly as it was written.
 //
-// É o que a demanda em andamento consome: ela guardou (id, versão) ao iniciar
-// e precisa continuar enxergando aquele documento mesmo depois de o fluxo ter
-// avançado três versões (ADR-0014 §4).
+// It is what a demand in progress consumes: it stored (id, version) on start and
+// has to keep seeing that document even after the flow has moved three versions
+// on (ADR-0014 §4).
 func (s *Service) GetVersion(ctx context.Context, id string, version int32) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(id) == "" {
-		return nil, errs.Invalid("identificador do fluxo não informado")
+		return nil, errs.Invalid("flow identifier not provided")
 	}
 	if version <= 0 {
-		return nil, errs.Invalid("versão do fluxo precisa ser positiva")
+		return nil, errs.Invalid("the flow version has to be positive")
 	}
 	return s.repo.VersionOf(ctx, accountID, id, version)
 }
 
-// Validate é o ensaio: devolve o relatório sem gravar nada.
+// Validate is the dry run: it returns the report without writing anything.
 //
-// Devolve Report e NÃO erro quando o fluxo é inválido — o cliente pediu uma
-// avaliação, e recebê-la como falha de RPC obrigaria a tela a ler mensagem de
-// erro para montar a lista de problemas. A recusa com errs.Invalid acontece em
-// Create e Update, onde o fluxo inválido de fato impede alguma coisa.
+// It returns a Report and NOT an error when the flow is invalid — the client
+// asked for an assessment, and receiving it as an RPC failure would force the
+// screen to parse an error message to build the list of problems. The refusal
+// with errs.Invalid happens in Create and Update, where an invalid flow actually
+// prevents something.
 func (s *Service) Validate(ctx context.Context, in Flow) (Report, error) {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return Report{}, err
@@ -94,14 +96,14 @@ func (s *Service) Validate(ctx context.Context, in Flow) (Report, error) {
 	return Validate(in), nil
 }
 
-// ── escrita ──────────────────────────────────────────────────────────────────
+// ── writes ───────────────────────────────────────────────────────────────────
 
-// Create grava o fluxo de um nível e a sua versão 1.
+// Create writes a level's flow and its version 1.
 //
-// O nível é verificado contra a ÁRVORE da conta, não contra o que o cliente
-// afirma: um id de workspace é adivinhável e viaja no corpo da requisição, e
-// sem essa checagem bastaria mandar o id de outra conta para pendurar um fluxo
-// lá dentro.
+// The level is checked against the account's TREE, not against what the client
+// claims: a workspace id is guessable and travels in the request body, and
+// without that check sending another account's id would be enough to hang a flow
+// inside it.
 func (s *Service) Create(ctx context.Context, in Flow, idempotencyKey string) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -109,7 +111,7 @@ func (s *Service) Create(ctx context.Context, in Flow, idempotencyKey string) (*
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "ator não identificado")
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 
 	ref, err := s.resolveOwner(ctx, accountID, ScopeRef{Scope: in.OwnerScope, ID: in.OwnerID})
@@ -117,7 +119,7 @@ func (s *Service) Create(ctx context.Context, in Flow, idempotencyKey string) (*
 		return nil, err
 	}
 	if ref.Scope == ScopePlatform {
-		return nil, errs.Permission("o catálogo da plataforma é semeado pela migração, não escrito por RPC: um fluxo de nível 0 vale para todas as contas")
+		return nil, errs.Permission("the platform catalogue is seeded by migration, not written by RPC: a level-0 flow applies to every account")
 	}
 
 	in.Normalize()
@@ -141,19 +143,20 @@ func (s *Service) Create(ctx context.Context, in Flow, idempotencyKey string) (*
 	return s.repo.Create(ctx, &f, s.writeKey(idempotencyKey, "create", f, 0))
 }
 
-// Update GERA VERSÃO NOVA. Nunca altera a existente.
+// Update CREATES A NEW VERSION. It never alters the existing one.
 //
-// Duas defesas contra reescrever o passado de quem está em execução:
+// Two defences against rewriting the past of something in execution:
 //
-//   - a versão anterior fica intacta no banco (a porta nem oferece caminho para
-//     alterá-la, e o banco recusa por trigger);
-//   - a versão que o autor editou é comparada com a corrente ANTES de gravar.
-//     Sem isso, duas pessoas editando o mesmo fluxo produziriam a versão 4
-//     duas vezes e a segunda apagaria o trabalho da primeira do documento vivo.
+//   - the previous version stays intact in the database (the port offers no path
+//     to alter it, and the database refuses through a trigger);
+//   - the version the author edited is compared with the current one BEFORE
+//     writing. Without that, two people editing the same flow would produce
+//     version 4 twice and the second would erase the first's work from the live
+//     document.
 //
-// Reenvio idêntico NÃO versiona: um cliente com retry automático versionaria o
-// fluxo para sempre, e a demanda passaria a apontar para uma versão que ninguém
-// escreveu.
+// An identical resend does NOT version: a client with automatic retries would
+// version the flow forever, and the demand would end up pointing at a version
+// nobody wrote.
 func (s *Service) Update(ctx context.Context, in Flow) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -161,10 +164,10 @@ func (s *Service) Update(ctx context.Context, in Flow) (*Flow, error) {
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "ator não identificado")
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 	if strings.TrimSpace(in.ID) == "" {
-		return nil, errs.Invalid("identificador do fluxo não informado")
+		return nil, errs.Invalid("flow identifier not provided")
 	}
 
 	current, err := s.repo.ByID(ctx, accountID, in.ID)
@@ -172,7 +175,7 @@ func (s *Service) Update(ctx context.Context, in Flow) (*Flow, error) {
 		return nil, err
 	}
 	if current.OwnerScope == ScopePlatform {
-		return nil, errs.Permission("o catálogo da plataforma não se edita por RPC: derive um fluxo no seu nível e a cadeia sobrepõe o que você declarar")
+		return nil, errs.Permission("the platform catalogue is not edited by RPC: derive a flow at your own level and the chain overlays what you declare")
 	}
 
 	in.Normalize()
@@ -181,7 +184,7 @@ func (s *Service) Update(ctx context.Context, in Flow) (*Flow, error) {
 	}
 	if in.Version != 0 && in.Version != current.Version {
 		return nil, errs.Conflict(
-			"o fluxo %q já está na versão %d e esta alteração foi escrita sobre a versão %d: recarregue antes de gravar",
+			"flow %q is already at version %d and this change was written over version %d: reload before saving",
 			current.Name, current.Version, in.Version)
 	}
 	if in.SameStages(*current) {
@@ -201,22 +204,23 @@ func (s *Service) Update(ctx context.Context, in Flow) (*Flow, error) {
 		CreatedAt:   current.CreatedAt,
 		UpdatedAt:   s.now(),
 	}
-	// UpdateFlowRequest não carrega idempotency_key (ver relatório): a chave é
-	// DERIVADA do conteúdo e da versão base, o que dá a mesma garantia — o
-	// mesmo reenvio colide na chave e devolve a versão já gravada, em vez de
-	// empilhar versões idênticas.
+	// UpdateFlowRequest does not carry an idempotency_key: the key is DERIVED
+	// from the content and the base version, which gives the same guarantee — the
+	// same resend collides on the key and returns the version already written,
+	// instead of stacking identical versions.
 	return s.repo.AppendVersion(ctx, accountID, &next, current.Version,
 		s.writeKey("", "update", next, current.Version))
 }
 
-// ── resolução ────────────────────────────────────────────────────────────────
+// ── resolution ───────────────────────────────────────────────────────────────
 
-// Resolve percorre a cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda
-// e devolve o fluxo efetivo COM a procedência.
+// Resolve walks the chain platform ◁ account ◁ workspace ◁ project ◁ demand and
+// returns the effective flow WITH its provenance.
 //
-// A ordem importa duas vezes: a linhagem vem da árvore da conta (é ela que diz
-// em qual projeto a demanda vive), e a sobreposição respeita essa ordem. Um
-// nível que não declara nada herda por omissão e nem aparece no rastro.
+// The order matters twice: the lineage comes from the account's tree (it is what
+// says which project the demand lives in), and the overlay respects that order.
+// A level that declares nothing inherits by omission and does not even appear in
+// the trail.
 func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*EffectiveFlow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -236,8 +240,9 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 		return nil, err
 	}
 
-	// Reordena o que o repositório devolveu segundo a CADEIA — a sobreposição
-	// depende da ordem, e ordem vinda de ORDER BY seria ordem por acaso.
+	// Reorder what the repository returned according to the CHAIN — the overlay
+	// depends on the order, and an order coming from ORDER BY would be order by
+	// accident.
 	byRef := make(map[ScopeRef]Flow, len(declared))
 	for _, f := range declared {
 		byRef[f.Ref()] = f
@@ -252,24 +257,25 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 	eff := MergeChain(levels)
 	if len(eff.Flow.Stages) == 0 {
 		return nil, errs.NotFound(
-			"fluxo aplicável a %s: nenhum nível da cadeia declara etapas, nem o catálogo da plataforma", ref)
+			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
 	}
 	return &eff, nil
 }
 
-// ── promoção ─────────────────────────────────────────────────────────────────
+// ── promotion ────────────────────────────────────────────────────────────────
 
-// Promote publica o fluxo para um nível ACIMA na cadeia (ADR-0014 §5).
+// Promote publishes the flow to a level ABOVE in the chain (ADR-0014 §5).
 //
-// Três recusas, e cada uma fecha um buraco diferente:
+// Three refusals, each closing a different hole:
 //
-//   - alvo fora da linhagem do próprio fluxo: promover é subir na SUA cadeia,
-//     não aterrissar num projeto vizinho que por acaso é da mesma conta;
-//   - alvo no catálogo da plataforma: dentro de uma conta PJ, fluxo de nível
-//     inferior é público DENTRO da conta — nunca fora dela. Compartilhamento
-//     externo está explicitamente fora da v1 (ADR-0014 §7);
-//   - ator sem `manage`: publicar para o nível acima muda o fluxo de quem não
-//     pediu nada, e isso não é decisão de qualquer membro.
+//   - a target outside the flow's own lineage: promoting is climbing YOUR chain,
+//     not landing in a neighbouring project that happens to be in the same
+//     account;
+//   - a target in the platform catalogue: inside an organization account, a
+//     lower-level flow is public WITHIN the account — never outside it. External
+//     sharing is explicitly out of v1 (ADR-0014 §7);
+//   - an actor without `manage`: publishing to the level above changes the flow
+//     of people who asked for nothing, and that is not any member's decision.
 func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targetID string) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -277,16 +283,16 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "ator não identificado")
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 	if strings.TrimSpace(flowID) == "" {
-		return nil, errs.Invalid("identificador do fluxo não informado")
+		return nil, errs.Invalid("flow identifier not provided")
 	}
 	if !ValidScope(target) {
-		return nil, errs.Invalid("nível de destino desconhecido: %q", target)
+		return nil, errs.Invalid("unknown target level: %q", target)
 	}
 	if target == ScopePlatform {
-		return nil, errs.Permission("o catálogo da plataforma não recebe fluxo de conta: dentro de uma conta PJ um fluxo de nível inferior é público DENTRO da conta, nunca fora dela (ADR-0014 §6 e §7)")
+		return nil, errs.Permission("the platform catalogue does not receive an account\u2019s flow: inside an organization account a lower-level flow is public WITHIN the account, never outside it (ADR-0014 §6 and §7)")
 	}
 
 	src, err := s.repo.ByID(ctx, accountID, flowID)
@@ -294,11 +300,11 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 		return nil, err
 	}
 	if src.OwnerScope == ScopePlatform {
-		return nil, errs.Precondition("o fluxo já é do catálogo da plataforma: não há nível acima")
+		return nil, errs.Precondition("the flow is already in the platform catalogue: there is no level above")
 	}
 	if Rank(target) >= Rank(src.OwnerScope) {
 		return nil, errs.Invalid(
-			"promoção sobe na cadeia: %s não está acima de %s", target.Label(), src.OwnerScope.Label())
+			"promotion climbs the chain: %s is not above %s", target.Label(), src.OwnerScope.Label())
 	}
 
 	want := ScopeRef{Scope: target, ID: strings.TrimSpace(targetID)}
@@ -311,7 +317,7 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 	}
 	if !containsRef(chain, want) {
 		return nil, errs.Invalid(
-			"o %s %q não está na linhagem do fluxo: promover é subir na própria cadeia, não publicar num ramo vizinho",
+			"%s %q is not in the flow\u2019s lineage: promoting is climbing your own chain, not publishing to a neighbouring branch",
 			target.Label(), want.ID)
 	}
 
@@ -320,7 +326,7 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 		return nil, err
 	}
 	if !canManage(role) {
-		return nil, errs.Permission("promover exige manage sobre o conteúdo da conta: apenas owner ou admin")
+		return nil, errs.Permission("promoting requires manage over the account\u2019s content: owner or admin only")
 	}
 
 	src.CreatedBy = call.ActorID
@@ -329,30 +335,31 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 		s.writeKey("", "promote:"+string(want.Scope)+":"+want.ID, *src, src.Version))
 }
 
-// ── auxiliares ───────────────────────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────────────────────────
 
-// resolveOwner normaliza e CONFIRMA o nível endereçado.
+// resolveOwner normalizes and CONFIRMS the addressed level.
 //
-// O nível conta é o único que dispensa id — ele é sempre a conta ativa, e
-// aceitar outro id no corpo seria deixar o chamador escolher o tenant. Os
-// demais são confirmados contra a árvore: id que não existe, ou que é de outra
-// conta, volta como NotFound pela própria porta.
+// The account level is the only one that needs no id — it is always the active
+// account, and accepting another id in the body would let the caller choose the
+// tenant. The rest are confirmed against the tree: an id that does not exist, or
+// that belongs to another account, comes back as NotFound from the port
+// itself.
 func (s *Service) resolveOwner(ctx context.Context, accountID string, ref ScopeRef) (ScopeRef, error) {
 	ref.ID = strings.TrimSpace(ref.ID)
 	if !ValidScope(ref.Scope) {
-		return ScopeRef{}, errs.Invalid("nível desconhecido: %q", ref.Scope)
+		return ScopeRef{}, errs.Invalid("unknown level: %q", ref.Scope)
 	}
 	switch ref.Scope {
 	case ScopePlatform:
 		return ScopeRef{Scope: ScopePlatform}, nil
 	case ScopeAccount:
 		if ref.ID != "" && ref.ID != accountID {
-			return ScopeRef{}, errs.Permission("nível de conta é sempre a conta ativa")
+			return ScopeRef{}, errs.Permission("the account level is always the active account")
 		}
 		return ScopeRef{Scope: ScopeAccount, ID: accountID}, nil
 	}
 	if ref.ID == "" {
-		return ScopeRef{}, errs.Invalid("nível %s exige o identificador do dono", ref.Scope.Label())
+		return ScopeRef{}, errs.Invalid("level %s requires the owner identifier", ref.Scope.Label())
 	}
 	if _, err := s.tree.ChainOf(ctx, accountID, ref); err != nil {
 		return ScopeRef{}, err
@@ -360,12 +367,12 @@ func (s *Service) resolveOwner(ctx context.Context, accountID string, ref ScopeR
 	return ref, nil
 }
 
-// writeKey devolve a chave de idempotência da escrita.
+// writeKey returns the write's idempotency key.
 //
-// Toda escrita carrega uma (ADR-0017). Quando o contrato não traz a chave do
-// cliente, ela é DERIVADA do que está sendo gravado: o mesmo reenvio produz a
-// mesma chave, colide no índice único e devolve o que já foi gravado — em vez
-// de criar um fluxo gêmeo ou uma versão duplicada.
+// Every write carries one (ADR-0017). When the contract does not bring the
+// client's key, it is DERIVED from what is being written: the same resend
+// produces the same key, collides on the unique index and returns what was
+// already written — instead of creating a twin flow or a duplicate version.
 func (s *Service) writeKey(given, op string, f Flow, base int32) string {
 	if k := strings.TrimSpace(given); k != "" {
 		return k

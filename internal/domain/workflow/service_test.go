@@ -11,36 +11,36 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM banco: repositório, linhagem, identidade e relógio
-// são portas, e aqui entram duplos em memória. É o retorno prático da
+// The domain is testable WITHOUT a database: repository, lineage, identity and
+// clock are ports, and in-memory doubles go in here. It is the practical return
 // arquitetura hexagonal — e o motivo de os duplos morarem NESTE arquivo: o
-// teste de arquitetura varre os _test.go também, e um duplo em
-// internal/adapter seria o domínio importando infra por uma porta dos fundos.
+// architecture test scans the _test.go files too, and a double under
+// internal/adapter would be the domain importing infra through a back door.
 
 // ── duplos ───────────────────────────────────────────────────────────────────
 
-// relogioFixo torna determinístico o que depende de tempo. Um relógio de
+// fixedClock makes what depends on time deterministic. A wall clock
 // parede aqui faria o teste de versionamento passar por sorte.
-type relogioFixo struct{ t time.Time }
+type fixedClock struct{ t time.Time }
 
-func (r *relogioFixo) Now() time.Time { r.t = r.t.Add(time.Second); return r.t }
+func (r *fixedClock) Now() time.Time { r.t = r.t.Add(time.Second); return r.t }
 
 type registro struct {
-	meta     workflow.Flow // identidade: dono, conta, versão corrente
-	versoes  map[int32]workflow.Flow
-	corrente int32
+	meta     workflow.Flow // identity: owner, account, current version
+	versions map[int32]workflow.Flow
+	current  int32
 }
 
 type fakeRepo struct {
 	flows  map[string]*registro
-	chaves map[string]string // chave de idempotência → id do fluxo
+	keys   map[string]string // idempotency key → flow id
 	nextID int
 	// Contadores para provar as promessas de forma da porta.
 	byOwnersCalls int
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{flows: map[string]*registro{}, chaves: map[string]string{}}
+	return &fakeRepo{flows: map[string]*registro{}, keys: map[string]string{}}
 }
 
 func (f *fakeRepo) id() string {
@@ -52,7 +52,7 @@ func (f *fakeRepo) visivel(accountID string, r *registro) bool {
 	return r.meta.AccountID == accountID || r.meta.OwnerScope == workflow.ScopePlatform
 }
 
-func (f *fakeRepo) corrente(r *registro) workflow.Flow { return r.versoes[r.corrente] }
+func (f *fakeRepo) current(r *registro) workflow.Flow { return r.versions[r.current] }
 
 func (f *fakeRepo) List(_ context.Context, accountID string, scope workflow.Scope, ownerID string) ([]workflow.Flow, error) {
 	var out []workflow.Flow
@@ -66,7 +66,7 @@ func (f *fakeRepo) List(_ context.Context, accountID string, scope workflow.Scop
 		if ownerID != "" && r.meta.OwnerID != ownerID {
 			continue
 		}
-		out = append(out, f.corrente(r))
+		out = append(out, f.current(r))
 	}
 	return out, nil
 }
@@ -74,20 +74,20 @@ func (f *fakeRepo) List(_ context.Context, accountID string, scope workflow.Scop
 func (f *fakeRepo) ByID(_ context.Context, accountID, id string) (*workflow.Flow, error) {
 	r, ok := f.flows[id]
 	if !ok || !f.visivel(accountID, r) {
-		return nil, errs.NotFound("fluxo")
+		return nil, errs.NotFound("flow")
 	}
-	cur := f.corrente(r)
+	cur := f.current(r)
 	return &cur, nil
 }
 
 func (f *fakeRepo) VersionOf(_ context.Context, accountID, id string, version int32) (*workflow.Flow, error) {
 	r, ok := f.flows[id]
 	if !ok || !f.visivel(accountID, r) {
-		return nil, errs.NotFound("fluxo")
+		return nil, errs.NotFound("flow")
 	}
-	v, ok := r.versoes[version]
+	v, ok := r.versions[version]
 	if !ok {
-		return nil, errs.NotFound("versão do fluxo")
+		return nil, errs.NotFound("flow version")
 	}
 	return &v, nil
 }
@@ -101,54 +101,54 @@ func (f *fakeRepo) ByOwners(_ context.Context, accountID string, refs []workflow
 	var out []workflow.Flow
 	for _, r := range f.flows {
 		if f.visivel(accountID, r) && want[r.meta.Ref()] {
-			out = append(out, f.corrente(r))
+			out = append(out, f.current(r))
 		}
 	}
 	return out, nil
 }
 
 func (f *fakeRepo) Create(_ context.Context, flow *workflow.Flow, key string) (*workflow.Flow, error) {
-	if id, repetida := f.chaves[key]; repetida {
-		cur := f.corrente(f.flows[id])
+	if id, repetida := f.keys[key]; repetida {
+		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
 	for _, r := range f.flows {
 		if r.meta.Ref() == flow.Ref() {
-			return nil, errs.New(errs.KindAlreadyExists, "o nível já tem fluxo")
+			return nil, errs.New(errs.KindAlreadyExists, "the level already has a flow")
 		}
 	}
 	cp := *flow
 	cp.ID = f.id()
 	cp.Version = 1
-	f.flows[cp.ID] = &registro{meta: cp, versoes: map[int32]workflow.Flow{1: cp}, corrente: 1}
-	f.chaves[key] = cp.ID
+	f.flows[cp.ID] = &registro{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
+	f.keys[key] = cp.ID
 	return &cp, nil
 }
 
 func (f *fakeRepo) AppendVersion(_ context.Context, accountID string, flow *workflow.Flow, base int32, key string) (*workflow.Flow, error) {
 	r, ok := f.flows[flow.ID]
 	if !ok || r.meta.AccountID != accountID {
-		return nil, errs.NotFound("fluxo")
+		return nil, errs.NotFound("flow")
 	}
-	if id, repetida := f.chaves[key]; repetida {
-		cur := f.corrente(f.flows[id])
+	if id, repetida := f.keys[key]; repetida {
+		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
-	if r.corrente != base {
-		return nil, errs.Conflict("o fluxo já está na versão %d", r.corrente)
+	if r.current != base {
+		return nil, errs.Conflict("the flow is already at version %d", r.current)
 	}
 	cp := *flow
-	cp.Version = r.corrente + 1
-	r.versoes[cp.Version] = cp
-	r.corrente = cp.Version
+	cp.Version = r.current + 1
+	r.versions[cp.Version] = cp
+	r.current = cp.Version
 	r.meta = cp
-	f.chaves[key] = cp.ID
+	f.keys[key] = cp.ID
 	return &cp, nil
 }
 
 func (f *fakeRepo) Promote(_ context.Context, accountID string, src *workflow.Flow, target workflow.ScopeRef, key string) (*workflow.Flow, error) {
-	if id, repetida := f.chaves[key]; repetida {
-		cur := f.corrente(f.flows[id])
+	if id, repetida := f.keys[key]; repetida {
+		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
 	for _, r := range f.flows {
@@ -156,11 +156,11 @@ func (f *fakeRepo) Promote(_ context.Context, accountID string, src *workflow.Fl
 			cp := *src
 			cp.ID = r.meta.ID
 			cp.OwnerScope, cp.OwnerID = target.Scope, target.ID
-			cp.Version = r.corrente + 1
-			r.versoes[cp.Version] = cp
-			r.corrente = cp.Version
+			cp.Version = r.current + 1
+			r.versions[cp.Version] = cp
+			r.current = cp.Version
 			r.meta = cp
-			f.chaves[key] = cp.ID
+			f.keys[key] = cp.ID
 			return &cp, nil
 		}
 	}
@@ -169,14 +169,14 @@ func (f *fakeRepo) Promote(_ context.Context, accountID string, src *workflow.Fl
 	cp.AccountID = accountID
 	cp.OwnerScope, cp.OwnerID = target.Scope, target.ID
 	cp.Version = 1
-	f.flows[cp.ID] = &registro{meta: cp, versoes: map[int32]workflow.Flow{1: cp}, corrente: 1}
-	f.chaves[key] = cp.ID
+	f.flows[cp.ID] = &registro{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
+	f.keys[key] = cp.ID
 	return &cp, nil
 }
 
 var _ workflow.Repository = (*fakeRepo)(nil)
 
-// fakeTree é a porta estreita da linhagem: quem está dentro de quem.
+// fakeTree is the lineage's narrow port: who is inside whom.
 type fakeTree struct {
 	workspaceDe map[string]string // projeto → workspace
 	contaDe     map[string]string // workspace → conta
@@ -223,20 +223,20 @@ func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.
 
 var _ workflow.Ancestry = (*fakeTree)(nil)
 
-// fakeAccess é a porta estreita de identidade: só o papel na conta ativa.
+// fakeAccess is identity's narrow port: only the role in the active account.
 type fakeAccess struct{ papel map[string]string }
 
 func (a *fakeAccess) RoleOf(_ context.Context, userID, accountID string) (string, error) {
 	p, ok := a.papel[userID+"@"+accountID]
 	if !ok {
-		return "", errs.Permission("sem vínculo com esta conta")
+		return "", errs.Permission("no membership in this account")
 	}
 	return p, nil
 }
 
 var _ workflow.Access = (*fakeAccess)(nil)
 
-// ── cenário ──────────────────────────────────────────────────────────────────
+// ── scenario ─────────────────────────────────────────────────────────────────
 
 const (
 	conta     = "acct-1"
@@ -247,7 +247,7 @@ const (
 	membro    = "usr-dev"
 )
 
-func cenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
+func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 	t.Helper()
 	repo := newFakeRepo()
 	tree := &fakeTree{
@@ -259,266 +259,266 @@ func cenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 		dono + "@" + conta:   workflow.RoleOwner,
 		membro + "@" + conta: "developer",
 	}}
-	svc := workflow.NewService(repo, tree, acc, &relogioFixo{t: time.Unix(1_700_000_000, 0).UTC()})
+	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()})
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: conta, ActorID: dono, ActorKind: ctxutil.ActorUser,
 	})
 	return repo, svc, ctx
 }
 
-// semear grava direto no duplo um fluxo já existente num nível da cadeia.
-func semear(repo *fakeRepo, accountID string, scope workflow.Scope, ownerID string, stages ...workflow.StageSpec) workflow.Flow {
+// seed writes a flow that already exists at a level of the chain straight into the double.
+func seed(repo *fakeRepo, accountID string, scope workflow.Scope, ownerID string, stages ...workflow.StageSpec) workflow.Flow {
 	f := workflow.Flow{
 		AccountID: accountID, OwnerScope: scope, OwnerID: ownerID,
 		Name: string(scope) + " flow", Version: 1, Stages: stages,
 	}
 	f.ID = repo.id()
-	repo.flows[f.ID] = &registro{meta: f, versoes: map[int32]workflow.Flow{1: f}, corrente: 1}
+	repo.flows[f.ID] = &registro{meta: f, versions: map[int32]workflow.Flow{1: f}, current: 1}
 	return f
 }
 
-func etapa(key string, tipo workflow.StageType, artefatos ...workflow.ArtifactKind) workflow.StageSpec {
+func stage(key string, kind workflow.StageType, artifacts ...workflow.ArtifactKind) workflow.StageSpec {
 	return workflow.StageSpec{
-		Key: key, Name: key, Type: tipo, Artifacts: artefatos, Gate: workflow.GateNone,
+		Key: key, Name: key, Type: kind, Artifacts: artifacts, Gate: workflow.GateNone,
 	}
 }
 
-func fluxoValido() workflow.Flow {
+func validFlow() workflow.Flow {
 	return workflow.Flow{
-		Name:       "Padrão do time",
+		Name:       "Team default",
 		OwnerScope: workflow.ScopeProject,
 		OwnerID:    projeto,
 		Stages: []workflow.StageSpec{
-			etapa("contexto", workflow.TypeContext, workflow.ArtifactDocument),
-			etapa("spec", workflow.TypeSpec, workflow.ArtifactSpec),
-			{Key: "validacao", Name: "Validação", Type: workflow.TypeHumanValidation,
+			stage("context", workflow.TypeContext, workflow.ArtifactDocument),
+			stage("spec", workflow.TypeSpec, workflow.ArtifactSpec),
+			{Key: "validation", Name: "Validation", Type: workflow.TypeHumanValidation,
 				Artifacts: []workflow.ArtifactKind{workflow.ArtifactReport}, Gate: workflow.GateHuman},
 		},
 	}
 }
 
-// ── a cadeia de herança ──────────────────────────────────────────────────────
+// ── the inheritance chain ────────────────────────────────────────────────────
 
-// O teste central do domínio: a cadeia inteira, com sobreposição e PROCEDÊNCIA.
-// Sem a procedência, ninguém consegue depurar por que uma demanda seguiu um
-// fluxo que ninguém lembra de ter escrito (ADR-0014, consequências).
-func TestCadeiaDeHerancaSobrepoeEDizDeOndeVeioCadaEtapa(t *testing.T) {
-	repo, svc, ctx := cenario(t)
+// The domain's central test: the whole chain, with overlay and PROVENANCE.
+// Without the provenance, nobody can debug why a demand followed a flow nobody
+// remembers writing (ADR-0014, consequences).
+func TestTheInheritanceChainOverlaysAndSaysWhereEachStageCameFrom(t *testing.T) {
+	repo, svc, ctx := scenario(t)
 
-	// Plataforma: o catálogo, nível 0.
-	semear(repo, "", workflow.ScopePlatform, "",
-		etapa("contexto", workflow.TypeContext, workflow.ArtifactDocument),
-		etapa("spec", workflow.TypeSpec, workflow.ArtifactSpec),
-		etapa("implementacao", workflow.TypeImplementation))
-	// Conta: reescreve a spec (mesma chave) — sobrepõe por declaração.
-	semear(repo, conta, workflow.ScopeAccount, conta,
-		etapa("spec", workflow.TypeSpec, workflow.ArtifactSpec, workflow.ArtifactDiagram))
-	// Workspace: não declara nada — herda por omissão.
-	// Projeto: acrescenta uma etapa nova, que entra no fim.
-	semear(repo, conta, workflow.ScopeProject, projeto,
-		etapa("teste", workflow.TypeTest, workflow.ArtifactTestPlan))
+	// Platform: the catalogue, level 0.
+	seed(repo, "", workflow.ScopePlatform, "",
+		stage("context", workflow.TypeContext, workflow.ArtifactDocument),
+		stage("spec", workflow.TypeSpec, workflow.ArtifactSpec),
+		stage("implementation", workflow.TypeImplementation))
+	// Account: rewrites the spec (same key) — overlays by declaration.
+	seed(repo, conta, workflow.ScopeAccount, conta,
+		stage("spec", workflow.TypeSpec, workflow.ArtifactSpec, workflow.ArtifactDiagram))
+	// Workspace: declares nothing — inherits by omission.
+	// Projeto: acrescenta uma stage nova, que entra no fim.
+	seed(repo, conta, workflow.ScopeProject, projeto,
+		stage("test", workflow.TypeTest, workflow.ArtifactTestPlan))
 
 	eff, err := svc.Resolve(ctx, workflow.ScopeProject, projeto)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	esperado := []string{"contexto", "spec", "implementacao", "teste"}
+	esperado := []string{"context", "spec", "implementation", "test"}
 	if len(eff.Flow.Stages) != len(esperado) {
-		t.Fatalf("esperadas %d etapas, vieram %d (%v)", len(esperado), len(eff.Flow.Stages), eff.Flow.Stages)
+		t.Fatalf("esperadas %d stages, vieram %d (%v)", len(esperado), len(eff.Flow.Stages), eff.Flow.Stages)
 	}
 	for i, key := range esperado {
 		if eff.Flow.Stages[i].Key != key {
-			t.Errorf("etapa %d deveria ser %q, veio %q", i, key, eff.Flow.Stages[i].Key)
+			t.Errorf("stage %d deveria ser %q, veio %q", i, key, eff.Flow.Stages[i].Key)
 		}
 	}
 
-	// A spec da conta venceu a da plataforma — e a posição herdada foi mantida.
+	// The account's spec won over the platform's — and the inherited position was kept.
 	if got := len(eff.Flow.Stages[1].Artifacts); got != 2 {
-		t.Errorf("a spec da conta deveria ter vencido a da plataforma (%d artefatos)", got)
+		t.Errorf("a spec da conta deveria ter vencido a da plataforma (%d artifacts)", got)
 	}
 
-	// A procedência, etapa por etapa.
+	// The provenance, stage by stage.
 	proc := map[string]workflow.Scope{
-		"contexto":      workflow.ScopePlatform,
+		"context":      workflow.ScopePlatform,
 		"spec":          workflow.ScopeAccount,
-		"implementacao": workflow.ScopePlatform,
-		"teste":         workflow.ScopeProject,
+		"implementation": workflow.ScopePlatform,
+		"test":         workflow.ScopeProject,
 	}
 	for key, esperada := range proc {
 		origem, ok := eff.OriginOf(key)
 		if !ok {
-			t.Fatalf("etapa %q sem procedência registrada", key)
+			t.Fatalf("stage %q has no recorded provenance", key)
 		}
 		if origem.Scope != esperada {
-			t.Errorf("etapa %q deveria vir de %s, veio de %s", key, esperada, origem.Scope)
+			t.Errorf("stage %q deveria vir de %s, veio de %s", key, esperada, origem.Scope)
 		}
 	}
 
-	// O rastro visível, do mais específico ao mais genérico. O workspace não
-	// aparece: ele não declarou nada, então não contribuiu.
-	if !strings.HasPrefix(eff.ResolvedFrom, "projeto ◂ conta ◂ plataforma") {
-		t.Errorf("rastro deveria começar em 'projeto ◂ conta ◂ plataforma', veio %q", eff.ResolvedFrom)
+	// The visible trail, from the most specific to the most generic. The workspace
+	// does not appear: it declared nothing, so it did not contribute.
+	if !strings.HasPrefix(eff.ResolvedFrom, "project ◂ account ◂ platform") {
+		t.Errorf("the trail should start at 'project ◂ account ◂ platform', got %q", eff.ResolvedFrom)
 	}
 	if strings.Contains(eff.ResolvedFrom, "workspace") {
-		t.Errorf("nível que não declarou nada não pode aparecer no rastro: %q", eff.ResolvedFrom)
+		t.Errorf("a level that declared nothing must not appear in the trail: %q", eff.ResolvedFrom)
 	}
-	if !strings.Contains(eff.ResolvedFrom, "spec (conta)") {
-		t.Errorf("o rastro deveria dizer de onde veio cada etapa: %q", eff.ResolvedFrom)
+	if !strings.Contains(eff.ResolvedFrom, "spec (account)") {
+		t.Errorf("the trail should say where each stage came from: %q", eff.ResolvedFrom)
 	}
 
-	// A cadeia inteira custa UMA ida ao repositório, não uma por nível.
+	// The whole chain costs ONE trip to the repository, not one per level.
 	if repo.byOwnersCalls != 1 {
-		t.Errorf("a resolução deveria custar UMA consulta, custou %d", repo.byOwnersCalls)
+		t.Errorf("resolution should cost ONE query, it cost %d", repo.byOwnersCalls)
 	}
 }
 
-func TestResolveDeDemandaAtravessaACadeiaInteira(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	semear(repo, "", workflow.ScopePlatform, "", etapa("contexto", workflow.TypeContext))
-	semear(repo, conta, workflow.ScopeDemand, demanda, etapa("hotfix", workflow.TypeGeneric))
+func TestResolvingADemandCrossesTheWholeChain(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	seed(repo, "", workflow.ScopePlatform, "", stage("context", workflow.TypeContext))
+	seed(repo, conta, workflow.ScopeDemand, demanda, stage("hotfix", workflow.TypeGeneric))
 
 	eff, err := svc.Resolve(ctx, workflow.ScopeDemand, demanda)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if len(eff.Flow.Stages) != 2 {
-		t.Fatalf("a demanda deveria herdar a plataforma e somar a sua etapa: %v", eff.Flow.Stages)
+		t.Fatalf("a demanda deveria herdar a plataforma e somar a sua stage: %v", eff.Flow.Stages)
 	}
 	if eff.Contributors[0].Scope != workflow.ScopeDemand {
-		t.Errorf("o nível mais específico deveria abrir o rastro, veio %v", eff.Contributors)
+		t.Errorf("the most specific level should open the trail, got %v", eff.Contributors)
 	}
 }
 
-func TestResolveSemNenhumNivelDeclaradoNaoInventaFluxo(t *testing.T) {
-	_, svc, ctx := cenario(t)
+func TestResolveWithNoDeclaredLevelDoesNotInventAFlow(t *testing.T) {
+	_, svc, ctx := scenario(t)
 	if _, err := svc.Resolve(ctx, workflow.ScopeProject, projeto); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("cadeia vazia deveria dar NotFound; erro: %v", err)
 	}
 }
 
-func TestResolveNaoAlcancaOutraConta(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	semear(repo, "acct-2", workflow.ScopeWorkspace, "ws-alheio", etapa("x", workflow.TypeGeneric))
+func TestResolveDoesNotReachAnotherAccount(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	seed(repo, "acct-2", workflow.ScopeWorkspace, "ws-alheio", stage("x", workflow.TypeGeneric))
 	if _, err := svc.Resolve(ctx, workflow.ScopeWorkspace, "ws-alheio"); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("workspace de outra conta deveria dar NotFound; erro: %v", err)
 	}
 }
 
-func TestResolveExigeContaAtiva(t *testing.T) {
-	_, svc, _ := cenario(t)
+func TestResolveRequiresAnActiveAccount(t *testing.T) {
+	_, svc, _ := scenario(t)
 	if _, err := svc.Resolve(context.Background(), workflow.ScopeAccount, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatal("requisição sem conta ativa é inválida por definição")
+		t.Fatal("a request with no active account is invalid by definition")
 	}
 }
 
-// ── congelamento de versão ───────────────────────────────────────────────────
+// ── version freezing ─────────────────────────────────────────────────────────
 
-// A invariante que protege a demanda em execução: atualizar GERA versão nova e
+// The invariant that protects a demand in execution: updating CREATES a new version and
 // a anterior fica exatamente como estava.
-func TestUpdateGeraVersaoNovaSemTocarNaAnterior(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, err := svc.Create(ctx, fluxoValido(), "k1")
+func TestUpdateCreatesANewVersionWithoutTouchingThePrevious(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if criado.Version != 1 {
-		t.Fatalf("o fluxo nasce na versão 1, veio %d", criado.Version)
+	if created.Version != 1 {
+		t.Fatalf("a flow is born at version 1, got %d", created.Version)
 	}
 
-	alterado := *criado
-	alterado.Stages = append([]workflow.StageSpec{}, criado.Stages...)
+	alterado := *created
+	alterado.Stages = append([]workflow.StageSpec{}, created.Stages...)
 	alterado.Stages[0].Name = "Contexto revisado"
-	atualizado, err := svc.Update(ctx, alterado)
+	updated, err := svc.Update(ctx, alterado)
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if atualizado.Version != 2 {
-		t.Fatalf("Update deveria gerar a versão 2, veio %d", atualizado.Version)
+	if updated.Version != 2 {
+		t.Fatalf("Update should have created version 2, got %d", updated.Version)
 	}
 
 	// O que a demanda congelou continua exatamente como estava.
-	congelada, err := svc.GetVersion(ctx, criado.ID, 1)
+	frozen, err := svc.GetVersion(ctx, created.ID, 1)
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
 	}
-	if congelada.Stages[0].Name != criado.Stages[0].Name {
-		t.Errorf("a versão 1 foi reescrita: %q virou %q",
-			criado.Stages[0].Name, congelada.Stages[0].Name)
+	if frozen.Stages[0].Name != created.Stages[0].Name {
+		t.Errorf("version 1 was rewritten: %q became %q",
+			created.Stages[0].Name, frozen.Stages[0].Name)
 	}
-	if congelada.Version != 1 {
-		t.Errorf("GetVersion(1) devolveu a versão %d", congelada.Version)
+	if frozen.Version != 1 {
+		t.Errorf("GetVersion(1) returned version %d", frozen.Version)
 	}
 
-	// E a versão corrente é a nova.
-	atual, err := svc.Get(ctx, criado.ID)
+	// And the current version is the new one.
+	atual, err := svc.Get(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if atual.Version != 2 || atual.Stages[0].Name != "Contexto revisado" {
-		t.Errorf("a versão corrente deveria ser a 2 revisada, veio v%d %q",
+		t.Errorf("the current version should be the revised 2, got v%d %q",
 			atual.Version, atual.Stages[0].Name)
 	}
 }
 
-func TestUpdateSobreVersaoDesatualizadaEConflito(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
+func TestUpdateOverAStaleVersionIsAConflict(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
 
-	primeira := *criado
-	primeira.Stages = append([]workflow.StageSpec{}, criado.Stages...)
+	primeira := *created
+	primeira.Stages = append([]workflow.StageSpec{}, created.Stages...)
 	primeira.Stages[0].Name = "A"
 	if _, err := svc.Update(ctx, primeira); err != nil {
-		t.Fatalf("primeira edição: %v", err)
+		t.Fatalf("first edit: %v", err)
 	}
 
-	// A segunda pessoa ainda estava com a versão 1 aberta na tela.
-	segunda := *criado
-	segunda.Stages = append([]workflow.StageSpec{}, criado.Stages...)
+	// The second person still had version 1 open on screen.
+	segunda := *created
+	segunda.Stages = append([]workflow.StageSpec{}, created.Stages...)
 	segunda.Stages[0].Name = "B"
 	if _, err := svc.Update(ctx, segunda); errs.KindOf(err) != errs.KindConflict {
-		t.Fatalf("edição sobre versão vencida deveria dar Conflict; erro: %v", err)
+		t.Fatalf("an edit over a stale version should be a Conflict; error: %v", err)
 	}
 }
 
-// Reenvio idêntico não versiona: um cliente com retry automático versionaria o
-// fluxo para sempre, e a demanda apontaria para versões que ninguém escreveu.
-func TestReenvioIdenticoNaoGeraVersao(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
+// An identical resend does not version: a client with automatic retries would
+// version the flow forever, and the demand would point at versions nobody wrote.
+func TestAnIdenticalResendCreatesNoVersion(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
 
-	igual := *criado
-	novo, err := svc.Update(ctx, igual)
+	igual := *created
+	fresh, err := svc.Update(ctx, igual)
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if novo.Version != 1 {
-		t.Errorf("reenvio idêntico não pode versionar; foi para a versão %d", novo.Version)
+	if fresh.Version != 1 {
+		t.Errorf("an identical resend must not version; it went to version %d", fresh.Version)
 	}
 }
 
-func TestCreateRepetidoComAMesmaChaveNaoDuplica(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	primeiro, err := svc.Create(ctx, fluxoValido(), "k1")
+func TestRepeatedCreateWithTheSameKeyDoesNotDuplicate(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	primeiro, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	segundo, err := svc.Create(ctx, fluxoValido(), "k1")
+	segundo, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
-		t.Fatalf("repetição deveria devolver o mesmo fluxo: %v", err)
+		t.Fatalf("a repeat should return the same flow: %v", err)
 	}
 	if primeiro.ID != segundo.ID || len(repo.flows) != 1 {
-		t.Errorf("a chave de idempotência não impediu o fluxo gêmeo: %d fluxos", len(repo.flows))
+		t.Errorf("the idempotency key did not prevent the twin flow: %d flows", len(repo.flows))
 	}
 }
 
-func TestCreateSemChaveDerivaUmaDoConteudo(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	if _, err := svc.Create(ctx, fluxoValido(), ""); err != nil {
+func TestCreateWithNoKeyDerivesOneFromTheContent(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	if _, err := svc.Create(ctx, validFlow(), ""); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := svc.Create(ctx, fluxoValido(), ""); err != nil {
-		t.Fatalf("o mesmo conteúdo deveria colidir na chave derivada: %v", err)
+	if _, err := svc.Create(ctx, validFlow(), ""); err != nil {
+		t.Fatalf("the same content should collide on the derived key: %v", err)
 	}
 	if len(repo.flows) != 1 {
 		t.Errorf("escrita sem chave do cliente ainda precisa ser idempotente: %d fluxos", len(repo.flows))
@@ -527,97 +527,97 @@ func TestCreateSemChaveDerivaUmaDoConteudo(t *testing.T) {
 
 // ── recusas de ValidateFlow ──────────────────────────────────────────────────
 
-func TestValidateRecusaCadaDefeitoQueQuebrariaUmaDemanda(t *testing.T) {
-	casos := []struct {
-		nome   string
-		fluxo  workflow.Flow
-		trecho string // pedaço da mensagem que localiza o problema
+func TestValidateRefusesEveryDefectThatWouldBreakADemand(t *testing.T) {
+	cases := []struct {
+		name    string
+		flow    workflow.Flow
+		snippet string // the piece of the message that locates the problem
 	}{
 		{
-			nome: "etapa órfã: sem chave, nenhum evento consegue apontar para ela",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
-				{Key: "", Name: "sem chave", Type: workflow.TypeGeneric, Gate: workflow.GateNone},
+			name: "orphan stage: no key, no event can point at it",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+				{Key: "", Name: "no key", Type: workflow.TypeGeneric, Gate: workflow.GateNone},
 			}},
-			trecho: "órfã",
+			snippet: "orphaned",
 		},
 		{
-			nome: "ciclo: a mesma chave duas vezes",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
-				etapa("spec", workflow.TypeSpec),
-				etapa("spec", workflow.TypeSpec),
+			name: "cycle: the same key twice",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+				stage("spec", workflow.TypeSpec),
+				stage("spec", workflow.TypeSpec),
 			}},
-			trecho: "ciclo",
+			snippet: "that is a cycle",
 		},
 		{
-			nome: "portão sem decisor: validação humana que não interrompe",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+			name: "gate with no decider: a human validation that does not interrupt",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
 				{Key: "val", Name: "val", Type: workflow.TypeHumanValidation, Gate: workflow.GateNone,
 					Artifacts: []workflow.ArtifactKind{workflow.ArtifactReport}},
 			}},
-			trecho: "não tem portão",
+			snippet: "has no gate",
 		},
 		{
-			nome: "portão sem decisor: portão humano sem nada sobre o que decidir",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+			name: "gate with no decider: a human gate with nothing to decide about",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
 				{Key: "gate", Name: "gate", Type: workflow.TypeGeneric, Gate: workflow.GateHuman},
 			}},
-			trecho: "não há sobre o que decidir",
+			snippet: "nothing to decide about",
 		},
 		{
-			nome: "tipo de etapa desconhecido",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
-				{Key: "x", Name: "x", Type: workflow.StageType("revisao-mistica"), Gate: workflow.GateNone},
+			name: "unknown stage type",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+				{Key: "x", Name: "x", Type: workflow.StageType("mystic-review"), Gate: workflow.GateNone},
 			}},
-			trecho: "tipo desconhecido",
+			snippet: "unknown type",
 		},
 		{
-			nome:   "fluxo sem etapa nenhuma",
-			fluxo:  workflow.Flow{Name: "f"},
-			trecho: "sem etapa nenhuma",
+			name:    "flow with no stages at all",
+			flow:    workflow.Flow{Name: "f"},
+			snippet: "no stages at all",
 		},
 		{
-			nome: "fluxo sem nome",
-			fluxo: workflow.Flow{Stages: []workflow.StageSpec{
-				etapa("spec", workflow.TypeSpec),
+			name: "flow with no name",
+			flow: workflow.Flow{Stages: []workflow.StageSpec{
+				stage("spec", workflow.TypeSpec),
 			}},
-			trecho: "sem nome",
+			snippet: "no name",
 		},
 		{
-			nome: "artefato desconhecido",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
-				etapa("x", workflow.TypeGeneric, workflow.ArtifactKind("pergaminho")),
+			name: "unknown artifact",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+				stage("x", workflow.TypeGeneric, workflow.ArtifactKind("scroll")),
 			}},
-			trecho: "artefato desconhecido",
+			snippet: "unknown artifact",
 		},
 		{
-			nome: "chave com espaço não sobrevive a evento nem a assunto",
-			fluxo: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
-				etapa("valida cao", workflow.TypeGeneric),
+			name: "a key with a space survives neither an event nor a subject",
+			flow: workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
+				stage("valida tion", workflow.TypeGeneric),
 			}},
-			trecho: "espaço",
+			snippet: "space",
 		},
 	}
 
-	for _, c := range casos {
-		t.Run(c.nome, func(t *testing.T) {
-			f := c.fluxo
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := c.flow
 			f.Normalize()
 			rep := workflow.Validate(f)
 			if rep.Valid() {
-				t.Fatalf("deveria ser recusado; relatório: %+v", rep)
+				t.Fatalf("it should be refused; report: %+v", rep)
 			}
-			if !contemTrecho(rep.Errors, c.trecho) {
-				t.Errorf("a mensagem precisa dizer QUAL etapa e POR QUÊ; veio %v", rep.Errors)
+			if !containsSnippet(rep.Errors, c.snippet) {
+				t.Errorf("the message has to say WHICH stage and WHY; got %v", rep.Errors)
 			}
-			// E a recusa é do CLIENTE, não falha interna.
+			// And the refusal belongs to the CLIENT, not an internal failure.
 			if errs.KindOf(rep.Err()) != errs.KindInvalid {
-				t.Errorf("erro de validação é do cliente: %v", rep.Err())
+				t.Errorf("a validation error belongs to the client: %v", rep.Err())
 			}
 		})
 	}
 }
 
-func TestValidateAvisaSemRecusar(t *testing.T) {
+func TestValidateWarnsWithoutRefusing(t *testing.T) {
 	f := workflow.Flow{Name: "f", Stages: []workflow.StageSpec{
 		{Key: "impl", Name: "impl", Type: workflow.TypeImplementation, Gate: workflow.GateNone,
 			Subtypes: []string{"aaa"}},
@@ -625,173 +625,173 @@ func TestValidateAvisaSemRecusar(t *testing.T) {
 	f.Normalize()
 	rep := workflow.Validate(f)
 	if !rep.Valid() {
-		t.Fatalf("nada aqui impede a execução: %v", rep.Errors)
+		t.Fatalf("nothing here prevents execution: %v", rep.Errors)
 	}
 	if len(rep.Warnings) < 2 {
-		t.Errorf("faltaram avisos (sem spec, sem portão, subetapas fora de teste): %v", rep.Warnings)
+		t.Errorf("warnings are missing (no spec, no gate, substages outside a test): %v", rep.Warnings)
 	}
 }
 
-// Em Create e Update a recusa vira erro: aqui o fluxo inválido de fato impede
+// In Create and Update the refusal becomes an error: there an invalid flow does
 // alguma coisa, e gravar seria deixar uma demanda futura sem resposta.
-func TestCreateRecusaFluxoInvalido(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	f := fluxoValido()
-	f.Stages = append(f.Stages, etapa("spec", workflow.TypeSpec)) // chave repetida
+func TestCreateRefusesAnInvalidFlow(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	f := validFlow()
+	f.Stages = append(f.Stages, stage("spec", workflow.TypeSpec)) // chave repetida
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("fluxo com ciclo deveria dar Invalid; erro: %v", err)
+		t.Fatalf("flow com ciclo deveria dar Invalid; erro: %v", err)
 	}
 	if len(repo.flows) != 0 {
 		t.Error("nada pode ter sido gravado")
 	}
 }
 
-func TestValidateNaoGravaNada(t *testing.T) {
-	repo, svc, ctx := cenario(t)
-	rep, err := svc.Validate(ctx, fluxoValido())
+func TestValidateWritesNothing(t *testing.T) {
+	repo, svc, ctx := scenario(t)
+	rep, err := svc.Validate(ctx, validFlow())
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
 	if !rep.Valid() {
-		t.Errorf("o fluxo do cenário é válido: %v", rep.Errors)
+		t.Errorf("the scenario's flow is valid: %v", rep.Errors)
 	}
 	if len(repo.flows) != 0 {
-		t.Error("Validate é ensaio: não pode gravar")
+		t.Error("Validate is a dry run: it must not write")
 	}
 }
 
-// ── nível e promoção ─────────────────────────────────────────────────────────
+// ── level and promotion ──────────────────────────────────────────────────────
 
-func TestCreateRecusaNivelDeOutraConta(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	f := fluxoValido()
+func TestCreateRefusesAnotherAccountsLevel(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	f := validFlow()
 	f.OwnerScope, f.OwnerID = workflow.ScopeWorkspace, "ws-alheio"
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("nível de outra conta não existe daqui; erro: %v", err)
+		t.Fatalf("another account's level does not exist from here; error: %v", err)
 	}
 }
 
-func TestCreateNoCatalogoDaPlataformaERecusado(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	f := fluxoValido()
+func TestCreatingInThePlatformCatalogueIsRefused(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	f := validFlow()
 	f.OwnerScope, f.OwnerID = workflow.ScopePlatform, ""
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindPermission {
-		t.Fatalf("o nível 0 vale para todas as contas; erro: %v", err)
+		t.Fatalf("level 0 applies to every account; error: %v", err)
 	}
 }
 
-func TestPromoteSobeUmNivelEPublicaSemMoverAOrigem(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
+func TestPromoteClimbsOneLevelAndPublishesWithoutMovingTheSource(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
 
-	promovido, err := svc.Promote(ctx, criado.ID, workflow.ScopeWorkspace, workspace)
+	promoted, err := svc.Promote(ctx, created.ID, workflow.ScopeWorkspace, workspace)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
-	if promovido.OwnerScope != workflow.ScopeWorkspace || promovido.OwnerID != workspace {
-		t.Errorf("o fluxo deveria ter sido publicado no workspace, veio %s/%s",
-			promovido.OwnerScope, promovido.OwnerID)
+	if promoted.OwnerScope != workflow.ScopeWorkspace || promoted.OwnerID != workspace {
+		t.Errorf("o flow deveria ter sido publicado no workspace, veio %s/%s",
+			promoted.OwnerScope, promoted.OwnerID)
 	}
-	if promovido.ID == criado.ID {
-		t.Error("promover PUBLICA, não move: a origem continua onde estava")
+	if promoted.ID == created.ID {
+		t.Error("promoting PUBLISHES, it does not move: the source stays where it was")
 	}
-	if origem, err := svc.Get(ctx, criado.ID); err != nil || origem.OwnerScope != workflow.ScopeProject {
-		t.Errorf("o fluxo de origem sumiu do projeto: %v %v", origem, err)
-	}
-}
-
-func TestPromoteParaNivelAbaixoOuIgualERecusado(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
-	if _, err := svc.Promote(ctx, criado.ID, workflow.ScopeDemand, demanda); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("promoção desce a cadeia? erro: %v", err)
-	}
-	if _, err := svc.Promote(ctx, criado.ID, workflow.ScopeProject, projeto); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("promoção para o mesmo nível deveria ser recusada; erro: %v", err)
+	if origem, err := svc.Get(ctx, created.ID); err != nil || origem.OwnerScope != workflow.ScopeProject {
+		t.Errorf("o flow de origem sumiu do projeto: %v %v", origem, err)
 	}
 }
 
-// Dentro de uma conta PJ um fluxo de nível inferior é público DENTRO da conta —
+func TestPromotingToALevelBelowOrEqualIsRefused(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeDemand, demanda); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("does promotion descend the chain? error: %v", err)
+	}
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeProject, projeto); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("promoting to the same level should be refused; error: %v", err)
+	}
+}
+
+// Inside an organization account a lower-level flow is public WITHIN the account —
 // nunca fora dela (ADR-0014 §6 e §7).
-func TestPromoteParaOCatalogoDaPlataformaERecusado(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
-	if _, err := svc.Promote(ctx, criado.ID, workflow.ScopePlatform, ""); errs.KindOf(err) != errs.KindPermission {
-		t.Fatalf("o catálogo não recebe fluxo de conta; erro: %v", err)
+func TestPromotingToThePlatformCatalogueIsRefused(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopePlatform, ""); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("the catalogue does not receive an account flow; error: %v", err)
 	}
 }
 
-func TestPromoteExigeManage(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
+func TestPromoteRequiresManage(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
 
-	// O mesmo pedido, feito por quem não tem manage sobre o conteúdo da conta.
+	// The same request, made by somebody with no manage over the account's content.
 	ctxDev := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: conta, ActorID: membro, ActorKind: ctxutil.ActorUser,
 	})
-	if _, err := svc.Promote(ctxDev, criado.ID, workflow.ScopeWorkspace, workspace); errs.KindOf(err) != errs.KindPermission {
-		t.Fatalf("promover muda o fluxo de quem não pediu nada; erro: %v", err)
+	if _, err := svc.Promote(ctxDev, created.ID, workflow.ScopeWorkspace, workspace); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("promoting changes the flow of people who asked for nothing; error: %v", err)
 	}
 }
 
-func TestPromoteParaRamoVizinhoERecusado(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	criado, _ := svc.Create(ctx, fluxoValido(), "k1")
+func TestPromotingToANeighbouringBranchIsRefused(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, _ := svc.Create(ctx, validFlow(), "k1")
 
-	// ws-vizinho é da MESMA conta — e ainda assim está fora da linhagem deste
-	// fluxo. Promover é subir na PRÓPRIA cadeia, não aterrissar num ramo ao
+	// ws-neighbour belongs to the SAME account — and is still outside this flow's
+	// lineage. Promoting is climbing your OWN chain, not landing on a branch next
 	// lado que por acaso pertence ao mesmo tenant.
-	if _, err := svc.Promote(ctx, criado.ID, workflow.ScopeWorkspace, "ws-vizinho"); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("promoção para ramo vizinho deveria dar Invalid; erro: %v", err)
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeWorkspace, "ws-vizinho"); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("promoting to a neighbouring branch should be Invalid; error: %v", err)
 	}
 }
 
-func TestPromoteVersionaOFluxoQueJaExisteNoDestino(t *testing.T) {
-	_, svc, ctx := cenario(t)
-	base := fluxoValido()
+func TestPromoteVersionsTheFlowThatAlreadyExistsAtTheTarget(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	base := validFlow()
 	base.OwnerScope, base.OwnerID = workflow.ScopeWorkspace, workspace
 	doWorkspace, err := svc.Create(ctx, base, "k0")
 	if err != nil {
 		t.Fatalf("Create no workspace: %v", err)
 	}
 
-	doProjeto, err := svc.Create(ctx, fluxoValido(), "k1")
+	doProjeto, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
 		t.Fatalf("Create no projeto: %v", err)
 	}
 
-	promovido, err := svc.Promote(ctx, doProjeto.ID, workflow.ScopeWorkspace, workspace)
+	promoted, err := svc.Promote(ctx, doProjeto.ID, workflow.ScopeWorkspace, workspace)
 	if err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
-	if promovido.ID != doWorkspace.ID {
-		t.Errorf("a promoção deveria versionar o fluxo do destino, não criar um segundo")
+	if promoted.ID != doWorkspace.ID {
+		t.Errorf("promotion should version the target flow, not create a second one")
 	}
-	if promovido.Version != 2 {
-		t.Errorf("o destino deveria ir para a versão 2, veio %d", promovido.Version)
+	if promoted.Version != 2 {
+		t.Errorf("the target should go to version 2, got %d", promoted.Version)
 	}
-	// E a versão 1 do destino continua legível, para quem a congelou.
+	// And the target's version 1 stays readable, for whoever froze it.
 	if v1, err := svc.GetVersion(ctx, doWorkspace.ID, 1); err != nil || v1.Version != 1 {
-		t.Errorf("a versão 1 do destino foi perdida: %v %v", v1, err)
+		t.Errorf("the target's version 1 was lost: %v %v", v1, err)
 	}
 }
 
-// ── portas obrigatórias ──────────────────────────────────────────────────────
+// ── required ports ───────────────────────────────────────────────────────────
 
-// Relógio nulo desligaria a porta sem ninguém perceber e devolveria ao teste a
-// dependência do relógio de parede que a porta existe para remover.
-func TestNewServiceRecusaRelogioNulo(t *testing.T) {
+// A nil clock would switch the port off without anyone noticing and would hand
+// the test back the wall-clock dependency the port exists to remove.
+func TestNewServiceRefusesANilClock(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Error("construtor deveria recusar relógio nulo")
+			t.Error("the constructor should refuse a nil clock")
 		}
 	}()
 	workflow.NewService(newFakeRepo(), &fakeTree{}, &fakeAccess{}, nil)
 }
 
-func contemTrecho(msgs []string, trecho string) bool {
+func containsSnippet(msgs []string, snippet string) bool {
 	for _, m := range msgs {
-		if strings.Contains(m, trecho) {
+		if strings.Contains(m, snippet) {
 			return true
 		}
 	}
