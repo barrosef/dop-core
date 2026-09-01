@@ -1,12 +1,14 @@
-// Package resource é o domínio dos recursos da conta: integrações, skills,
-// workflows e fluxos git — a unidade de posse e compartilhamento (ADR-0013).
+// Package resource is the domain of an account's resources: integrations,
+// skills, workflows and git flows — the unit of ownership and sharing
+// (ADR-0013).
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK nenhum. Ele
-// declara o que precisa como PORTA (repository.go) e o composition root liga.
+// House rule: this package knows nothing of Postgres, gRPC or any SDK. It
+// declares what it needs as a PORT (repository.go) and the composition root
+// wires it.
 //
-// A distinção que organiza tudo aqui é a NATUREZA do recurso: recurso com
-// credencial carrega risco; recurso de conteúdo carrega conhecimento. Os dois
-// não podem ter o mesmo default de acesso (ADR-0014 §6).
+// The distinction that organizes everything here is the resource's NATURE: a
+// resource with a credential carries risk; a content resource carries
+// knowledge. The two cannot share an access default (ADR-0014 §6).
 package resource
 
 import (
@@ -27,8 +29,8 @@ const (
 	KindGitFlow     Kind = "git_flow"
 )
 
-// ValidKind aceita apenas os quatro tipos do enum resource_kind do banco —
-// tipo fora do vocabulário é erro de contrato, não dado do usuário.
+// ValidKind accepts only the four types of the database's resource_kind enum —
+// a type outside the vocabulary is a contract error, not user data.
 func ValidKind(k Kind) bool {
 	switch k {
 	case KindIntegration, KindSkill, KindWorkflow, KindGitFlow:
@@ -37,19 +39,19 @@ func ValidKind(k Kind) bool {
 	return false
 }
 
-// HasCredential: só integração tem credencial. É o predicado que decide o
-// default de acesso, o versionamento e se SetCredential faz sentido — três
-// regras diferentes penduradas na MESMA distinção, o que é sinal de que a
-// distinção é a certa.
+// HasCredential: only an integration has a credential. It is the predicate that
+// decides the access default, the versioning and whether SetCredential makes
+// sense at all — three different rules hanging off the SAME distinction, which
+// is a sign the distinction is the right one.
 func (k Kind) HasCredential() bool { return k == KindIntegration }
 
-// IsContent é o outro lado: skill, workflow e git_flow são conhecimento
-// escrito, versionável e compartilhável dentro da conta.
+// IsContent is the other side: skill, workflow and git_flow are written
+// knowledge, versionable and shareable within the account.
 func (k Kind) IsContent() bool { return ValidKind(k) && !k.HasCredential() }
 
-// Category classifica a integração. Não existe categoria fora destas três:
-// git (onde o código mora), task_manager (de onde a demanda vem) e agent
-// (quem executa — Claude, Codex, Google Code Assist).
+// Category classifies an integration. There is no category outside these three:
+// git (where the code lives), task_manager (where the demand comes from) and
+// agent (who executes — Claude, Codex, Google Code Assist).
 type Category string
 
 const (
@@ -66,20 +68,20 @@ func ValidCategory(c Category) bool {
 	return false
 }
 
-// Level é o nível de uma concessão. São dois, e de propósito: mais níveis
-// viram matriz de permissão que ninguém sabe explicar.
+// Level is a grant's level. There are two, on purpose: more levels turn into a
+// permission matrix nobody can explain.
 type Level string
 
 const (
-	LevelNone   Level = "" // ausência de acesso — nunca é gravado, só devolvido
+	LevelNone   Level = "" // absence of access — never stored, only returned
 	LevelUse    Level = "use"
 	LevelManage Level = "manage"
 )
 
 func ValidLevel(l Level) bool { return l == LevelUse || l == LevelManage }
 
-// AtLeast: manage inclui use. Quem gerencia a integração também a usa —
-// o contrário não vale.
+// AtLeast: manage includes use. Whoever manages the integration also uses it —
+// the converse does not hold.
 func (l Level) AtLeast(want Level) bool {
 	switch want {
 	case LevelUse:
@@ -97,7 +99,7 @@ type Resource struct {
 	Name          string
 	Version       int32
 	Config        map[string]any
-	CredentialRef string // ponteiro OPACO ao SecretStore — nunca o segredo
+	CredentialRef string // an OPAQUE pointer into the SecretStore — never the secret
 	Status        string
 	CreatedBy     string
 	CreatedAt     time.Time
@@ -106,12 +108,12 @@ type Resource struct {
 
 func (r Resource) HasCredential() bool { return r.Kind.HasCredential() }
 
-// IsVersioned: conteúdo é versionado, credencial não.
+// IsVersioned: content is versioned, a credential is not.
 //
-// Skill e workflow são texto que alguém escreveu e que outra pessoa vai
-// executar amanhã — sobrescrever apaga a resposta de "com qual versão isso
-// rodou?". Já a configuração de uma integração é estado corrente do mundo
-// externo: versionar o base_url de ontem não serve a ninguém.
+// A skill and a workflow are text somebody wrote and somebody else will run
+// tomorrow — overwriting erases the answer to "which version did that run
+// with?". An integration's configuration, by contrast, is the current state of
+// the outside world: versioning yesterday's base_url serves nobody.
 func (r Resource) IsVersioned() bool { return r.Kind.IsContent() }
 
 type Grant struct {
@@ -123,15 +125,14 @@ type Grant struct {
 	CreatedAt  time.Time
 }
 
-// ── credencial ───────────────────────────────────────────────────────────────
+// ── credential ───────────────────────────────────────────────────────────────
 
-// CredentialKind é o Kind da SecretRef de credencial de integração. Fixo: o
-// domínio não inventa taxonomia de cofre.
+// CredentialKind is the Kind of an integration credential's SecretRef. Fixed:
+// the domain does not invent vault taxonomy.
 const CredentialKind = "integration_credential"
 
-// SecretRefFor monta a referência LÓGICA do segredo. O domínio não conhece
-// caminho, namespace nem nome de segredo — só o adaptador sabe resolvê-la
-// (ADR-0001).
+// SecretRefFor builds the secret's LOGICAL reference. The domain knows no path,
+// no namespace and no secret name — only the adapter can resolve it (ADR-0001).
 func SecretRefFor(accountID, resourceID string) ports.SecretRef {
 	return ports.SecretRef{
 		AccountID: accountID,
@@ -140,28 +141,30 @@ func SecretRefFor(accountID, resourceID string) ports.SecretRef {
 	}
 }
 
-// CredentialRef é o que fica GRAVADO na linha do recurso: um rótulo opaco,
-// derivável da própria linha. Ele não é caminho de cofre e não abre nada —
-// serve para responder "esta integração já tem credencial?" e para a auditoria
-// registrar QUAL credencial autorizou uma ação, sem jamais tocar no valor.
+// CredentialRef is what is STORED on the resource's row: an opaque label,
+// derivable from the row itself. It is not a vault path and it opens nothing —
+// it exists to answer "does this integration already have a credential?" and to
+// let the audit trail record WHICH credential authorized an action, without ever
+// touching the value.
 func CredentialRef(accountID, resourceID string) string {
 	return CredentialKind + ":" + accountID + ":" + resourceID
 }
 
-// ── o coração: acesso efetivo ────────────────────────────────────────────────
+// ── the heart: effective access ──────────────────────────────────────────────
 
-// EffectiveLevel resolve o nível do ator sobre um recurso. É a única função do
-// sistema que responde "esta pessoa pode?" — e por isso está aqui, no domínio,
-// testável sem banco.
+// EffectiveLevel resolves the actor's level over a resource. It is the system's
+// only function that answers "may this person?" — and that is why it lives here,
+// in the domain, testable without a database.
 //
-// A ordem das cláusulas É a regra:
+// The order of the clauses IS the rule:
 //
-//  1. owner e admin têm manage IMPLÍCITO em todo recurso da conta. Sem isso
-//     surge o cenário em que a integração do GitHub quebra, quem a conectou
-//     saiu da empresa e ninguém — nem o dono da conta — consegue consertar.
-//  2. concessão explícita vale a seguir, para qualquer natureza de recurso.
-//  3. sem concessão, decide a NATUREZA (ADR-0014 §6): credencial é risco,
-//     conhecimento é conhecimento.
+//  1. owner and admin have IMPLICIT manage over every resource in the account.
+//     Without it you get the scenario where the GitHub integration breaks, the
+//     person who connected it has left the company, and nobody — not even the
+//     account's owner — can fix it.
+//  2. an explicit grant comes next, for any nature of resource.
+//  3. with no grant, the NATURE decides (ADR-0014 §6): a credential is risk,
+//     knowledge is knowledge.
 func EffectiveLevel(r Resource, role identity.Role, accountKind identity.AccountKind, explicit *Grant) Level {
 	if role.HasImplicitManage() {
 		return LevelManage
@@ -170,54 +173,74 @@ func EffectiveLevel(r Resource, role identity.Role, accountKind identity.Account
 		return explicit.Level
 	}
 	if r.HasCredential() {
-		// FECHADO por natureza. Uma credencial é a chave de um sistema de
-		// terceiros: quem não recebeu a chave explicitamente não a tem.
+		// CLOSED by nature. A credential is the key to a third-party system:
+		// whoever was not explicitly handed the key does not have it.
 		return LevelNone
 	}
 	if accountKind == identity.AccountOrganization {
-		// ABERTO por natureza, dentro da conta. Skill e workflow existem para
-		// serem usados pelo time; exigir concessão para cada membro ler uma
-		// skill transforma conhecimento em burocracia. Continua restringível
-		// por concessão explícita, que a cláusula 2 já honra.
+		// OPEN by nature, within the account. Skills and workflows exist to be
+		// used by the team; requiring a grant for each member to read a skill
+		// turns knowledge into bureaucracy. It stays restrictable through an
+		// explicit grant, which clause 2 already honours.
 		return LevelUse
 	}
-	// Conta pessoal: ela tem exatamente um membro, e esse membro é owner —
-	// logo a cláusula 1 já respondeu. Chegar aqui significa vínculo que não
-	// existe. É daí que sai, de graça, a regra "recurso de conta pessoal nunca
-	// é compartilhável": não há para quem compartilhar.
+	// A personal account has exactly one member, and that member is owner — so
+	// clause 1 already answered. Reaching here means a membership that does not
+	// exist. That is where the rule "a personal account's resource is never
+	// shareable" comes from, for free: there is nobody to share it with.
 	return LevelNone
 }
 
-// ── validação de entrada ─────────────────────────────────────────────────────
+// ── input validation ─────────────────────────────────────────────────────────
 
 const nameMaxLen = 120
 
-// ValidateName: nome é a chave natural do recurso dentro do par (conta, tipo),
-// então precisa ser estável e legível.
+// Translation keys for the refusals a person reads.
+const (
+	KeyNameRequired     = "resource.name.required"
+	KeyNameTooLong      = "resource.name.too_long"
+	KeyCategoryInvalid  = "resource.integration.category_invalid"
+	KeyProviderRequired = "resource.integration.provider_required"
+
+	KeyResourceMissing     = "resource.id_missing"
+	KeyNoGrant             = "resource.grant.absent"
+	KeyKindUnknown         = "resource.kind.unknown"
+	KeyViewerCannotCreate  = "resource.create.viewer_forbidden"
+	KeyLevelInvalid        = "resource.grant.level_invalid"
+	KeyGrantUserMissing    = "resource.grant.user_missing"
+	KeyGranteeNotMember    = "resource.grant.not_a_member"
+	KeyGrantMissing        = "resource.grant.id_missing"
+	KeyCredentialEmpty     = "resource.credential.empty"
+	KeyKindHasNoCredential = "resource.credential.kind_unsupported"
+)
+
+// ValidateName: the name is the resource's natural key within the (account,
+// kind) pair, so it has to be stable and readable.
 func ValidateName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errs.Invalid("o recurso precisa de um nome")
+		return errs.Invalid("the resource needs a name").WithCode(KeyNameRequired, nil)
 	}
 	if len(name) > nameMaxLen {
-		return errs.Invalid("o nome do recurso pode ter no máximo %d caracteres", nameMaxLen)
+		return errs.Invalid("the resource name may have at most %d characters", nameMaxLen).
+			WithCode(KeyNameTooLong, map[string]any{"max": nameMaxLen})
 	}
 	return nil
 }
 
-// IntegrationSpec é a leitura tipada do config de uma integração — o que o
-// proto descreve como IntegrationSpec e o banco guarda em jsonb.
+// IntegrationSpec is the typed reading of an integration's config — what the
+// proto describes as IntegrationSpec and the database keeps in jsonb.
 type IntegrationSpec struct {
 	Category Category
 	Provider string
 	BaseURL  string
 }
 
-// ParseIntegration valida o config de uma integração no momento da escrita.
+// ParseIntegration validates an integration's config at write time.
 //
-// Integração sem categoria e sem provedor é linha inútil: ninguém sabe se
-// aquilo é um GitHub, um Jira ou um agente, e o roteamento de execução depende
-// exatamente disso. Validar na escrita evita descobrir na hora do deploy.
+// An integration with no category and no provider is a useless row: nobody knows
+// whether that is a GitHub, a Jira or an agent, and execution routing depends on
+// exactly that. Validating on write avoids finding out at deploy time.
 func ParseIntegration(config map[string]any) (IntegrationSpec, error) {
 	var spec IntegrationSpec
 	spec.Category = Category(strings.TrimSpace(str(config["category"])))
@@ -226,10 +249,12 @@ func ParseIntegration(config map[string]any) (IntegrationSpec, error) {
 
 	if !ValidCategory(spec.Category) {
 		return spec, errs.Invalid(
-			"categoria de integração inválida: %q (use git, task_manager ou agent)", spec.Category)
+			"invalid integration category: %q (use git, task_manager or agent)", spec.Category).
+			WithCode(KeyCategoryInvalid, map[string]any{"category": string(spec.Category)})
 	}
 	if spec.Provider == "" {
-		return spec, errs.Invalid("a integração precisa declarar o provedor")
+		return spec, errs.Invalid("the integration has to declare its provider").
+			WithCode(KeyProviderRequired, nil)
 	}
 	return spec, nil
 }

@@ -10,12 +10,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Service concentra as regras de recurso. Recebe apenas PORTAS.
+// Service concentrates the resource rules. It takes only PORTS.
 //
-// Repare no que NÃO existe aqui: nenhum método devolve o valor de uma
-// credencial. O segredo entra por SetCredential e some — quem precisa dele é o
-// executor, que resolve a SecretRef pelo próprio SecretStore. Não há caminho
-// de leitura pelo qual um segredo volte por uma RPC (ADR-0001).
+// Note what does NOT exist here: no method returns a credential's value. The
+// secret goes in through SetCredential and vanishes — whoever needs it is the
+// executor, which resolves the SecretRef through the SecretStore itself. There
+// is no read path by which a secret comes back out of an RPC (ADR-0001).
 type Service struct {
 	repo    Repository
 	access  Access
@@ -26,8 +26,8 @@ func NewService(repo Repository, access Access, secrets ports.SecretStore) *Serv
 	return &Service{repo: repo, access: access, secrets: secrets}
 }
 
-// actor é o ator resolvido na conta ativa: papel e natureza da conta, que é
-// exatamente o que EffectiveLevel consome.
+// actor is the caller resolved in the active account: role and account nature,
+// which is exactly what EffectiveLevel consumes.
 type actor struct {
 	accountID   string
 	userID      string
@@ -35,10 +35,10 @@ type actor struct {
 	accountKind identity.AccountKind
 }
 
-// who resolve quem está chamando, na conta ativa.
+// who resolves the caller, in the active account.
 //
-// Requisição sem conta ativa é inválida por definição (SP-0) — e a resolução
-// do papel acontece UMA vez por operação, não uma vez por recurso.
+// A request with no active account is invalid by definition (SP-0) — and the
+// role is resolved ONCE per operation, not once per resource.
 func (s *Service) who(ctx context.Context) (actor, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -46,7 +46,7 @@ func (s *Service) who(ctx context.Context) (actor, error) {
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return actor{}, errs.New(errs.KindUnauthorized, "ator não identificado")
+		return actor{}, errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 	m, err := s.access.Authorize(ctx, call.ActorID, accountID)
 	if err != nil {
@@ -64,41 +64,43 @@ func (s *Service) who(ctx context.Context) (actor, error) {
 	}, nil
 }
 
-// authorize carrega o recurso e verifica o nível EXIGIDO, numa operação só.
-// Separar "carregar" de "autorizar" convidaria a esquecer a segunda parte.
+// authorize loads the resource and checks the REQUIRED level, in one operation.
+// Separating "load" from "authorize" would invite forgetting the second part.
 func (s *Service) authorize(ctx context.Context, a actor, resourceID string, need Level) (*Resource, error) {
 	if strings.TrimSpace(resourceID) == "" {
-		return nil, errs.Invalid("recurso não informado")
+		return nil, errs.Invalid("resource not provided").WithCode(KeyResourceMissing, nil)
 	}
 	r, err := s.repo.ByID(ctx, a.accountID, resourceID)
 	if err != nil {
 		return nil, err
 	}
 	if r == nil {
-		return nil, errs.NotFound("recurso")
+		return nil, errs.NotFound("resource")
 	}
 	g, err := s.repo.GrantOf(ctx, a.accountID, r.ID, a.userID)
 	if err != nil {
 		return nil, err
 	}
 	if lvl := EffectiveLevel(*r, a.role, a.accountKind, g); !lvl.AtLeast(need) {
-		return nil, errs.Permission("sem concessão de %s sobre o recurso %q", need, r.Name)
+		return nil, errs.Permission("no %s grant over resource %q", need, r.Name).
+			WithCode(KeyNoGrant, map[string]any{"level": string(need), "resource": r.Name})
 	}
 	return r, nil
 }
 
-// List devolve o que o ator PODE ver, não tudo que existe na conta.
+// List returns what the actor MAY see, not everything the account holds.
 //
-// Filtrar na leitura é o que faz o default por natureza ser real: uma
-// integração fechada não aparece na lista de quem não recebeu concessão. As
-// concessões do ator são buscadas de uma vez — não há uma consulta por linha.
+// Filtering on read is what makes the by-nature default real: a closed
+// integration does not appear in the list of somebody with no grant. The actor's
+// grants are fetched in one go — there is no query per row.
 func (s *Service) List(ctx context.Context, kind Kind) ([]Resource, error) {
 	a, err := s.who(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if kind != "" && !ValidKind(kind) {
-		return nil, errs.Invalid("tipo de recurso desconhecido: %q", kind)
+		return nil, errs.Invalid("unknown resource kind: %q", kind).
+			WithCode(KeyKindUnknown, map[string]any{"kind": string(kind)})
 	}
 
 	all, err := s.repo.List(ctx, a.accountID, kind)
@@ -131,30 +133,32 @@ func (s *Service) Get(ctx context.Context, id string) (*Resource, error) {
 	return s.authorize(ctx, a, id, LevelUse)
 }
 
-// Create registra um recurso na conta ativa.
+// Create registers a resource in the active account.
 //
-// Duas decisões moram aqui:
+// Two decisions live here:
 //
-//   - integração tem seu config VALIDADO na escrita (categoria e provedor):
-//     descobrir que a integração não sabe quem é na hora do deploy é tarde;
-//   - integração nasce FECHADA, então quem a criou recebe manage explícito.
-//     Sem isso, um developer conecta o GitHub e perde o acesso à própria
-//     integração no instante seguinte — o default por natureza viraria uma
-//     armadilha em vez de uma proteção.
+//   - an integration has its config VALIDATED on write (category and provider):
+//     finding out at deploy time that the integration does not know who it is
+//     comes too late;
+//   - an integration is born CLOSED, so whoever created it receives explicit
+//     manage. Without that, a developer connects GitHub and loses access to
+//     their own integration the instant after — the by-nature default would
+//     become a trap instead of a protection.
 func (s *Service) Create(ctx context.Context, kind Kind, name string, config map[string]any) (*Resource, error) {
 	a, err := s.who(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !ValidKind(kind) {
-		return nil, errs.Invalid("tipo de recurso desconhecido: %q", kind)
+		return nil, errs.Invalid("unknown resource kind: %q", kind).
+			WithCode(KeyKindUnknown, map[string]any{"kind": string(kind)})
 	}
 	if err := ValidateName(name); err != nil {
 		return nil, err
 	}
-	// Viewer é papel de leitura: não cria recurso na conta.
+	// Viewer is a read-only role: it does not create resources in the account.
 	if a.role == identity.RoleViewer {
-		return nil, errs.Permission("viewer não cria recurso")
+		return nil, errs.Permission("a viewer does not create resources").WithCode(KeyViewerCannotCreate, nil)
 	}
 	if config == nil {
 		config = map[string]any{}
@@ -191,10 +195,10 @@ func (s *Service) Create(ctx context.Context, kind Kind, name string, config map
 	return saved, nil
 }
 
-// Update altera a configuração. Conteúdo é VERSIONADO — a versão nova não
-// apaga a anterior, porque alguém vai precisar saber com qual skill aquela
-// execução rodou. Integração é sobrescrita: base_url de ontem não é história,
-// é lixo.
+// Update changes the configuration. Content is VERSIONED — the new version does
+// not erase the previous one, because somebody will need to know which skill
+// that execution ran with. An integration is overwritten: yesterday's base_url
+// is not history, it is litter.
 func (s *Service) Update(ctx context.Context, id string, config map[string]any) (*Resource, error) {
 	a, err := s.who(ctx)
 	if err != nil {
@@ -215,12 +219,12 @@ func (s *Service) Update(ctx context.Context, id string, config map[string]any) 
 	return s.repo.Update(ctx, a.accountID, r.ID, config, r.IsVersioned())
 }
 
-// Delete apaga o recurso e, antes dele, a credencial.
+// Delete removes the resource and, before it, the credential.
 //
-// A ordem é deliberada: o cofre primeiro, a linha depois. Delete no SecretStore
-// é idempotente por contrato, então uma falha na remoção da linha deixa um
-// retry limpo. A ordem inversa deixaria segredo órfão no cofre — sem nenhuma
-// linha apontando para ele, ninguém jamais o encontraria para apagar.
+// The order is deliberate: the vault first, the row second. Delete on the
+// SecretStore is idempotent by contract, so a failure removing the row leaves a
+// clean retry. The reverse order would leave an orphan secret in the vault —
+// with no row pointing at it, nobody would ever find it to delete.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	a, err := s.who(ctx)
 	if err != nil {
@@ -233,32 +237,33 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if r.CredentialRef != "" {
 		if err := s.secrets.Delete(ctx, SecretRefFor(a.accountID, r.ID)); err != nil {
 			return errs.Wrap(errs.KindUnavailable, err,
-				"falha ao remover a credencial do recurso %s", r.ID)
+				"failed to remove the credential of resource %s", r.ID)
 		}
 	}
 	return s.repo.Delete(ctx, a.accountID, r.ID)
 }
 
-// Grant concede acesso a um membro da conta.
+// Grant gives access to a member of the account.
 //
-// Quem concede precisa ter manage sobre o RECURSO — não basta ser membro, e
-// não basta ter use. E só se concede a quem já é membro da conta: acesso a
-// recurso não é porta de entrada na conta, é composição sobre um vínculo que
-// já existe (ADR-0013).
+// The granter has to hold manage over the RESOURCE — being a member is not
+// enough, and holding use is not enough. And a grant only goes to someone who is
+// already a member of the account: resource access is not a way into the
+// account, it is composition over a membership that already exists (ADR-0013).
 //
-// Consequência que vale registrar: numa conta pessoal não existe segundo
-// membro, então nenhuma concessão é possível — recurso de conta pessoal nunca
-// é compartilhável, e isso sai da cardinalidade, sem regra especial.
+// A consequence worth recording: a personal account has no second member, so no
+// grant is possible — a personal account's resource is never shareable, and that
+// falls out of the cardinality, with no special rule.
 func (s *Service) Grant(ctx context.Context, resourceID, userID string, level Level) (*Grant, error) {
 	a, err := s.who(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !ValidLevel(level) {
-		return nil, errs.Invalid("nível de concessão inválido: %q (use use ou manage)", level)
+		return nil, errs.Invalid("invalid grant level: %q (use use or manage)", level).
+			WithCode(KeyLevelInvalid, map[string]any{"level": string(level)})
 	}
 	if strings.TrimSpace(userID) == "" {
-		return nil, errs.Invalid("usuário da concessão não informado")
+		return nil, errs.Invalid("grant user not provided").WithCode(KeyGrantUserMissing, nil)
 	}
 	r, err := s.authorize(ctx, a, resourceID, LevelManage)
 	if err != nil {
@@ -267,7 +272,8 @@ func (s *Service) Grant(ctx context.Context, resourceID, userID string, level Le
 	if _, err := s.access.Authorize(ctx, userID, a.accountID); err != nil {
 		switch errs.KindOf(err) {
 		case errs.KindPermission, errs.KindNotFound:
-			return nil, errs.Invalid("não é possível conceder acesso a quem não é membro desta conta")
+			return nil, errs.Invalid("cannot grant access to someone who is not a member of this account").
+				WithCode(KeyGranteeNotMember, nil)
 		}
 		return nil, err
 	}
@@ -279,25 +285,25 @@ func (s *Service) Grant(ctx context.Context, resourceID, userID string, level Le
 	})
 }
 
-// RevokeGrant remove uma concessão. A autorização é sobre o RECURSO da
-// concessão — quem gerencia o recurso decide quem o acessa.
+// RevokeGrant removes a grant. Authorization is over the grant's RESOURCE —
+// whoever manages the resource decides who reaches it.
 //
-// Revogar não fecha a porta para owner e admin: o manage deles é implícito e
-// não passa por esta tabela. É proposital.
+// Revoking does not close the door on owner and admin: their manage is implicit
+// and does not go through this table. That is deliberate.
 func (s *Service) RevokeGrant(ctx context.Context, grantID string) error {
 	a, err := s.who(ctx)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(grantID) == "" {
-		return errs.Invalid("concessão não informada")
+		return errs.Invalid("grant not provided").WithCode(KeyGrantMissing, nil)
 	}
 	g, err := s.repo.GrantByID(ctx, a.accountID, grantID)
 	if err != nil {
 		return err
 	}
 	if g == nil {
-		return errs.NotFound("concessão")
+		return errs.NotFound("grant")
 	}
 	if _, err := s.authorize(ctx, a, g.ResourceID, LevelManage); err != nil {
 		return err
@@ -305,34 +311,36 @@ func (s *Service) RevokeGrant(ctx context.Context, grantID string) error {
 	return s.repo.RevokeGrant(ctx, a.accountID, grantID)
 }
 
-// SetCredential guarda o segredo no SecretStore e persiste APENAS a referência
-// opaca na linha do recurso.
+// SetCredential stores the secret in the SecretStore and persists ONLY the
+// opaque reference on the resource's row.
 //
-// O valor não é gravado no banco, não volta em nenhuma leitura, não entra em
-// evento e não entra em mensagem de erro — nem como "cause". A ordem é cofre
-// primeiro, linha depois: se o banco falhar, sobra um segredo sem ponteiro
-// (inerte, e sobrescrito na próxima tentativa); a ordem inversa deixaria a
-// linha afirmando ter credencial que não existe, e a execução falharia longe
-// daqui, sem explicação.
+// The value is not written to the database, does not come back from any read,
+// does not enter an event and does not enter an error message — not even as a
+// "cause". The order is vault first, row second: if the database fails, an
+// orphan secret with no pointer is left behind (inert, and overwritten on the
+// next attempt); the reverse order would leave the row claiming a credential
+// that does not exist, and execution would fail far from here, with no
+// explanation.
 func (s *Service) SetCredential(ctx context.Context, resourceID string, secret []byte) (string, error) {
 	a, err := s.who(ctx)
 	if err != nil {
 		return "", err
 	}
 	if len(secret) == 0 {
-		return "", errs.Invalid("credencial vazia")
+		return "", errs.Invalid("empty credential").WithCode(KeyCredentialEmpty, nil)
 	}
 	r, err := s.authorize(ctx, a, resourceID, LevelManage)
 	if err != nil {
 		return "", err
 	}
 	if !r.HasCredential() {
-		return "", errs.Precondition("recurso do tipo %q não tem credencial", r.Kind)
+		return "", errs.Precondition("a resource of kind %q has no credential", r.Kind).
+			WithCode(KeyKindHasNoCredential, map[string]any{"kind": string(r.Kind)})
 	}
 
 	if err := s.secrets.Put(ctx, SecretRefFor(a.accountID, r.ID), ports.SecretValue(secret)); err != nil {
 		return "", errs.Wrap(errs.KindUnavailable, err,
-			"falha ao guardar a credencial do recurso %s", r.ID)
+			"failed to store the credential of resource %s", r.ID)
 	}
 	saved, err := s.repo.SetCredentialRef(ctx, a.accountID, r.ID, CredentialRef(a.accountID, r.ID))
 	if err != nil {

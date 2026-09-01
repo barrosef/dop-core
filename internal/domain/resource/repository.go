@@ -6,44 +6,45 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 )
 
-// Repository é a PORTA de persistência do domínio de recurso.
+// Repository is the resource domain's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in internal/adapter/postgres.
+// The domain never sees SQL.
 //
-// Toda operação recebe accountID explicitamente: isolamento multi-tenant é
-// parâmetro obrigatório da porta, não algo que o adaptador possa esquecer.
+// Every operation takes accountID explicitly: multi-tenant isolation is a
+// required parameter of the port, not something the adapter could forget.
 type Repository interface {
-	// Recursos
+	// Resources
 	List(ctx context.Context, accountID string, kind Kind) ([]Resource, error)
 	ByID(ctx context.Context, accountID, id string) (*Resource, error)
 	Create(ctx context.Context, r *Resource) (*Resource, error)
-	// Update grava a configuração nova. bumpVersion=true incrementa a versão
-	// em vez de sobrescrever — é o que separa conteúdo de credencial.
+	// Update writes the new configuration. bumpVersion=true increments the
+	// version instead of overwriting — that is what separates content from a
+	// credential.
 	Update(ctx context.Context, accountID, id string, config map[string]any, bumpVersion bool) (*Resource, error)
 	Delete(ctx context.Context, accountID, id string) error
-	// SetCredentialRef grava APENAS o ponteiro opaco. O valor do segredo não
-	// passa por esta porta em momento algum.
+	// SetCredentialRef stores ONLY the opaque pointer. The secret's value never
+	// passes through this port at any point.
 	SetCredentialRef(ctx context.Context, accountID, id, ref string) (*Resource, error)
 
-	// Concessões
+	// Grants
 	GrantsOfUser(ctx context.Context, accountID, userID string) ([]Grant, error)
 	GrantOf(ctx context.Context, accountID, resourceID, userID string) (*Grant, error)
 	GrantByID(ctx context.Context, accountID, grantID string) (*Grant, error)
-	// Grant é upsert: conceder de novo com outro nível AJUSTA a concessão, não
-	// duplica linha (a tabela tem UNIQUE (resource_id, user_id)).
+	// Grant is an upsert: granting again at another level ADJUSTS the grant, it
+	// does not duplicate the row (the table has UNIQUE (resource_id, user_id)).
 	Grant(ctx context.Context, accountID string, g *Grant) (*Grant, error)
 	RevokeGrant(ctx context.Context, accountID, grantID string) error
 }
 
-// Access é a porta ESTREITA para o domínio de identidade: recurso precisa
-// saber duas coisas sobre quem chama — o papel na conta ativa (para o manage
-// implícito de owner e admin) e a natureza da conta (para o default de acesso
-// por natureza). Nada além disso.
+// Access is the NARROW port into the identity domain: a resource needs to know
+// two things about the caller — their role in the active account (for owner and
+// admin's implicit manage) and the account's nature (for the by-nature access
+// default). Nothing beyond that.
 //
-// A superfície foi escolhida para que *identity.Service a satisfaça como está:
-// o composition root apenas liga, sem adaptador de cola e sem duplicar a regra
-// de papéis em dois lugares.
+// The surface was chosen so that *identity.Service satisfies it as it stands:
+// the composition root only wires, with no glue adapter and without duplicating
+// the role rule in two places.
 type Access interface {
 	Authorize(ctx context.Context, userID, accountID string) (*identity.Membership, error)
 	GetAccount(ctx context.Context, id string) (*identity.Account, error)
