@@ -10,22 +10,22 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Config é a política de implantação do substrato. Não é infraestrutura: são
-// decisões de produto que o composition root injeta.
+// Config is the substrate's deployment policy. It is not infrastructure: these
+// are product decisions the composition root injects.
 type Config struct {
-	// DevboxImage é a imagem do sandbox. Roda como usuário arbitrário NÃO-root
-	// desde a primeira imagem — OKD/OpenShift recusam root por SCC, e isso é
-	// requisito de imagem, não de implantação (spec §2).
+	// DevboxImage is the sandbox's image. It runs as an arbitrary NON-root user
+	// from the very first image — OKD/OpenShift refuse root through their SCC, and
+	// that is an image requirement, not a deployment one (spec §2).
 	DevboxImage string
-	// IngressDomain é o sufixo das URLs <serviço>--<demanda>.<domínio> (spec §5).
+	// IngressDomain is the suffix of the URLs <service>--<demand>.<domain> (spec §5).
 	IngressDomain string
 }
 
 // Service concentra as regras do substrato. Recebe apenas PORTAS.
 //
-// Repare no que NÃO existe aqui: nenhum método devolve credencial, kubeconfig
-// ou socket. O sandbox recebe token derivado de curta duração como volume
-// projetado (spec §5) — nada disso passa por uma RPC de volta.
+// Note what does NOT exist here: no method returns a credential, a kubeconfig
+// or a socket. The sandbox receives a short-lived derived token as a projected
+// volume (spec §5) — none of that travels back through an RPC.
 type Service struct {
 	repo     Repository
 	launcher ports.SandboxLauncher
@@ -35,24 +35,24 @@ type Service struct {
 	cfg      Config
 }
 
-// NewService exige as portas de que depende. Panic aqui é deliberado: é erro de
-// montagem, detectado no boot, não em produção às três da manhã.
+// NewService requires the ports it depends on. The panic here is deliberate: it
+// is a wiring error, caught at boot, not in production at three in the morning.
 //
-// O relógio segue a regra da porta Clock: sem fallback para time.Now(), porque
-// o fallback desliga a porta sem ninguém perceber e devolve ao teste a
-// dependência do relógio de parede que a porta existe para remover.
+// The clock follows the Clock port's rule: no fallback to time.Now(), because
+// the fallback switches the port off without anyone noticing and hands the test
+// back the wall-clock dependency the port exists to remove.
 func NewService(repo Repository, launcher ports.SandboxLauncher, access Access, demands Demands, clock ports.Clock, cfg Config) *Service {
 	if repo == nil || launcher == nil || access == nil || demands == nil {
-		panic("execution.NewService: repositório, launcher, acesso e demandas são obrigatórios")
+		panic("execution.NewService: repository, launcher, access and demands are required")
 	}
 	if clock == nil {
-		panic("execution.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("execution.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, launcher: launcher, access: access, demands: demands, clock: clock, cfg: cfg}
 }
 
-// caller resolve conta e ator. Requisição sem conta ativa é inválida por
-// definição (SP-0).
+// caller resolves the account and the actor. A request with no active account is
+// invalid by definition (SP-0).
 func (s *Service) caller(ctx context.Context) (accountID, userID string, role identity.Role, err error) {
 	accountID, err = ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *Service) caller(ctx context.Context) (accountID, userID string, role id
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return "", "", "", errs.New(errs.KindUnauthorized, "ator não identificado")
+		return "", "", "", errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 	m, err := s.access.Authorize(ctx, call.ActorID, accountID)
 	if err != nil {
@@ -69,11 +69,11 @@ func (s *Service) caller(ctx context.Context) (accountID, userID string, role id
 	return accountID, call.ActorID, m.Role, nil
 }
 
-// load traz o sandbox da conta ativa. Sandbox de outra conta é "não encontrado",
-// nunca "sem permissão": a segunda resposta confirmaria que o id existe.
+// load fetches the active account's sandbox. Another account's sandbox is "not
+// found", never "forbidden": the second answer would confirm the id exists.
 func (s *Service) load(ctx context.Context, accountID, id string) (*Sandbox, error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, errs.Invalid("sandbox não informado")
+		return nil, errs.Invalid("sandbox not provided")
 	}
 	sb, err := s.repo.ByID(ctx, accountID, id)
 	if err != nil {
@@ -89,24 +89,24 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Sandbox, err
 
 // Provision cria o sandbox da demanda.
 //
-// A ordem das verificações é a regra, e a primeira delas é a mais importante:
+// The order of the checks is the rule, and the first one matters most:
 //
 //  1. o tier tem de vir DECLARADO. Sem ele, recusa — nunca um default;
-//  2. repetição da mesma chave de idempotência devolve o mesmo sandbox;
+//  2. a repeat of the same idempotency key returns the same sandbox;
 //  3. a demanda precisa existir e ser da conta ativa;
 //  4. uma demanda ativa tem UM sandbox (spec §1);
-//  5. o substrato precisa OFERECER o tier pedido. Se não oferecer, recusa
-//     ANTES de gravar qualquer estado — recusa que provisiona metade é pior
+//  5. the substrate has to OFFER the requested tier. If it does not, it refuses
+//     BEFORE writing any state — a refusal that provisions half is worse
 //     que recusa nenhuma.
 //
-// Só depois disso o estado é gravado. São duas transações, cada uma atômica com
-// seu evento (ADR-0019): a primeira registra a INTENÇÃO (provisioning), a
+// Only after that is the state written. Two transactions, each atomic with its
+// own event (ADR-0019): the first records the INTENT (provisioning), the
 // segunda registra o que o substrato ENTREGOU. Uma queda entre elas deixa a
-// linha em provisioning — visível, reconciliável e sem sandbox órfão invisível,
-// que é exatamente o que uma transação só não conseguiria dar: gravar depois do
-// Launch perderia o rastro do que já subiu.
+// row in provisioning — visible, reconcilable and with no invisible orphan
+// sandbox, which is exactly what a single transaction could not give: writing
+// after Launch would lose the trace of what already came up.
 func (s *Service) Provision(ctx context.Context, demandID string, tier ports.IsolationTier, idempotencyKey string) (*Sandbox, error) {
-	// Antes de tudo: o nível de isolamento é declarado, nunca presumido.
+	// Before anything: the isolation tier is declared, never presumed.
 	if err := RequireTier(tier); err != nil {
 		return nil, err
 	}
@@ -115,10 +115,10 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 		return nil, err
 	}
 	if strings.TrimSpace(demandID) == "" {
-		return nil, errs.Invalid("demanda não informada")
+		return nil, errs.Invalid("demand not provided")
 	}
 	if role == identity.RoleViewer {
-		return nil, errs.Permission("viewer não provisiona sandbox")
+		return nil, errs.Permission("a viewer does not provision a sandbox")
 	}
 
 	if idempotencyKey != "" {
@@ -139,21 +139,21 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 		return nil, errs.NotFound("demanda")
 	}
 
-	// Uma demanda ativa, um sandbox. Devolver o que existe é o comportamento
-	// útil; trocar o tier por baixo dele NÃO é — seria degradar (ou promover)
-	// em silêncio um isolamento que alguém já declarou.
+	// One active demand, one sandbox. Returning what exists is the useful
+	// behaviour; swapping the tier underneath it is NOT — that would silently
+	// degrade (or promote) an isolation somebody already declared.
 	if live, err := s.repo.LiveByDemand(ctx, accountID, demandID); err != nil {
 		return nil, err
 	} else if live != nil {
 		if live.Tier != tier {
 			return nil, errs.Precondition(
-				"a demanda já tem sandbox com isolamento %q; destrua-o antes de pedir %q",
+				"the demand already has a sandbox with isolation %q; destroy it before asking for %q",
 				live.Tier, tier)
 		}
-		// Linha em provisioning é rastro de uma tentativa que não terminou —
-		// uma queda entre as duas transações. Devolvê-la como está entregaria
+		// A row in provisioning is the trace of an attempt that did not finish —
+		// a crash between the two transactions. Returning it as it stands would hand
 		// ao cliente um sandbox pela metade que nunca mais seria consertado;
-		// retomar dali é o que torna a segunda transação idempotente de fato.
+		// resuming from there is what makes the second transaction genuinely idempotent.
 		if live.State != StateProvisioning {
 			return live, nil
 		}
@@ -183,18 +183,18 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 }
 
 // finishProvision executa a SEGUNDA metade do provisionamento: sobe o sandbox e
-// registra o que o substrato entregou. Vive separada porque é exatamente o
+// records what the substrate delivered. It lives apart because it is exactly
 // trecho que precisa ser refeito quando a primeira tentativa morreu no meio.
 func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
 	status, err := s.launcher.Launch(ctx, s.specFor(sb))
 	if err != nil {
-		// A linha fica em provisioning de propósito: ela é o rastro de que
-		// alguém tentou. Apagá-la aqui esconderia um sandbox meio subido.
+		// The row stays in provisioning on purpose: it is the trace that somebody
+		// tried. Deleting it here would hide a half-started sandbox.
 		return nil, err
 	}
 	if status.Tier != tier {
-		// O adaptador quebrou a garantia 1 da porta. Desfazer é obrigatório:
-		// entregar isolamento diferente do declarado é pior que não entregar.
+		// The adapter broke the port's guarantee 1. Undoing is mandatory:
+		// delivering isolation different from what was declared is worse than not delivering.
 		_ = s.launcher.Destroy(ctx, sb.Handle())
 		_, _ = s.repo.Transition(ctx, accountID, sb.ID, DestroyTransition)
 		return nil, errs.Internal(
@@ -205,9 +205,9 @@ func (s *Service) finishProvision(ctx context.Context, accountID string, sb *San
 		s.endpoints(sb.DemandID, status.Endpoints))
 }
 
-// requireTierSupported traduz "esse cluster não tem Kata" em recusa com
-// mensagem, que é o R-4 da spec: o adaptador detecta e aplica a política de
-// tier, nunca degrada em silêncio.
+// requireTierSupported turns "this cluster has no Kata" into a refusal with a
+// message, which is the spec's R-4: the adapter detects and applies the tier
+// policy, it never degrades in silence.
 func (s *Service) requireTierSupported(ctx context.Context, tier ports.IsolationTier) error {
 	supported, err := s.launcher.SupportedTiers(ctx)
 	if err != nil {
@@ -223,7 +223,7 @@ func (s *Service) requireTierSupported(ctx context.Context, tier ports.Isolation
 		names = append(names, string(t))
 	}
 	return errs.Precondition(
-		"este substrato não oferece isolamento %q; disponíveis: %s",
+		"this substrate does not offer isolation %q; available: %s",
 		tier, strings.Join(names, ", "))
 }
 
@@ -242,8 +242,8 @@ func (s *Service) specFor(sb *Sandbox) ports.SandboxSpec {
 	}
 }
 
-// endpoints compõe a URL pública de cada serviço. A regra de nomeação é do
-// domínio, não do adaptador — ver EndpointURL.
+// endpoints composes each service's public URL. The naming rule belongs to the
+// domain, not to the adapter — see EndpointURL.
 func (s *Service) endpoints(demandID string, in []ports.SandboxEndpoint) []Endpoint {
 	out := make([]Endpoint, 0, len(in))
 	for _, e := range in {
@@ -259,11 +259,11 @@ func (s *Service) endpoints(demandID string, in []ports.SandboxEndpoint) []Endpo
 
 // ── ciclo de vida ────────────────────────────────────────────────────────────
 
-// Suspend é a operação de ECONOMIA: a execução morre, o workspace fica.
+// Suspend is the SAVING operation: the execution dies, the workspace stays.
 //
-// Repetir é inócuo: suspender o que já está suspenso devolve o sandbox como
-// está, sem tocar no substrato e SEM emitir evento. Evento de mudança que não
-// mudou nada envenena o dossiê da demanda e faz toda projeção contar duas vezes.
+// Repeating is harmless: suspending what is already suspended returns the
+// sandbox as it stands, without touching the substrate and WITHOUT emitting an
+// event. A change event that changed nothing poisons the demand's dossier and
 func (s *Service) Suspend(ctx context.Context, id string) (*Sandbox, error) {
 	accountID, _, role, err := s.caller(ctx)
 	if err != nil {
@@ -274,14 +274,14 @@ func (s *Service) Suspend(ctx context.Context, id string) (*Sandbox, error) {
 		return nil, err
 	}
 	if role == identity.RoleViewer {
-		return nil, errs.Permission("viewer não altera o ciclo de vida do sandbox")
+		return nil, errs.Permission("a viewer does not change a sandbox life cycle")
 	}
 	if sb.State == StateSuspended {
 		return sb, nil
 	}
 	if !CanApply(sb.State, SuspendTransition) {
 		return nil, errs.Precondition(
-			"sandbox em %q não pode ser suspenso", sb.State)
+			"a sandbox in %q cannot be suspended", sb.State)
 	}
 	if err := s.launcher.Suspend(ctx, sb.Handle()); err != nil {
 		return nil, err
@@ -289,11 +289,11 @@ func (s *Service) Suspend(ctx context.Context, id string) (*Sandbox, error) {
 	return s.repo.Transition(ctx, accountID, sb.ID, SuspendTransition)
 }
 
-// Resume recria a execução SOBRE o workspace existente (spec §3).
+// Resume recreates the execution OVER the existing workspace (spec §3).
 //
-// Destruído não retoma. É a diferença entre as duas operações materializada no
-// único lugar onde ela dói: quem chama aqui esperando "desfazer" precisa ouvir
-// que não há o que desfazer.
+// Destroyed does not resume. It is the difference between the two operations
+// materialized in the one place where it hurts: whoever calls here expecting an
+// "undo" needs to hear there is nothing to undo.
 func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 	accountID, _, role, err := s.caller(ctx)
 	if err != nil {
@@ -304,11 +304,11 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		return nil, err
 	}
 	if role == identity.RoleViewer {
-		return nil, errs.Permission("viewer não altera o ciclo de vida do sandbox")
+		return nil, errs.Permission("a viewer does not change a sandbox life cycle")
 	}
 	if sb.State.IsTerminal() {
 		return nil, errs.Precondition(
-			"sandbox destruído não retoma — a destruição leva o workspace junto; " +
+			"a destroyed sandbox does not resume — destruction takes the workspace with it; " +
 				"provisione um novo para a demanda")
 	}
 	if sb.State == StateActive {
@@ -318,7 +318,7 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		return sb, nil
 	}
 	if !CanApply(sb.State, ResumeTransition) {
-		return nil, errs.Precondition("sandbox em %q não pode ser retomado", sb.State)
+		return nil, errs.Precondition("a sandbox in %q cannot be resumed", sb.State)
 	}
 
 	status, err := s.launcher.Resume(ctx, s.specFor(sb))
@@ -326,9 +326,9 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		return nil, err
 	}
 	if status.Tier != sb.Tier {
-		// Retomar com isolamento diferente do declarado é a degradação
-		// silenciosa entrando pela porta dos fundos: o sandbox já existia,
-		// ninguém reconferiria o tier.
+		// Resuming with an isolation different from the declared one is silent
+		// degradation coming in through the back door: the sandbox already existed,
+		// so nobody would recheck the tier.
 		return nil, errs.Internal(
 			"o substrato retomou o sandbox com isolamento %q, declarado como %q",
 			status.Tier, sb.Tier)
@@ -337,19 +337,19 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Os endpoints do retorno vêm do substrato, mas NÃO são regravados: fazer
-	// isso emitiria um segundo "provisionado" para um sandbox que só foi
-	// retomado, e toda projeção passaria a contar dois provisionamentos onde
-	// houve um. Endpoint é estado corrente, lido pelo Describe.
+	// The endpoints in the return come from the substrate, but they are NOT
+	// rewritten: doing so would emit a second "provisioned" for a sandbox that was
+	// only resumed, and every projection would start counting two provisionings
+	// where there was one. An endpoint is current state, read through Describe.
 	resumed.Endpoints = s.endpoints(sb.DemandID, status.Endpoints)
 	return resumed, nil
 }
 
-// Destroy é IRREVERSÍVEL: leva execução e workspace.
+// Destroy is IRREVERSIBLE: it takes execution and workspace.
 //
-// Idempotente por estado: destruir o que já foi destruído devolve true sem
+// Idempotent by state: destroying what was already destroyed returns true with
 // tocar em nada. Erro nesse caso seria hostil — quem repete a chamada quer o
-// mesmo resultado, e o resultado já está lá.
+// same result, and the result is already there.
 func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 	accountID, _, role, err := s.caller(ctx)
 	if err != nil {
@@ -360,15 +360,15 @@ func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	if role == identity.RoleViewer {
-		return false, errs.Permission("viewer não destrói sandbox")
+		return false, errs.Permission("a viewer does not destroy a sandbox")
 	}
 	if sb.State.IsTerminal() {
 		return true, nil
 	}
-	// O substrato primeiro, a linha depois. Destroy é idempotente por contrato
-	// (garantia 8), então falhar ao gravar deixa um retry limpo. A ordem
-	// inversa deixaria a linha dizendo "destruído" com a microVM viva e
-	// faturando, e ninguém mais a procuraria.
+	// The substrate first, the row second. Destroy is idempotent by contract
+	// (guarantee 8), so failing to write leaves a clean retry. The reverse order
+	// would leave the row saying "destroyed" with the microVM alive and billing,
+	// and nobody would look for it again.
 	if err := s.launcher.Destroy(ctx, sb.Handle()); err != nil {
 		return false, err
 	}
@@ -378,11 +378,11 @@ func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-// Describe devolve o sandbox como ele ESTÁ.
+// Describe returns the sandbox as it IS.
 //
-// Consulta o substrato quando o sandbox está vivo, e não só o banco, por um
-// motivo específico: o estado de cada endpoint (running/stopped) é o compose
-// interno da demanda, que muda sem passar por nenhuma RPC nossa. Ler só a linha
+// It queries the substrate when the sandbox is alive, and not only the database,
+// for a specific reason: each endpoint's state (running/stopped) is the demand's
+// inner compose, which changes without going through any RPC of ours. Reading
 // devolveria uma foto antiga com cara de verdade corrente.
 func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	accountID, _, _, err := s.caller(ctx)
@@ -400,47 +400,47 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	status, err := s.launcher.Describe(ctx, sb.Handle())
 	if err != nil {
 		if errs.KindOf(err) == errs.KindNotFound {
-			// Divergência real: a linha diz que existe, o substrato não o tem.
-			// Alguém apagou o namespace por fora, ou o Launch nunca terminou.
+			// A real divergence: the row says it exists, the substrate does not have
+			// it. Somebody deleted the namespace from outside, or Launch never finished.
 			// Dizer "ativo" aqui seria mentir para o cockpit.
 			return nil, errs.Precondition(
-				"o sandbox %s não existe mais no substrato (estado registrado: %s); "+
+				"sandbox %s no longer exists in the substrate (recorded state: %s); "+
 					"destrua-o e provisione outro", sb.ID, sb.State)
 		}
 		return nil, err
 	}
 	sb.Endpoints = s.endpoints(sb.DemandID, status.Endpoints)
-	// O tier vem do BANCO, não do substrato: é o que foi declarado e entregue no
+	// The tier comes from the DATABASE, not from the substrate: it is what was
 	// provisionamento. Deixar o substrato redeclarar a cada leitura abriria a
-	// porta para o valor mudar sem que ninguém tivesse pedido.
+	// door for the value to change without anybody having asked.
 	return sb, nil
 }
 
-// ── execução de comando ──────────────────────────────────────────────────────
+// ── command execution ────────────────────────────────────────────────────────
 
 // RunCommand roda um comando no sandbox VIVO da demanda.
 //
-// É por aqui que o agente age (ADR-0023 + spec do substrato §4): o runtime de
-// agente pergunta pela DEMANDA, que é o vocabulário dele, e este domínio resolve
-// demanda → sandbox → substrato. O runtime nunca vê um id de sandbox, nunca vê
+// This is how the agent acts (ADR-0023 + substrate spec §4): the agent runtime
+// asks by DEMAND, which is its vocabulary, and this domain resolves demand →
+// sandbox → substrate. The runtime never sees a sandbox id, never sees
 // `ports.SandboxLauncher` e nunca escolhe onde o comando roda.
 //
-// Três decisões que não são óbvias:
+// Three decisions that are not obvious:
 //
-//  1. O ERRO É SÓ DO SUBSTRATO. Comando que sai com código != 0, que estoura o
-//     prazo ou que tem a saída cortada volta em `ExecResult` com erro nil —
-//     é a garantia 15 da porta, propagada intacta. O agente PRECISA ver que o
+//  1. THE ERROR IS THE SUBSTRATE'S ALONE. A command that exits non-zero, blows
+//     its deadline or has its output cut comes back in `ExecResult` with a nil
+//     error — it is the port's guarantee 15, propagated intact. The agent HAS to
 //     teste reprovou para consertar; devolver isso como erro tiraria dele a
-//     única informação que resolve o problema;
+//     the only information that solves the problem;
 //
-//  2. TRABALHO DE AGENTE É ATIVIDADE. O toque adia a suspensão por ociosidade
+//  2. AGENT WORK IS ACTIVITY. The touch postpones idle suspension
 //     (spec §3). Sem ele, o varredor de economia derrubaria o sandbox debaixo
-//     de um agente que está justamente trabalhando nele — e o sintoma seria um
-//     laço de ferramenta que falha na volta seguinte por "sandbox suspenso",
-//     sem nada explicando por quê;
+//     of an agent that is precisely working in it — and the symptom would be a
+//     tool loop failing on the next turn with "sandbox suspended", with nothing
+//     explaining why;
 //
-//  3. VIEWER NÃO RODA COMANDO. Rodar comando no sandbox é escrever no workspace
-//     da demanda e gastar o tempo de uma máquina que a conta paga. É a mesma
+//  3. A VIEWER DOES NOT RUN COMMANDS. Running a command in the sandbox is
+//     writing into the demand's workspace and spending the time of a machine the
 //     linha que separa viewer de quem provisiona.
 func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.ExecRequest) (*ports.ExecResult, error) {
 	accountID, _, role, err := s.caller(ctx)
@@ -448,13 +448,13 @@ func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.Exe
 		return nil, err
 	}
 	if strings.TrimSpace(demandID) == "" {
-		return nil, errs.Invalid("demanda não informada")
+		return nil, errs.Invalid("demand not provided")
 	}
 	if len(req.Command) == 0 {
-		return nil, errs.Invalid("comando não informado")
+		return nil, errs.Invalid("command not provided")
 	}
 	if role == identity.RoleViewer {
-		return nil, errs.Permission("viewer não executa comando no sandbox")
+		return nil, errs.Permission("a viewer does not run commands in the sandbox")
 	}
 
 	sb, err := s.repo.LiveByDemand(ctx, accountID, demandID)
@@ -468,7 +468,7 @@ func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.Exe
 	}
 	if sb.State != StateActive {
 		return nil, errs.Precondition(
-			"o sandbox da demanda %s está em %q e não executa comando; retome-o antes",
+			"the sandbox of demand %s is in %q and runs no command; resume it first",
 			demandID, sb.State)
 	}
 
@@ -480,29 +480,29 @@ func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.Exe
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
-// streamTailLines é quanto de histórico acompanha a reconexão.
+// streamTailLines is how much history accompanies a reconnection.
 //
-// Sem teto, abrir os logs de um sandbox que roda há horas despejaria o log
-// inteiro antes da primeira linha nova — e o dev que só queria ver o que está
-// acontecendo agora esperaria por megabytes. O histórico profundo é assunto da
-// projeção de timeline, não deste fluxo.
+// With no ceiling, opening the logs of a sandbox that has run for hours would
+// dump the entire log before the first new line — and the dev who only wanted to
+// see what is happening now would wait through megabytes. Deep history is the
+// timeline projection's business, not this stream's.
 const streamTailLines = 500
 
-// Emitter entrega uma linha ao cliente. Erro dele encerra o fluxo — é como o
+// Emitter delivers a line to the client. Its error ends the stream — it is how
 // servidor descobre que o cliente sumiu.
 type Emitter func(LogLine) error
 
 // StreamLogs segue os logs do sandbox enquanto o cliente estiver ouvindo.
 //
-// Dev conectado é ATIVIDADE: o toque abaixo adia a suspensão por ociosidade.
-// Sem ele, o varredor de economia derrubaria o sandbox debaixo de quem está
+// A connected dev is ACTIVITY: the touch below postpones idle suspension.
+// Without it, the saving sweeper would drop the sandbox from under whoever is
 // justamente olhando para ele (spec §3).
 //
-// Sandbox suspenso NÃO tem logs, e isso é recusa explícita em vez de fluxo
-// vazio: a suspensão apaga a execução, e o que cada substrato ainda guarda do
-// que rodou antes é diferente em cada um — o k8s apaga o pod e perde tudo, o
-// Docker mantém o arquivo de log do contêiner parado. Prometer "às vezes vem
-// alguma coisa" seria expor essa divergência ao cliente.
+// A suspended sandbox has NO logs, and that is an explicit refusal rather than
+// an empty stream: suspension erases the execution, and what each substrate
+// still keeps of what ran before differs between them — k8s deletes the pod and
+// loses everything, Docker keeps the stopped container's log file. Promising
+// "sometimes something comes back" would expose that divergence to the client.
 func (s *Service) StreamLogs(ctx context.Context, sandboxID string, f LogFilter, emit Emitter) error {
 	accountID, _, _, err := s.caller(ctx)
 	if err != nil {
@@ -514,9 +514,9 @@ func (s *Service) StreamLogs(ctx context.Context, sandboxID string, f LogFilter,
 	}
 	switch sb.State {
 	case StateDestroyed:
-		return errs.Precondition("sandbox destruído não tem logs")
+		return errs.Precondition("a destroyed sandbox has no logs")
 	case StateSuspended:
-		return errs.Precondition("sandbox suspenso não tem execução; retome-o para ver logs")
+		return errs.Precondition("a suspended sandbox has no execution; resume it to see logs")
 	}
 	if err := s.repo.TouchActivity(ctx, accountID, sb.ID); err != nil {
 		return err
@@ -547,9 +547,9 @@ func (s *Service) StreamLogs(ctx context.Context, sandboxID string, f LogFilter,
 
 // SweepIdle suspende os sandboxes ociosos da conta e devolve quantos suspendeu.
 //
-// É a spec §3 virando código: demandas esperam humanos por horas, e sandbox
-// ocioso é o que separa paralelismo real de máquina afogada. Falha em um não
-// interrompe os outros — um pod teimoso não pode fazer a conta inteira parar de
+// It is spec §3 turned into code: demands wait on humans for hours, and an idle
+// sandbox is what separates real parallelism from a drowning machine. A failure
+// in one does not interrupt the others — a stubborn pod must not make the whole
 // economizar.
 func (s *Service) SweepIdle(ctx context.Context) (int, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -578,32 +578,32 @@ func (s *Service) SweepIdle(ctx context.Context) (int, error) {
 	return suspended, nil
 }
 
-// NewSweeper monta o serviço só para VARRER.
+// NewSweeper assembles the service for SWEEPING only.
 //
-// O scheduler não atende ninguém: ele não autoriza chamador nem consulta
-// demanda, só suspende o que está parado. Montar o grafo inteiro lá dentro para
-// satisfazer construtor exigiria inventar dependências que a varredura não usa
-// — e dependência inventada é dependência que um dia alguém passa a usar.
+// The scheduler serves nobody: it authorizes no caller and queries no demand, it
+// only suspends what is idle. Assembling the whole graph in there to satisfy a
+// constructor would mean inventing dependencies the sweep does not use — and an
+// invented dependency is a dependency somebody starts using one day.
 //
-// O serviço devolvido PANICA se alguém chamar Provision ou qualquer coisa que
-// precise de ator: é erro de montagem, e falhar alto é melhor que autorizar com
+// The returned service PANICS if anybody calls Provision or anything that needs
+// an actor: it is a wiring error, and failing loudly beats authorizing with
 // um duplo vazio.
 func NewSweeper(repo Repository, launcher ports.SandboxLauncher, clock ports.Clock) *Service {
 	if repo == nil || launcher == nil || clock == nil {
-		panic("execution.NewSweeper: repositório, launcher e relógio são obrigatórios")
+		panic("execution.NewSweeper: repository, launcher and clock are required")
 	}
 	return &Service{repo: repo, launcher: launcher, clock: clock}
 }
 
-// SweepAllAccounts é o varredor de economia rodando como SISTEMA.
+// SweepAllAccounts is the saving sweeper running as SYSTEM.
 //
-// O scheduler não tem conta ativa — e todo o resto deste domínio exige uma. A
-// saída é visitar conta por conta: `AccountsWithIdle` diz QUAIS têm o que
+// The scheduler has no active account — and all the rest of this domain requires
+// one. The way out is to visit account by account: `AccountsWithIdle` says WHICH
 // varrer, e cada varredura acontece com aquela conta no contexto, pelo mesmo
-// caminho que uma chamada de usuário faria. O isolamento não é afrouxado; o que
-// muda é quem decide a ordem de visita.
+// path a user call would take. Isolation is not loosened; what changes is who
+// decides the visiting order.
 //
-// Erro numa conta não interrompe as outras: sandbox ocioso de uma conta não
+// An error in one account does not interrupt the others: one account's idle
 // deve ficar aceso porque a conta anterior tem um problema.
 func (s *Service) SweepAllAccounts(ctx context.Context) (contas, suspensos int, err error) {
 	ids, err := s.repo.AccountsWithIdle(ctx, int(IdleTimeout.Seconds()))
@@ -611,9 +611,9 @@ func (s *Service) SweepAllAccounts(ctx context.Context) (contas, suspensos int, 
 		return 0, 0, err
 	}
 	for _, accountID := range ids {
-		// Ator de sistema, com a conta da vez: é o mesmo Call que o
-		// interceptor montaria, e é o que faz MustAccount funcionar sem abrir
-		// exceção no domínio.
+		// A system actor, with the account at hand: it is the same Call the
+		// interceptor would build, and it is what makes MustAccount work without
+		// carving out an exception in the domain.
 		porConta := ctxutil.Into(ctx, ctxutil.Call{
 			AccountID: accountID,
 			ActorID:   "scheduler",

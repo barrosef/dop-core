@@ -15,42 +15,42 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM cluster, SEM Docker e SEM banco: repositório,
-// launcher, acesso e relógio são portas, e aqui entram duplos em memória. É o
-// retorno prático da arquitetura hexagonal.
+// The domain is testable WITHOUT a cluster, WITHOUT Docker and WITHOUT a
+// database: repository, launcher, access and clock are ports, and in-memory
+// doubles go in here. It is the practical return on hexagonal architecture.
 //
-// Os duplos moram NESTE arquivo, e não em internal/adapter: o teste de
+// The doubles live in THIS file, and not in internal/adapter: the
 // arquitetura varre todo .go sob internal/domain, inclusive os _test.go, e
 // importar adaptador daqui quebraria a fronteira que ele protege. Eles
 // satisfazem as MESMAS portas — o mesmo contrato que o k8s e o Docker cumprem.
 
 // ── o modelo: suspender ≠ destruir ───────────────────────────────────────────
 
-// TestSuspenderNaoEDestruir é o teste central deste domínio. As duas operações
-// param a execução; só uma delas leva o trabalho junto. Se um dia alguém
-// "simplificar" as duas em uma, é aqui que o build quebra.
-func TestSuspenderNaoEDestruir(t *testing.T) {
+// TestSuspendingIsNotDestroying is this domain's central test. Both operations
+// stop the execution; only one takes the work with it. If somebody one day
+// "simplifies" the two into one, this is where the build breaks.
+func TestSuspendingIsNotDestroying(t *testing.T) {
 	sus, des := execution.SuspendTransition, execution.DestroyTransition
 
 	if !sus.StopsRuntime || !des.StopsRuntime {
-		t.Error("as duas param a execução — é o que as faz parecerem iguais de fora")
+		t.Error("both stop the execution — that is what makes them look alike from outside")
 	}
 	if !sus.PreservesWork() {
-		t.Error("suspender é ECONOMIA: o workspace sobrevive")
+		t.Error("suspending is SAVING: the workspace survives")
 	}
 	if des.PreservesWork() {
-		t.Error("destruir leva o workspace junto — é o que o torna irreversível")
+		t.Error("destroying takes the workspace with it — that is what makes it irreversible")
 	}
 	if !sus.Reversible || des.Reversible {
-		t.Error("suspender volta; destruir não")
+		t.Error("suspending comes back; destroying does not")
 	}
 	if !execution.StateDestroyed.IsTerminal() {
-		t.Error("destruído é absorvente")
+		t.Error("destroyed is absorbing")
 	}
-	// De destruído não sai NADA — nem para ativo, nem para suspenso.
+	// NOTHING leaves destroyed — not to active, not to suspended.
 	for _, tr := range []execution.Transition{sus, des, execution.ResumeTransition} {
 		if execution.CanApply(execution.StateDestroyed, tr) {
-			t.Errorf("destruído aceitou transição para %q", tr.To)
+			t.Errorf("destroyed accepted a transition to %q", tr.To)
 		}
 	}
 	if !execution.CanApply(execution.StateActive, sus) {
@@ -60,23 +60,23 @@ func TestSuspenderNaoEDestruir(t *testing.T) {
 		t.Error("suspenso deveria retomar")
 	}
 	if execution.CanApply(execution.StateSuspended, sus) {
-		t.Error("suspender o já suspenso não é transição — é repetição")
+		t.Error("suspending the already suspended is not a transition — it is a repeat")
 	}
 }
 
 // ── isolationTier: declarado, nunca presumido ────────────────────────────────
 
-func TestTierNaoDeclaradoERecusado(t *testing.T) {
+func TestAnUndeclaredTierIsRefused(t *testing.T) {
 	f := novoCenario(t)
 
 	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierUnspecified, "")
 	if errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("tier ausente precisa ser recusado, veio: %v", err)
 	}
-	if !strings.Contains(err.Error(), "não escolhe por você") {
-		t.Errorf("a mensagem precisa dizer que o substrato não escolhe: %q", err)
+	if !strings.Contains(err.Error(), "does not choose for you") {
+		t.Errorf("the message has to say the substrate does not choose: %q", err)
 	}
-	// E, sobretudo: nada foi gravado e nada foi lançado.
+	// And above all: nothing was written and nothing was launched.
 	if n := f.repo.total(); n != 0 {
 		t.Errorf("recusa gravou %d sandbox(es)", n)
 	}
@@ -85,53 +85,53 @@ func TestTierNaoDeclaradoERecusado(t *testing.T) {
 	}
 }
 
-func TestTierDesconhecidoERecusado(t *testing.T) {
+func TestAnUnknownTierIsRefused(t *testing.T) {
 	f := novoCenario(t)
 	if _, err := f.svc.Provision(f.ctx, "demanda-1", "microvm-turbinada", ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("tier fora do vocabulário precisa ser recusado, veio: %v", err)
+		t.Fatalf("a tier outside the vocabulary has to be refused, got: %v", err)
 	}
 }
 
-// TestTierNaoOferecidoRecusaSemGravar é o R-4 da spec: RuntimeClass de Kata
-// falta na maioria das distribuições, e a resposta é recusa com mensagem.
-func TestTierNaoOferecidoRecusaSemGravar(t *testing.T) {
+// TestAnUnofferedTierRefusesWithoutWriting is the spec's R-4: a Kata
+// RuntimeClass is missing from most distributions, and the answer is a refusal with a message.
+func TestAnUnofferedTierRefusesWithoutWriting(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.tiers = []ports.IsolationTier{ports.TierNamespace}
 
 	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, "")
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("esperava recusa por precondição, veio: %v", err)
+		t.Fatalf("expected a precondition refusal, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "namespace") {
-		t.Errorf("a mensagem precisa dizer o que ESTÁ disponível: %q", err)
+		t.Errorf("the message has to say what IS available: %q", err)
 	}
 	if n := f.repo.total(); n != 0 {
-		t.Errorf("recusa gravou %d sandbox(es) — recusa que provisiona metade é pior que recusa nenhuma", n)
+		t.Errorf("the refusal wrote %d sandbox(es) — a refusal that provisions half is worse than no refusal", n)
 	}
 }
 
-// TestSubstratoQueDegradaEDescartado: se o launcher entregar um nível diferente
-// do declarado, o sandbox é DESTRUÍDO. Aceitá-lo seria transformar a garantia
-// da porta em recomendação.
-func TestSubstratoQueDegradaEDescartado(t *testing.T) {
+// TestASubstrateThatDegradesIsDiscarded: if the launcher delivers a tier
+// different from the declared one, the sandbox is DESTROYED. Accepting it would
+// turn the port's guarantee into a recommendation.
+func TestASubstrateThatDegradesIsDiscarded(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.tiers = []ports.IsolationTier{ports.TierHardware, ports.TierNamespace}
-	f.launcher.entrega = ports.TierNamespace // pedimos hardware, ele dá namespace
+	f.launcher.delivers = ports.TierNamespace // we asked for hardware, it gives namespace
 
 	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, "")
 	if err == nil {
-		t.Fatal("degradação silenciosa foi aceita")
+		t.Fatal("silent degradation was accepted")
 	}
 	if f.launcher.destroys == 0 {
-		t.Error("o sandbox degradado ficou de pé, faturando")
+		t.Error("the degraded sandbox stayed up, billing")
 	}
 	sb := f.repo.only(t)
 	if sb.State != execution.StateDestroyed {
-		t.Errorf("a linha ficou em %q; deveria constar destruída", sb.State)
+		t.Errorf("the row is in %q; it should read as destroyed", sb.State)
 	}
 }
 
-func TestTierEntregueEGravado(t *testing.T) {
+func TestTheDeliveredTierIsStored(t *testing.T) {
 	f := novoCenario(t)
 	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
 	if err != nil {
@@ -141,16 +141,16 @@ func TestTierEntregueEGravado(t *testing.T) {
 		t.Errorf("o cliente precisa ver o que RECEBEU: %q", sb.Tier)
 	}
 	if sb.State != execution.StateActive {
-		t.Errorf("estado após provisionar: %q", sb.State)
+		t.Errorf("state after provisioning: %q", sb.State)
 	}
 	if sb.Namespace != execution.NamespaceFor("demanda-1") {
 		t.Errorf("namespace: %q", sb.Namespace)
 	}
 }
 
-// ── idempotência e unicidade ─────────────────────────────────────────────────
+// ── idempotency and uniqueness ───────────────────────────────────────────────
 
-func TestChaveDeIdempotenciaNaoDuplicaSandbox(t *testing.T) {
+func TestTheIdempotencyKeyDoesNotDuplicateASandbox(t *testing.T) {
 	f := novoCenario(t)
 	a, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "chave-1")
 	if err != nil {
@@ -161,42 +161,42 @@ func TestChaveDeIdempotenciaNaoDuplicaSandbox(t *testing.T) {
 		t.Fatalf("2º Provision: %v", err)
 	}
 	if a.ID != b.ID {
-		t.Fatalf("a repetição criou outro sandbox: %s != %s", a.ID, b.ID)
+		t.Fatalf("the repeat created another sandbox: %s != %s", a.ID, b.ID)
 	}
 	if f.launcher.launches != 1 {
-		t.Errorf("o substrato foi acionado %d vezes para uma chave só", f.launcher.launches)
+		t.Errorf("the substrate was invoked %d times for a single key", f.launcher.launches)
 	}
 }
 
-// TestProvisionamentoInterrompidoERetomado cobre a queda entre as DUAS
-// transações do provisionamento: a linha ficou em provisioning e o substrato
-// nunca subiu. A repetição precisa terminar o serviço, não devolver ao cliente
-// um sandbox pela metade que ninguém mais conserta.
-func TestProvisionamentoInterrompidoERetomado(t *testing.T) {
+// TestAnInterruptedProvisioningIsResumed cobre a queda entre as DUAS
+// transactions of provisioning: the row stayed in provisioning and the
+// substrate never came up. The repeat has to finish the job, not hand the client
+// half a sandbox nobody can fix afterwards.
+func TestAnInterruptedProvisioningIsResumed(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.falhasNoLaunch = 1
 
 	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, ""); err == nil {
 		t.Fatal("a primeira tentativa deveria ter falhado")
 	}
-	meio := f.repo.only(t)
-	if meio.State != execution.StateProvisioning {
-		t.Fatalf("o rastro da tentativa sumiu: estado %q", meio.State)
+	half := f.repo.only(t)
+	if half.State != execution.StateProvisioning {
+		t.Fatalf("o rastro da tentativa gone: estado %q", half.State)
 	}
 
 	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
 	if err != nil {
-		t.Fatalf("a repetição deveria terminar o provisionamento: %v", err)
+		t.Fatalf("the repeat should finish the provisioning: %v", err)
 	}
-	if sb.ID != meio.ID {
-		t.Errorf("a repetição criou outro sandbox: %s != %s", sb.ID, meio.ID)
+	if sb.ID != half.ID {
+		t.Errorf("the repeat created another sandbox: %s != %s", sb.ID, half.ID)
 	}
 	if sb.State != execution.StateActive {
-		t.Errorf("estado após retomar o provisionamento: %q", sb.State)
+		t.Errorf("state after resuming the provisioning: %q", sb.State)
 	}
 }
 
-func TestUmaDemandaUmSandbox(t *testing.T) {
+func TestOneDemandOneSandbox(t *testing.T) {
 	f := novoCenario(t)
 	a, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
 	if err != nil {
@@ -209,25 +209,25 @@ func TestUmaDemandaUmSandbox(t *testing.T) {
 	if a.ID != b.ID {
 		t.Error("a mesma demanda ganhou dois sandboxes")
 	}
-	// Trocar o isolamento de um sandbox que já existe seria degradar (ou
-	// promover) em silêncio o que alguém já declarou.
+	// Swapping the isolation of a sandbox that already exists would silently
+	// degrade (or promote) what somebody already declared.
 	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, ""); errs.KindOf(err) != errs.KindPrecondition {
 		t.Fatalf("esperava recusa ao mudar o tier de um sandbox existente, veio: %v", err)
 	}
 }
 
-// ── isolamento e permissão ───────────────────────────────────────────────────
+// ── isolation and permission ─────────────────────────────────────────────────
 
-func TestDemandaDeOutraContaNaoExiste(t *testing.T) {
+func TestAnotherAccountsDemandDoesNotExist(t *testing.T) {
 	f := novoCenario(t)
 	f.demands.dono["demanda-alheia"] = "outra-conta"
 
 	if _, err := f.svc.Provision(f.ctx, "demanda-alheia", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("demanda de outra conta precisa ser 'não encontrada' — a existência do id não pode vazar: %v", err)
+		t.Fatalf("another account's demand has to be 'not found' — the id's existence must not leak: %v", err)
 	}
 }
 
-func TestViewerNaoProvisiona(t *testing.T) {
+func TestAViewerDoesNotProvision(t *testing.T) {
 	f := novoCenario(t)
 	f.access.papel = identity.RoleViewer
 	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindPermission {
@@ -235,15 +235,15 @@ func TestViewerNaoProvisiona(t *testing.T) {
 	}
 }
 
-func TestRequisicaoSemContaAtiva(t *testing.T) {
+func TestARequestWithNoActiveAccount(t *testing.T) {
 	f := novoCenario(t)
 	sem := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
 	if _, err := f.svc.Provision(sem, "demanda-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("requisição sem conta ativa é inválida por definição: %v", err)
+		t.Fatalf("a request with no active account is invalid by definition: %v", err)
 	}
 }
 
-func TestSandboxDeOutraContaNaoEEncontrado(t *testing.T) {
+func TestAnotherAccountsSandboxIsNotFound(t *testing.T) {
 	f := novoCenario(t)
 	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
 	if err != nil {
@@ -257,7 +257,7 @@ func TestSandboxDeOutraContaNaoEEncontrado(t *testing.T) {
 
 // ── ciclo de vida ────────────────────────────────────────────────────────────
 
-func TestSuspenderRepetidoNaoEmiteTransicao(t *testing.T) {
+func TestARepeatedSuspendEmitsNoTransition(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 
@@ -266,14 +266,14 @@ func TestSuspenderRepetidoNaoEmiteTransicao(t *testing.T) {
 	}
 	antes := f.repo.transitions
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
-		t.Fatalf("2º Suspend deveria ser inócuo: %v", err)
+		t.Fatalf("the 2nd Suspend should be harmless: %v", err)
 	}
 	if f.repo.transitions != antes {
-		t.Error("suspender o já suspenso emitiu transição — evento que não mudou nada envenena o dossiê")
+		t.Error("suspending the already suspended emitted a transition — an event that changed nothing poisons the dossier")
 	}
 }
 
-func TestDestruirEIrreversivel(t *testing.T) {
+func TestDestroyingIsIrreversible(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 
@@ -281,20 +281,20 @@ func TestDestruirEIrreversivel(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Destroy: %v", err)
 	}
-	// Repetir é inócuo: quem repete quer o mesmo resultado, e ele já está lá.
+	// Repeating is harmless: whoever repeats wants the same result, and it is already there.
 	if ok, err := f.svc.Destroy(f.ctx, sb.ID); err != nil || !ok {
 		t.Fatalf("2º Destroy: %v (%v)", err, ok)
 	}
 	_, err = f.svc.Resume(f.ctx, sb.ID)
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("destruído retomou: %v", err)
+		t.Fatalf("destroyed resumed: %v", err)
 	}
 	if !strings.Contains(err.Error(), "workspace") {
 		t.Errorf("a mensagem precisa dizer que o trabalho foi junto: %q", err)
 	}
 }
 
-func TestRetomarRecriaSobreOWorkspace(t *testing.T) {
+func TestResumingRecreatesOverTheWorkspace(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
@@ -305,41 +305,41 @@ func TestRetomarRecriaSobreOWorkspace(t *testing.T) {
 		t.Fatalf("Resume: %v", err)
 	}
 	if got.State != execution.StateActive {
-		t.Fatalf("estado após retomar: %q", got.State)
+		t.Fatalf("state after resuming: %q", got.State)
 	}
 	if f.launcher.resumes != 1 {
 		t.Errorf("o substrato foi retomado %d vezes", f.launcher.resumes)
 	}
 }
 
-// TestRetomadaComTierDiferenteERecusada fecha a porta dos fundos: o sandbox já
-// existia, então ninguém reconferiria o isolamento.
-func TestRetomadaComTierDiferenteERecusada(t *testing.T) {
+// TestResumingWithADifferentTierIsRefused closes the back door: the sandbox
+// already existed, so nobody would recheck the isolation.
+func TestResumingWithADifferentTierIsRefused(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
 		t.Fatalf("Suspend: %v", err)
 	}
-	f.launcher.entrega = ports.TierKernelEmulated
+	f.launcher.delivers = ports.TierKernelEmulated
 	if _, err := f.svc.Resume(f.ctx, sb.ID); err == nil {
 		t.Fatal("retomada degradada foi aceita")
 	}
 }
 
-func TestDescribeDenunciaDivergenciaComOSubstrato(t *testing.T) {
+func TestDescribeReportsDivergenceWithTheSubstrate(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
-	f.launcher.sumiu = true // alguém apagou o namespace por fora
+	f.launcher.gone = true // somebody deleted the namespace from outside
 
 	_, err := f.svc.Describe(f.ctx, sb.ID)
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("dizer 'ativo' para um sandbox que não existe é mentir para o cockpit: %v", err)
+		t.Fatalf("saying 'active' for a sandbox that does not exist is lying to the cockpit: %v", err)
 	}
 }
 
 // ── economia ─────────────────────────────────────────────────────────────────
 
-func TestVarreduraSuspendeSomenteOOcioso(t *testing.T) {
+func TestTheSweepSuspendsOnlyWhatIsIdle(t *testing.T) {
 	f := novoCenario(t)
 	ocioso := f.provisionado(t)
 	f.repo.get(ocioso.ID).LastActiveAt = f.clock.Now().Add(-2 * execution.IdleTimeout)
@@ -355,17 +355,17 @@ func TestVarreduraSuspendeSomenteOOcioso(t *testing.T) {
 		t.Fatalf("SweepIdle: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("suspendeu %d; esperava só o ocioso", n)
+		t.Fatalf("suspended %d; expected only the idle one", n)
 	}
 	if f.repo.get(ocioso.ID).State != execution.StateSuspended {
-		t.Error("o ocioso continuou de pé — é isso que afoga a máquina")
+		t.Error("the idle one stayed up — that is what drowns the machine")
 	}
 	if f.repo.get(recente.ID).State != execution.StateActive {
 		t.Error("o sandbox em uso foi derrubado")
 	}
 }
 
-func TestShouldSuspendPuro(t *testing.T) {
+func TestShouldSuspendIsPure(t *testing.T) {
 	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	ativo := execution.Sandbox{State: execution.StateActive, LastActiveAt: agora.Add(-execution.IdleTimeout)}
 	if !ativo.ShouldSuspend(agora) {
@@ -377,13 +377,13 @@ func TestShouldSuspendPuro(t *testing.T) {
 	}
 	suspenso := execution.Sandbox{State: execution.StateSuspended, LastActiveAt: agora.Add(-time.Hour)}
 	if suspenso.ShouldSuspend(agora) {
-		t.Error("suspender o já suspenso não economiza nada")
+		t.Error("suspending the already suspended saves nothing")
 	}
 }
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
-func TestClassificacaoDeLinha(t *testing.T) {
+func TestLineClassification(t *testing.T) {
 	casos := []struct {
 		raw   string
 		src   execution.Source
@@ -393,9 +393,9 @@ func TestClassificacaoDeLinha(t *testing.T) {
 		{"[app] subiu na 3000", execution.SourceApp, "", "subiu na 3000"},
 		{"[test:e2e] 3 passaram", execution.SourceTest, execution.TestE2E, "3 passaram"},
 		{"[infra] docker pronto", execution.SourceInfra, "", "docker pronto"},
-		// Sem prefixo é o que o próprio substrato imprimiu.
+		// No prefix means it is what the substrate itself printed.
 		{"npm ERR! algo", execution.SourceInfra, "", "npm ERR! algo"},
-		// Colchete que não é tag nossa não pode ser comido: a linha vale como veio.
+		// A bracket that is not our tag must not be eaten: the line stands as it came.
 		{"[2026-08-31] backup ok", execution.SourceInfra, "", "[2026-08-31] backup ok"},
 	}
 	for _, c := range casos {
@@ -407,7 +407,7 @@ func TestClassificacaoDeLinha(t *testing.T) {
 	}
 }
 
-func TestFiltroDeLog(t *testing.T) {
+func TestLogFilter(t *testing.T) {
 	linha := execution.LogLine{Source: execution.SourceTest, TestType: execution.TestE2E, Service: "backend"}
 	if !(execution.LogFilter{}).Matches(linha) {
 		t.Error("filtro vazio pede tudo")
@@ -416,42 +416,42 @@ func TestFiltroDeLog(t *testing.T) {
 		t.Error("origem igual deveria casar")
 	}
 	if (execution.LogFilter{Source: execution.SourceApp}).Matches(linha) {
-		t.Error("origem diferente não casa")
+		t.Error("a different source does not match")
 	}
 	if (execution.LogFilter{TestType: execution.TestAAA}).Matches(linha) {
-		t.Error("tipo de teste diferente não casa")
+		t.Error("a different test type does not match")
 	}
 }
 
-func TestStreamLogsFiltraEContaComoAtividade(t *testing.T) {
+func TestStreamLogsFiltersAndCountsAsActivity(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
-	f.launcher.linhas = []ports.LogLine{
+	f.launcher.lines = []ports.LogLine{
 		{Text: "[app] subiu"},
 		{Text: "[test:e2e] verde"},
 		{Text: "docker pronto"},
 	}
 
-	var vistas []string
+	var seen []string
 	err := f.svc.StreamLogs(f.ctx, sb.ID, execution.LogFilter{Source: execution.SourceApp},
 		func(l execution.LogLine) error {
-			vistas = append(vistas, l.Text)
+			seen = append(seen, l.Text)
 			return nil
 		})
 	if err != nil {
 		t.Fatalf("StreamLogs: %v", err)
 	}
-	if len(vistas) != 1 || vistas[0] != "subiu" {
-		t.Fatalf("o filtro não recortou: %v", vistas)
+	if len(seen) != 1 || seen[0] != "subiu" {
+		t.Fatalf("the filter did not cut: %v", seen)
 	}
-	// Dev conectado é atividade: sem isso o varredor derrubaria o sandbox de
-	// quem está justamente olhando para ele.
+	// A connected dev is activity: without it the sweeper would drop the sandbox
+	// of whoever is looking right at it.
 	if f.repo.touches == 0 {
-		t.Error("seguir logs não contou como atividade")
+		t.Error("following logs did not count as activity")
 	}
 }
 
-func TestStreamLogsRecusaSuspensoEDestruido(t *testing.T) {
+func TestStreamLogsRefusesSuspendedAndDestroyed(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
@@ -459,7 +459,7 @@ func TestStreamLogsRecusaSuspensoEDestruido(t *testing.T) {
 	}
 	err := f.svc.StreamLogs(f.ctx, sb.ID, execution.LogFilter{}, func(execution.LogLine) error { return nil })
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("suspenso não tem execução; esperava recusa, veio: %v", err)
+		t.Fatalf("suspended has no execution; expected a refusal, got: %v", err)
 	}
 
 	if _, err := f.svc.Destroy(f.ctx, sb.ID); err != nil {
@@ -467,16 +467,16 @@ func TestStreamLogsRecusaSuspensoEDestruido(t *testing.T) {
 	}
 	err = f.svc.StreamLogs(f.ctx, sb.ID, execution.LogFilter{}, func(execution.LogLine) error { return nil })
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("destruído não tem logs; veio: %v", err)
+		t.Fatalf("destroyed has no logs; got: %v", err)
 	}
 }
 
-func TestErroDoEmitInterrompeOFluxo(t *testing.T) {
+func TestAnEmitErrorInterruptsTheStream(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
-	f.launcher.linhas = []ports.LogLine{{Text: "um"}, {Text: "dois"}, {Text: "três"}}
+	f.launcher.lines = []ports.LogLine{{Text: "one"}, {Text: "two"}, {Text: "three"}}
 
-	boom := errs.Internal("cliente sumiu")
+	boom := errs.Internal("cliente gone")
 	n := 0
 	err := f.svc.StreamLogs(f.ctx, sb.ID, execution.LogFilter{}, func(execution.LogLine) error {
 		n++
@@ -486,32 +486,32 @@ func TestErroDoEmitInterrompeOFluxo(t *testing.T) {
 		t.Fatal("erro do emit precisa subir")
 	}
 	if n != 1 {
-		t.Errorf("continuou emitindo depois do erro: %d linhas", n)
+		t.Errorf("continuou emitindo depois do erro: %d lines", n)
 	}
 }
 
 // ── montagem ─────────────────────────────────────────────────────────────────
 
-// TestRelogioObrigatorio: aceitar nil manteria a porta de enfeite — o serviço
+// TestTheClockIsRequired: accepting nil would keep the port decorative — the
 // cairia em time.Now() por dentro e nenhum teste de ociosidade seria
-// determinístico.
-func TestRelogioObrigatorio(t *testing.T) {
+// deterministic.
+func TestTheClockIsRequired(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Fatal("NewService aceitou relógio nulo")
+			t.Fatal("NewService accepted a nil clock")
 		}
 	}()
 	execution.NewService(novoRepo(), &launcherFalso{}, &acessoFalso{}, &demandasFalsas{}, nil, execution.Config{})
 }
 
-func TestURLDeEndpointEDoDominio(t *testing.T) {
+func TestTheEndpointURLBelongsToTheDomain(t *testing.T) {
 	got := execution.EndpointURL("dev.dop.app", "5f3a9c21-0000-0000-0000-000000000000", "portal-frontend")
 	want := "https://portal-frontend--5f3a9c21.dev.dop.app"
 	if got != want {
 		t.Errorf("EndpointURL = %q; esperava %q", got, want)
 	}
 	if execution.EndpointURL("", "d1", "app") != "" {
-		t.Error("sem domínio de ingress não há URL para prometer")
+		t.Error("with no ingress domain there is no URL to promise")
 	}
 }
 
@@ -556,21 +556,21 @@ func (c *cenario) provisionado(t *testing.T) *execution.Sandbox {
 	return sb
 }
 
-// ── relógio ──────────────────────────────────────────────────────────────────
+// ── clock ────────────────────────────────────────────────────────────────────
 
 type relogioFixo struct{ t time.Time }
 
 func (r *relogioFixo) Now() time.Time { return r.t.UTC() }
 
-// ── repositório ──────────────────────────────────────────────────────────────
+// ── repository ───────────────────────────────────────────────────────────────
 
 type repoFalso struct {
 	mu sync.Mutex
-	// agora vem do MESMO relógio do serviço. Duplo que consulta o relógio de
-	// parede reintroduz, no teste, exatamente a dependência que a porta Clock
+	// now comes from the service's SAME clock. A double that reads the wall
+	// clock reintroduces, in the test, exactly the dependency the Clock port
 	// existe para remover — e o teste passa ou falha conforme a hora do dia.
 	agora       func() time.Time
-	linhas      map[string]*execution.Sandbox
+	lines       map[string]*execution.Sandbox
 	seq         int
 	transitions int
 	touches     int
@@ -578,31 +578,31 @@ type repoFalso struct {
 
 func novoRepo() *repoFalso {
 	return &repoFalso{
-		linhas: map[string]*execution.Sandbox{},
-		agora:  func() time.Time { return time.Now().UTC() },
+		lines: map[string]*execution.Sandbox{},
+		agora: func() time.Time { return time.Now().UTC() },
 	}
 }
 
 func (r *repoFalso) total() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.linhas)
+	return len(r.lines)
 }
 
 func (r *repoFalso) get(id string) *execution.Sandbox {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.linhas[id]
+	return r.lines[id]
 }
 
 func (r *repoFalso) only(t *testing.T) *execution.Sandbox {
 	t.Helper()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.linhas) != 1 {
-		t.Fatalf("esperava exatamente uma linha, há %d", len(r.linhas))
+	if len(r.lines) != 1 {
+		t.Fatalf("expected exactly one line, there are %d", len(r.lines))
 	}
-	for _, s := range r.linhas {
+	for _, s := range r.lines {
 		return s
 	}
 	return nil
@@ -611,7 +611,7 @@ func (r *repoFalso) only(t *testing.T) *execution.Sandbox {
 func (r *repoFalso) ByID(_ context.Context, accountID, id string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s, ok := r.linhas[id]
+	s, ok := r.lines[id]
 	if !ok || s.AccountID != accountID { // toda consulta filtra por conta
 		return nil, nil
 	}
@@ -622,7 +622,7 @@ func (r *repoFalso) ByID(_ context.Context, accountID, id string) (*execution.Sa
 func (r *repoFalso) ByIdempotencyKey(_ context.Context, accountID, key string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, s := range r.linhas {
+	for _, s := range r.lines {
 		if s.AccountID == accountID && s.IdempotencyKey == key && key != "" {
 			cp := *s
 			return &cp, nil
@@ -634,7 +634,7 @@ func (r *repoFalso) ByIdempotencyKey(_ context.Context, accountID, key string) (
 func (r *repoFalso) LiveByDemand(_ context.Context, accountID, demandID string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, s := range r.linhas {
+	for _, s := range r.lines {
 		if s.AccountID == accountID && s.DemandID == demandID && !s.State.IsTerminal() {
 			cp := *s
 			return &cp, nil
@@ -650,7 +650,7 @@ func (r *repoFalso) Create(_ context.Context, s *execution.Sandbox) (*execution.
 	cp := *s
 	cp.ID = fmt.Sprintf("sbx-%d", r.seq)
 	cp.CreatedAt, cp.UpdatedAt = r.agora(), r.agora()
-	r.linhas[cp.ID] = &cp
+	r.lines[cp.ID] = &cp
 	out := cp
 	return &out, nil
 }
@@ -658,7 +658,7 @@ func (r *repoFalso) Create(_ context.Context, s *execution.Sandbox) (*execution.
 func (r *repoFalso) MarkProvisioned(_ context.Context, accountID, id string, tier ports.IsolationTier, eps []execution.Endpoint) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s, ok := r.linhas[id]
+	s, ok := r.lines[id]
 	if !ok || s.AccountID != accountID {
 		return nil, errs.NotFound("sandbox")
 	}
@@ -670,15 +670,15 @@ func (r *repoFalso) MarkProvisioned(_ context.Context, accountID, id string, tie
 func (r *repoFalso) Transition(_ context.Context, accountID, id string, t execution.Transition) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s, ok := r.linhas[id]
+	s, ok := r.lines[id]
 	if !ok || s.AccountID != accountID {
 		return nil, errs.NotFound("sandbox")
 	}
-	// O duplo carrega a MESMA invariante da trigger do banco: destruído é
+	// The double carries the SAME invariant as the database trigger: destroyed
 	// absorvente. Duplo mais permissivo que o real deixa passar o bug que o
-	// real barraria — em produção, longe daqui.
+	// real one would block — in production, far from here.
 	if s.State.IsTerminal() && t.To != execution.StateDestroyed {
-		return nil, errs.Precondition("sandbox destruído não retoma")
+		return nil, errs.Precondition("a destroyed sandbox does not resume")
 	}
 	r.transitions++
 	s.State = t.To
@@ -689,7 +689,7 @@ func (r *repoFalso) Transition(_ context.Context, accountID, id string, t execut
 func (r *repoFalso) TouchActivity(_ context.Context, accountID, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if s, ok := r.linhas[id]; ok && s.AccountID == accountID {
+	if s, ok := r.lines[id]; ok && s.AccountID == accountID {
 		r.touches++
 	}
 	return nil
@@ -699,12 +699,12 @@ func (r *repoFalso) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	corte := time.Duration(olderThanSeconds) * time.Second
-	vistas := map[string]bool{}
+	seen := map[string]bool{}
 	var out []string
-	for _, s := range r.linhas {
+	for _, s := range r.lines {
 		if s.State == execution.StateActive && r.agora().Sub(s.LastActiveAt) >= corte &&
-			!vistas[s.AccountID] {
-			vistas[s.AccountID] = true
+			!seen[s.AccountID] {
+			seen[s.AccountID] = true
 			out = append(out, s.AccountID)
 		}
 	}
@@ -716,7 +716,7 @@ func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSecon
 	defer r.mu.Unlock()
 	corte := time.Duration(olderThanSeconds) * time.Second
 	var out []execution.Sandbox
-	for _, s := range r.linhas {
+	for _, s := range r.lines {
 		if s.AccountID == accountID && s.State == execution.StateActive &&
 			r.agora().Sub(s.LastActiveAt) >= corte {
 			out = append(out, *s)
@@ -730,24 +730,24 @@ func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSecon
 type launcherFalso struct {
 	falhasNoLaunch int
 	tiers          []ports.IsolationTier
-	entrega        ports.IsolationTier // vazio = entrega o que foi pedido
-	sumiu          bool
-	linhas         []ports.LogLine
+	delivers       ports.IsolationTier // vazio = delivers o que foi pedido
+	gone           bool
+	lines          []ports.LogLine
 	launches       int
 	resumes        int
 	destroys       int
-	fases          map[string]ports.SandboxPhase
+	phases         map[string]ports.SandboxPhase
 	// execs guarda os comandos recebidos, e execSaida o que devolver. Comando
-	// que falha é RESULTADO nesta porta (garantia 15), então o duplo precisa
-	// saber devolver código != 0 sem devolver erro.
+	// that fails is a RESULT on this port (guarantee 15), so the double has to
+	// know how to return a non-zero code without returning an error.
 	execs     []ports.ExecRequest
 	execSaida *ports.ExecResult
 	execErro  error
 }
 
 func (l *launcherFalso) tierEntregue(pedido ports.IsolationTier) ports.IsolationTier {
-	if l.entrega != "" {
-		return l.entrega
+	if l.delivers != "" {
+		return l.delivers
 	}
 	return pedido
 }
@@ -760,45 +760,45 @@ func (l *launcherFalso) Launch(_ context.Context, spec ports.SandboxSpec) (*port
 	l.launches++
 	if l.falhasNoLaunch > 0 {
 		l.falhasNoLaunch--
-		return nil, errs.New(errs.KindUnavailable, "o substrato não respondeu")
+		return nil, errs.New(errs.KindUnavailable, "the substrate did not answer")
 	}
-	if l.fases == nil {
-		l.fases = map[string]ports.SandboxPhase{}
+	if l.phases == nil {
+		l.phases = map[string]ports.SandboxPhase{}
 	}
-	l.fases[spec.ID] = ports.PhaseActive
+	l.phases[spec.ID] = ports.PhaseActive
 	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
 }
 
 func (l *launcherFalso) Suspend(_ context.Context, h ports.SandboxHandle) error {
-	if l.fases != nil {
-		l.fases[h.ID] = ports.PhaseSuspended
+	if l.phases != nil {
+		l.phases[h.ID] = ports.PhaseSuspended
 	}
 	return nil
 }
 
 func (l *launcherFalso) Resume(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	l.resumes++
-	if l.fases != nil {
-		l.fases[spec.ID] = ports.PhaseActive
+	if l.phases != nil {
+		l.phases[spec.ID] = ports.PhaseActive
 	}
 	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
 }
 
 func (l *launcherFalso) Destroy(_ context.Context, h ports.SandboxHandle) error {
 	l.destroys++
-	delete(l.fases, h.ID)
+	delete(l.phases, h.ID)
 	return nil
 }
 
 func (l *launcherFalso) Describe(_ context.Context, h ports.SandboxHandle) (*ports.SandboxStatus, error) {
-	if l.sumiu {
+	if l.gone {
 		return nil, errs.NotFound("sandbox %s", h.ID)
 	}
-	fase, ok := l.fases[h.ID]
+	phase, ok := l.phases[h.ID]
 	if !ok {
 		return nil, errs.NotFound("sandbox %s", h.ID)
 	}
-	return &ports.SandboxStatus{Phase: fase, Tier: ports.TierNamespace}, nil
+	return &ports.SandboxStatus{Phase: phase, Tier: ports.TierNamespace}, nil
 }
 
 func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
@@ -806,11 +806,11 @@ func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports
 	if l.execErro != nil {
 		return nil, l.execErro
 	}
-	if fase, ok := l.fases[h.ID]; !ok || fase != ports.PhaseActive {
-		// O adaptador real recusa por Describe antes de tentar; o duplo faz o
-		// mesmo para que o teste do domínio não passe por um caminho que a
-		// porta não permite.
-		return nil, errs.Precondition("sandbox %s não está ativo", h.ID)
+	if phase, ok := l.phases[h.ID]; !ok || phase != ports.PhaseActive {
+		// The real adapter refuses through Describe before trying; the double does
+		// the same so that the domain test does not take a path the port does not
+		// allow.
+		return nil, errs.Precondition("sandbox %s is not active", h.ID)
 	}
 	if l.execSaida != nil {
 		return l.execSaida, nil
@@ -819,7 +819,7 @@ func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports
 }
 
 func (l *launcherFalso) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.LogQuery, emit func(ports.LogLine) error) error {
-	for _, ln := range l.linhas {
+	for _, ln := range l.lines {
 		if err := emit(ln); err != nil {
 			return err
 		}
@@ -827,13 +827,13 @@ func (l *launcherFalso) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.L
 	return nil
 }
 
-// ── portas estreitas para outros domínios ────────────────────────────────────
+// ── narrow ports into other domains ──────────────────────────────────────────
 
 type acessoFalso struct{ papel identity.Role }
 
 func (a *acessoFalso) Authorize(_ context.Context, userID, accountID string) (*identity.Membership, error) {
 	if userID == "" || accountID == "" {
-		return nil, errs.Permission("sem vínculo")
+		return nil, errs.Permission("no membership")
 	}
 	return &identity.Membership{UserID: userID, AccountID: accountID, Role: a.papel}, nil
 }
@@ -848,18 +848,18 @@ func (d *demandasFalsas) DemandAccount(_ context.Context, demandID string) (stri
 	return acc, nil
 }
 
-// O scheduler é ator de SISTEMA e não tem conta ativa. A varredura visita conta
+// The scheduler is a SYSTEM actor and has no active account. The sweep visits
 // por conta, e cada visita continua acontecendo DENTRO de uma conta — o
-// isolamento não é afrouxado, só a ordem de visita é decidida por fora.
-func TestVarreduraDeSistemaAtravessaContasSemAfrouxarIsolamento(t *testing.T) {
+// isolation is not loosened, only the visiting order is decided from outside.
+func TestTheSystemSweepCrossesAccountsWithoutLooseningIsolation(t *testing.T) {
 	repo := novoRepo()
 	launcher := &launcherFalso{tiers: []ports.IsolationTier{ports.TierNamespace}}
 	relogio := &relogioFixo{t: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)}
 
-	// Duas contas, cada uma com um sandbox parado além do limite.
+	// Two accounts, each with one sandbox idle past the limit.
 	for _, conta := range []string{"acc-1", "acc-2"} {
 		id := "sb-" + conta
-		repo.linhas[id] = &execution.Sandbox{
+		repo.lines[id] = &execution.Sandbox{
 			ID: id, AccountID: conta, State: execution.StateActive,
 			LastActiveAt: relogio.t.Add(-2 * execution.IdleTimeout),
 		}
@@ -878,11 +878,11 @@ func TestVarreduraDeSistemaAtravessaContasSemAfrouxarIsolamento(t *testing.T) {
 // ═════════════════════════════════════════════════════════════════════════════
 // RunCommand — a ponte por onde o agente AGE (spec do substrato §4).
 //
-// A regra que estes testes protegem é a mesma da garantia 15 da porta, um andar
-// acima: erro é do SUBSTRATO; o que o comando fez, inclusive falhar, é resultado.
+// The rule these tests protect is the port's guarantee 15, one floor up: the
+// error is the SUBSTRATE's; what the command did, including failing, is a result.
 // ═════════════════════════════════════════════════════════════════════════════
 
-func TestRunCommandRodaNoSandboxDaDemanda(t *testing.T) {
+func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
 	c := novoCenario(t)
 	sb := c.provisionado(t)
 
@@ -893,37 +893,37 @@ func TestRunCommandRodaNoSandboxDaDemanda(t *testing.T) {
 		t.Fatalf("RunCommand: %v", err)
 	}
 	if res.ExitCode != 0 {
-		t.Fatalf("código de saída %d", res.ExitCode)
+		t.Fatalf("exit code %d", res.ExitCode)
 	}
 	if len(c.launcher.execs) != 1 {
 		t.Fatalf("o substrato recebeu %d comando(s)", len(c.launcher.execs))
 	}
 	// O runtime de agente pergunta pela DEMANDA; quem resolve demanda → sandbox
-	// é este domínio. O agente nunca vê um id de sandbox.
+	// is this domain. The agent never sees a sandbox id.
 	if sb.DemandID != "demanda-1" {
 		t.Fatalf("sandbox da demanda errada: %+v", sb)
 	}
 }
 
-// Comando que falha é RESULTADO. Se isto virar erro, o laço de ferramenta do
-// agente perde a única informação que o modelo consegue usar para corrigir.
-func TestRunCommandCodigoDeSaidaNaoEhErro(t *testing.T) {
+// A command that fails is a RESULT. If this becomes an error, the agent's tool
+// loop loses the only information the model can use to correct itself.
+func TestRunCommandExitCodeIsNotAnError(t *testing.T) {
 	c := novoCenario(t)
 	c.provisionado(t)
 	c.launcher.execSaida = &ports.ExecResult{ExitCode: 3, Stderr: "reprovou"}
 
 	res, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
 	if err != nil {
-		t.Fatalf("código != 0 virou erro do domínio: %v", err)
+		t.Fatalf("a non-zero code became a domain error: %v", err)
 	}
 	if res.ExitCode != 3 || res.Stderr != "reprovou" {
-		t.Fatalf("o resultado do comando não chegou inteiro: %+v", res)
+		t.Fatalf("the command result did not arrive whole: %+v", res)
 	}
 }
 
-// Trabalho de agente é ATIVIDADE: sem o toque, o varredor de economia derruba o
-// sandbox debaixo do agente que está justamente trabalhando nele (spec §3).
-func TestRunCommandAdiaASuspensaoPorOciosidade(t *testing.T) {
+// Agent work is ACTIVITY: without the touch, the saving sweeper drops the
+// sandbox from under the agent that is precisely working in it (spec §3).
+func TestRunCommandPostponesIdleSuspension(t *testing.T) {
 	c := novoCenario(t)
 	sb := c.provisionado(t)
 	c.repo.touches = 0
@@ -932,12 +932,12 @@ func TestRunCommandAdiaASuspensaoPorOciosidade(t *testing.T) {
 		t.Fatalf("RunCommand: %v", err)
 	}
 	if c.repo.touches == 0 {
-		t.Fatalf("rodar comando não contou como atividade no sandbox %s: o varredor "+
-			"suspenderia o sandbox no meio do trabalho do agente", sb.ID)
+		t.Fatalf("running a command did not count as activity in sandbox %s: the sweeper "+
+			"suspenderia o sandbox no half do trabalho do agente", sb.ID)
 	}
 }
 
-func TestRunCommandRecusaOQueNaoPodeExecutar(t *testing.T) {
+func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 	t.Run("demanda_sem_sandbox", func(t *testing.T) {
 		c := novoCenario(t)
 		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
@@ -952,8 +952,8 @@ func TestRunCommandRecusaOQueNaoPodeExecutar(t *testing.T) {
 		if _, err := c.svc.Suspend(c.ctx, sb.ID); err != nil {
 			t.Fatalf("Suspend: %v", err)
 		}
-		// Precondição, e nunca um código de saída inventado: substrato sem
-		// execução não roda comando, e dizer isso é diferente de dizer que o
+		// A precondition, and never a made-up exit code: a substrate with no
+		// execution runs no command, and saying that is different from saying the
 		// comando falhou.
 		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindPrecondition {
@@ -989,9 +989,9 @@ func TestRunCommandRecusaOQueNaoPodeExecutar(t *testing.T) {
 		outra := ctxutil.Into(context.Background(), ctxutil.Call{
 			AccountID: "conta-b", ActorID: "u2", ActorKind: ctxutil.ActorUser,
 		})
-		// Toda consulta filtra por conta: o sandbox da conta A não existe para
-		// a conta B, e a resposta é a mesma de "não existe" — a outra
-		// confirmaria que o id é real.
+		// Every query filters by account: account A's sandbox does not exist for
+		// account B, and the answer is the same as "does not exist" — the other
+		// would confirm the id is real.
 		_, err := c.svc.RunCommand(outra, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindNotFound {
 			t.Fatalf("esperava KindNotFound, veio %v", err)

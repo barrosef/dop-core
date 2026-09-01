@@ -7,91 +7,92 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// Repository é a PORTA de persistência do substrato.
+// Repository is the substrate's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in internal/adapter/postgres.
+// The domain never sees SQL.
 //
-// Toda operação recebe accountID explicitamente e DEVE filtrá-lo no WHERE:
-// isolamento multi-tenant é parâmetro obrigatório da porta, não algo que o
-// adaptador possa esquecer.
+// Every operation takes accountID explicitly and MUST filter by it in the WHERE:
+// multi-tenant isolation is a required parameter of the port, not something the
+// adapter could forget.
 //
-// Cada método de escrita grava estado e evento na MESMA transação (ADR-0019) —
-// e é por isso que não existe um "SaveSandbox" genérico aqui: uma escrita
-// genérica não sabe qual evento emitir, e o evento acabaria sendo publicado
-// fora da transação por quem chamou.
+// Every write method stores state and event in the SAME transaction (ADR-0019) —
+// and that is why there is no generic "SaveSandbox" here: a generic write does
+// not know which event to emit, and the event would end up published outside the
+// transaction by the caller.
 type Repository interface {
-	// ByID devolve (nil, nil) quando não há linha: se a ausência é erro, quem
-	// decide é o domínio.
+	// ByID returns (nil, nil) when there is no row: whether absence is an error is
+	// the domain's decision.
 	ByID(ctx context.Context, accountID, id string) (*Sandbox, error)
-	// ByIdempotencyKey resolve a REPETIÇÃO de um provisionamento: mesma chave,
-	// mesmo sandbox. Sem isso, um retry de rede duplicaria microVM.
+	// ByIdempotencyKey resolves the REPEAT of a provisioning: same key, same
+	// sandbox. Without it, a network retry would duplicate a microVM.
 	ByIdempotencyKey(ctx context.Context, accountID, key string) (*Sandbox, error)
-	// LiveByDemand devolve o sandbox NÃO destruído da demanda, se houver.
-	// Uma demanda ativa tem um sandbox (spec §1) — a unicidade é garantida por
-	// índice parcial no banco, e esta consulta existe para responder antes de
-	// tentar violar a restrição.
+	// LiveByDemand returns the demand's NOT destroyed sandbox, if there is one.
+	// An active demand has one sandbox (spec §1) — uniqueness is guaranteed by a
+	// partial index in the database, and this query exists to answer before
+	// trying to violate the constraint.
 	LiveByDemand(ctx context.Context, accountID, demandID string) (*Sandbox, error)
 
-	// Create grava o sandbox em provisioning e emite o evento de início.
+	// Create writes the sandbox in provisioning and emits the start event.
 	Create(ctx context.Context, s *Sandbox) (*Sandbox, error)
-	// MarkProvisioned confirma o que o substrato ENTREGOU: tier e endpoints
-	// reais. O tier vem de volta porque ele é declarado, nunca presumido — e a
-	// linha precisa registrar o que o cliente de fato recebeu.
+	// MarkProvisioned confirms what the substrate DELIVERED: the real tier and
+	// endpoints. The tier comes back because it is declared, never presumed — and
+	// the row has to record what the client actually received.
 	MarkProvisioned(ctx context.Context, accountID, id string, tier ports.IsolationTier, endpoints []Endpoint) (*Sandbox, error)
-	// Transition aplica uma mudança de estado e emite o evento correspondente.
-	// Recebe a Transition inteira, não só o estado destino, para que o evento
-	// carregue se o trabalho foi preservado ou perdido — é a pergunta que a
-	// auditoria vai fazer depois.
+	// Transition applies a state change and emits the corresponding event. It
+	// takes the whole Transition, not just the destination state, so the event
+	// carries whether the work was preserved or lost — it is the question the
+	// audit will ask later.
 	Transition(ctx context.Context, accountID, id string, t Transition) (*Sandbox, error)
-	// TouchActivity registra uso e adia a suspensão por ociosidade. Não emite
-	// evento: batimento de atividade em log de eventos é ruído que afogaria o
-	// dossiê da demanda.
+	// TouchActivity records usage and postpones idle suspension. It emits no
+	// event: an activity heartbeat in an event log is noise that would drown the
+	// demand's dossier.
 	TouchActivity(ctx context.Context, accountID, id string) error
 
-	// ListIdle alimenta o varredor de economia: ativos parados desde antes do
-	// corte. Filtra por conta como todo o resto.
+	// ListIdle feeds the saving sweeper: active sandboxes idle since before the
+	// cutoff. It filters by account like everything else.
 	ListIdle(ctx context.Context, accountID string, olderThanSeconds int) ([]Sandbox, error)
 
-	// AccountsWithIdle é a ÚNICA consulta deste domínio que atravessa contas, e
-	// existe por um motivo estrutural: o varredor de economia roda no
-	// scheduler, que é ator de SISTEMA e não tem conta ativa — enquanto todo o
-	// resto do domínio exige uma.
+	// AccountsWithIdle is this domain's ONLY query that crosses accounts, and it
+	// exists for a structural reason: the saving sweeper runs in the scheduler,
+	// which is a SYSTEM actor and has no active account — while all the rest of
+	// the domain requires one.
 	//
-	// A saída dela não é dado de conta nenhuma: é a lista de contas que TÊM o
-	// que varrer. Cada varredura continua acontecendo dentro de UMA conta, com
-	// ela no contexto, então o isolamento não é afrouxado — o que muda é só
-	// quem decide a ordem de visita.
+	// Its output is no account's data: it is the list of accounts that HAVE
+	// something to sweep. Every sweep still happens inside ONE account, with that
+	// account in the context, so isolation is not loosened — what changes is only
+	// who decides the visiting order.
 	//
-	// Sem isso, ou o scheduler ganharia acesso irrestrito, ou sandbox ocioso
-	// nunca suspenderia. A spec do substrato é explícita sobre o custo do
-	// segundo caso: "sandbox ocioso é o que separa paralelismo real de máquina
-	// afogada".
+	// Without it, either the scheduler would gain unrestricted access, or an idle
+	// sandbox would never suspend. The substrate spec is explicit about the cost
+	// of the second case: "an idle sandbox is what separates real parallelism
+	// from a drowning machine".
 	AccountsWithIdle(ctx context.Context, olderThanSeconds int) ([]string, error)
 }
 
-// Access é a porta ESTREITA para o domínio de identidade: o substrato precisa
-// de UMA coisa sobre quem chama — o papel na conta ativa, porque provisionar
-// custa dinheiro e viewer não gasta o dinheiro da conta.
+// Access is the NARROW port into the identity domain: the substrate needs ONE
+// thing about the caller — their role in the active account, because provisioning
+// costs money and a viewer does not spend the account's money.
 //
-// A superfície foi escolhida para que *identity.Service a satisfaça como está:
-// o composition root apenas liga, sem adaptador de cola.
+// The surface was chosen so that *identity.Service satisfies it as it stands:
+// the composition root only wires, with no glue adapter.
 type Access interface {
 	Authorize(ctx context.Context, userID, accountID string) (*identity.Membership, error)
 }
 
-// Demands é a porta ESTREITA para o domínio de demanda.
+// Demands is the NARROW port into the demand domain.
 //
-// O substrato precisa saber DUAS coisas antes de gastar uma microVM: a demanda
-// existe, e ela é da conta ativa. Nada além — nem estágio, nem thread, nem
-// card. Declarada aqui, e não importada do pacote de demanda, porque a
-// dependência é do substrato para a demanda e não o contrário: quem executa
-// conhece o que executa, e inverter isso amarraria os dois domínios num ciclo.
+// The substrate needs to know TWO things before spending a microVM: the demand
+// exists, and it belongs to the active account. Nothing more — no stage, no
+// thread, no card. Declared here, and not imported from the demand package,
+// because the dependency runs from substrate to demand and not the other way:
+// whoever executes knows what it executes, and inverting that would tie the two
+// domains into a cycle.
 type Demands interface {
-	// DemandAccount devolve a conta dona da demanda.
+	// DemandAccount returns the account that owns the demand.
 	//
-	// Demanda inexistente e demanda de OUTRA conta devolvem o mesmo erro
-	// (KindNotFound) de propósito: distinguir os dois casos vazaria a
-	// existência de ids de outras contas para quem ficar tentando.
+	// A nonexistent demand and a demand from ANOTHER account return the same
+	// error (KindNotFound) on purpose: telling the two cases apart would leak the
+	// existence of other accounts' ids to whoever kept trying.
 	DemandAccount(ctx context.Context, demandID string) (string, error)
 }

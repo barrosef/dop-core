@@ -1,19 +1,22 @@
-// Package execution é o domínio do SUBSTRATO: onde e como uma demanda executa.
+// Package execution is the SUBSTRATE domain: where and how a demand executes.
 //
-// Regra da casa: este pacote não conhece Kubernetes, Docker, Postgres nem gRPC.
-// Ele declara o que precisa como PORTA (repository.go, mais ports.SandboxLauncher)
-// e o composition root liga.
+// House rule: this package knows nothing of Kubernetes, Docker, Postgres or
+// gRPC. It declares what it needs as a PORT (repository.go, plus
+// ports.SandboxLauncher) and the composition root wires it.
 //
-// A distinção que organiza tudo aqui é entre as DUAS coisas que um sandbox tem:
+// The distinction that organizes everything here is between the TWO things a
+// sandbox has:
 //
-//   - a EXECUÇÃO — o pod, o contêiner, o agente rodando. Efêmera por natureza,
-//     custa dinheiro enquanto existe e é barata de recriar;
-//   - o WORKSPACE — os worktrees das branches da demanda. É o trabalho, e não
-//     se recria: refazê-lo custa o tempo do agente e do humano que revisou.
+//   - the EXECUTION — the pod, the container, the running agent. Ephemeral by
+//     nature, it costs money while it exists and is cheap to recreate;
+//   - the WORKSPACE — the worktrees of the demand's branches. It is the work, and
+//     it does not get recreated: redoing it costs the agent's time and the time
+//     of the human who reviewed it.
 //
-// Suspender derruba a primeira e preserva o segundo. Destruir leva os dois.
-// Essa diferença está no MODELO (ver Transition), não só nos nomes dos métodos:
-// nome errado o compilador aceita, invariante violada ele recusa.
+// Suspending tears down the first and preserves the second. Destroying takes
+// both. That difference lives in the MODEL (see Transition), not only in the
+// method names: a wrong name the compiler accepts, a violated invariant it
+// refuses.
 package execution
 
 import (
@@ -24,7 +27,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// State é o ciclo de vida do sandbox: ativo → suspenso → destruído (spec §3).
+// State is the sandbox's life cycle: active → suspended → destroyed (spec §3).
 type State string
 
 const (
@@ -42,62 +45,63 @@ func ValidState(s State) bool {
 	return false
 }
 
-// Transition descreve o que uma mudança de estado faz com a execução e com o
-// workspace — as duas coisas que um sandbox tem.
+// Transition describes what a state change does to the execution and to the
+// workspace — the two things a sandbox has.
 //
-// Isto existe para que a diferença entre suspender e destruir seja um FATO
-// consultável, e não um detalhe que cada chamador precisa lembrar. É a mesma
-// razão de EffectiveLevel morar no domínio de recurso: a regra que separa
-// "economia" de "perda irreversível" é cara demais para viver espalhada.
+// This exists so the difference between suspending and destroying is a
+// QUERYABLE FACT, not a detail every caller has to remember. It is the same
+// reason EffectiveLevel lives in the resource domain: the rule that separates
+// "saving money" from "irreversible loss" is too expensive to live scattered.
 type Transition struct {
 	To State
-	// StopsRuntime: a execução para. Verdadeiro nas duas — é justamente o que
-	// as faz PARECEREM iguais de fora.
+	// StopsRuntime: the execution stops. True in both — which is precisely what
+	// makes them LOOK the same from outside.
 	StopsRuntime bool
-	// DiscardsWorkspace: o trabalho da demanda vai junto. É AQUI que suspender
-	// e destruir deixam de ser a mesma operação.
+	// DiscardsWorkspace: the demand's work goes with it. THIS is where suspending
+	// and destroying stop being the same operation.
 	DiscardsWorkspace bool
-	// Reversible: existe caminho de volta pelo próprio domínio.
+	// Reversible: there is a way back through the domain itself.
 	Reversible bool
 }
 
 var (
-	// SuspendTransition é economia: sem trabalho de agente e sem dev conectado,
-	// o pod morre e o workspace sobrevive no PVC. Demandas esperam humanos por
-	// horas — sandbox ocioso é o que separa paralelismo real de máquina afogada
-	// (spec §3).
+	// SuspendTransition is saving money: with no agent work and no dev connected,
+	// the pod dies and the workspace survives on the PVC. Demands wait on humans
+	// for hours — an idle sandbox is what separates real parallelism from a
+	// drowning machine (spec §3).
 	SuspendTransition = Transition{
 		To: StateSuspended, StopsRuntime: true, DiscardsWorkspace: false, Reversible: true,
 	}
-	// DestroyTransition é perda deliberada: leva a execução E o workspace, e
-	// não volta. Nenhuma transição sai de destroyed — a invariante é reforçada
-	// por trigger no banco (migração 0010), porque regra que ninguém pode
-	// violar não pode depender de todo caminho de código lembrar dela.
+	// DestroyTransition is deliberate loss: it takes the execution AND the
+	// workspace, and does not come back. No transition leaves destroyed — the
+	// invariant is enforced by a database trigger (migration 0010), because a
+	// rule nobody may violate cannot depend on every code path remembering it.
 	DestroyTransition = Transition{
 		To: StateDestroyed, StopsRuntime: true, DiscardsWorkspace: true, Reversible: false,
 	}
-	// ResumeTransition recria a execução SOBRE o workspace existente.
+	// ResumeTransition recreates the execution OVER the existing workspace.
 	ResumeTransition = Transition{
 		To: StateActive, StopsRuntime: false, DiscardsWorkspace: false, Reversible: true,
 	}
 )
 
-// IsTerminal: destruído é absorvente. Depois dele o sandbox é só história.
+// IsTerminal: destroyed is absorbing. After it the sandbox is only history.
 func (s State) IsTerminal() bool { return s == StateDestroyed }
 
-// PreservesWork responde a pergunta que o usuário realmente faz antes de clicar:
-// "eu perco o que já foi feito?".
+// PreservesWork answers the question the user actually asks before clicking:
+// "do I lose what has already been done?".
 func (t Transition) PreservesWork() bool { return !t.DiscardsWorkspace }
 
-// CanApply diz se a transição é legítima a partir do estado atual.
+// CanApply says whether the transition is legitimate from the current state.
 //
-// A ordem das cláusulas é a regra:
+// The order of the clauses is the rule:
 //
-//  1. de destroyed não sai nada. Irreversível quer dizer isso;
-//  2. suspender só faz sentido a partir de ativo — suspender o que já está
-//     suspenso é repetição, tratada como no-op pelo serviço, não como erro;
-//  3. retomar exige workspace vivo, isto é, um sandbox suspenso;
-//  4. destruir vale de qualquer estado não terminal: destruir é sempre possível.
+//  1. nothing leaves destroyed. That is what irreversible means;
+//  2. suspending only makes sense from active — suspending what is already
+//     suspended is a repeat, treated as a no-op by the service, not as an error;
+//  3. resuming requires a live workspace, that is, a suspended sandbox;
+//  4. destroying is valid from any non-terminal state: destroying is always
+//     possible.
 func CanApply(from State, t Transition) bool {
 	if from.IsTerminal() {
 		return false
@@ -113,14 +117,14 @@ func CanApply(from State, t Transition) bool {
 	return false
 }
 
-// Sandbox é a unidade do substrato: uma demanda ativa, um sandbox (spec §1).
+// Sandbox is the substrate's unit: one active demand, one sandbox (spec §1).
 type Sandbox struct {
 	ID        string
 	AccountID string
 	DemandID  string
 	State     State
-	// Tier é o que foi ENTREGUE, não o que foi pedido. O cliente vê o que
-	// recebeu (spec §2) — e por isso é gravado, não recalculado na leitura.
+	// Tier is what was DELIVERED, not what was asked for. The client sees what it
+	// received (spec §2) — which is why it is stored, not recomputed on read.
 	Tier           ports.IsolationTier
 	Namespace      string
 	Endpoints      []Endpoint
@@ -133,7 +137,7 @@ type Sandbox struct {
 	UpdatedAt      time.Time
 }
 
-// Endpoint é um serviço da pilha da demanda exposto ao dev.
+// Endpoint is a service of the demand's stack exposed to the dev.
 type Endpoint struct {
 	Name  string
 	URL   string
@@ -141,16 +145,16 @@ type Endpoint struct {
 	State string // running | stopped
 }
 
-// Handle monta a referência que o launcher entende.
+// Handle builds the reference the launcher understands.
 func (s Sandbox) Handle() ports.SandboxHandle {
 	return ports.SandboxHandle{ID: s.ID, Namespace: s.Namespace}
 }
 
-// IsLive: o sandbox ainda ocupa lugar no substrato (ou execução, ou workspace).
+// IsLive: the sandbox still occupies room in the substrate (execution, workspace, or both).
 func (s Sandbox) IsLive() bool { return !s.State.IsTerminal() }
 
-// IdleFor diz há quanto tempo o sandbox está sem uso. É o número que o varredor
-// de ociosidade compara com IdleTimeout.
+// IdleFor says how long the sandbox has been unused. It is the number the idle
+// sweeper compares with IdleTimeout.
 func (s Sandbox) IdleFor(now time.Time) time.Duration {
 	if s.LastActiveAt.IsZero() {
 		return 0
@@ -158,25 +162,25 @@ func (s Sandbox) IdleFor(now time.Time) time.Duration {
 	return now.Sub(s.LastActiveAt)
 }
 
-// IdleTimeout: sem trabalho de agente e sem dev conectado por este tempo, o
-// sandbox suspende (spec §3). Vive no domínio porque é política de produto —
-// o adaptador não tem opinião sobre quanto tempo é "ocioso".
+// IdleTimeout: with no agent work and no dev connected for this long, the
+// sandbox suspends (spec §3). It lives in the domain because it is product
+// policy — the adapter has no opinion about how long "idle" is.
 const IdleTimeout = 30 * time.Minute
 
-// ShouldSuspend é a política de economia em uma função pura, testável sem
-// substrato nenhum.
+// ShouldSuspend is the saving policy as a pure function, testable with no
+// substrate at all.
 func (s Sandbox) ShouldSuspend(now time.Time) bool {
 	return s.State == StateActive && s.IdleFor(now) >= IdleTimeout
 }
 
 // ── namespace ────────────────────────────────────────────────────────────────
 
-// NamespaceFor deriva o namespace da demanda: dop-<id-curto>.
+// NamespaceFor derives the demand's namespace: dop-<short-id>.
 //
-// Identificação hierárquica (conta, workspace, projeto, demanda) é LABEL, não
-// nome (spec §1) — o nome carrega só o que precisa ser único e curto, porque
-// nome de namespace é limitado a 63 caracteres em DNS-1123 e um id completo com
-// hífens já come metade disso.
+// Hierarchical identification (account, workspace, project, demand) is a LABEL,
+// not a name (spec §1) — the name carries only what has to be unique and short,
+// because a namespace name is limited to 63 characters in DNS-1123 and a full id
+// with hyphens already eats half of that.
 const namespaceIDLen = 8
 
 func NamespaceFor(demandID string) string {
@@ -187,9 +191,9 @@ func NamespaceFor(demandID string) string {
 	return "dop-" + short
 }
 
-// ── classificação de log ─────────────────────────────────────────────────────
+// ── log classification ───────────────────────────────────────────────────────
 
-// Source classifica de onde vem uma linha de log dentro do sandbox.
+// Source classifies where a log line inside the sandbox comes from.
 type Source string
 
 const (
@@ -198,16 +202,16 @@ const (
 	SourceInfra Source = "infra"
 )
 
-// TestType é o tipo de teste, quando a linha vem de uma execução de testes.
+// TestType is the kind of test, when the line comes from a test run.
 type TestType string
 
 const (
 	TestAAA         TestType = "aaa"
 	TestE2E         TestType = "e2e"
-	TestIntegration TestType = "integracao"
+	TestIntegration TestType = "integration"
 )
 
-// LogLine é a linha JÁ classificada, que sai pela RPC.
+// LogLine is the ALREADY classified line, the one that leaves through the RPC.
 type LogLine struct {
 	Source   Source
 	Service  string
@@ -216,15 +220,16 @@ type LogLine struct {
 	At       time.Time
 }
 
-// Classify lê o prefixo de convenção de uma linha crua do substrato.
+// Classify reads the convention prefix of a raw line from the substrate.
 //
-// A convenção mora AQUI, e não no adaptador, por um motivo prático: são dois
-// adaptadores e um domínio. Colocada do lado de lá, a mesma regra de prefixo
-// existiria duas vezes e divergiria no primeiro ajuste — e a suíte de contrato
-// não pegaria, porque classificação de log não é garantia do substrato.
+// The convention lives HERE, and not in the adapter, for a practical reason:
+// there are two adapters and one domain. Placed on the far side, the same prefix
+// rule would exist twice and would diverge on the first adjustment — and the
+// contract suite would not catch it, because log classification is not a
+// substrate guarantee.
 //
-// Formato aceito, no começo da linha: "[app]", "[infra]", "[test:e2e]".
-// Linha sem prefixo é infra: é o que o próprio substrato imprimiu.
+// Accepted format, at the start of the line: "[app]", "[infra]", "[test:e2e]".
+// A line with no prefix is infra: it is what the substrate itself printed.
 func Classify(raw string) (Source, TestType, string) {
 	text := strings.TrimSpace(raw)
 	if !strings.HasPrefix(text, "[") {
@@ -245,18 +250,19 @@ func Classify(raw string) (Source, TestType, string) {
 	case SourceApp, SourceTest, SourceInfra:
 		return Source(src), TestType(tt), rest
 	}
-	// Colchete que não é tag nossa: a linha é do próprio processo, intacta.
+	// A bracket that is not our tag: the line belongs to the process itself, intact.
 	return SourceInfra, "", raw
 }
 
-// LogFilter é o recorte pedido pelo cliente no StreamLogs.
+// LogFilter is the slice the client asked for in StreamLogs.
 type LogFilter struct {
 	Source   Source
 	Service  string
 	TestType TestType
 }
 
-// Matches aplica o filtro. Campo vazio não filtra — pedir tudo é o caso comum.
+// Matches applies the filter. An empty field does not filter — asking for
+// everything is the common case.
 func (f LogFilter) Matches(l LogLine) bool {
 	if f.Source != "" && f.Source != l.Source {
 		return false
@@ -270,32 +276,33 @@ func (f LogFilter) Matches(l LogLine) bool {
 	return true
 }
 
-// ── validação ────────────────────────────────────────────────────────────────
+// ── validation ───────────────────────────────────────────────────────────────
 
-// RequireTier é a regra que o dono do produto pediu por escrito: isolationTier é
-// DECLARADO, nunca presumido.
+// RequireTier is the rule the product owner asked for in writing: the isolation
+// tier is DECLARED, never presumed.
 //
-// Chamador que não diz o nível é RECUSADO — não recebe um default. Escolher por
-// ele seria decidir, em nome de outra pessoa, quanto isolamento a carga dela
-// merece; e o erro dessa escolha só aparece quando já custou caro.
+// A caller that does not say the tier is REFUSED — it does not get a default.
+// Choosing for them would be deciding, on somebody else's behalf, how much
+// isolation their workload deserves; and the error of that choice only shows up
+// once it has already cost dearly.
 func RequireTier(t ports.IsolationTier) error {
 	if t == ports.TierUnspecified {
 		return errs.Invalid(
-			"nível de isolamento não declarado: informe min_tier (hardware, " +
-				"kernel_emulated ou namespace) — o substrato não escolhe por você")
+			"isolation tier not declared: provide min_tier (hardware, " +
+				"kernel_emulated or namespace) — the substrate does not choose for you")
 	}
 	if !ports.ValidIsolationTier(t) {
-		return errs.Invalid("nível de isolamento desconhecido: %q", t)
+		return errs.Invalid("unknown isolation tier: %q", t)
 	}
 	return nil
 }
 
-// EndpointURL monta a URL pública de um serviço da demanda:
-// <serviço>--<demanda-curta>.<domínio> (spec §5).
+// EndpointURL builds a demand service's public URL:
+// <service>--<short-demand>.<domain> (spec §5).
 //
-// Mora no domínio porque a nomeação é política do produto: se cada adaptador a
-// montasse, a mesma regra existiria em dois lugares e o dev veria URLs
-// diferentes conforme onde o sandbox tivesse subido.
+// It lives in the domain because the naming is product policy: if each adapter
+// built it, the same rule would exist in two places and the dev would see
+// different URLs depending on where the sandbox came up.
 func EndpointURL(baseDomain, demandID, service string) string {
 	if baseDomain == "" || service == "" {
 		return ""
