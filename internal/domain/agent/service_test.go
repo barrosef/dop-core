@@ -327,11 +327,11 @@ func TestTruncamentoViraMensagemNaThread(t *testing.T) {
 	if !out.ContextTruncated {
 		t.Fatal("o pacote veio truncado e o resultado não disse")
 	}
-	if len(c.conv.mensagens) != 3 || !strings.Contains(c.conv.mensagens[1].texto, "truncado") {
+	if len(c.conv.mensagens) != 3 || !strings.Contains(c.conv.mensagens[1].texto, "truncated") {
 		t.Fatalf("o aviso de truncamento não entrou na thread: %+v", c.conv.mensagens)
 	}
 	// E o agente também precisa saber, ANTES de afirmar coisas sobre o que não leu.
-	if !strings.Contains(c.prov.turnoPedido.StablePrefix, "TRUNCADO") {
+	if !strings.Contains(c.prov.turnoPedido.StablePrefix, "TRUNCATED") {
 		t.Fatal("o prefixo não avisou o agente de que o contexto veio parcial")
 	}
 }
