@@ -2,16 +2,16 @@ package attention
 
 import "time"
 
-// Este arquivo é o mapa entre o LOG e a CAIXA: quais eventos abrem item, quais
-// fecham, e o que cada item diz.
+// This file is the map between the LOG and the BOX: which events open an item,
+// which close one, and what each item says.
 //
-// Ele é a fronteira do risco R-1 da spec ("caixa barulhenta vira ruído e é
-// ignorada"). Cada linha aqui é uma decisão de que aquilo EXIGE decisão humana;
-// tudo que não estiver listado é, por definição, coisa de cockpit e não de
-// caixa. Acrescentar linha é fácil demais — a pergunta antes de acrescentar é
-// "o dev precisa DECIDIR algo, ou só saber?".
+// It is the frontier of risk R-1 in the spec ("a noisy box becomes noise and is
+// ignored"). Every line here is a decision that this REQUIRES a human decision;
+// anything not listed is, by definition, cockpit material and not box material.
+// Adding a line is too easy — the question before adding one is "does the dev
+// need to DECIDE something, or only to know?".
 
-// Tipos de evento que ABREM item.
+// Event types that OPEN an item.
 const (
 	EvThreadBlocked     = "dop.demand.thread.blocked"
 	EvStageAdvanced     = "dop.demand.stage.advanced"
@@ -21,7 +21,7 @@ const (
 	EvBudgetExceeded    = "dop.cost.budget.exceeded"
 )
 
-// Tipos de evento que FECHAM item.
+// Event types that CLOSE an item.
 const (
 	EvThreadResumed   = "dop.demand.thread.resumed"
 	EvThreadConcluded = "dop.demand.thread.concluded"
@@ -31,14 +31,26 @@ const (
 	EvBudgetSet       = "dop.cost.budget.set"
 )
 
-// Subjects é o que o consumidor assina. Assinar `dop.>` e descartar 90% seria
-// desperdício de entrega; assinar demais também é ruído, só que de rede.
+// Translation keys for what the box SHOWS. They live next to the rule that
+// produces them, so that adding a rule without a key is visibly incomplete.
+const (
+	KeyThreadBlocked  = "attention.thread_blocked.title"
+	KeyGatePending    = "attention.gate_pending.title"
+	KeyPRReview       = "attention.pr_review.title"
+	KeyMergeConflict  = "attention.merge_conflict.title"
+	KeyDirective      = "attention.directive.title"
+	KeyBudgetExceeded = "attention.budget_exceeded.title"
+)
+
+// Subjects is what the consumer subscribes to. Subscribing to `dop.>` and
+// discarding 90% would waste deliveries; subscribing too broadly is also noise,
+// just network noise.
 func Subjects() []string {
 	return []string{"dop.demand.>", "dop.delivery.>", "dop.cost.>"}
 }
 
-// Event é o mínimo que a regra precisa saber do evento. Existe para que este
-// pacote não importe nem o adaptador nem o envelope do barramento.
+// Event is the minimum the rule needs to know about an event. It exists so this
+// package imports neither the adapter nor the bus envelope.
 type Event struct {
 	ID          string
 	AccountID   string
@@ -49,103 +61,113 @@ type Event struct {
 	Payload     map[string]any
 }
 
-// Decision é o que a regra devolve: abrir um item, fechar os itens de um alvo,
-// ou ignorar o evento.
+// Decision is what the rule returns: open an item, close a target's items, or
+// ignore the event.
 type Decision struct {
 	Open  *Item
 	Close *CloseSpec
 }
 
-// CloseSpec fecha por ALVO, não por id de item: quem destrava a thread não sabe
-// (nem deveria saber) qual item a caixa criou para ela.
+// CloseSpec closes by TARGET, not by item id: whoever unblocks the thread does
+// not know (and should not know) which item the box created for it.
 type CloseSpec struct {
 	Kind       Kind
 	TargetKind string
 	TargetID   string
 }
 
-// Apply traduz um evento em decisão. Devolve zero-value quando o evento não
-// interessa à caixa — que é o caso da esmagadora maioria deles.
+// Apply translates an event into a decision. It returns the zero value when the
+// event does not concern the box — which is the case for the overwhelming
+// majority of them.
 func Apply(e Event) Decision {
 	switch e.Type {
 
 	case EvThreadBlocked:
-		return abrir(e, KindThreadBlocked, "thread", threadID(e),
-			str(e.Payload, "question", "Um agente precisa de resposta"),
+		return open(e, KindThreadBlocked, "thread", threadID(e),
+			KeyThreadBlocked, map[string]any{"question": str(e.Payload, "question", "")},
+			"An agent needs an answer",
 			str(e.Payload, "detail", ""))
 
 	case EvStageAdvanced:
-		// Só entra quando a etapa PAROU num portão humano. Etapa avançando é
-		// progresso, e progresso é cockpit — se toda transição virasse item, a
-		// caixa encheria de coisa que ninguém precisa decidir.
+		// It only counts when the stage STOPPED at a human gate. A stage moving
+		// forward is progress, and progress is cockpit material — if every
+		// transition became an item, the box would fill with things nobody has
+		// to decide.
 		//
-		// O campo é `to`, o estado PARA ONDE a etapa foi. A primeira versão
-		// lia `status`, que o evento nunca teve: a caixa só sabia FECHAR um
-		// item que nunca abria, e o teste de unidade não pegou porque fabricava
-		// o evento com o formato suposto em vez do formato emitido. É o teste
-		// de integração no fim deste domínio que fecha esse buraco.
+		// The field is `to`, the state the stage moved TO. The first version
+		// read `status`, which the event never had: the box could only CLOSE an
+		// item that never opened, and the unit test did not catch it because it
+		// fabricated the event in the assumed shape instead of the emitted one.
+		// It is the integration test at the end of this domain that closes that
+		// gap.
 		if str(e.Payload, "to", "") != "blocked" {
 			return Decision{}
 		}
 		if str(e.Payload, "gate", "") == "none" {
 			return Decision{}
 		}
-		return abrir(e, KindGatePending, "stage", str(e.Payload, "stage_key", ""),
-			"Etapa aguardando decisão: "+str(e.Payload, "stage_key", ""),
+		stage := str(e.Payload, "stage_key", "")
+		return open(e, KindGatePending, "stage", stage,
+			KeyGatePending, map[string]any{"stage": stage},
+			"Stage awaiting a decision: "+stage,
 			str(e.Payload, "reason", ""))
 
 	case EvPullRequestOpened:
-		return abrir(e, KindPRReview, "pull_request", str(e.Payload, "pull_request_id", e.AggregateID),
-			"PR aguardando revisão", str(e.Payload, "title", ""))
+		return open(e, KindPRReview, "pull_request", str(e.Payload, "pull_request_id", e.AggregateID),
+			KeyPRReview, map[string]any{"title": str(e.Payload, "title", "")},
+			"Pull request awaiting review", str(e.Payload, "title", ""))
 
 	case EvMergeConflict:
-		return abrir(e, KindMergeConflict, "pull_request", str(e.Payload, "pull_request_id", e.AggregateID),
-			"Conflito escalado na fila de merge", str(e.Payload, "detail", ""))
+		return open(e, KindMergeConflict, "pull_request", str(e.Payload, "pull_request_id", e.AggregateID),
+			KeyMergeConflict, map[string]any{"detail": str(e.Payload, "detail", "")},
+			"Conflict escalated in the merge queue", str(e.Payload, "detail", ""))
 
 	case EvDirectiveProposed:
-		return abrir(e, KindDirective, "directive", str(e.Payload, "directive_id", e.AggregateID),
-			"Transversal detectada — decisão de coordenação",
+		return open(e, KindDirective, "directive", str(e.Payload, "directive_id", e.AggregateID),
+			KeyDirective, map[string]any{"recommendation": str(e.Payload, "recommendation", "")},
+			"Cross-cutting concern detected — coordination decision",
 			str(e.Payload, "recommendation", ""))
 
 	case EvBudgetExceeded:
-		return abrir(e, KindBudgetExceeded, "demand", demandID(e),
-			"Orçamento estourado — demanda pausada",
+		return open(e, KindBudgetExceeded, "demand", demandID(e),
+			KeyBudgetExceeded, map[string]any{"scope": str(e.Payload, "scope", "")},
+			"Budget exceeded — demand paused",
 			str(e.Payload, "scope", ""))
 
-	// ── fechamento ──────────────────────────────────────────────────────────
+	// ── closing ─────────────────────────────────────────────────────────────
 
 	case EvThreadResumed, EvThreadConcluded:
-		return fechar(KindThreadBlocked, "thread", threadID(e))
+		return closeFor(KindThreadBlocked, "thread", threadID(e))
 
 	case EvGateDecided:
-		return fechar(KindGatePending, "stage", str(e.Payload, "stage_key", ""))
+		return closeFor(KindGatePending, "stage", str(e.Payload, "stage_key", ""))
 
 	case EvDirectiveDecide:
-		return fechar(KindDirective, "directive", str(e.Payload, "directive_id", e.AggregateID))
+		return closeFor(KindDirective, "directive", str(e.Payload, "directive_id", e.AggregateID))
 
 	case EvMergeState:
-		// Só fecha quando o conflito deixou de existir. Mudança de estado para
-		// "rebasing" não resolve conflito nenhum.
+		// It only closes once the conflict has ceased to exist. A state change
+		// to "rebasing" resolves no conflict at all.
 		if s := str(e.Payload, "state", ""); s != "merged" && s != "cancelled" {
 			return Decision{}
 		}
-		return fechar(KindMergeConflict, "pull_request",
+		return closeFor(KindMergeConflict, "pull_request",
 			str(e.Payload, "pull_request_id", e.AggregateID))
 
 	case EvBudgetSet:
-		// Teto novo pode ter destravado a demanda. Fechar aqui e deixar o
-		// próximo estouro reabrir é mais honesto do que manter item de um
-		// bloqueio que talvez não exista mais.
-		return fechar(KindBudgetExceeded, "demand", demandID(e))
+		// A new ceiling may have unblocked the demand. Closing here and letting
+		// the next overrun reopen is more honest than keeping an item for a
+		// block that may no longer exist.
+		return closeFor(KindBudgetExceeded, "demand", demandID(e))
 	}
 
 	return Decision{}
 }
 
-func abrir(e Event, k Kind, targetKind, targetID, title, summary string) Decision {
+func open(e Event, k Kind, targetKind, targetID, titleKey string, params map[string]any, title, summary string) Decision {
 	if targetID == "" {
-		// Item sem alvo é item que não dá para clicar — e item que não leva a
-		// lugar nenhum é pior que item ausente.
+		// An item with no target is an item you cannot click — and an item that
+		// leads nowhere is worse than a missing item.
 		return Decision{}
 	}
 	return Decision{Open: &Item{
@@ -154,6 +176,8 @@ func abrir(e Event, k Kind, targetKind, targetID, title, summary string) Decisio
 		TargetKind: targetKind,
 		TargetID:   targetID,
 		DemandID:   demandID(e),
+		TitleKey:   titleKey,
+		Params:     params,
 		Title:      title,
 		Summary:    summary,
 		OpenedAt:   e.OccurredAt,
@@ -161,15 +185,15 @@ func abrir(e Event, k Kind, targetKind, targetID, title, summary string) Decisio
 	}}
 }
 
-func fechar(k Kind, targetKind, targetID string) Decision {
+func closeFor(k Kind, targetKind, targetID string) Decision {
 	if targetID == "" {
 		return Decision{}
 	}
 	return Decision{Close: &CloseSpec{Kind: k, TargetKind: targetKind, TargetID: targetID}}
 }
 
-// demandID: os eventos da demanda têm agregado "demand"; os de entrega e custo
-// carregam o id no payload.
+// demandID: the demand's events carry the "demand" aggregate; delivery and cost
+// events carry the id in the payload.
 func demandID(e Event) string {
 	if e.Aggregate == "demand" {
 		return e.AggregateID
@@ -179,9 +203,9 @@ func demandID(e Event) string {
 
 func threadID(e Event) string { return str(e.Payload, "thread_id", "") }
 
-func str(p map[string]any, chave, padrao string) string {
-	if v, ok := p[chave].(string); ok && v != "" {
+func str(p map[string]any, key, fallback string) string {
+	if v, ok := p[key].(string); ok && v != "" {
 		return v
 	}
-	return padrao
+	return fallback
 }

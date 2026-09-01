@@ -67,11 +67,11 @@ func (a *Attention) abrir(ctx context.Context, it attention.Item) error {
 	_, err := a.pool.Exec(ctx, `
 		INSERT INTO attention_items
 		       (account_id, kind, target_kind, target_id, demand_id,
-		        title, summary, opened_at, opened_by_event)
-		VALUES ($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7,$8,$9)
+		        title_key, params, title, summary, opened_at, opened_by_event)
+		VALUES ($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT DO NOTHING`,
 		it.AccountID, string(it.Kind), it.TargetKind, it.TargetID, it.DemandID,
-		it.Title, it.Summary, it.OpenedAt, it.EventID)
+		it.TitleKey, paramsJSON(it.Params), it.Title, it.Summary, it.OpenedAt, it.EventID)
 	if err != nil {
 		return err
 	}
@@ -97,4 +97,22 @@ func (a *Attention) fechar(ctx context.Context, accountID string, c attention.Cl
 			"kind", string(c.Kind), "target", c.TargetID)
 	}
 	return nil
+}
+
+// paramsJSON serializes the translation parameters.
+//
+// A nil map becomes `{}` and not SQL NULL: the column is NOT NULL, and a reader
+// that had to handle both "no params" and "null params" would be handling the
+// same thing twice. A map that fails to serialize becomes `{}` as well — losing
+// a cosmetic parameter is better than losing the attention item, which is what
+// returning an error here would do.
+func paramsJSON(p map[string]any) []byte {
+	if len(p) == 0 {
+		return []byte(`{}`)
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return []byte(`{}`)
+	}
+	return b
 }

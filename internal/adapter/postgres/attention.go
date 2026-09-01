@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -17,7 +18,8 @@ type AttentionRepo struct{ pool *pgxpool.Pool }
 func NewAttentionRepo(pool *pgxpool.Pool) *AttentionRepo { return &AttentionRepo{pool: pool} }
 
 const attentionCols = `id::text, account_id::text, kind, target_kind, target_id,
-	COALESCE(demand_id::text,''), title, summary, opened_at, resolved_at, opened_by_event::text`
+	COALESCE(demand_id::text,''), COALESCE(title_key,''), params,
+	title, summary, opened_at, resolved_at, opened_by_event::text`
 
 func (r *AttentionRepo) List(ctx context.Context, accountID, demandID string, includeResolved bool, limit int) ([]attention.Item, error) {
 	// A ordenação FINAL é do domínio (a prioridade depende da idade, que muda
@@ -40,10 +42,18 @@ func (r *AttentionRepo) List(ctx context.Context, accountID, demandID string, in
 	for rows.Next() {
 		var it attention.Item
 		var kind string
+		var params []byte
 		if err := rows.Scan(&it.ID, &it.AccountID, &kind, &it.TargetKind, &it.TargetID,
-			&it.DemandID, &it.Title, &it.Summary, &it.OpenedAt, &it.ResolvedAt,
+			&it.DemandID, &it.TitleKey, &params,
+			&it.Title, &it.Summary, &it.OpenedAt, &it.ResolvedAt,
 			&it.EventID); err != nil {
-			return nil, Translate(err, "item de atenção")
+			return nil, Translate(err, "attention item")
+		}
+		// Unreadable params lose the parameters, never the item: the row is
+		// still an open matter someone has to decide, and the English fallback
+		// still says what it is.
+		if len(params) > 0 {
+			_ = json.Unmarshal(params, &it.Params)
 		}
 		it.Kind = attention.Kind(kind)
 		itens = append(itens, it)

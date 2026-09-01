@@ -8,8 +8,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Service serve a caixa. É deliberadamente pequeno: a inteligência está na
-// tabela de impacto e no mapa de eventos, ambos testáveis sem banco.
+// Service serves the box. It is deliberately small: the intelligence lives in
+// the impact table and in the event map, both testable without a database.
 type Service struct {
 	repo    Repository
 	watcher Watcher
@@ -18,22 +18,22 @@ type Service struct {
 
 func NewService(repo Repository, watcher Watcher, clock ports.Clock) *Service {
 	if repo == nil || watcher == nil {
-		panic("attention.NewService: repositório e watcher são obrigatórios")
+		panic("attention.NewService: repository and watcher are required")
 	}
 	if clock == nil {
-		panic("attention.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("attention.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, watcher: watcher, clock: clock}
 }
 
-// DefaultLimit existe porque a caixa é para DECIDIR, não para navegar: se
-// alguém tem mais de cem pendências abertas, o problema não é a paginação.
+// DefaultLimit exists because the box is for DECIDING, not for browsing: if
+// someone has more than a hundred open items, pagination is not the problem.
 const DefaultLimit = 100
 
-// List devolve a caixa da conta ativa, já ordenada.
+// List returns the active account's box, already ordered.
 //
-// A prioridade é calculada na LEITURA, não gravada: ela depende da idade, e
-// idade muda sozinha. Prioridade materializada ficaria velha em silêncio.
+// Priority is computed on READ, not stored: it depends on age, and age changes
+// on its own. A materialized priority would go stale in silence.
 func (s *Service) List(ctx context.Context, demandID string, includeResolved bool, limit int) ([]Item, int, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -42,30 +42,30 @@ func (s *Service) List(ctx context.Context, demandID string, includeResolved boo
 	if limit <= 0 || limit > DefaultLimit {
 		limit = DefaultLimit
 	}
-	itens, err := s.repo.List(ctx, accountID, demandID, includeResolved, limit)
+	items, err := s.repo.List(ctx, accountID, demandID, includeResolved, limit)
 	if err != nil {
 		return nil, 0, err
 	}
-	Sort(itens, s.clock.Now())
+	Sort(items, s.clock.Now())
 
 	total, err := s.repo.OpenTotal(ctx, accountID)
 	if err != nil {
 		return nil, 0, err
 	}
-	return itens, total, nil
+	return items, total, nil
 }
 
-// Watch acompanha a caixa ao vivo, traduzindo evento em mudança.
+// Watch follows the box live, translating events into changes.
 //
-// Reusa o fan-out do domínio de evento pela porta `Watcher`: uma segunda
-// implementação de fan-out seria uma segunda chance de errar isolamento entre
-// contas.
+// It reuses the event domain's fan-out through the `Watcher` port: a second
+// fan-out implementation would be a second chance to get cross-account
+// isolation wrong.
 func (s *Service) Watch(ctx context.Context, sinceEventID string, emit func(change, eventID string, it Item) error) error {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return err
 	}
 	if emit == nil {
-		return errs.Invalid("Watch exige um emissor")
+		return errs.Invalid("Watch requires an emitter")
 	}
 	return s.watcher.Watch(ctx, sinceEventID, nil, nil, func(e Event) error {
 		d := Apply(e)
@@ -73,8 +73,9 @@ func (s *Service) Watch(ctx context.Context, sinceEventID string, emit func(chan
 		case d.Open != nil:
 			return emit("opened", e.ID, *d.Open)
 		case d.Close != nil:
-			// O fechamento não carrega o item inteiro — quem fecha conhece o
-			// ALVO, não o id. O cliente casa pelo alvo, como a projeção faz.
+			// Closing does not carry the whole item — whoever closes knows the
+			// TARGET, not the id. The client matches by target, the way the
+			// projection does.
 			return emit("resolved", e.ID, Item{
 				AccountID: e.AccountID, Kind: d.Close.Kind,
 				TargetKind: d.Close.TargetKind, TargetID: d.Close.TargetID,

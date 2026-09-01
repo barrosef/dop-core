@@ -7,99 +7,122 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 )
 
-func ev(tipo string, payload map[string]any) attention.Event {
+func ev(kind string, payload map[string]any) attention.Event {
 	return attention.Event{
 		ID: "ev-1", AccountID: "acc-1", Aggregate: "demand", AggregateID: "dem-1",
-		Type: tipo, OccurredAt: agora, Payload: payload,
+		Type: kind, OccurredAt: now, Payload: payload,
 	}
 }
 
-func TestThreadBloqueadaAbreItemQueLevaAThread(t *testing.T) {
+func TestBlockedThreadOpensAnItemThatLeadsToTheThread(t *testing.T) {
 	d := attention.Apply(ev(attention.EvThreadBlocked, map[string]any{
-		"thread_id": "th-9", "question": "Posso apagar a coluna?",
+		"thread_id": "th-9", "question": "May I drop the column?",
 	}))
 	if d.Open == nil {
-		t.Fatal("thread bloqueada deveria abrir item")
+		t.Fatal("a blocked thread should open an item")
 	}
 	if d.Open.TargetKind != "thread" || d.Open.TargetID != "th-9" {
-		t.Errorf("o clique tem que levar à thread; veio %s/%s", d.Open.TargetKind, d.Open.TargetID)
+		t.Errorf("the click must lead to the thread; got %s/%s", d.Open.TargetKind, d.Open.TargetID)
 	}
 	if d.Open.DemandID != "dem-1" {
-		t.Error("o item precisa da demanda para a caixa poder agrupar")
+		t.Error("the item needs the demand so the box can group by it")
 	}
 }
 
-// O risco R-1 em forma de teste: progresso não é atenção.
-func TestEtapaAvancandoNaoEnchaACaixa(t *testing.T) {
+// Risk R-1 in test form: progress is not attention.
+func TestAdvancingStageDoesNotFillTheBox(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
-		"stage_key": "implementacao", "to": "running",
+		"stage_key": "implementation", "to": "running",
 	}))
 	if d.Open != nil {
-		t.Fatal("etapa avançando é progresso, e progresso é cockpit — não caixa")
+		t.Fatal("an advancing stage is progress, and progress is cockpit material — not box material")
 	}
 }
 
-func TestEtapaBloqueadaEmPortaoHumanoAbreItem(t *testing.T) {
+func TestStageBlockedAtAHumanGateOpensAnItem(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
 		"stage_key": "spec", "to": "blocked", "gate": "human",
 	}))
 	if d.Open == nil || d.Open.Kind != attention.KindGatePending {
-		t.Fatal("etapa parada em portão humano exige decisão — tem que abrir item")
+		t.Fatal("a stage stopped at a human gate requires a decision — it must open an item")
 	}
 }
 
-func TestEtapaBloqueadaSemPortaoNaoAbreItem(t *testing.T) {
+func TestStageBlockedWithoutAGateOpensNothing(t *testing.T) {
 	d := attention.Apply(ev(attention.EvStageAdvanced, map[string]any{
-		"stage_key": "teste", "to": "blocked", "gate": "none",
+		"stage_key": "test", "to": "blocked", "gate": "none",
 	}))
 	if d.Open != nil {
-		t.Fatal("bloqueio sem portão não é decisão humana pendente")
+		t.Fatal("a block with no gate is not a pending human decision")
 	}
 }
 
-func TestThreadDestravadaFechaOItem(t *testing.T) {
+// Every opened item must carry the translation key. Without it the cockpit has
+// only the English fallback to show, and the box stops being localizable — the
+// failure is invisible until someone reads the screen in another language.
+func TestEveryOpenedItemCarriesATranslationKey(t *testing.T) {
+	cases := []attention.Event{
+		ev(attention.EvThreadBlocked, map[string]any{"thread_id": "th-1"}),
+		ev(attention.EvStageAdvanced, map[string]any{"stage_key": "spec", "to": "blocked", "gate": "human"}),
+		ev(attention.EvPullRequestOpened, map[string]any{"pull_request_id": "pr-1"}),
+		ev(attention.EvMergeConflict, map[string]any{"pull_request_id": "pr-1"}),
+		ev(attention.EvDirectiveProposed, map[string]any{"directive_id": "dir-1"}),
+		ev(attention.EvBudgetExceeded, map[string]any{"demand_id": "dem-1"}),
+	}
+	for _, e := range cases {
+		d := attention.Apply(e)
+		if d.Open == nil {
+			t.Fatalf("%s should have opened an item", e.Type)
+		}
+		if d.Open.TitleKey == "" {
+			t.Errorf("%s opened an item with no TitleKey — it can only ever be shown in English", e.Type)
+		}
+	}
+}
+
+func TestResumedThreadClosesTheItem(t *testing.T) {
 	d := attention.Apply(ev(attention.EvThreadResumed, map[string]any{"thread_id": "th-9"}))
 	if d.Close == nil {
-		t.Fatal("thread destravada tem que fechar o item")
+		t.Fatal("a resumed thread must close the item")
 	}
 	if d.Close.TargetID != "th-9" || d.Close.Kind != attention.KindThreadBlocked {
-		t.Error("o fechamento é por ALVO: quem destrava não sabe o id do item")
+		t.Error("closing is by TARGET: whoever unblocks does not know the item id")
 	}
 }
 
-// Mudança de estado que não resolve conflito não pode fechar o item — senão a
-// caixa mentiria dizendo que está resolvido.
-func TestEstadoIntermediarioNaoFechaConflito(t *testing.T) {
+// A state change that resolves no conflict must not close the item — otherwise
+// the box would lie and claim it is resolved.
+func TestIntermediateStateDoesNotCloseAConflict(t *testing.T) {
 	if d := attention.Apply(ev(attention.EvMergeState, map[string]any{
 		"state": "rebasing", "pull_request_id": "pr-1",
 	})); d.Close != nil {
-		t.Fatal("rebasing não resolveu conflito nenhum")
+		t.Fatal("rebasing resolved no conflict at all")
 	}
 	if d := attention.Apply(ev(attention.EvMergeState, map[string]any{
 		"state": "merged", "pull_request_id": "pr-1",
 	})); d.Close == nil {
-		t.Fatal("merge concluído resolve o conflito")
+		t.Fatal("a completed merge resolves the conflict")
 	}
 }
 
-func TestEventoSemAlvoNaoViraItem(t *testing.T) {
+func TestEventWithNoTargetDoesNotBecomeAnItem(t *testing.T) {
 	d := attention.Apply(ev(attention.EvThreadBlocked, map[string]any{}))
 	if d.Open != nil {
-		t.Fatal("item sem alvo não dá para clicar — pior que item ausente")
+		t.Fatal("an item with no target cannot be clicked — worse than a missing item")
 	}
 }
 
-func TestEventoIrrelevanteEhIgnorado(t *testing.T) {
+func TestIrrelevantEventIsIgnored(t *testing.T) {
 	d := attention.Apply(ev("dop.hierarchy.workspace.created", map[string]any{}))
 	if d.Open != nil || d.Close != nil {
-		t.Fatal("workspace criado não exige decisão de ninguém")
+		t.Fatal("a created workspace requires nobody's decision")
 	}
 }
 
-// Os assuntos assinados têm que cobrir TODO evento que a regra sabe traduzir —
-// senão o item simplesmente nunca chega, e ninguém percebe.
-func TestAssuntosCobremTodosOsEventosTratados(t *testing.T) {
-	tratados := []string{
+// The subscribed subjects must cover EVERY event the rule knows how to
+// translate — otherwise the item simply never arrives, and nobody notices.
+func TestSubjectsCoverEveryHandledEvent(t *testing.T) {
+	handled := []string{
 		attention.EvThreadBlocked, attention.EvStageAdvanced,
 		attention.EvPullRequestOpened, attention.EvMergeConflict,
 		attention.EvDirectiveProposed, attention.EvBudgetExceeded,
@@ -107,21 +130,21 @@ func TestAssuntosCobremTodosOsEventosTratados(t *testing.T) {
 		attention.EvGateDecided, attention.EvDirectiveDecide,
 		attention.EvMergeState, attention.EvBudgetSet,
 	}
-	for _, tipo := range tratados {
-		if !cobertoPorAlgumAssunto(tipo, attention.Subjects()) {
-			t.Errorf("evento %q é tratado pela regra mas nenhum assunto assinado o traz", tipo)
+	for _, kind := range handled {
+		if !coveredBySomeSubject(kind, attention.Subjects()) {
+			t.Errorf("event %q is handled by the rule but no subscribed subject carries it", kind)
 		}
 	}
 }
 
-// casa a semântica do NATS que a porta documenta: ">" casa a cauda.
-func cobertoPorAlgumAssunto(tipo string, assuntos []string) bool {
-	for _, a := range assuntos {
-		if len(a) > 2 && a[len(a)-2:] == ".>" && len(tipo) >= len(a)-1 &&
-			tipo[:len(a)-1] == a[:len(a)-1] {
+// Matches the NATS semantics the port documents: ">" matches the tail.
+func coveredBySomeSubject(kind string, subjects []string) bool {
+	for _, s := range subjects {
+		if len(s) > 2 && s[len(s)-2:] == ".>" && len(kind) >= len(s)-1 &&
+			kind[:len(s)-1] == s[:len(s)-1] {
 			return true
 		}
-		if a == tipo {
+		if s == kind {
 			return true
 		}
 	}

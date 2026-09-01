@@ -5,17 +5,17 @@ import (
 	"time"
 )
 
-// Sort ordena a caixa: mais urgente primeiro.
+// Sort orders the box: most urgent first.
 //
-// Ordenação ESTÁVEL e com desempate final por id. Sem o desempate, dois itens
-// de mesmo tipo abertos no mesmo instante trocariam de lugar entre uma consulta
-// e outra — e lista que se mexe sozinha é lista em que ninguém confia.
-func Sort(itens []Item, agora time.Time) {
-	sort.SliceStable(itens, func(i, j int) bool {
-		pi, pj := itens[i].Priority(agora), itens[j].Priority(agora)
+// A STABLE sort with a final tie-break by id. Without the tie-break, two items
+// of the same kind opened at the same instant would swap places between one
+// query and the next — and a list that moves on its own is a list nobody trusts.
+func Sort(items []Item, now time.Time) {
+	sort.SliceStable(items, func(i, j int) bool {
+		pi, pj := items[i].Priority(now), items[j].Priority(now)
 		if pi != pj {
 			return pi < pj
 		}
-		return itens[i].ID < itens[j].ID
+		return items[i].ID < items[j].ID
 	})
 }

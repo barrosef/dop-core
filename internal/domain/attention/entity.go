@@ -1,17 +1,18 @@
-// Package attention é a caixa de atenção: a fila única que responde "onde eu
-// sou necessário, e em que ordem".
+// Package attention is the attention box: the single queue that answers "where
+// am I needed, and in what order".
 //
-// É PROJEÇÃO (ADR-0006): todo item nasce de um evento e morre de outro. Este
-// pacote não cria item — ele traduz evento em item e ORDENA. A tradução mora
-// aqui, e não no adaptador, porque decidir o que merece atenção humana é regra
-// de negócio, não detalhe de armazenamento.
+// It is a PROJECTION (ADR-0006): every item is born of an event and dies of
+// another. This package does not create items — it translates events into items
+// and ORDERS them. The translation lives here, and not in the adapter, because
+// deciding what deserves human attention is a business rule, not a storage
+// detail.
 package attention
 
 import (
 	"time"
 )
 
-// Kind é a natureza do item. É ela que determina o impacto na ordenação.
+// Kind is the item's nature. It is what determines the impact on ordering.
 type Kind string
 
 const (
@@ -24,89 +25,108 @@ const (
 	KindIntegrationBroken Kind = "integration_broken"
 )
 
-// Item é uma pendência que exige DECISÃO HUMANA.
+// Item is a pending matter that requires a HUMAN DECISION.
 //
-// O que não exige decisão não entra: status e progresso ficam no cockpit. Caixa
-// barulhenta vira ruído e é ignorada, e caixa ignorada não protege ninguém
-// (risco R-1 da spec de conversação e atenção).
+// What does not require a decision does not get in: status and progress stay in
+// the cockpit. A noisy box becomes noise and is ignored, and an ignored box
+// protects nobody (risk R-1 of the conversation-and-attention spec).
 type Item struct {
 	ID         string
 	AccountID  string
 	Kind       Kind
 	TargetKind string // thread | stage | pull_request | directive | demand | resource
 	TargetID   string
-	DemandID   string // vazio em item de conta (integração quebrada)
-	Title      string
-	Summary    string
+	DemandID   string // empty on an account-level item (broken integration)
+
+	// TitleKey and Params are what the cockpit TRANSLATES. The key is stable
+	// ("attention.gate_pending.title") and Params carries the values the
+	// sentence needs.
+	//
+	// They exist because this text is read by a person, and text read by a
+	// person cannot be frozen in one language inside the domain. The domain
+	// knows WHICH sentence applies; it does not get to choose the words.
+	TitleKey string
+	Params   map[string]any
+
+	// Title and Summary are the ENGLISH FALLBACK, for a reader that has no
+	// catalogue: logs, the API's raw response, an operator reading the table.
+	// They are never the translation — a client that shows them to a user is
+	// showing developer text, and the presence of TitleKey is how it knows
+	// better.
+	Title   string
+	Summary string
+
 	OpenedAt   time.Time
 	ResolvedAt *time.Time
-	// EventID é o evento que ABRIU o item. Guardá-lo é o que torna a projeção
-	// reconstruível e a reentrega inócua.
+	// EventID is the event that OPENED the item. Keeping it is what makes the
+	// projection rebuildable and redelivery harmless.
 	EventID string
 }
 
 func (i Item) Open() bool { return i.ResolvedAt == nil }
 
-// impacto é a tabela de urgência por tipo, e a ordem dela É a regra.
+// impact is the urgency table by kind, and its ordering IS the rule.
 //
-// Um lugar só, como o roteador de modelo: espalhar isso por ifs faria cada
-// domínio decidir a própria urgência, e a fila deixaria de ter uma ordem só —
-// que é exatamente o que a caixa existe para oferecer.
+// One place only, like the model router: spreading this across ifs would let
+// each domain decide its own urgency, and the queue would stop having a single
+// order — which is exactly what the box exists to provide.
 //
-// A régua vem da spec: "prioridade por impacto (produção da fila de merge >
-// pergunta exploratória) e idade". Traduzindo: o que trava ENTREGA vem antes do
-// que trava UMA demanda, que vem antes do que trava UMA conversa.
-var impacto = map[Kind]int{
-	// Trava a entrega de todo mundo: a fila de merge é por repositório, e um
-	// conflito escalado segura tudo que está atrás dele.
+// The yardstick comes from the spec: "priority by impact (a production merge
+// queue > an exploratory question) and age". Translated: what blocks DELIVERY
+// comes before what blocks ONE demand, which comes before what blocks ONE
+// conversation.
+var impact = map[Kind]int{
+	// Blocks delivery for everyone: the merge queue is per repository, and an
+	// escalated conflict holds up everything behind it.
 	KindMergeConflict: 10,
-	// Trava a conta inteira: sem integração, nenhuma demanda anda.
+	// Blocks the whole account: with no integration, no demand moves.
 	KindIntegrationBroken: 20,
-	// Trava UMA demanda por inteiro.
+	// Blocks ONE demand entirely.
 	KindBudgetExceeded: 30,
 	KindGatePending:    40,
-	// Trabalho pronto esperando gente — custa dinheiro parado, mas não bloqueia
-	// quem já está andando.
+	// Finished work waiting on a person — it costs money sitting still, but it
+	// does not block whoever is already moving.
 	KindPRReview: 50,
-	// Coordenação: importante e nunca urgente. A demanda 1 segue até onde der;
-	// ela NÃO para porque uma transversal foi identificada (ADR-0015).
+	// Coordination: important and never urgent. Demand 1 goes as far as it can;
+	// it does NOT stop because a cross-cutting concern was identified
+	// (ADR-0015).
 	KindDirective: 60,
-	// Uma conversa esperando resposta.
+	// A conversation waiting on an answer.
 	KindThreadBlocked: 70,
 }
 
-// ImpactOf devolve o impacto do tipo. Tipo desconhecido cai no fim da fila, e
-// não no começo: item que ninguém sabe classificar não pode empurrar para baixo
-// um conflito de merge só porque é novo.
+// ImpactOf returns the kind's impact. An unknown kind lands at the END of the
+// queue, not the start: an item nobody can classify must not push a merge
+// conflict down just for being new.
 func ImpactOf(k Kind) int {
-	if v, ok := impacto[k]; ok {
+	if v, ok := impact[k]; ok {
 		return v
 	}
 	return 999
 }
 
-// Priority combina impacto e idade num número único, menor primeiro.
+// Priority combines impact and age into a single number, smallest first.
 //
-// A idade só desempata DENTRO do mesmo impacto — nunca atravessa faixas. Se
-// atravessasse, uma pergunta exploratória de três dias passaria na frente de um
-// conflito de produção de três minutos, que é precisamente a inversão que a
-// spec proíbe.
-func (i Item) Priority(agora time.Time) int32 {
-	horas := int(agora.Sub(i.OpenedAt).Hours())
-	if horas < 0 {
-		horas = 0 // relógio andando para trás não vira prioridade máxima
+// Age only breaks ties WITHIN the same impact — it never crosses bands. If it
+// did, a three-day-old exploratory question would jump ahead of a three-minute
+// production conflict, which is precisely the inversion the spec forbids.
+func (i Item) Priority(now time.Time) int32 {
+	hours := int(now.Sub(i.OpenedAt).Hours())
+	if hours < 0 {
+		hours = 0 // a clock running backwards must not become top priority
 	}
-	// Teto de uma semana: passado disso a idade para de diferenciar, senão um
-	// item esquecido há meses dominaria a faixa para sempre.
-	if horas > 24*7 {
-		horas = 24 * 7
+	// A one-week ceiling: past that, age stops differentiating, otherwise an
+	// item forgotten months ago would dominate its band forever.
+	if hours > 24*7 {
+		hours = 24 * 7
 	}
-	// Impacto × 1000 reserva a casa da idade sem que ela invada a faixa acima.
-	return int32(ImpactOf(i.Kind)*1000 + (24*7 - horas))
+	// Impact × 1000 reserves the age digits without letting them invade the
+	// band above.
+	return int32(ImpactOf(i.Kind)*1000 + (24*7 - hours))
 }
 
-// Kinds ordenados por impacto — existe para o teste provar que a tabela cobre
-// todos os tipos, e para a tela de calibração mostrar a régua.
+// Kinds ordered by impact — it exists so the test can prove the table covers
+// every kind, and so a calibration screen can show the yardstick.
 func Kinds() []Kind {
 	return []Kind{
 		KindMergeConflict, KindIntegrationBroken, KindBudgetExceeded,

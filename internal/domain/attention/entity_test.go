@@ -7,69 +7,69 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 )
 
-var agora = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+var now = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
-func item(k attention.Kind, idadeHoras int) attention.Item {
-	return attention.Item{Kind: k, OpenedAt: agora.Add(-time.Duration(idadeHoras) * time.Hour)}
+func item(k attention.Kind, ageHours int) attention.Item {
+	return attention.Item{Kind: k, OpenedAt: now.Add(-time.Duration(ageHours) * time.Hour)}
 }
 
-// A regra da spec: "produção da fila de merge > pergunta exploratória".
-// Este é o teste que a codifica.
-func TestConflitoDeMergeVemAntesDePerguntaExploratoria(t *testing.T) {
-	conflito := item(attention.KindMergeConflict, 0)  // três minutos atrás
-	pergunta := item(attention.KindThreadBlocked, 72) // três dias atrás
+// The spec's rule: "a production merge queue > an exploratory question".
+// This is the test that encodes it.
+func TestMergeConflictComesBeforeExploratoryQuestion(t *testing.T) {
+	conflict := item(attention.KindMergeConflict, 0)  // three minutes ago
+	question := item(attention.KindThreadBlocked, 72) // three days ago
 
-	if conflito.Priority(agora) >= pergunta.Priority(agora) {
-		t.Fatalf("conflito de produção recém-aberto (%d) deveria vir antes de pergunta de três dias (%d)",
-			conflito.Priority(agora), pergunta.Priority(agora))
+	if conflict.Priority(now) >= question.Priority(now) {
+		t.Fatalf("a just-opened production conflict (%d) should come before a three-day-old question (%d)",
+			conflict.Priority(now), question.Priority(now))
 	}
 }
 
-// A idade desempata DENTRO da faixa, e é isso que impede a caixa de esquecer
-// item antigo — sem deixá-lo atravessar faixas.
-func TestIdadeDesempataDentroDaMesmaFaixa(t *testing.T) {
-	velho := item(attention.KindPRReview, 48)
-	novo := item(attention.KindPRReview, 1)
+// Age breaks ties WITHIN a band, and that is what keeps the box from forgetting
+// an old item — without letting it cross bands.
+func TestAgeBreaksTiesWithinTheSameBand(t *testing.T) {
+	old := item(attention.KindPRReview, 48)
+	fresh := item(attention.KindPRReview, 1)
 
-	if velho.Priority(agora) >= novo.Priority(agora) {
-		t.Fatal("entre itens do mesmo tipo, o mais velho tem que vir primeiro")
+	if old.Priority(now) >= fresh.Priority(now) {
+		t.Fatal("among items of the same kind, the older one must come first")
 	}
 }
 
-// Se a idade atravessasse faixas, uma pergunta esquecida passaria na frente de
-// um conflito de produção. É a inversão que a spec proíbe.
-func TestIdadeNaoAtravessaFaixa(t *testing.T) {
-	perguntaAntiquissima := item(attention.KindThreadBlocked, 24*365)
-	conflitoAgora := item(attention.KindMergeConflict, 0)
+// If age crossed bands, a forgotten question would jump ahead of a production
+// conflict. That is the inversion the spec forbids.
+func TestAgeDoesNotCrossBands(t *testing.T) {
+	ancientQuestion := item(attention.KindThreadBlocked, 24*365)
+	conflictNow := item(attention.KindMergeConflict, 0)
 
-	if perguntaAntiquissima.Priority(agora) <= conflitoAgora.Priority(agora) {
-		t.Fatal("idade não pode atravessar faixa de impacto")
+	if ancientQuestion.Priority(now) <= conflictNow.Priority(now) {
+		t.Fatal("age must not cross an impact band")
 	}
 }
 
-func TestTipoDesconhecidoVaiParaOFimDaFila(t *testing.T) {
-	desconhecido := item(attention.Kind("inventado"), 0)
-	pior := item(attention.KindThreadBlocked, 0)
+func TestUnknownKindGoesToTheEndOfTheQueue(t *testing.T) {
+	unknown := item(attention.Kind("made-up"), 0)
+	worst := item(attention.KindThreadBlocked, 0)
 
-	if desconhecido.Priority(agora) <= pior.Priority(agora) {
-		t.Fatal("tipo desconhecido não pode empurrar item classificado para baixo")
+	if unknown.Priority(now) <= worst.Priority(now) {
+		t.Fatal("an unknown kind must not push a classified item down")
 	}
 }
 
-func TestTodoTipoTemImpactoDeclarado(t *testing.T) {
+func TestEveryKindHasADeclaredImpact(t *testing.T) {
 	for _, k := range attention.Kinds() {
 		if attention.ImpactOf(k) >= 999 {
-			t.Errorf("tipo %q sem impacto na tabela — cairia no fim da fila em silêncio", k)
+			t.Errorf("kind %q has no impact in the table — it would silently land at the end of the queue", k)
 		}
 	}
 }
 
-// Relógio andando para trás não pode virar prioridade máxima.
-func TestRelogioParaTrasNaoViraUrgencia(t *testing.T) {
-	futuro := attention.Item{Kind: attention.KindPRReview, OpenedAt: agora.Add(time.Hour)}
-	presente := attention.Item{Kind: attention.KindPRReview, OpenedAt: agora}
+// A clock running backwards must not become top priority.
+func TestClockRunningBackwardsIsNotUrgency(t *testing.T) {
+	future := attention.Item{Kind: attention.KindPRReview, OpenedAt: now.Add(time.Hour)}
+	present := attention.Item{Kind: attention.KindPRReview, OpenedAt: now}
 
-	if futuro.Priority(agora) < presente.Priority(agora) {
-		t.Fatal("item com OpenedAt no futuro não pode ser mais urgente que um de agora")
+	if future.Priority(now) < present.Priority(now) {
+		t.Fatal("an item with OpenedAt in the future must not be more urgent than one from now")
 	}
 }
