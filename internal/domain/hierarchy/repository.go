@@ -2,13 +2,13 @@ package hierarchy
 
 import "context"
 
-// Repository é a PORTA de persistência do domínio de hierarquia.
+// Repository is the hierarchy domain's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in internal/adapter/postgres.
+// The domain never sees SQL.
 //
-// Toda operação recebe accountID explicitamente: o filtro por conta ativa é
-// parâmetro da porta, não detalhe que o adaptador possa esquecer.
+// Every operation takes accountID explicitly: filtering by the active account is
+// a parameter of the port, not a detail the adapter could forget.
 type Repository interface {
 	// Workspaces
 	ListWorkspaces(ctx context.Context, accountID string) ([]Workspace, error)
@@ -16,23 +16,23 @@ type Repository interface {
 	CreateWorkspace(ctx context.Context, w *Workspace) (*Workspace, error)
 	UpdateWorkspace(ctx context.Context, w *Workspace) (*Workspace, error)
 
-	// Projetos. workspaceID vazio = todos os projetos da conta.
+	// Projects. An empty workspaceID means all of the account's projects.
 	ListProjects(ctx context.Context, accountID, workspaceID string) ([]Project, error)
 	ProjectByID(ctx context.Context, accountID, id string) (*Project, error)
 	CreateProject(ctx context.Context, p *Project) (*Project, error)
 	UpdateProject(ctx context.Context, p *Project) (*Project, error)
 
-	// Tree devolve workspaces e projetos da conta já agrupados.
+	// Tree returns the account's workspaces and projects already grouped.
 	//
-	// Existe como operação PRÓPRIA — e não como laço sobre ListProjects — para
-	// que a árvore do cockpit custe uma varredura, não uma consulta por
-	// workspace. O N+1 aqui apareceria na primeira tela de todo mundo.
+	// It exists as an operation of its OWN — rather than a loop over
+	// ListProjects — so the cockpit's tree costs one scan instead of one query
+	// per workspace. The N+1 here would show up on everybody's first screen.
 	Tree(ctx context.Context, accountID string) ([]TreeNode, error)
 
-	// ResourceAccounts diz a que conta pertence cada recurso pedido. Ids
-	// inexistentes simplesmente não voltam no mapa.
+	// ResourceAccounts says which account each requested resource belongs to.
+	// Ids that do not exist simply do not come back in the map.
 	//
-	// É o que permite ao domínio recusar recurso de outra conta sem saber o que
-	// é um recurso — quem sabe é o domínio de recursos.
+	// It is what lets the domain refuse another account's resource without
+	// knowing what a resource is — the resource domain knows that.
 	ResourceAccounts(ctx context.Context, ids []string) (map[string]string, error)
 }

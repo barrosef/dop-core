@@ -9,46 +9,66 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM banco: o repositório é porta, e aqui entra um duplo
-// em memória. É o retorno prático da arquitetura hexagonal.
+// The domain is testable WITHOUT a database: the repository is a port, and an
+// in-memory double goes in here. It is the practical return on hexagonal
+// architecture.
 
 func TestNormalizeKey(t *testing.T) {
-	casos := map[string]string{
+	cases := map[string]string{
 		"dop":        "DOP",
 		"  dop-x  ":  "DOPX",
 		"Plat form1": "PLATFORM1",
 		"---":        "",
 	}
-	for entrada, esperado := range casos {
-		if got := hierarchy.NormalizeKey(entrada); got != esperado {
-			t.Errorf("NormalizeKey(%q) = %q, esperado %q", entrada, got, esperado)
+	for input, want := range cases {
+		if got := hierarchy.NormalizeKey(input); got != want {
+			t.Errorf("NormalizeKey(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
 
 func TestValidateKey(t *testing.T) {
-	// Chave é OPCIONAL: ausência não é erro.
+	// The key is OPTIONAL: absence is not an error.
 	if err := hierarchy.ValidateKey(""); err != nil {
-		t.Errorf("chave vazia deveria ser aceita: %v", err)
+		t.Errorf("an empty key should be accepted: %v", err)
 	}
 	if err := hierarchy.ValidateKey("DOP"); err != nil {
-		t.Errorf("chave maiúscula curta recusada: %v", err)
+		t.Errorf("a short uppercase key was refused: %v", err)
 	}
 	if err := hierarchy.ValidateKey("dop"); err == nil {
-		t.Error("chave minúscula deveria ser recusada")
+		t.Error("a lowercase key should be refused")
 	}
 	if err := hierarchy.ValidateKey("DOP-X"); err == nil {
-		t.Error("chave com pontuação deveria ser recusada")
+		t.Error("a key with punctuation should be refused")
 	}
 	if err := hierarchy.ValidateKey("D"); err == nil {
-		t.Error("chave de 1 caractere deveria ser recusada")
+		t.Error("a 1-character key should be refused")
 	}
-	if err := hierarchy.ValidateKey("PLATAFORMADIGITAL"); err == nil {
-		t.Error("chave longa deveria ser recusada")
+	if err := hierarchy.ValidateKey("DIGITALPLATFORM"); err == nil {
+		t.Error("a long key should be refused")
 	}
 }
 
-func TestReferencedResourceIDsJuntaTudoSemRepetir(t *testing.T) {
+// A refusal a person reads has to carry its translation key, otherwise the form
+// can only ever apologize in English.
+func TestValidationRefusalsCarryATranslationKey(t *testing.T) {
+	for name, err := range map[string]error{
+		"empty name":  hierarchy.ValidateName(""),
+		"long name":   hierarchy.ValidateName(string(make([]byte, 200))),
+		"short key":   hierarchy.ValidateKey("D"),
+		"long key":    hierarchy.ValidateKey("DIGITALPLATFORM"),
+		"key charset": hierarchy.ValidateKey("dop"),
+	} {
+		if err == nil {
+			t.Fatalf("%s: expected a refusal", name)
+		}
+		if code, _ := errs.CodeOf(err); code == "" {
+			t.Errorf("%s: refusal has no translation key — %v", name, err)
+		}
+	}
+}
+
+func TestReferencedResourceIDsJoinsEverythingWithoutRepeating(t *testing.T) {
 	p := hierarchy.Project{
 		Repos: []hierarchy.ProjectRepo{
 			{IntegrationID: "int-1"}, {IntegrationID: "int-1"}, {IntegrationID: "int-2"},
@@ -58,16 +78,16 @@ func TestReferencedResourceIDsJuntaTudoSemRepetir(t *testing.T) {
 	}
 	got := p.ReferencedResourceIDs()
 	if len(got) != 4 {
-		t.Fatalf("esperado 4 ids distintos, veio %v", got)
+		t.Fatalf("expected 4 distinct ids, got %v", got)
 	}
 }
 
-// ── duplo em memória ────────────────────────────────────────────────────────
+// ── in-memory double ────────────────────────────────────────────────────────
 
 type fakeRepo struct {
 	workspaces map[string]*hierarchy.Workspace
 	projects   map[string]*hierarchy.Project
-	// dono de cada recurso, por id — é o que sustenta a regra das contas.
+	// the owner of each resource, by id — this is what backs the account rule.
 	resources map[string]string
 	nextID    int
 	treeCalls int
@@ -141,7 +161,7 @@ func (f *fakeRepo) ListProjects(_ context.Context, accountID, workspaceID string
 func (f *fakeRepo) ProjectByID(_ context.Context, accountID, id string) (*hierarchy.Project, error) {
 	p, ok := f.projects[id]
 	if !ok || p.AccountID != accountID {
-		return nil, errs.NotFound("projeto")
+		return nil, errs.NotFound("project")
 	}
 	cp := *p
 	return &cp, nil
@@ -157,7 +177,7 @@ func (f *fakeRepo) CreateProject(_ context.Context, p *hierarchy.Project) (*hier
 func (f *fakeRepo) UpdateProject(_ context.Context, p *hierarchy.Project) (*hierarchy.Project, error) {
 	cur, ok := f.projects[p.ID]
 	if !ok || cur.AccountID != p.AccountID {
-		return nil, errs.NotFound("projeto")
+		return nil, errs.NotFound("project")
 	}
 	cp := *p
 	f.projects[p.ID] = &cp
@@ -189,7 +209,7 @@ func (f *fakeRepo) ResourceAccounts(_ context.Context, ids []string) (map[string
 	return out, nil
 }
 
-// ── cenário comum ───────────────────────────────────────────────────────────
+// ── shared scenario ─────────────────────────────────────────────────────────
 
 func setup(t *testing.T) (*fakeRepo, *hierarchy.Service, context.Context) {
 	t.Helper()
@@ -201,168 +221,169 @@ func setup(t *testing.T) (*fakeRepo, *hierarchy.Service, context.Context) {
 	return repo, svc, ctx
 }
 
-// ── testes do serviço ───────────────────────────────────────────────────────
+// ── service tests ───────────────────────────────────────────────────────────
 
-func TestCreateWorkspaceExigeNome(t *testing.T) {
+func TestCreateWorkspaceRequiresAName(t *testing.T) {
 	_, svc, ctx := setup(t)
 	if _, err := svc.CreateWorkspace(ctx, "   ", "", "", nil); err == nil ||
 		errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("workspace sem nome deveria ser recusado; erro: %v", err)
+		t.Fatalf("a workspace with no name should be refused; error: %v", err)
 	}
 }
 
-func TestCreateWorkspaceRecusaChaveInvalida(t *testing.T) {
+func TestCreateWorkspaceRefusesAnInvalidKey(t *testing.T) {
 	_, svc, ctx := setup(t)
-	if _, err := svc.CreateWorkspace(ctx, "Plataforma", "plat", "", nil); err == nil {
-		t.Error("chave minúscula deveria ser recusada")
+	if _, err := svc.CreateWorkspace(ctx, "Platform", "plat", "", nil); err == nil {
+		t.Error("a lowercase key should be refused")
 	}
-	w, err := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	w, err := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	if err != nil {
-		t.Fatalf("chave válida recusada: %v", err)
+		t.Fatalf("a valid key was refused: %v", err)
 	}
 	if w.AccountID != "acct-1" {
-		t.Errorf("workspace deveria nascer na conta ativa, veio %q", w.AccountID)
+		t.Errorf("the workspace should be born in the active account, got %q", w.AccountID)
 	}
 }
 
-func TestOperacaoSemContaAtivaERecusada(t *testing.T) {
+func TestOperationWithoutAnActiveAccountIsRefused(t *testing.T) {
 	svc := hierarchy.NewService(newFakeRepo())
-	// Sem AccountID: regra do SP-0 — requisição sem conta ativa é inválida.
+	// No AccountID: the SP-0 rule — a request with no active account is invalid.
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "usr-1"})
-	if _, err := svc.CreateWorkspace(ctx, "Plataforma", "", "", nil); err == nil {
-		t.Error("criação sem conta ativa deveria ser recusada")
+	if _, err := svc.CreateWorkspace(ctx, "Platform", "", "", nil); err == nil {
+		t.Error("creating with no active account should be refused")
 	}
 	if _, err := svc.ListWorkspaces(ctx); err == nil {
-		t.Error("listagem sem conta ativa deveria ser recusada")
+		t.Error("listing with no active account should be refused")
 	}
 	if _, err := svc.GetTree(ctx); err == nil {
-		t.Error("árvore sem conta ativa deveria ser recusada")
+		t.Error("the tree with no active account should be refused")
 	}
 }
 
-func TestWorkspaceDeOutraContaNaoEVisto(t *testing.T) {
+func TestAnotherAccountsWorkspaceIsNotVisible(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.workspaces["ws-alheio"] = &hierarchy.Workspace{
-		ID: "ws-alheio", AccountID: "acct-2", Name: "De outra conta",
+	repo.workspaces["ws-foreign"] = &hierarchy.Workspace{
+		ID: "ws-foreign", AccountID: "acct-2", Name: "From another account",
 	}
-	// Não é "sem permissão" e sim "não encontrado": o id não vaza.
-	if _, err := svc.GetWorkspace(ctx, "ws-alheio"); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("workspace de outra conta deveria ser não encontrado; erro: %v", err)
+	// Not "forbidden" but "not found": the id does not leak.
+	if _, err := svc.GetWorkspace(ctx, "ws-foreign"); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("another account's workspace should be not found; error: %v", err)
 	}
 	list, _ := svc.ListWorkspaces(ctx)
 	if len(list) != 0 {
-		t.Errorf("a listagem não deveria trazer workspace de outra conta: %v", list)
+		t.Errorf("the listing should not bring another account's workspace: %v", list)
 	}
 }
 
-func TestProjetoHerdaContaDoWorkspace(t *testing.T) {
+func TestProjectInheritsTheWorkspacesAccount(t *testing.T) {
 	_, svc, ctx := setup(t)
-	ws, err := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	ws, err := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	if err != nil {
 		t.Fatalf("CreateWorkspace: %v", err)
 	}
-	p, err := svc.CreateProject(ctx, ws.ID, "Cockpit", "a tela")
+	p, err := svc.CreateProject(ctx, ws.ID, "Cockpit", "the screen")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	if p.AccountID != ws.AccountID {
-		t.Errorf("projeto deveria herdar a conta do workspace: %q vs %q", p.AccountID, ws.AccountID)
+		t.Errorf("the project should inherit the workspace's account: %q vs %q", p.AccountID, ws.AccountID)
 	}
 	if p.WorkspaceID != ws.ID {
-		t.Errorf("projeto deveria apontar para o workspace: %q", p.WorkspaceID)
+		t.Errorf("the project should point at the workspace: %q", p.WorkspaceID)
 	}
 }
 
-func TestProjetoEmWorkspaceDeOutraContaERecusado(t *testing.T) {
+func TestProjectInAnotherAccountsWorkspaceIsRefused(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.workspaces["ws-alheio"] = &hierarchy.Workspace{
-		ID: "ws-alheio", AccountID: "acct-2", Name: "De outra conta",
+	repo.workspaces["ws-foreign"] = &hierarchy.Workspace{
+		ID: "ws-foreign", AccountID: "acct-2", Name: "From another account",
 	}
-	if _, err := svc.CreateProject(ctx, "ws-alheio", "Cockpit", ""); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("projeto em workspace de outra conta deveria falhar; erro: %v", err)
+	if _, err := svc.CreateProject(ctx, "ws-foreign", "Cockpit", ""); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("a project in another account's workspace should fail; error: %v", err)
 	}
 }
 
-// A regra do "recursos de contas diferentes não se misturam": um id de recurso
-// viaja no corpo da requisição, e sem esta checagem bastaria mandar o id da
-// integração alheia para usar a credencial dela.
-func TestProjetoNaoReferenciaIntegracaoDeOutraConta(t *testing.T) {
+// The "resources from different accounts do not mix" rule: a resource id
+// travels in the request body, and without this check sending someone else's
+// integration id would be enough to use their credential.
+func TestProjectCannotReferenceAnotherAccountsIntegration(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.resources["int-nossa"] = "acct-1"
-	repo.resources["int-alheia"] = "acct-2"
+	repo.resources["int-ours"] = "acct-1"
+	repo.resources["int-theirs"] = "acct-2"
 
-	ws, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	ws, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	p, _ := svc.CreateProject(ctx, ws.ID, "Cockpit", "")
 
 	p.Repos = []hierarchy.ProjectRepo{{
-		IntegrationID: "int-alheia", ExternalID: "42", Name: "dop-core",
+		IntegrationID: "int-theirs", ExternalID: "42", Name: "dop-core",
 	}}
 	_, err := svc.UpdateProject(ctx, *p)
 	if err == nil || errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("repo de integração de outra conta deveria dar Invalid; erro: %v", err)
+		t.Fatalf("a repo on another account's integration should be Invalid; error: %v", err)
 	}
 
-	// O mesmo vale para o gerenciador de tarefas e para recursos anexados.
+	// The same holds for the task manager and for attached resources.
 	p.Repos = nil
-	p.TaskManager = &hierarchy.ProjectTaskManager{IntegrationID: "int-alheia", ExternalSpaceID: "s1"}
+	p.TaskManager = &hierarchy.ProjectTaskManager{IntegrationID: "int-theirs", ExternalSpaceID: "s1"}
 	if _, err := svc.UpdateProject(ctx, *p); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("gerenciador de tarefas de outra conta deveria dar Invalid; erro: %v", err)
+		t.Fatalf("another account's task manager should be Invalid; error: %v", err)
 	}
 	p.TaskManager = nil
-	p.Resources = []string{"int-alheia"}
+	p.Resources = []string{"int-theirs"}
 	if _, err := svc.UpdateProject(ctx, *p); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("recurso anexado de outra conta deveria dar Invalid; erro: %v", err)
+		t.Fatalf("another account's attached resource should be Invalid; error: %v", err)
 	}
 }
 
-func TestProjetoAceitaIntegracaoDaMesmaConta(t *testing.T) {
+func TestProjectAcceptsAnIntegrationFromTheSameAccount(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.resources["int-nossa"] = "acct-1"
+	repo.resources["int-ours"] = "acct-1"
 
-	ws, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	ws, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	p, _ := svc.CreateProject(ctx, ws.ID, "Cockpit", "")
 	p.Repos = []hierarchy.ProjectRepo{{
-		IntegrationID: "int-nossa", ExternalID: "42", Name: "dop-core",
+		IntegrationID: "int-ours", ExternalID: "42", Name: "dop-core",
 	}}
 
 	saved, err := svc.UpdateProject(ctx, *p)
 	if err != nil {
-		t.Fatalf("integração da própria conta deveria ser aceita: %v", err)
+		t.Fatalf("an integration from the account itself should be accepted: %v", err)
 	}
-	// Branch padrão preenchida pelo domínio — banco e domínio não discordam.
+	// The default branch is filled in by the domain — database and domain do
+	// not disagree.
 	if saved.Repos[0].DefaultBranch != hierarchy.DefaultBranch {
-		t.Errorf("branch padrão deveria ser %q, veio %q",
+		t.Errorf("the default branch should be %q, got %q",
 			hierarchy.DefaultBranch, saved.Repos[0].DefaultBranch)
 	}
 }
 
-func TestProjetoRecusaRecursoInexistente(t *testing.T) {
+func TestProjectRefusesANonexistentResource(t *testing.T) {
 	_, svc, ctx := setup(t)
-	ws, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	ws, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	p, _ := svc.CreateProject(ctx, ws.ID, "Cockpit", "")
-	p.Resources = []string{"res-fantasma"}
+	p.Resources = []string{"res-ghost"}
 	if _, err := svc.UpdateProject(ctx, *p); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("recurso inexistente deveria dar Invalid; erro: %v", err)
+		t.Fatalf("a nonexistent resource should be Invalid; error: %v", err)
 	}
 }
 
-func TestRepoSemIdentificadorExternoERecusado(t *testing.T) {
+func TestRepoWithoutAnExternalIDIsRefused(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.resources["int-nossa"] = "acct-1"
-	ws, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	repo.resources["int-ours"] = "acct-1"
+	ws, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 	p, _ := svc.CreateProject(ctx, ws.ID, "Cockpit", "")
-	p.Repos = []hierarchy.ProjectRepo{{IntegrationID: "int-nossa", Name: "dop-core"}}
+	p.Repos = []hierarchy.ProjectRepo{{IntegrationID: "int-ours", Name: "dop-core"}}
 	if _, err := svc.UpdateProject(ctx, *p); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("repo sem id externo deveria dar Invalid; erro: %v", err)
+		t.Fatalf("a repo with no external id should be Invalid; error: %v", err)
 	}
 }
 
-// GetTree existe para a árvore custar UMA ida ao repositório — não uma por
-// workspace. O teste protege exatamente isso.
-func TestGetTreeAgrupaProjetosEmUmaChamada(t *testing.T) {
+// GetTree exists so the tree costs ONE trip to the repository — not one per
+// workspace. This test guards exactly that.
+func TestGetTreeGroupsProjectsInASingleCall(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	ws1, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
-	ws2, _ := svc.CreateWorkspace(ctx, "Produto", "PROD", "", nil)
+	ws1, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
+	ws2, _ := svc.CreateWorkspace(ctx, "Product", "PROD", "", nil)
 	svc.CreateProject(ctx, ws1.ID, "Cockpit", "")
 	svc.CreateProject(ctx, ws1.ID, "Core", "")
 	svc.CreateProject(ctx, ws2.ID, "Site", "")
@@ -373,55 +394,55 @@ func TestGetTreeAgrupaProjetosEmUmaChamada(t *testing.T) {
 		t.Fatalf("GetTree: %v", err)
 	}
 	if repo.treeCalls != 1 {
-		t.Errorf("a árvore deveria custar UMA chamada ao repositório, custou %d", repo.treeCalls)
+		t.Errorf("the tree should cost ONE repository call, it cost %d", repo.treeCalls)
 	}
 	if len(nodes) != 2 {
-		t.Fatalf("esperados 2 workspaces na árvore, vieram %d", len(nodes))
+		t.Fatalf("expected 2 workspaces in the tree, got %d", len(nodes))
 	}
 	total := 0
 	for _, n := range nodes {
 		total += len(n.Projects)
 		for _, p := range n.Projects {
 			if p.WorkspaceID != n.Workspace.ID {
-				t.Errorf("projeto %q pendurado no workspace errado", p.ID)
+				t.Errorf("project %q hung under the wrong workspace", p.ID)
 			}
 		}
 	}
 	if total != 3 {
-		t.Errorf("esperados 3 projetos na árvore, vieram %d", total)
+		t.Errorf("expected 3 projects in the tree, got %d", total)
 	}
 }
 
-func TestGetTreeIgnoraOutraConta(t *testing.T) {
+func TestGetTreeIgnoresOtherAccounts(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	repo.workspaces["ws-alheio"] = &hierarchy.Workspace{ID: "ws-alheio", AccountID: "acct-2"}
-	repo.projects["prj-alheio"] = &hierarchy.Project{
-		ID: "prj-alheio", AccountID: "acct-2", WorkspaceID: "ws-alheio",
+	repo.workspaces["ws-foreign"] = &hierarchy.Workspace{ID: "ws-foreign", AccountID: "acct-2"}
+	repo.projects["prj-foreign"] = &hierarchy.Project{
+		ID: "prj-foreign", AccountID: "acct-2", WorkspaceID: "ws-foreign",
 	}
 	nodes, err := svc.GetTree(ctx)
 	if err != nil {
 		t.Fatalf("GetTree: %v", err)
 	}
 	if len(nodes) != 0 {
-		t.Errorf("a árvore não deveria conter nada de outra conta: %v", nodes)
+		t.Errorf("the tree should contain nothing from another account: %v", nodes)
 	}
 }
 
-func TestUpdateWorkspaceNaoTrocaDeConta(t *testing.T) {
+func TestUpdateWorkspaceDoesNotChangeAccounts(t *testing.T) {
 	repo, svc, ctx := setup(t)
-	ws, _ := svc.CreateWorkspace(ctx, "Plataforma", "PLAT", "", nil)
+	ws, _ := svc.CreateWorkspace(ctx, "Platform", "PLAT", "", nil)
 
-	// O chamador tenta empurrar outra conta pelo corpo da requisição.
+	// The caller tries to push another account through the request body.
 	saved, err := svc.UpdateWorkspace(ctx, hierarchy.Workspace{
-		ID: ws.ID, AccountID: "acct-2", Name: "Plataforma Digital", Key: "PLAT",
+		ID: ws.ID, AccountID: "acct-2", Name: "Digital Platform", Key: "PLAT",
 	})
 	if err != nil {
 		t.Fatalf("UpdateWorkspace: %v", err)
 	}
 	if saved.AccountID != "acct-1" {
-		t.Errorf("a conta do workspace não pode ser trocada por atualização: %q", saved.AccountID)
+		t.Errorf("a workspace's account must not be changed by an update: %q", saved.AccountID)
 	}
-	if repo.workspaces[ws.ID].Name != "Plataforma Digital" {
-		t.Error("o nome deveria ter sido atualizado")
+	if repo.workspaces[ws.ID].Name != "Digital Platform" {
+		t.Error("the name should have been updated")
 	}
 }

@@ -1,8 +1,9 @@
-// Package hierarchy é o domínio da árvore do cockpit: workspaces e os projetos
-// que vivem dentro deles.
+// Package hierarchy is the domain of the cockpit's tree: workspaces and the
+// projects that live inside them.
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK nenhum. Ele
-// declara o que precisa como PORTA (repository.go) e o composition root liga.
+// House rule: this package knows nothing of Postgres, gRPC or any SDK. It
+// declares what it needs as a PORT (repository.go) and the composition root
+// wires it.
 package hierarchy
 
 import (
@@ -12,41 +13,42 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Workspace agrupa projetos e pertence a UMA conta. A conta é o limite de
-// isolamento: nada atravessa de uma conta para outra (ADR-0017).
+// Workspace groups projects and belongs to ONE account. The account is the
+// isolation boundary: nothing crosses from one account to another (ADR-0017).
 type Workspace struct {
 	ID          string
 	AccountID   string
 	Name        string
-	Key         string // opcional — prefixo curto que rotula o workspace na UI
+	Key         string // optional — a short prefix that labels the workspace in the UI
 	Description string
 	Tags        []string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// Project é a unidade de trabalho. A conta NÃO é declarada por ele: vem
-// herdada do workspace. Deixar o cliente escolher a conta do projeto abriria
-// justamente o buraco que o isolamento multi-tenant existe para fechar.
+// Project is the unit of work. It does NOT declare its account: that is
+// inherited from the workspace. Letting the client choose a project's account
+// would open exactly the hole multi-tenant isolation exists to close.
 type Project struct {
 	ID          string
-	AccountID   string // herdada do workspace, nunca informada pelo chamador
+	AccountID   string // inherited from the workspace, never supplied by the caller
 	WorkspaceID string
 	Name        string
 	Description string
 	Repos       []ProjectRepo
-	TaskManager *ProjectTaskManager // opcional: nem todo projeto tem quadro
-	Resources   []string            // ids de recursos anexados (skill, workflow, git_flow)
+	TaskManager *ProjectTaskManager // optional: not every project has a board
+	Resources   []string            // ids of attached resources (skill, workflow, git_flow)
 	Rules       []string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// ProjectRepo é um repositório anexado ao projeto.
+// ProjectRepo is a repository attached to the project.
 //
-// O provedor é do REPOSITÓRIO, não do projeto (ADR-0013): é por isso que
-// IntegrationID mora aqui e não no Project. Sem essa escolha, um projeto que
-// tem um repo no GitHub e outro no GitLab seria impossível de representar.
+// The provider belongs to the REPOSITORY, not to the project (ADR-0013): that
+// is why IntegrationID lives here and not on Project. Without that choice, a
+// project with one repo on GitHub and another on GitLab would be impossible to
+// represent.
 type ProjectRepo struct {
 	ID            string
 	IntegrationID string
@@ -56,34 +58,36 @@ type ProjectRepo struct {
 	PRTargets     []string
 }
 
-// DefaultBranch aplicado quando o chamador não informa — espelha o default da
-// coluna, para que domínio e banco não discordem.
+// DefaultBranch applied when the caller does not say — mirrors the column's
+// default, so that the domain and the database do not disagree.
 const DefaultBranch = "main"
 
-// ProjectTaskManager é o vínculo com o quadro do provedor.
+// ProjectTaskManager is the link to the provider's board.
 //
-// ExternalSpaceID guarda o "espaço" do provedor — nunca a palavra workspace
-// nua: workspace já é conceito NOSSO, e confundir os dois é o caminho curto
-// para ligar o projeto ao quadro errado.
+// ExternalSpaceID holds the provider's "space" — never the bare word workspace:
+// workspace is already OUR concept, and confusing the two is the short path to
+// linking the project to the wrong board.
 type ProjectTaskManager struct {
 	IntegrationID     string
 	ExternalSpaceID   string
 	ExternalProjectID string
-	CardTypes         []string // dinâmicos: quem manda no vocabulário é o provedor
+	CardTypes         []string // dynamic: the provider owns this vocabulary
 }
 
-// TreeNode é um workspace com os projetos que ele contém. Existe para que a
-// árvore do cockpit venha em UMA resposta — ver Repository.Tree.
+// TreeNode is a workspace together with the projects it contains. It exists so
+// the cockpit's tree arrives in ONE response — see Repository.Tree.
 type TreeNode struct {
 	Workspace Workspace
 	Projects  []Project
 }
 
-// ReferencedResourceIDs lista TODO recurso citado pelo projeto: integrações
-// dos repositórios, integração do gerenciador de tarefas e recursos anexados.
+// ReferencedResourceIDs lists EVERY resource the project cites: the
+// repositories' integrations, the task manager's integration and the attached
+// resources.
 //
-// É a entrada da checagem de conta — por isso devolve tudo junto, sem
-// distinguir a origem: qualquer id que escape da conta dona é um problema.
+// It is the input to the account check — which is why it returns everything
+// together, without distinguishing the origin: any id that escapes the owning
+// account is a problem.
 func (p Project) ReferencedResourceIDs() []string {
 	seen := make(map[string]bool, len(p.Repos)+len(p.Resources)+1)
 	out := make([]string, 0, len(p.Repos)+len(p.Resources)+1)
@@ -106,7 +110,7 @@ func (p Project) ReferencedResourceIDs() []string {
 	return out
 }
 
-// ── regras de nome e chave ───────────────────────────────────────────────────
+// ── name and key rules ───────────────────────────────────────────────────────
 
 const (
 	nameMaxLen = 120
@@ -114,21 +118,31 @@ const (
 	keyMaxLen  = 12
 )
 
-// ValidateName vale para workspace e projeto: nome é obrigatório. Sem nome, a
-// árvore do cockpit vira uma lista de itens em branco.
+// Translation keys for the refusals a person reads while filling in a form.
+const (
+	KeyNameRequired = "hierarchy.name.required"
+	KeyNameTooLong  = "hierarchy.name.too_long"
+	KeyKeyTooShort  = "hierarchy.key.too_short"
+	KeyKeyTooLong   = "hierarchy.key.too_long"
+	KeyKeyCharset   = "hierarchy.key.charset"
+)
+
+// ValidateName applies to workspaces and projects alike: a name is required.
+// With no name, the cockpit's tree becomes a list of blank items.
 func ValidateName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errs.Invalid("nome é obrigatório")
+		return errs.Invalid("name is required").
+			WithCode(KeyNameRequired, nil)
 	}
 	if len(name) > nameMaxLen {
-		return errs.Invalid("nome pode ter no máximo %d caracteres", nameMaxLen)
+		return errs.Invalid("name may have at most %d characters", nameMaxLen).
+			WithCode(KeyNameTooLong, map[string]any{"max": nameMaxLen})
 	}
 	return nil
 }
 
-// NormalizeKey produz uma chave válida a partir de texto livre: maiúscula e
-// alfanumérica.
+// NormalizeKey produces a valid key from free text: uppercase and alphanumeric.
 func NormalizeKey(raw string) string {
 	raw = strings.ToUpper(strings.TrimSpace(raw))
 	var b strings.Builder
@@ -140,21 +154,24 @@ func NormalizeKey(raw string) string {
 	return b.String()
 }
 
-// ValidateKey aceita chave VAZIA — ela é opcional. Se vier, precisa ser curta
-// e maiúscula alfanumérica: a chave aparece como prefixo em rótulos e
-// referências, e prefixo longo ou com pontuação some da tela.
+// ValidateKey accepts an EMPTY key — it is optional. When present it has to be
+// short and uppercase alphanumeric: the key shows up as a prefix in labels and
+// references, and a long or punctuated prefix disappears off the screen.
 func ValidateKey(k string) error {
 	if k == "" {
 		return nil
 	}
 	if len(k) < keyMinLen {
-		return errs.Invalid("a chave precisa de ao menos %d caracteres", keyMinLen)
+		return errs.Invalid("the key needs at least %d characters", keyMinLen).
+			WithCode(KeyKeyTooShort, map[string]any{"min": keyMinLen})
 	}
 	if len(k) > keyMaxLen {
-		return errs.Invalid("a chave pode ter no máximo %d caracteres", keyMaxLen)
+		return errs.Invalid("the key may have at most %d characters", keyMaxLen).
+			WithCode(KeyKeyTooLong, map[string]any{"max": keyMaxLen})
 	}
 	if NormalizeKey(k) != k {
-		return errs.Invalid("a chave aceita apenas letras maiúsculas e números")
+		return errs.Invalid("the key accepts only uppercase letters and digits").
+			WithCode(KeyKeyCharset, nil)
 	}
 	return nil
 }
