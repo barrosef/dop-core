@@ -15,31 +15,32 @@ import (
 )
 
 const (
-	// watcherBuffer é a POLÍTICA DE CONSUMIDOR LENTO, em um número.
+	// watcherBuffer is the SLOW-CONSUMER POLICY, expressed as a number.
 	//
-	// Cada assinante tem uma fila própria e limitada. Se ela encher, o servidor
-	// NÃO espera: derruba aquele assinante com Unavailable e segue. A
-	// alternativa — bloquear na entrega — faria um cockpit num wifi ruim travar
-	// o fan-out de todo mundo, inclusive do broker (o handler roda na goroutine
-	// de consumo do JetStream). Perder um cliente lento é barato; ele reconecta
-	// mandando since_event_id e não perde nada. Travar o servidor não é.
+	// Each subscriber has its own bounded queue. If it fills up, the server does
+	// NOT wait: it drops that subscriber with Unavailable and moves on. The
+	// alternative — blocking on delivery — would let one cockpit on bad wifi
+	// stall the fan-out for everybody, the broker included (the handler runs on
+	// JetStream's consumption goroutine). Losing a slow client is cheap; it
+	// reconnects with since_event_id and loses nothing. Stalling the server is
+	// not.
 	watcherBuffer = 256
 
-	// replayPage / maxReplay limitam o custo do replay.
+	// replayPage / maxReplay bound the cost of a replay.
 	//
-	// Cursor muito antigo NÃO é caso deste serviço: histórico profundo se lê da
-	// projeção de timeline, paginada, que existe exatamente para isso. Aqui o
-	// replay serve para emendar uma reconexão, não para reconstruir o mundo.
+	// A very old cursor is NOT this service's case: deep history is read from
+	// the timeline projection, paginated, which exists exactly for that. Here
+	// replay serves to splice a reconnection, not to rebuild the world.
 	replayPage = 500
 	maxReplay  = 5000
 )
 
-// Service entrega o log de eventos ao vivo. Recebe apenas PORTAS.
+// Service delivers the event log live. It takes only PORTS.
 //
-// Há UMA assinatura no barramento por processo, não uma por cliente: o fan-out
-// para os assinantes é feito em memória. Assinar por cliente criaria um
-// consumidor no broker a cada aba aberta do cockpit — e a porta EventBus nem
-// oferece como desfazer isso.
+// There is ONE bus subscription per process, not one per client: the fan-out to
+// subscribers happens in memory. Subscribing per client would create a broker
+// consumer for every cockpit tab opened — and the EventBus port does not even
+// offer a way to undo that.
 type Service struct {
 	repo  Repository
 	bus   ports.EventBus
@@ -48,7 +49,7 @@ type Service struct {
 	startOnce sync.Once
 	startErr  error
 	started   atomic.Bool
-	// startedAt corta o passado do fluxo ao vivo — ver fanout.
+	// startedAt cuts the past out of the live stream — see fanout.
 	startedAt time.Time
 
 	mu       sync.Mutex
@@ -66,17 +67,17 @@ func (s *Service) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Start abre a assinatura única no barramento. Idempotente.
+// Start opens the single bus subscription. Idempotent.
 //
-// O ctx é o do PROCESSO, não o de um cliente: a assinatura precisa sobreviver a
-// todo Watch que entra e sai. Quem chama é o composition root.
+// The ctx is the PROCESS's, not a client's: the subscription has to outlive
+// every Watch that comes and goes. The composition root is the caller.
 //
-// `consumer` precisa ser único POR PROCESSO — não por serviço. Duas réplicas de
-// `serve` compartilhando o mesmo nome viram um consumer group: o evento cai em
-// uma das duas e os clientes da outra nunca o veem. Vazio = nome sorteado.
+// `consumer` has to be unique PER PROCESS — not per service. Two `serve`
+// replicas sharing one name become a consumer group: the event lands in one of
+// them and the other's clients never see it. Empty = a random name.
 //
-// `subjects` é decidido pelo composition root, como já acontece em
-// RegisterProjections; o domínio não escreve sintaxe de assunto do broker.
+// `subjects` is decided by the composition root, as already happens in
+// RegisterProjections; the domain does not write broker subject syntax.
 func (s *Service) Start(ctx context.Context, consumer string, subjects []string) error {
 	s.startOnce.Do(func() {
 		if consumer == "" {
@@ -89,35 +90,35 @@ func (s *Service) Start(ctx context.Context, consumer string, subjects []string)
 	return s.startErr
 }
 
-// Watch entrega os eventos da conta ativa conforme acontecem.
+// Watch delivers the active account's events as they happen.
 //
-// Se sinceEventID vier preenchido, primeiro drena do log o que veio depois dele
-// e só então emenda no fluxo ao vivo. A ordem das operações abaixo é a parte
-// que importa — ver o comentário da emenda.
+// If sinceEventID is filled in, it first drains from the log whatever came after
+// it and only then splices into the live stream. The order of the operations
+// below is the part that matters — see the splice comment.
 func (s *Service) Watch(ctx context.Context, sinceEventID string, f Filter, emit Emitter) error {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return err
 	}
 	if !s.started.Load() {
-		return errs.New(errs.KindUnavailable, "fluxo de eventos não iniciado")
+		return errs.New(errs.KindUnavailable, "event stream not started")
 	}
 
-	// ── A EMENDA ─────────────────────────────────────────────────────────────
-	// Assina ANTES de ler o banco. É o que fecha o buraco.
+	// ── THE SPLICE ───────────────────────────────────────────────────────────
+	// Subscribe BEFORE reading the database. That is what closes the gap.
 	//
-	// Todo evento é publicado DEPOIS de commitado (o relay lê o outbox já
-	// gravado). Logo, para um evento qualquer: ou ele foi publicado antes de nós
-	// assinarmos — e então commitou antes disso, e portanto antes da leitura do
-	// banco, que vem depois: está no replay — ou foi publicado depois de
-	// assinarmos, e está na fila deste watcher. Não existe terceira hipótese:
-	// nada se perde.
+	// Every event is published AFTER it commits (the relay reads an outbox that
+	// is already written). So for any event: either it was published before we
+	// subscribed — and then it committed before that, and therefore before the
+	// database read, which comes later: it is in the replay — or it was
+	// published after we subscribed, and it is in this watcher's queue. There is
+	// no third possibility: nothing is lost.
 	//
-	// O preço é o inverso: o que commitou antes da leitura e só foi publicado
-	// depois da assinatura aparece nos DOIS. Por isso guardamos os ids do replay
-	// e descartamos a repetição quando ela chegar pela fila. O conjunto é
-	// limitado por maxReplay, então cabe na memória e vale para o fluxo inteiro
-	// — inclusive para uma republicação tardia do relay.
+	// The price is the converse: whatever committed before the read and was only
+	// published after the subscription shows up in BOTH. That is why we keep the
+	// replay's ids and discard the repeat when it arrives through the queue. The
+	// set is bounded by maxReplay, so it fits in memory and holds for the whole
+	// stream — including a late republication from the relay.
 	w := s.register(accountID, f)
 	defer s.unregister(w)
 
@@ -131,15 +132,16 @@ func (s *Service) Watch(ctx context.Context, sinceEventID string, f Filter, emit
 	for {
 		select {
 		case <-ctx.Done():
-			// Cliente desconectou: o defer acima tira o watcher do fan-out e a
-			// fila é coletada com ele. Nada fica rodando.
+			// The client disconnected: the defer above removes the watcher from
+			// the fan-out and the queue is collected with it. Nothing keeps
+			// running.
 			return nil
 		case <-w.overflow:
 			return errs.New(errs.KindUnavailable,
-				"assinante lento demais: reconecte com since_event_id do último evento recebido")
+				"subscriber too slow: reconnect with since_event_id of the last event received")
 		case e := <-w.ch:
 			if _, dup := seen[e.ID]; dup {
-				continue // já saiu no replay
+				continue // already went out in the replay
 			}
 			if err := emit(e); err != nil {
 				return err
@@ -148,7 +150,7 @@ func (s *Service) Watch(ctx context.Context, sinceEventID string, f Filter, emit
 	}
 }
 
-// replay drena do log tudo o que veio depois do cursor, paginado.
+// replay drains from the log everything after the cursor, paginated.
 func (s *Service) replay(ctx context.Context, accountID, sinceEventID string, f Filter, emit Emitter, seen map[string]struct{}) error {
 	cur, err := s.repo.Locate(ctx, accountID, sinceEventID)
 	if err != nil {
@@ -168,14 +170,14 @@ func (s *Service) replay(ctx context.Context, accountID, sinceEventID string, f 
 			cur = Cursor{OccurredAt: e.OccurredAt, ID: e.ID}
 		}
 		if len(batch) < replayPage {
-			return nil // alcançou o fim do log
+			return nil // reached the end of the log
 		}
 		if len(seen) >= maxReplay {
-			// Recusar é mais honesto do que emendar em silêncio no meio do
-			// histórico: o cliente ficaria com um buraco sem saber.
+			// Refusing is more honest than silently splicing in mid-history: the
+			// client would be left with a hole and no way to know.
 			return errs.Precondition(
-				"cursor antigo demais para replay ao vivo (limite de %d eventos); "+
-					"leia o histórico pela timeline e reconecte com um cursor recente", maxReplay)
+				"cursor too old for a live replay (limit of %d events); "+
+					"read the history through the timeline and reconnect with a recent cursor", maxReplay)
 		}
 	}
 }
@@ -190,8 +192,8 @@ type watcher struct {
 	once      sync.Once
 }
 
-// offer nunca bloqueia: roda na goroutine de consumo do barramento, que é
-// compartilhada por TODOS os assinantes.
+// offer never blocks: it runs on the bus's consumption goroutine, which is
+// shared by ALL subscribers.
 func (w *watcher) offer(e ports.Event) {
 	select {
 	case w.ch <- e:
@@ -217,26 +219,27 @@ func (s *Service) unregister(w *watcher) {
 	s.mu.Lock()
 	delete(s.watchers, w)
 	s.mu.Unlock()
-	// A fila NÃO é fechada aqui: o fan-out pode estar no meio de um offer. Sem
-	// referência, ela é coletada — fechar só criaria corrida por nada.
+	// The queue is NOT closed here: the fan-out may be in the middle of an
+	// offer. With no reference left it gets collected — closing would only
+	// create a race for nothing.
 }
 
-// fanout é o handler da assinatura única. Devolve sempre nil: entregar ao
-// cockpit é best-effort e um cliente lento não pode fazer o barramento
-// reentregar o evento para todo mundo.
+// fanout is the single subscription's handler. It always returns nil:
+// delivering to the cockpit is best-effort, and a slow client must not make the
+// bus redeliver the event to everybody.
 func (s *Service) fanout(_ context.Context, e ports.Event) error {
-	// A porta EventBus GARANTE (garantia 6) que o que foi publicado antes da
-	// assinatura é entregue quando o durável aparece — retenção, para que a
-	// espinha de eventos não dependa da ordem de boot. Para uma projeção isso é
-	// exatamente o certo; para um tail ao vivo é exatamente o errado: todo start
-	// do processo despejaria o histórico retido no broker em cima de quem
-	// estivesse ouvindo, estourando a fila de todos.
+	// The EventBus port GUARANTEES (guarantee 6) that whatever was published
+	// before the subscription is delivered once the durable appears — retention,
+	// so the event spine does not depend on boot order. For a projection that is
+	// exactly right; for a live tail it is exactly wrong: every process start
+	// would dump the broker's retained history onto whoever was listening,
+	// overflowing everyone's queue.
 	//
-	// Então o corte é feito AQUI, onde se sabe o que o tail significa: ao vivo é
-	// o que aconteceu depois de ele existir; o passado é assunto do replay pelo
-	// Postgres, que sabe filtrar por conta e paginar. Nada se perde na emenda
-	// porque todo evento commitado depois da leitura do banco necessariamente
-	// ocorreu depois do Start.
+	// So the cut is made HERE, where the meaning of a tail is known: live is what
+	// happened after it existed; the past is replay's business, through Postgres,
+	// which knows how to filter by account and paginate. Nothing is lost at the
+	// splice because every event committed after the database read necessarily
+	// occurred after Start.
 	if e.OccurredAt.Before(s.startedAt) {
 		return nil
 	}
@@ -257,17 +260,17 @@ func (s *Service) fanout(_ context.Context, e ports.Event) error {
 	return nil
 }
 
-// unwrapEnvelope reduz Payload ao payload de NEGÓCIO.
+// unwrapEnvelope reduces Payload to the BUSINESS payload.
 //
-// O evento que chega pelo barramento traz, em Payload, o envelope inteiro (id,
-// account_id, type, payload...); os demais campos de ports.Event já vêm
-// desembrulhados pelo adaptador. O evento que vem do Postgres traz o payload
-// puro. Sem normalizar aqui, o MESMO evento chegaria ao cliente com duas formas
-// diferentes conforme tivesse passado pelo replay ou pelo tail — e o cliente
-// não tem como saber por onde ele veio.
+// The event arriving through the bus carries, in Payload, the whole envelope
+// (id, account_id, type, payload...); the other ports.Event fields already come
+// unwrapped from the adapter. The event coming from Postgres carries the bare
+// payload. Without normalizing here, the SAME event would reach the client in
+// two different shapes depending on whether it came through replay or through
+// the tail — and the client has no way of knowing which.
 //
-// A checagem é estrita (id do envelope igual ao id do evento) para não confundir
-// com um payload de negócio que por acaso tenha um campo "payload".
+// The check is strict (envelope id equal to the event id) so as not to confuse
+// it with a business payload that happens to have a "payload" field.
 func unwrapEnvelope(e ports.Event) ports.Event {
 	var env struct {
 		ID      string          `json:"id"`

@@ -1,5 +1,6 @@
-// Package config resolve a configuração do processo a partir do ambiente.
-// É o composition root que escolhe QUAL adaptador cada porta recebe (ADR-0001).
+// Package config resolves the process configuration from the environment.
+// It is the composition root that chooses WHICH adapter each port receives
+// (ADR-0001).
 package config
 
 import (
@@ -14,40 +15,41 @@ type Config struct {
 	Mode string
 
 	GRPCPort int
-	HTTPPort int // health e métricas
+	HTTPPort int // health and metrics
 
 	DatabaseURL string
 	NATSUrl     string
 
-	// Escolha de adaptadores por ambiente.
+	// Adapter choice, per environment.
 	SecretBackend string // k8s | gcp | memory
-	ObjectBackend string // gcs (real ou emulado)
+	ObjectBackend string // gcs (real or emulated)
 
-	// SecretProject é o projeto GCP que hospeda os segredos. Só usado com
+	// SecretProject is the GCP project that hosts the secrets. Only used with
 	// SECRET_BACKEND=gcp.
 	SecretProject string
-	// SecretEndpoint aponta o adaptador do GCP para o EMULADOR ("host:porta").
-	// Vazio = Secret Manager de verdade, com credencial padrão do ambiente.
+	// SecretEndpoint points the GCP adapter at the EMULATOR ("host:port").
+	// Empty = the real Secret Manager, with the environment's default
+	// credential.
 	//
-	// Não existe variável oficial de emulador para o Secret Manager — o Google
-	// publica STORAGE_EMULATOR_HOST e PUBSUB_EMULATOR_HOST, mas nenhuma aqui, e
-	// a biblioteca oficial não lê nenhuma. Esta é NOSSA, e por isso precisa ser
-	// passada explicitamente ao adaptador.
+	// There is no official emulator variable for Secret Manager — Google
+	// publishes STORAGE_EMULATOR_HOST and PUBSUB_EMULATOR_HOST, but none here,
+	// and the official library reads none. This one is OURS, which is why it has
+	// to be passed to the adapter explicitly.
 	SecretEndpoint string
-	// SecretPropagation é quanto o Put espera o alias `latest` enxergar a
-	// versão recém-gravada antes de desistir. No emulador é instantâneo; no
-	// GCP real o alias é eventualmente consistente e esta espera é o que
-	// separa "leitura-após-escrita" de promessa vazia (ver o adaptador).
+	// SecretPropagation is how long Put waits for the `latest` alias to see the
+	// version just written before giving up. In the emulator it is instant; on
+	// real GCP the alias is eventually consistent, and this wait is what
+	// separates "read-after-write" from an empty promise (see the adapter).
 	SecretPropagation time.Duration
-	// SandboxBackend escolhe o substrato de execução. Docker é o caminho do
-	// desenvolvimento local sem cluster; k8s é o do cluster de execução.
+	// SandboxBackend chooses the execution substrate. Docker is the path for
+	// local development with no cluster; k8s is the execution cluster's.
 	SandboxBackend string // k8s | docker
 	DockerSocket   string
 	WorkspaceSize  string
 	StorageClass   string
 
-	// DevboxImage roda como usuário arbitrário NÃO-root desde a primeira
-	// imagem: OKD recusa root por SCC, e isso é requisito de imagem.
+	// DevboxImage runs as an arbitrary NON-root user from the very first image:
+	// OKD refuses root through its SCC, and that is an image requirement.
 	DevboxImage   string
 	IngressDomain string
 
@@ -60,95 +62,101 @@ type Config struct {
 
 	FirebaseProject string
 
-	// IdentityBackend escolhe o provedor de identidade (ADR-0001). firebase é o
-	// caminho do GCP; oidc é o de cluster self-hosted — Keycloak, Dex,
-	// Authentik — e não depende de fornecedor nenhum.
+	// IdentityBackend chooses the identity provider (ADR-0001). firebase is the
+	// GCP path; oidc is the self-hosted cluster path — Keycloak, Dex, Authentik
+	// — and depends on no vendor at all.
 	IdentityBackend string // firebase | oidc
-	// OIDCIssuer é o `iss` EXATO dos tokens, e a base da descoberta em
+	// OIDCIssuer is the tokens' EXACT `iss`, and the base for discovery at
 	// /.well-known/openid-configuration.
 	OIDCIssuer string
-	// OIDCAudience é o client_id registrado no emissor. Vazio DESLIGA a
-	// checagem de audiência, e desligar aceita token emitido para outra
-	// aplicação do mesmo realm — é escolha, não default de conveniência.
+	// OIDCAudience is the client_id registered with the issuer. Empty TURNS OFF
+	// the audience check, and turning it off accepts a token issued to another
+	// application in the same realm — a choice, not a convenience default.
 	OIDCAudience string
-	// Ajuste do adaptador, não vocabulário do domínio (ver ports.IdentityProvider).
+	// Adapter tuning, not domain vocabulary (see ports.IdentityProvider).
 	OIDCClockSkew      time.Duration
 	OIDCKeysMinRefresh time.Duration
 
-	// ── provedor de código (ADR-0008, porta delivery.GitProvider) ──
+	// ── code provider (ADR-0008, the delivery.GitProvider port) ──
 	//
-	// Repare no que NÃO está aqui: o TOKEN. Token de provedor é credencial de
-	// RECURSO (ADR-0013) — vive no cofre, atrás de ports.SecretStore, é
-	// diferente por conta e por recurso, e por isso não pode ser variável de
-	// ambiente do processo. O que está aqui é o AJUSTE do adaptador: endereço,
-	// prazos e política de merge, que são iguais para toda a instalação.
+	// Note what is NOT here: the TOKEN. A provider token is a RESOURCE
+	// credential (ADR-0013) — it lives in the vault, behind ports.SecretStore,
+	// it differs per account and per resource, and so it cannot be a process
+	// environment variable. What is here is the adapter's TUNING: address,
+	// deadlines and merge policy, which are the same for the whole installation.
 	//
-	// GitBackend escolhe o adaptador padrão da instalação. Ele é só o default:
-	// a conexão de verdade é montada por recurso, porque o recurso é que diz
-	// qual provedor e qual credencial (ADR-0013).
+	// GitBackend chooses the installation's default adapter. It is only a
+	// default: the real connection is assembled per resource, because it is the
+	// resource that says which provider and which credential (ADR-0013).
 	GitBackend string // github | gitlab
-	// GitHubAPI e GitLabAPI apontam para o serviço público OU para uma
-	// instalação self-hosted (GitHub Enterprise, GitLab CE/EE). Existirem os
-	// dois ao mesmo tempo é proposital: uma conta pode ter recursos nos dois.
+	// GitHubAPI and GitLabAPI point at the public service OR at a self-hosted
+	// installation (GitHub Enterprise, GitLab CE/EE). Having both at once is
+	// deliberate: one account may have resources in both.
 	GitHubAPI string
-	// GitHubGraphQL é separado da REST de propósito: no GitHub Enterprise a
-	// URL do GraphQL é /api/graphql, e não a base REST com sufixo.
+	// GitHubGraphQL is separate from the REST base on purpose: on GitHub
+	// Enterprise the GraphQL URL is /api/graphql, not the REST base plus a
+	// suffix.
 	GitHubGraphQL string
 	GitLabAPI     string
-	// GitTimeout é o prazo de UMA chamada ao provedor.
+	// GitTimeout is the deadline for ONE call to the provider.
 	GitTimeout time.Duration
-	// GitRebaseTimeout é o prazo do rebase INTEIRO, que é assíncrono nos dois
-	// provedores e que a porta promete entregar já resolvido (garantia 9).
-	// Separado de GitTimeout porque são grandezas diferentes: uma chamada que
-	// demora 30s está quebrada; um rebase que demora 30s é normal.
+	// GitRebaseTimeout is the deadline for the WHOLE rebase, which is
+	// asynchronous in both providers and which the port promises to deliver
+	// already settled (guarantee 9). Separate from GitTimeout because they are
+	// different magnitudes: a call taking 30s is broken; a rebase taking 30s is
+	// normal.
 	GitRebaseTimeout time.Duration
-	// GitMergeMethod é política do fluxo git (ADR-0013, recurso `git_flow`),
-	// não vocabulário do domínio — a fila da ADR-0008 precisa que o merge
-	// aconteça, não que ele aconteça de um jeito. Fica no adaptador.
+	// GitMergeMethod is git-flow policy (ADR-0013, the `git_flow` resource), not
+	// domain vocabulary — the ADR-0008 queue needs the merge to happen, not to
+	// happen in a particular way. It stays in the adapter.
 	GitMergeMethod string // merge | squash | rebase
 
-	// ── comunicação (ADR-0025) ──
-	// MailBackend escolhe o adaptador da porta Mailer. `smtp` é o caminho do
-	// self-hosted; `sendgrid`, o do SaaS. Os dois passam pela mesma suíte de
-	// contrato.
+	// ── communication (ADR-0025) ──
+	// MailBackend chooses the Mailer port's adapter. `smtp` is the self-hosted
+	// path; `sendgrid` the SaaS one. Both pass the same contract suite.
 	MailBackend string // sendgrid | smtp
-	// MailFrom/MailFromName são o remetente da INSTALAÇÃO. Não é vocabulário do
-	// domínio: quem avisa é a plataforma, e o endereço dela muda por instalação.
+	// MailFrom/MailFromName are the INSTALLATION's sender. Not domain
+	// vocabulary: the platform is who notifies, and its address changes per
+	// installation.
 	MailFrom     string
 	MailFromName string
-	// SendGridAPI existe para apontar o adaptador para outro host — o serviço
-	// tem endpoint regional na UE, e a suíte de contrato aponta para um duplo.
-	// A CHAVE não está aqui de propósito: ela é credencial, mora no cofre
-	// (ADR-0023), e chega ao adaptador já resolvida pelo composition root.
+	// SendGridAPI exists to point the adapter at another host — the service has
+	// a regional endpoint in the EU, and the contract suite points at a double.
+	// The KEY is deliberately not here: it is a credential, it lives in the
+	// vault (ADR-0023), and it reaches the adapter already resolved by the
+	// composition root.
 	SendGridAPI string
-	// SendGridTemplates é tipo → `template_id`, lido de SENDGRID_TEMPLATE_<TIPO>.
-	// É a metade da resolução que muda por instalação; a outra — QUE tipos
-	// existem — é compilada no adaptador, onde a suíte de contrato a exercita.
+	// SendGridTemplates is kind → `template_id`, read from
+	// SENDGRID_TEMPLATE_<KIND>. It is the half of resolution that changes per
+	// installation; the other half — WHICH kinds exist — is compiled into the
+	// adapter, where the contract suite exercises it.
 	SendGridTemplates map[string]string
-	// SMTPAddr vazio liga o ENSAIO LOCAL: o adaptador imprime em vez de enviar.
-	// É o mesmo gesto da chave vazia no SendGrid, e é ele que faz o ambiente de
-	// desenvolvimento não precisar de servidor de e-mail nenhum.
+	// An empty SMTPAddr turns on the LOCAL REHEARSAL: the adapter prints instead
+	// of sending. It is the same gesture as an empty key in SendGrid, and it is
+	// what lets the development environment need no mail server at all.
 	SMTPAddr string
 	SMTPUser string
-	// SendGridAPIKey e SMTPPassword são credenciais DA INSTALAÇÃO, e por isso
-	// vêm do ambiente — como o DATABASE_URL, entregues pelo Secret do
-	// Kubernetes que o Deployment monta.
+	// SendGridAPIKey and SMTPPassword are the INSTALLATION's credentials, which
+	// is why they come from the environment — like DATABASE_URL, delivered by
+	// the Kubernetes Secret the Deployment mounts.
 	//
-	// NÃO vão para o cofre, e a distinção importa: o cofre existe para
-	// credencial de CLIENTE (integração de conta, ADR-0013), com isolamento
-	// por conta no nome do segredo. Credencial da instalação não pertence a
-	// conta nenhuma — guardá-la lá inventaria uma conta fictícia para ser dona
-	// dela, e afrouxaria a garantia 5 da porta para acomodar a exceção.
+	// They do NOT go to the vault, and the distinction matters: the vault exists
+	// for CUSTOMER credentials (an account's integration, ADR-0013), with
+	// per-account isolation in the secret's name. An installation credential
+	// belongs to no account — keeping it there would invent a fictitious account
+	// to own it, and would loosen the port's guarantee 5 to accommodate the
+	// exception.
 	SendGridAPIKey string
 	SMTPPassword   string
 	SMTPStartTLS   bool
-	// CockpitBaseURL é a base dos links do e-mail. Vazio faz o aviso sair sem
-	// link — degradação declarada: link quebrado custa mais confiança que
-	// ausência de link.
+	// CockpitBaseURL is the base of the links in emails. Empty makes the notice
+	// go out with no link — a declared degradation: a broken link costs more
+	// trust than a missing one.
 	CockpitBaseURL string
-	// DigestDelay é o atraso do aviso de atenção (ADR-0025). Configurável
-	// porque 15 minutos é palpite informado, não medição: o valor certo para
-	// uma equipe de plantão não é o de quem olha a caixa de manhã.
+	// DigestDelay is the attention notice's delay (ADR-0025). Configurable
+	// because 15 minutes is an informed guess, not a measurement: the right
+	// value for an on-call team is not the one for somebody who checks the box
+	// in the morning.
 	DigestDelay time.Duration
 
 	RelayInterval time.Duration
@@ -209,66 +217,69 @@ func Load(mode string) (*Config, error) {
 		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
 		LogLevel:      env("LOG_LEVEL", "info"),
 	}
-	// Os ids de template vêm por variável POR TIPO, e não numa string com
-	// separador: uma lista achatada erra em silêncio quando alguém troca a
-	// ordem, e o sintoma seria o convite chegar com o layout do resumo.
+	// Template ids come through one variable PER KIND, not in a
+	// separator-joined string: a flattened list fails silently when somebody
+	// changes the order, and the symptom would be an invite arriving with the
+	// digest's layout.
 	//
-	// A varredura é por PREFIXO, e não por uma lista de tipos conhecidos, para
-	// que este pacote não precise importar o domínio de notificação só para
-	// saber que tipos existem — quem confere se todos têm template é a suíte de
-	// contrato do adaptador, que é onde essa checagem tem dente.
+	// The scan is by PREFIX, not against a list of known kinds, so this package
+	// does not have to import the notification domain just to learn which kinds
+	// exist — checking that all of them have a template is the adapter's
+	// contract suite's job, which is where that check has teeth.
 	c.SendGridTemplates = map[string]string{}
-	const prefixo = "SENDGRID_TEMPLATE_"
+	const prefix = "SENDGRID_TEMPLATE_"
 	for _, kv := range os.Environ() {
 		i := strings.IndexByte(kv, '=')
-		if i <= 0 || !strings.HasPrefix(kv, prefixo) || i+1 >= len(kv) {
+		if i <= 0 || !strings.HasPrefix(kv, prefix) || i+1 >= len(kv) {
 			continue
 		}
-		c.SendGridTemplates[strings.ToLower(kv[len(prefixo):i])] = kv[i+1:]
+		c.SendGridTemplates[strings.ToLower(kv[len(prefix):i])] = kv[i+1:]
 	}
-	// Token da service account, quando rodando dentro do cluster.
+	// The service account token, when running inside the cluster.
 	if b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
 		c.K8sToken = string(b)
 	}
 	if c.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL é obrigatória")
+		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	// Falha no BOOT, e não no primeiro login: emissor vazio faria o adaptador
-	// aceitar token de qualquer origem, e a descoberta apontaria para lugar
-	// nenhum. É o tipo de erro de configuração que precisa aparecer no deploy.
+	// Fail at BOOT, not at the first login: an empty issuer would make the
+	// adapter accept a token from any origin, and discovery would point
+	// nowhere. It is the kind of configuration error that has to surface at
+	// deploy time.
 	if c.IdentityBackend == "oidc" && c.OIDCIssuer == "" {
-		return nil, fmt.Errorf("OIDC_ISSUER é obrigatória quando IDENTITY_BACKEND=oidc")
+		return nil, fmt.Errorf("OIDC_ISSUER is required when IDENTITY_BACKEND=oidc")
 	}
-	// Mesmo motivo: sem projeto o adaptador montaria nomes "projects//secrets/…"
-	// e só quebraria na primeira credencial gravada, com o processo já verde.
+	// Same reason: with no project the adapter would build names like
+	// "projects//secrets/…" and would only break on the first credential
+	// written, with the process already green.
 	if c.SecretBackend == "gcp" && c.SecretProject == "" {
-		return nil, fmt.Errorf("SECRET_PROJECT é obrigatória quando SECRET_BACKEND=gcp")
+		return nil, fmt.Errorf("SECRET_PROJECT is required when SECRET_BACKEND=gcp")
 	}
-	// Mesmo raciocínio, no provedor de código: backend desconhecido faria o
-	// composition root cair no default e a instalação inteira falar com o
-	// provedor errado — descoberto na primeira tentativa de abrir PR, com o
-	// processo verde há semanas.
+	// Same reasoning for the code provider: an unknown backend would make the
+	// composition root fall back to the default and the whole installation talk
+	// to the wrong provider — discovered on the first attempt to open a PR, with
+	// the process green for weeks.
 	switch c.GitBackend {
 	case "github", "gitlab":
 	default:
-		return nil, fmt.Errorf("GIT_BACKEND desconhecido: %q (use github ou gitlab)", c.GitBackend)
+		return nil, fmt.Errorf("unknown GIT_BACKEND: %q (use github or gitlab)", c.GitBackend)
 	}
-	// Método de merge fora do vocabulário viraria uma recusa do provedor no
-	// momento exato em que a fila da ADR-0008 tenta integrar — o pior momento
-	// possível para descobrir um erro de digitação em variável de ambiente.
+	// A merge method outside the vocabulary would become a provider refusal at
+	// the exact moment the ADR-0008 queue tries to integrate — the worst
+	// possible time to discover a typo in an environment variable.
 	switch c.GitMergeMethod {
 	case "merge", "squash", "rebase":
 	default:
-		return nil, fmt.Errorf("GIT_MERGE_METHOD desconhecido: %q (use merge, squash ou rebase)", c.GitMergeMethod)
+		return nil, fmt.Errorf("unknown GIT_MERGE_METHOD: %q (use merge, squash or rebase)", c.GitMergeMethod)
 	}
-	// Mesmo raciocínio no canal de e-mail: backend desconhecido cairia no
-	// default e a instalação inteira mandaria aviso pelo caminho errado —
-	// descoberto no primeiro convite que não chega, com o processo verde há
-	// semanas.
+	// Same reasoning in the email channel: an unknown backend would fall back to
+	// the default and the whole installation would send notices down the wrong
+	// path — discovered on the first invite that never arrives, with the process
+	// green for weeks.
 	switch c.MailBackend {
 	case "sendgrid", "smtp":
 	default:
-		return nil, fmt.Errorf("MAIL_BACKEND desconhecido: %q (use sendgrid ou smtp)", c.MailBackend)
+		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use sendgrid or smtp)", c.MailBackend)
 	}
 	return c, nil
 }
