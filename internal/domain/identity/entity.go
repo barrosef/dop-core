@@ -1,8 +1,9 @@
-// Package identity é o domínio de quem é o usuário, o que é uma conta e como
-// se entra nela.
+// Package identity is the domain of who the user is, what an account is and how
+// one gets into it.
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK nenhum. Ele
-// declara o que precisa como PORTA (repository.go) e o composition root liga.
+// House rule: this package knows nothing of Postgres, gRPC or any SDK. It
+// declares what it needs as a PORT (repository.go) and the composition root
+// wires it.
 package identity
 
 import (
@@ -28,8 +29,8 @@ const (
 	RoleViewer    Role = "viewer"
 )
 
-// ValidRole aceita apenas os quatro papéis pré-definidos. Papel é campo na
-// membership: acrescentar depois não exige migração (spec SP-0 §4).
+// ValidRole accepts only the four predefined roles. The role is a field on the
+// membership: adding one later needs no migration (spec SP-0 §4).
 func ValidRole(r Role) bool {
 	switch r {
 	case RoleOwner, RoleAdmin, RoleDeveloper, RoleViewer:
@@ -38,16 +39,16 @@ func ValidRole(r Role) bool {
 	return false
 }
 
-// CanManageMembers responde quem pode convidar e alterar vínculos.
+// CanManageMembers answers who may invite and change memberships.
 func (r Role) CanManageMembers() bool { return r == RoleOwner || r == RoleAdmin }
 
-// HasImplicitManage: owner e admin gerenciam todo recurso da conta — sem isso
-// surge o cenário em que ninguém consegue consertar uma integração quebrada.
+// HasImplicitManage: owner and admin manage every resource in the account —
+// without it you get the scenario where nobody can fix a broken integration.
 func (r Role) HasImplicitManage() bool { return r == RoleOwner || r == RoleAdmin }
 
 type User struct {
 	ID            string
-	Subject       string // do IdentityProvider, já normalizado
+	Subject       string // from the IdentityProvider, already normalized
 	Email         string
 	EmailVerified bool
 	Name          string
@@ -62,15 +63,15 @@ type Account struct {
 	Kind           AccountKind
 	Handle         string
 	DisplayName    string
-	LegalID        string // CNPJ
+	LegalID        string // company registration number (CNPJ in Brazil)
 	LegalName      string
-	VerifiedDomain string // vazio = não verificada
+	VerifiedDomain string // empty = not verified
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
-// IsVerified destrava entrada por domínio, selo e contestação de handle
-// (ADR-0004). Tudo o mais funciona sem verificação.
+// IsVerified unlocks domain-based joining, the badge and handle disputes
+// (ADR-0004). Everything else works without verification.
 func (a Account) IsVerified() bool { return a.VerifiedDomain != "" }
 
 type Membership struct {
@@ -91,7 +92,8 @@ const (
 	InviteRevoked  InviteStatus = "revoked"
 )
 
-// GrantSpec é a concessão composta NO CONVITE — não há default (ADR-0013).
+// GrantSpec is the grant composed INTO THE INVITE — there is no default
+// (ADR-0013).
 type GrantSpec struct {
 	ResourceID string
 	Level      string // use | manage
@@ -109,23 +111,23 @@ type Invite struct {
 	CreatedAt time.Time
 }
 
-// InviteTTL: 14 dias (spec SP-0 §3).
+// InviteTTL: 14 days (spec SP-0 §3).
 const InviteTTL = 14 * 24 * time.Hour
 
-// IsUsable diz se o convite ainda pode ser aceito. Expiração é verificada por
-// tempo, não só por status — o status pode não ter sido varrido ainda.
+// IsUsable says whether the invite can still be accepted. Expiry is checked by
+// TIME, not only by status — the status may not have been swept yet.
 func (i Invite) IsUsable(now time.Time) bool {
 	return i.Status == InvitePending && now.Before(i.ExpiresAt)
 }
 
-// ── regras de nome ───────────────────────────────────────────────────────────
+// ── name rules ───────────────────────────────────────────────────────────────
 
-// NormalizeHandle produz um handle válido a partir de um texto livre.
-// PF e PJ dividem o mesmo espaço de nomes (ADR-0002).
+// NormalizeHandle produces a valid handle from free text.
+// Personal and organization accounts share one namespace (ADR-0002).
 func NormalizeHandle(raw string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	if at := strings.IndexByte(raw, '@'); at > 0 {
-		raw = raw[:at] // handle derivado do e-mail
+		raw = raw[:at] // handle derived from the email
 	}
 	var b strings.Builder
 	lastDash := false
@@ -147,15 +149,25 @@ const (
 	handleMaxLen = 39
 )
 
+// Translation keys for the refusals a person reads while choosing a handle.
+const (
+	KeyHandleTooShort = "identity.handle.too_short"
+	KeyHandleTooLong  = "identity.handle.too_long"
+	KeyHandleCharset  = "identity.handle.charset"
+)
+
 func ValidateHandle(h string) error {
 	if len(h) < handleMinLen {
-		return errs.Invalid("handle precisa de ao menos %d caracteres", handleMinLen)
+		return errs.Invalid("handle needs at least %d characters", handleMinLen).
+			WithCode(KeyHandleTooShort, map[string]any{"min": handleMinLen})
 	}
 	if len(h) > handleMaxLen {
-		return errs.Invalid("handle pode ter no máximo %d caracteres", handleMaxLen)
+		return errs.Invalid("handle may have at most %d characters", handleMaxLen).
+			WithCode(KeyHandleTooLong, map[string]any{"max": handleMaxLen})
 	}
 	if NormalizeHandle(h) != h {
-		return errs.Invalid("handle aceita apenas letras minúsculas, números e hífen")
+		return errs.Invalid("handle accepts only lowercase letters, digits and hyphens").
+			WithCode(KeyHandleCharset, nil)
 	}
 	return nil
 }

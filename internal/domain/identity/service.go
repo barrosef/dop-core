@@ -12,38 +12,56 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Service concentra as regras de identidade. Recebe apenas PORTAS.
+// Service concentrates the identity rules. It takes only PORTS.
 type Service struct {
 	repo  Repository
 	clock ports.Clock
 }
 
-// NewService exige um relógio. Aceitar nil era o que mantinha a porta de
-// enfeite: o serviço caía em time.Now() por dentro, nenhum teste de expiração
-// era determinístico, e ninguém percebia que a abstração não estava provada.
-// Panic aqui é deliberado — é erro de montagem, detectado no boot, não em
-// produção às três da manhã.
+// Translation keys for the refusals a person reads.
+const (
+	KeyRoleUnknown          = "identity.role.unknown"
+	KeyEmailInvalid         = "identity.email.invalid"
+	KeyGrantLevelInvalid    = "identity.grant.level_invalid"
+	KeyLegalIDRequired      = "identity.account.legal_id_required"
+	KeyHandleTaken          = "identity.handle.taken"
+	KeyNoMembership         = "identity.membership.absent"
+	KeyOnlyAdminsInvite     = "identity.invite.only_admins"
+	KeyOnlyAdminsRevoke     = "identity.invite.only_admins_revoke"
+	KeyOnlyAdminsSetRole    = "identity.membership.only_admins"
+	KeyInviteNotUsable      = "identity.invite.not_usable"
+	KeyInviteNeedsSession   = "identity.invite.session_required"
+	KeyInviteEmailUnverif   = "identity.invite.email_unverified"
+	KeyInviteWrongRecipient = "identity.invite.wrong_recipient"
+)
+
+// NewService requires a clock. Accepting nil is what kept the port decorative:
+// the service fell back to time.Now() internally, no expiry test was
+// deterministic, and nobody noticed the abstraction was never proven. The panic
+// here is deliberate — this is a wiring error, caught at boot, not in production
+// at three in the morning.
 func NewService(repo Repository, clock ports.Clock) *Service {
 	if clock == nil {
-		panic("identity.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("identity.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, clock: clock}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
 
-// EnsureUser é chamada em TODO primeiro login e precisa ser idempotente.
+// EnsureUser is called on EVERY first login and has to be idempotent.
 //
-// Aqui mora a decisão do account linking: o mesmo e-mail chegando por outro
-// provedor resolve para o MESMO usuário. Sem isso, quem entrou por Google e
-// depois por GitHub vira dois usuários — e duplicata em sistema multi-tenant
-// não é incômodo cosmético, é confusão de acesso (spec SP-0 §1).
+// This is where the account-linking decision lives: the same email arriving
+// through a different provider resolves to the SAME user. Without it, someone
+// who signed in with Google and later with GitHub becomes two users — and a
+// duplicate in a multi-tenant system is not a cosmetic nuisance, it is access
+// confusion (spec SP-0 §1).
 //
-// Junto com o usuário nasce a conta pessoal: o usuário não precisa saber que
-// isso aconteceu, ele só vê "minha conta" no seletor.
+// The personal account is born together with the user: the user does not need
+// to know that happened, they just see "my account" in the selector.
 func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Account, error) {
 	if p.Subject == "" {
-		return nil, nil, errs.Invalid("principal sem sujeito")
+		return nil, nil, errs.Invalid("principal with no subject")
 	}
 
 	existing, err := s.repo.UserBySubject(ctx, p.Subject)
@@ -61,7 +79,7 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 	}
 	if existing != nil {
 		u.ID = existing.ID
-		// Preserva o que o provedor novo não trouxe.
+		// Preserve whatever the new provider did not bring.
 		if u.Name == "" {
 			u.Name = existing.Name
 		}
@@ -76,7 +94,7 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 		return nil, nil, err
 	}
 
-	// Conta pessoal existente?
+	// Is there already a personal account?
 	accounts, _, err := s.repo.AccountsOfUser(ctx, saved.ID)
 	if err != nil {
 		return nil, nil, err
@@ -94,8 +112,8 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 	return saved, personal, nil
 }
 
-// createPersonalAccount deriva o handle do e-mail e resolve colisão por sufixo
-// — o usuário pode trocar depois.
+// createPersonalAccount derives the handle from the email and resolves
+// collisions with a suffix — the user can change it later.
 func (s *Service) createPersonalAccount(ctx context.Context, u *User) (*Account, error) {
 	base := NormalizeHandle(u.Email)
 	if base == "" {
@@ -127,30 +145,32 @@ func (s *Service) createPersonalAccount(ctx context.Context, u *User) (*Account,
 			DisplayName: name,
 		}, u.ID)
 	}
-	return nil, errs.Internal("não foi possível derivar um handle livre")
+	return nil, errs.Internal("could not derive a free handle")
 }
 
-// CreateOrganization cria a conta PJ; quem criou vira owner.
-// Sem espera e sem documento: a legitimidade vem da verificação de domínio,
-// feita depois (ADR-0004).
+// CreateOrganization creates the organization account; its creator becomes
+// owner. No waiting and no paperwork: legitimacy comes from domain
+// verification, done later (ADR-0004).
 func (s *Service) CreateOrganization(ctx context.Context, handle, displayName, legalID string) (*Account, error) {
 	call, ok := ctxutil.From(ctx)
 	if !ok || call.ActorID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "ator não identificado")
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
 	}
 	handle = NormalizeHandle(handle)
 	if err := ValidateHandle(handle); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(legalID) == "" {
-		return nil, errs.Invalid("CNPJ é obrigatório para conta de organização")
+		return nil, errs.Invalid("a company registration number is required for an organization account").
+			WithCode(KeyLegalIDRequired, nil)
 	}
 	if found, err := s.repo.AccountByHandle(ctx, handle); err != nil {
 		if errs.KindOf(err) != errs.KindNotFound {
 			return nil, err
 		}
 	} else if found != nil {
-		return nil, errs.New(errs.KindAlreadyExists, "o identificador %q já está em uso", handle)
+		return nil, errs.New(errs.KindAlreadyExists, "the handle %q is already taken", handle).
+			WithCode(KeyHandleTaken, map[string]any{"handle": handle})
 	}
 	return s.repo.CreateAccountWithOwner(ctx, &Account{
 		Kind:        AccountOrganization,
@@ -160,17 +180,17 @@ func (s *Service) CreateOrganization(ctx context.Context, handle, displayName, l
 	}, call.ActorID)
 }
 
-// ListAccounts alimenta o seletor de conta ativa: a pessoal mais toda
-// organização em que o usuário tenha vínculo.
+// ListAccounts feeds the active-account selector: the personal one plus every
+// organization the user has a membership in.
 func (s *Service) ListAccounts(ctx context.Context, userID string) ([]Account, []Membership, error) {
 	if userID == "" {
-		return nil, nil, errs.Invalid("usuário não informado")
+		return nil, nil, errs.Invalid("user not provided")
 	}
 	return s.repo.AccountsOfUser(ctx, userID)
 }
 
-// Authorize resolve papel e concessões do ator na conta ativa.
-// É o que o BFF consulta para preencher o AuthContext dos decorators.
+// Authorize resolves the actor's role and grants in the active account.
+// It is what the BFF queries to fill the decorators' AuthContext.
 func (s *Service) Authorize(ctx context.Context, userID, accountID string) (*Membership, error) {
 	if accountID == "" {
 		return nil, ctxutil.ErrNoAccount
@@ -180,12 +200,12 @@ func (s *Service) Authorize(ctx context.Context, userID, accountID string) (*Mem
 		return nil, err
 	}
 	if m == nil {
-		return nil, errs.Permission("sem vínculo com esta conta")
+		return nil, errs.Permission("no membership in this account").WithCode(KeyNoMembership, nil)
 	}
 	return m, nil
 }
 
-// CreateInvite compõe papel e concessões NO CONVITE — sem defaults.
+// CreateInvite composes role and grants INTO THE INVITE — no defaults.
 func (s *Service) CreateInvite(ctx context.Context, email string, role Role, grants []GrantSpec) (*Invite, error) {
 	call, _ := ctxutil.From(ctx)
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -193,25 +213,28 @@ func (s *Service) CreateInvite(ctx context.Context, email string, role Role, gra
 		return nil, err
 	}
 	if !ValidRole(role) {
-		return nil, errs.Invalid("papel desconhecido: %q", role)
+		return nil, errs.Invalid("unknown role: %q", role).
+			WithCode(KeyRoleUnknown, map[string]any{"role": string(role)})
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
-		return nil, errs.Invalid("e-mail inválido")
+		return nil, errs.Invalid("invalid email").WithCode(KeyEmailInvalid, nil)
 	}
 	for _, g := range grants {
 		if g.Level != "use" && g.Level != "manage" {
-			return nil, errs.Invalid("nível de concessão inválido: %q", g.Level)
+			return nil, errs.Invalid("invalid grant level: %q", g.Level).
+				WithCode(KeyGrantLevelInvalid, map[string]any{"level": g.Level})
 		}
 	}
 
-	// Quem convida precisa poder gerir membros.
+	// Whoever invites has to be able to manage members.
 	actor, err := s.Authorize(ctx, call.ActorID, accountID)
 	if err != nil {
 		return nil, err
 	}
 	if !actor.Role.CanManageMembers() {
-		return nil, errs.Permission("apenas owner ou admin podem convidar")
+		return nil, errs.Permission("only an owner or admin may invite").
+			WithCode(KeyOnlyAdminsInvite, nil)
 	}
 
 	inv := &Invite{
@@ -227,58 +250,65 @@ func (s *Service) CreateInvite(ctx context.Context, email string, role Role, gra
 	if err != nil {
 		return nil, err
 	}
-	// NÃO existe mais token. O aceite confere o e-mail VERIFICADO da sessão
-	// contra o do convite, então o link precisa apenas ENDEREÇAR o convite —
-	// e um id que não concede nada pode viajar no e-mail, no evento e na
-	// timeline sem virar credencial em repouso.
+	// There is NO token any more. Acceptance checks the session's VERIFIED
+	// email against the invite's, so the link only has to ADDRESS the invite —
+	// and an id that grants nothing can travel in the email, in the event and
+	// in the timeline without becoming a credential at rest.
 	return saved, nil
 }
 
-// AcceptInvite valida a expiração por TEMPO, não só por status: a varredura de
-// expirados pode não ter passado ainda.
+// AcceptInvite validates expiry by TIME, not only by status: the sweep of
+// expired invites may not have run yet.
 func (s *Service) AcceptInvite(ctx context.Context, inviteID, userID string) (*Membership, error) {
 	if userID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "aceite exige sessão autenticada")
+		return nil, errs.New(errs.KindUnauthorized, "acceptance requires an authenticated session").
+			WithCode(KeyInviteNeedsSession, nil)
 	}
 	inv, err := s.repo.InviteByID(ctx, inviteID)
 	if err != nil {
 		return nil, err
 	}
 	if inv == nil {
-		return nil, errs.NotFound("convite")
+		return nil, errs.NotFound("invite")
 	}
 	if !inv.IsUsable(s.now()) {
-		return nil, errs.Precondition("convite %s", inv.Status)
+		return nil, errs.Precondition("invite is %s", inv.Status).
+			WithCode(KeyInviteNotUsable, map[string]any{"status": string(inv.Status)})
 	}
 
-	// O convite é para UMA pessoa, e agora ele exige que ela seja ela.
+	// The invite is for ONE person, and it now requires them to be that person.
 	//
-	// Antes o aceite conferia só o token: qualquer usuário autenticado que
-	// tivesse o link entrava na conta, com o papel concedido a outra pessoa.
-	// Era credencial de PORTADOR, e por isso não podia aparecer em evento nem
-	// em projeção — o que impedia o e-mail de carregar link de aceite.
+	// Acceptance used to check only the token: any authenticated user holding
+	// the link entered the account, with the role granted to somebody else. It
+	// was a BEARER credential, and that is why it could not appear in an event
+	// or a projection — which in turn kept the email from carrying an
+	// acceptance link.
 	//
-	// Exigindo o e-mail VERIFICADO da sessão, o link deixa de conceder
-	// qualquer coisa a quem apenas o possui: é preciso SER o convidado. Foi
-	// isso que liberou o `invite_id` para viajar em texto claro.
+	// By requiring the session's VERIFIED email, the link stops granting
+	// anything to whoever merely holds it: you have to BE the invitee. That is
+	// what freed `invite_id` to travel in the clear.
 	u, err := s.repo.UserByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	if u == nil {
-		return nil, errs.New(errs.KindUnauthorized, "sessão sem usuário")
+		return nil, errs.New(errs.KindUnauthorized, "session without a user")
 	}
-	// Não verificado é recusa SEPARADA da divergência: "confirme seu e-mail" e
-	// "este convite não é seu" mandam a pessoa fazer coisas diferentes, e um
-	// erro só faria as duas parecerem a mesma parede.
+	// Unverified is a SEPARATE refusal from a mismatch: "confirm your email"
+	// and "this invite is not yours" send the person to do different things,
+	// and a single error would make both look like the same wall.
 	if !u.EmailVerified {
 		return nil, errs.Precondition(
-			"o aceite exige e-mail verificado: confirme %s antes de entrar na conta", u.Email)
+			"acceptance requires a verified email: confirm %s before joining the account", u.Email).
+			WithCode(KeyInviteEmailUnverif, map[string]any{"email": u.Email})
 	}
 	if !strings.EqualFold(strings.TrimSpace(u.Email), strings.TrimSpace(inv.Email)) {
-		// A mensagem NÃO diz para quem era o convite: isso transformaria o link
-		// num oráculo de e-mail para quem o encontrasse.
-		return nil, errs.New(errs.KindPermission, "este convite foi feito para outro e-mail")
+		// The message does NOT say who the invite was for: that would turn the
+		// link into an email oracle for whoever found it. The params are empty
+		// for the same reason — a translated sentence must not be able to leak
+		// what the English one refuses to.
+		return nil, errs.New(errs.KindPermission, "this invite was issued to a different email").
+			WithCode(KeyInviteWrongRecipient, nil)
 	}
 
 	return s.repo.AcceptInvite(ctx, inv.ID, userID)
@@ -295,16 +325,17 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) (*Invite, e
 		return nil, err
 	}
 	if !actor.Role.CanManageMembers() {
-		return nil, errs.Permission("apenas owner ou admin podem revogar convites")
+		return nil, errs.Permission("only an owner or admin may revoke invites").
+			WithCode(KeyOnlyAdminsRevoke, nil)
 	}
 	return s.repo.RevokeInvite(ctx, accountID, inviteID)
 }
 
-// UpdateMembershipRole altera o papel de um membro.
+// UpdateMembershipRole changes a member's role.
 //
-// A invariante "toda conta tem ao menos um owner ativo" é garantida por TRIGGER
-// no banco — regra que nenhuma operação pode violar, nem por caminho que
-// ninguém previu.
+// The invariant "every account has at least one active owner" is enforced by a
+// database TRIGGER — a rule no operation can violate, not even through a path
+// nobody anticipated.
 func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string, role Role) (*Membership, error) {
 	call, _ := ctxutil.From(ctx)
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -312,14 +343,16 @@ func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string,
 		return nil, err
 	}
 	if !ValidRole(role) {
-		return nil, errs.Invalid("papel desconhecido: %q", role)
+		return nil, errs.Invalid("unknown role: %q", role).
+			WithCode(KeyRoleUnknown, map[string]any{"role": string(role)})
 	}
 	actor, err := s.Authorize(ctx, call.ActorID, accountID)
 	if err != nil {
 		return nil, err
 	}
 	if !actor.Role.CanManageMembers() {
-		return nil, errs.Permission("apenas owner ou admin podem alterar vínculos")
+		return nil, errs.Permission("only an owner or admin may change memberships").
+			WithCode(KeyOnlyAdminsSetRole, nil)
 	}
 	return s.repo.UpdateMembershipRole(ctx, membershipID, role)
 }
@@ -340,7 +373,7 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	return s.repo.AccountByID(ctx, id)
 }
 
-// ── auxiliares ───────────────────────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 func mergeProviders(existing, incoming []string) []string {
 	seen := make(map[string]bool, len(existing)+len(incoming))

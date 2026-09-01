@@ -12,10 +12,11 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM banco: o repositório é porta, e aqui entra um duplo
-// em memória. É o retorno prático da arquitetura hexagonal.
+// The domain is testable WITHOUT a database: the repository is a port, and an
+// in-memory double goes in here. It is the practical return on hexagonal
+// architecture.
 func TestNormalizeHandle(t *testing.T) {
-	casos := map[string]string{
+	cases := map[string]string{
 		"dev@dop.local":     "dev",
 		"Ed Barros":         "ed-barros",
 		"  UPPER@x.com  ":   "upper",
@@ -23,83 +24,83 @@ func TestNormalizeHandle(t *testing.T) {
 		"---trim---":        "trim",
 		"maria.silva@x.com": "maria-silva",
 	}
-	for entrada, esperado := range casos {
-		if got := identity.NormalizeHandle(entrada); got != esperado {
-			t.Errorf("NormalizeHandle(%q) = %q, esperado %q", entrada, got, esperado)
+	for input, want := range cases {
+		if got := identity.NormalizeHandle(input); got != want {
+			t.Errorf("NormalizeHandle(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
 
 func TestValidateHandle(t *testing.T) {
 	if err := identity.ValidateHandle("ed"); err != nil {
-		t.Errorf("handle mínimo válido recusado: %v", err)
+		t.Errorf("a valid minimum handle was refused: %v", err)
 	}
 	if err := identity.ValidateHandle("a"); err == nil {
-		t.Error("handle de 1 caractere deveria ser recusado")
+		t.Error("a 1-character handle should be refused")
 	}
 	if err := identity.ValidateHandle("Ed_Barros"); err == nil {
-		t.Error("maiúscula e underscore deveriam ser recusados")
+		t.Error("uppercase and underscore should be refused")
 	}
 }
 
-func TestPapeis(t *testing.T) {
+func TestRoles(t *testing.T) {
 	if !identity.RoleOwner.CanManageMembers() || !identity.RoleAdmin.CanManageMembers() {
-		t.Error("owner e admin devem poder gerir membros")
+		t.Error("owner and admin must be able to manage members")
 	}
 	if identity.RoleDeveloper.CanManageMembers() || identity.RoleViewer.CanManageMembers() {
-		t.Error("developer e viewer NÃO devem gerir membros")
+		t.Error("developer and viewer must NOT manage members")
 	}
-	// Sem manage implícito, ninguém conserta integração quebrada.
+	// Without implicit manage, nobody can fix a broken integration.
 	if !identity.RoleOwner.HasImplicitManage() || !identity.RoleAdmin.HasImplicitManage() {
-		t.Error("owner e admin devem ter manage implícito")
+		t.Error("owner and admin must have implicit manage")
 	}
 	if identity.RoleDeveloper.HasImplicitManage() {
-		t.Error("developer NÃO tem manage implícito")
+		t.Error("developer does NOT have implicit manage")
 	}
 	if identity.ValidRole("superuser") {
-		t.Error("papel fora do vocabulário deveria ser recusado")
+		t.Error("a role outside the vocabulary should be refused")
 	}
 }
 
-func TestConviteExpiraPorTempo(t *testing.T) {
-	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	inv := identity.Invite{Status: identity.InvitePending, ExpiresAt: agora.Add(time.Hour)}
-	if !inv.IsUsable(agora) {
-		t.Error("convite pendente e dentro do prazo deveria ser usável")
+func TestInviteExpiresByTime(t *testing.T) {
+	ref := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	inv := identity.Invite{Status: identity.InvitePending, ExpiresAt: ref.Add(time.Hour)}
+	if !inv.IsUsable(ref) {
+		t.Error("a pending invite within its deadline should be usable")
 	}
-	// Expiração é por TEMPO, não só por status: a varredura pode não ter passado.
-	if inv.IsUsable(agora.Add(2 * time.Hour)) {
-		t.Error("convite vencido deveria ser recusado mesmo com status pendente")
+	// Expiry is by TIME, not only by status: the sweep may not have run.
+	if inv.IsUsable(ref.Add(2 * time.Hour)) {
+		t.Error("an expired invite should be refused even while its status is pending")
 	}
-	revogado := identity.Invite{Status: identity.InviteRevoked, ExpiresAt: agora.Add(time.Hour)}
-	if revogado.IsUsable(agora) {
-		t.Error("convite revogado nunca é usável")
+	revoked := identity.Invite{Status: identity.InviteRevoked, ExpiresAt: ref.Add(time.Hour)}
+	if revoked.IsUsable(ref) {
+		t.Error("a revoked invite is never usable")
 	}
 }
 
-// ── duplo em memória ────────────────────────────────────────────────────────
+// ── in-memory double ────────────────────────────────────────────────────────
 
-// relogioFixo é o duplo do Clock. Mora aqui, e não em internal/adapter/clock,
-// porque o teste de arquitetura reprova QUALQUER import de adaptador sob
-// internal/domain — inclusive em arquivo _test.go. A suíte de contrato
-// (test/contract/clock.go) é quem garante que este duplo e o relógio de
-// verdade cumprem as mesmas garantias.
-type relogioFixo struct{ t time.Time }
+// fixedClock is the Clock double. It lives here, and not in
+// internal/adapter/clock, because the architecture test rejects ANY adapter
+// import under internal/domain — including from a _test.go file. The contract
+// suite (test/contract/clock.go) is what guarantees this double and the real
+// clock honour the same promises.
+type fixedClock struct{ t time.Time }
 
-func (r relogioFixo) Now() time.Time { return r.t }
+func (c fixedClock) Now() time.Time { return c.t }
 
-// instante base dos testes: fixo, para que expiração de convite (14 dias) seja
-// verificável por igualdade em vez de por tolerância.
-var agora = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+// The tests' base instant: fixed, so that invite expiry (14 days) is verifiable
+// by equality rather than by tolerance.
+var now = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
 type fakeRepo struct {
-	users    map[string]*identity.User // por subject
+	users    map[string]*identity.User // by subject
 	byID     map[string]*identity.User
 	accounts map[string]*identity.Account
 	byHandle map[string]*identity.Account
 	members  []identity.Membership
 	invites  map[string]*identity.Invite
-	aceitos  []string
+	accepted []string
 	nextID   int
 }
 
@@ -119,13 +120,13 @@ func (f *fakeRepo) UserBySubject(_ context.Context, s string) (*identity.User, e
 	if u, ok := f.users[s]; ok {
 		return u, nil
 	}
-	return nil, errs.NotFound("usuário")
+	return nil, errs.NotFound("user")
 }
 func (f *fakeRepo) UserByID(_ context.Context, id string) (*identity.User, error) {
 	if u, ok := f.byID[id]; ok {
 		return u, nil
 	}
-	return nil, errs.NotFound("usuário")
+	return nil, errs.NotFound("user")
 }
 func (f *fakeRepo) UpsertUser(_ context.Context, u *identity.User) (*identity.User, error) {
 	if u.ID == "" {
@@ -140,13 +141,13 @@ func (f *fakeRepo) AccountByID(_ context.Context, id string) (*identity.Account,
 	if a, ok := f.accounts[id]; ok {
 		return a, nil
 	}
-	return nil, errs.NotFound("conta")
+	return nil, errs.NotFound("account")
 }
 func (f *fakeRepo) AccountByHandle(_ context.Context, h string) (*identity.Account, error) {
 	if a, ok := f.byHandle[h]; ok {
 		return a, nil
 	}
-	return nil, errs.NotFound("conta")
+	return nil, errs.NotFound("account")
 }
 func (f *fakeRepo) CreateAccountWithOwner(_ context.Context, a *identity.Account, owner string) (*identity.Account, error) {
 	a.ID = f.id("acct")
@@ -195,7 +196,7 @@ func (f *fakeRepo) UpdateMembershipRole(_ context.Context, id string, r identity
 			return &f.members[i], nil
 		}
 	}
-	return nil, errs.NotFound("vínculo")
+	return nil, errs.NotFound("membership")
 }
 func (f *fakeRepo) CreateInvite(_ context.Context, inv *identity.Invite) (*identity.Invite, error) {
 	inv.ID = f.id("inv")
@@ -209,18 +210,18 @@ func (f *fakeRepo) InviteByID(_ context.Context, id string) (*identity.Invite, e
 	return f.invites[id], nil
 }
 func (f *fakeRepo) AcceptInvite(_ context.Context, inviteID, userID string) (*identity.Membership, error) {
-	f.aceitos = append(f.aceitos, inviteID+"/"+userID)
+	f.accepted = append(f.accepted, inviteID+"/"+userID)
 	return &identity.Membership{ID: f.id("mem"), UserID: userID}, nil
 }
 func (f *fakeRepo) RevokeInvite(context.Context, string, string) (*identity.Invite, error) {
 	return nil, nil
 }
 
-// ── testes do serviço ───────────────────────────────────────────────────────
+// ── service tests ───────────────────────────────────────────────────────────
 
-func TestEnsureUserCriaContaPessoal(t *testing.T) {
+func TestEnsureUserCreatesThePersonalAccount(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 
 	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
 		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", Providers: []string{"password"},
@@ -229,40 +230,40 @@ func TestEnsureUserCriaContaPessoal(t *testing.T) {
 		t.Fatalf("EnsureUser: %v", err)
 	}
 	if acct == nil || acct.Kind != identity.AccountPersonal {
-		t.Fatal("a conta pessoal deveria nascer junto com o usuário")
+		t.Fatal("the personal account should be born together with the user")
 	}
 	if acct.Handle != "dev" {
-		t.Errorf("handle deveria derivar do e-mail: %q", acct.Handle)
+		t.Errorf("the handle should derive from the email: %q", acct.Handle)
 	}
-	// O criador é owner — e a conta pessoal tem exatamente um vínculo.
+	// The creator is owner — and a personal account has exactly one membership.
 	mems, _ := repo.MembershipsOfAccount(context.Background(), acct.ID)
 	if len(mems) != 1 || mems[0].Role != identity.RoleOwner || mems[0].UserID != u.ID {
-		t.Errorf("vínculo owner ausente ou incorreto: %+v", mems)
+		t.Errorf("owner membership missing or wrong: %+v", mems)
 	}
 }
 
-func TestEnsureUserEIdempotente(t *testing.T) {
+func TestEnsureUserIsIdempotent(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}}
 
 	u1, a1, _ := svc.EnsureUser(ctx, p)
 	u2, a2, err := svc.EnsureUser(ctx, p)
 	if err != nil {
-		t.Fatalf("segunda chamada: %v", err)
+		t.Fatalf("second call: %v", err)
 	}
 	if u1.ID != u2.ID {
-		t.Error("EnsureUser criou usuário duplicado")
+		t.Error("EnsureUser created a duplicate user")
 	}
 	if a1.ID != a2.ID {
-		t.Error("EnsureUser criou conta pessoal duplicada")
+		t.Error("EnsureUser created a duplicate personal account")
 	}
 }
 
-func TestAccountLinkingAcumulaProvedores(t *testing.T) {
+func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 
 	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}})
@@ -270,226 +271,230 @@ func TestAccountLinkingAcumulaProvedores(t *testing.T) {
 		Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"google.com"},
 	})
 	if err != nil {
-		t.Fatalf("segundo provedor: %v", err)
+		t.Fatalf("second provider: %v", err)
 	}
 	if len(u.Providers) != 2 {
-		t.Errorf("os dois provedores deveriam somar, veio %v", u.Providers)
+		t.Errorf("both providers should add up, got %v", u.Providers)
 	}
 }
 
-func TestCreateInviteExigePermissao(t *testing.T) {
+func TestCreateInviteRequiresPermission(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 
-	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
-	// developer não convida
+	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "owner@x.com"})
+	// a developer does not invite
 	repo.members[0].Role = identity.RoleDeveloper
 	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID, ActorKind: ctxutil.ActorUser})
 
-	_, err := svc.CreateInvite(ctx, "novo@x.com", identity.RoleDeveloper, nil)
+	_, err := svc.CreateInvite(ctx, "newcomer@x.com", identity.RoleDeveloper, nil)
 	if err == nil || errs.KindOf(err) != errs.KindPermission {
-		t.Fatalf("developer não deveria convidar; erro: %v", err)
+		t.Fatalf("a developer should not be able to invite; error: %v", err)
 	}
 
 	repo.members[0].Role = identity.RoleAdmin
-	inv, err := svc.CreateInvite(ctx, "novo@x.com", identity.RoleDeveloper,
+	inv, err := svc.CreateInvite(ctx, "newcomer@x.com", identity.RoleDeveloper,
 		[]identity.GrantSpec{{ResourceID: "res-1", Level: "use"}})
 	if err != nil {
-		t.Fatalf("admin deveria convidar: %v", err)
+		t.Fatalf("an admin should be able to invite: %v", err)
 	}
 	if inv.ID == "" {
-		t.Error("o convite precisa de id: é ele que o link carrega")
+		t.Error("the invite needs an id: it is what the link carries")
 	}
 	if len(inv.Grants) != 1 {
-		t.Error("as concessões compostas no convite deveriam ser preservadas")
+		t.Error("grants composed into the invite should be preserved")
 	}
 }
 
-func TestCreateInviteRecusaNivelInvalido(t *testing.T) {
+func TestCreateInviteRefusesAnInvalidLevel(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
+	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "owner@x.com"})
 	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID})
 
 	if _, err := svc.CreateInvite(ctx, "n@x.com", identity.RoleDeveloper,
 		[]identity.GrantSpec{{ResourceID: "r", Level: "admin"}}); err == nil {
-		t.Error("nível de concessão fora de use|manage deveria ser recusado")
+		t.Error("a grant level outside use|manage should be refused")
 	}
 }
 
-func TestOperacaoSemContaAtivaERecusada(t *testing.T) {
-	svc := identity.NewService(newFakeRepo(), relogioFixo{agora})
-	// Sem AccountID: regra do SP-0 — requisição sem conta ativa é inválida.
+func TestOperationWithoutAnActiveAccountIsRefused(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	// No AccountID: the SP-0 rule — a request with no active account is invalid.
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
 	if _, err := svc.CreateInvite(ctx, "a@b.com", identity.RoleViewer, nil); err == nil {
-		t.Error("operação sem conta ativa deveria ser recusada")
+		t.Error("an operation with no active account should be refused")
 	}
 }
 
-// A expiração do convite era, até aqui, verificável só por tolerância — o
-// serviço lia o relógio de parede por dentro. Com a porta injetada dá para
-// afirmar o instante exato, e para atravessar a fronteira dos 14 dias sem
-// dormir.
-func TestConviteExpiraExatamenteEmQuatorzeDias(t *testing.T) {
+// Invite expiry used to be checkable only by tolerance — the service read the
+// wall clock internally. With the port injected, the exact instant can be
+// asserted, and the 14-day boundary crossed without sleeping.
+func TestInviteExpiresExactlyInFourteenDays(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 
-	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "dono@x.com"})
+	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "s1", Email: "owner@x.com"})
 	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID, ActorKind: ctxutil.ActorUser})
 
-	convite, err := svc.CreateInvite(ctx, "novo@dop.dev", identity.RoleDeveloper, nil)
+	invite, err := svc.CreateInvite(ctx, "newcomer@dop.dev", identity.RoleDeveloper, nil)
 	if err != nil {
-		t.Fatalf("criar convite: %v", err)
+		t.Fatalf("creating the invite: %v", err)
 	}
 
-	if quer := agora.Add(identity.InviteTTL); !convite.ExpiresAt.Equal(quer) {
-		t.Fatalf("expiração em %v, esperada %v", convite.ExpiresAt, quer)
+	if want := now.Add(identity.InviteTTL); !invite.ExpiresAt.Equal(want) {
+		t.Fatalf("expiry at %v, expected %v", invite.ExpiresAt, want)
 	}
 
-	// Um instante ANTES do vencimento ainda serve; no vencimento, não. A
-	// fronteira é fechada em cima: `now.Before(ExpiresAt)`.
-	if !convite.IsUsable(convite.ExpiresAt.Add(-time.Nanosecond)) {
-		t.Error("convite deveria valer no último instante antes de expirar")
+	// An instant BEFORE the deadline still works; at the deadline, it does not.
+	// The boundary is closed at the top: `now.Before(ExpiresAt)`.
+	if !invite.IsUsable(invite.ExpiresAt.Add(-time.Nanosecond)) {
+		t.Error("the invite should hold at the last instant before expiring")
 	}
-	if convite.IsUsable(convite.ExpiresAt) {
-		t.Error("convite não pode valer no exato instante da expiração")
+	if invite.IsUsable(invite.ExpiresAt) {
+		t.Error("the invite must not hold at the exact instant of expiry")
 	}
 }
 
-// ── aceite de convite: o link não é credencial ──────────────────────────────
+// ── invite acceptance: the link is not a credential ─────────────────────────
 //
-// Estes testes são o argumento inteiro de segurança do convite sem token. Se
-// algum deles passar a aceitar quem não deve, o `invite_id` volta a ser
-// segredo — e ele viaja em e-mail, evento e projeção.
+// These tests are the entire security argument for the tokenless invite. If any
+// of them starts accepting someone it should not, `invite_id` becomes a secret
+// again — and it travels in email, in events and in projections.
 
-// convidaPara cria a conta do dono, promove-o a admin e devolve o convite.
-func convidaPara(t *testing.T, repo *fakeRepo, svc *identity.Service, email string) *identity.Invite {
+// inviteFor creates the owner's account, promotes them to admin and returns the
+// invite.
+func inviteFor(t *testing.T, repo *fakeRepo, svc *identity.Service, email string) *identity.Invite {
 	t.Helper()
 	ctx := context.Background()
-	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "dono", Email: "dono@x.com"})
+	u, acct, _ := svc.EnsureUser(ctx, ports.Principal{Subject: "owner", Email: "owner@x.com"})
 	repo.members[0].Role = identity.RoleAdmin
 	ctx = ctxutil.Into(ctx, ctxutil.Call{AccountID: acct.ID, ActorID: u.ID, ActorKind: ctxutil.ActorUser})
 	inv, err := svc.CreateInvite(ctx, email, identity.RoleDeveloper, nil)
 	if err != nil {
-		t.Fatalf("criar convite: %v", err)
+		t.Fatalf("creating the invite: %v", err)
 	}
 	return inv
 }
 
-func TestAceiteExigeSerOConvidado(t *testing.T) {
+func TestAcceptanceRequiresBeingTheInvitee(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
 
-	// Um terceiro autenticado, de posse do link.
-	intruso, _, _ := svc.EnsureUser(ctx, ports.Principal{
-		Subject: "s-intruso", Email: "intruso@x.com", EmailVerified: true})
+	// A third party, authenticated, holding the link.
+	intruder, _, _ := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "s-intruder", Email: "intruder@x.com", EmailVerified: true})
 
-	_, err := svc.AcceptInvite(ctx, inv.ID, intruso.ID)
+	_, err := svc.AcceptInvite(ctx, inv.ID, intruder.ID)
 	if err == nil {
-		t.Fatal("possuir o id do convite NÃO pode bastar para entrar na conta")
+		t.Fatal("holding the invite id must NOT be enough to join the account")
 	}
 	if errs.KindOf(err) != errs.KindPermission {
-		t.Errorf("recusa deveria ser de permissão, veio %v", errs.KindOf(err))
+		t.Errorf("the refusal should be a permission one, got %v", errs.KindOf(err))
 	}
-	// O erro não pode virar oráculo: quem tem o link não descobre quem foi
-	// convidado.
-	if strings.Contains(err.Error(), "convidado@x.com") {
-		t.Errorf("a mensagem revela o e-mail do convite: %q", err)
+	// The error must not become an oracle: whoever holds the link does not get
+	// to learn who was invited. The translation params are checked too — a
+	// localized sentence must not leak what the English one refuses to.
+	if strings.Contains(err.Error(), "invitee@x.com") {
+		t.Errorf("the message reveals the invite's email: %q", err)
 	}
-	if len(repo.aceitos) != 0 {
-		t.Errorf("nenhum vínculo deveria ter sido criado, veio %v", repo.aceitos)
+	if _, params := errs.CodeOf(err); len(params) != 0 {
+		t.Errorf("the refusal carries params that could leak the invitee: %v", params)
+	}
+	if len(repo.accepted) != 0 {
+		t.Errorf("no membership should have been created, got %v", repo.accepted)
 	}
 }
 
-func TestAceiteExigeEmailVerificado(t *testing.T) {
+func TestAcceptanceRequiresAVerifiedEmail(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
 
-	// Mesmo e-mail, sem verificação: um emissor que não confirma e-mail deixaria
-	// qualquer um reivindicar o endereço alheio.
-	quaseEle, _, _ := svc.EnsureUser(ctx, ports.Principal{
-		Subject: "s-conv", Email: "convidado@x.com", EmailVerified: false})
+	// Same email, unverified: an issuer that does not confirm addresses would
+	// let anyone claim somebody else's.
+	almostThem, _, _ := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "s-invitee", Email: "invitee@x.com", EmailVerified: false})
 
-	_, err := svc.AcceptInvite(ctx, inv.ID, quaseEle.ID)
+	_, err := svc.AcceptInvite(ctx, inv.ID, almostThem.ID)
 	if err == nil {
-		t.Fatal("e-mail não verificado não prova identidade")
+		t.Fatal("an unverified email does not prove identity")
 	}
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Errorf("recusa deveria ser de pré-condição, veio %v", errs.KindOf(err))
+		t.Errorf("the refusal should be a precondition one, got %v", errs.KindOf(err))
 	}
 }
 
-func TestAceiteDoConvidadoFunciona(t *testing.T) {
+func TestTheInviteesOwnAcceptanceWorks(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
 
-	ele, _, _ := svc.EnsureUser(ctx, ports.Principal{
-		Subject: "s-conv", Email: "convidado@x.com", EmailVerified: true})
+	them, _, _ := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "s-invitee", Email: "invitee@x.com", EmailVerified: true})
 
-	m, err := svc.AcceptInvite(ctx, inv.ID, ele.ID)
+	m, err := svc.AcceptInvite(ctx, inv.ID, them.ID)
 	if err != nil {
-		t.Fatalf("o próprio convidado deveria entrar: %v", err)
+		t.Fatalf("the invitee themselves should get in: %v", err)
 	}
-	if m == nil || m.UserID != ele.ID {
-		t.Fatalf("vínculo deveria ser do convidado, veio %+v", m)
+	if m == nil || m.UserID != them.ID {
+		t.Fatalf("the membership should belong to the invitee, got %+v", m)
 	}
-	if len(repo.aceitos) != 1 || repo.aceitos[0] != inv.ID+"/"+ele.ID {
-		t.Errorf("aceite gravado errado: %v", repo.aceitos)
+	if len(repo.accepted) != 1 || repo.accepted[0] != inv.ID+"/"+them.ID {
+		t.Errorf("acceptance recorded wrongly: %v", repo.accepted)
 	}
 }
 
-func TestAceiteSemSessaoERecusado(t *testing.T) {
+func TestAcceptanceWithoutASessionIsRefused(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
+	svc := identity.NewService(repo, fixedClock{now})
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
 
 	if _, err := svc.AcceptInvite(context.Background(), inv.ID, ""); err == nil {
-		t.Fatal("o link sozinho, sem sessão, não pode aceitar nada")
+		t.Fatal("the link alone, with no session, must not accept anything")
 	}
 }
 
-func TestAceiteDeConviteVencidoERecusado(t *testing.T) {
+func TestAcceptanceOfAnExpiredInviteIsRefused(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
+	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
-	ele, _, _ := svc.EnsureUser(ctx, ports.Principal{
-		Subject: "s-conv", Email: "convidado@x.com", EmailVerified: true})
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
+	them, _, _ := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "s-invitee", Email: "invitee@x.com", EmailVerified: true})
 
-	// O relógio anda até exatamente o vencimento — a fronteira é fechada em cima.
-	vencido := identity.NewService(repo, relogioFixo{agora.Add(identity.InviteTTL)})
-	if _, err := vencido.AcceptInvite(ctx, inv.ID, ele.ID); err == nil {
-		t.Fatal("convite no instante do vencimento não deveria valer")
+	// The clock moves to exactly the deadline — the boundary is closed at the top.
+	expired := identity.NewService(repo, fixedClock{now.Add(identity.InviteTTL)})
+	if _, err := expired.AcceptInvite(ctx, inv.ID, them.ID); err == nil {
+		t.Fatal("an invite at the instant of expiry should not hold")
 	}
 }
 
-// EnsureUser normaliza o e-mail antes de gravar, mas a PORTA não promete isso:
-// quem lê `users` lê o que estiver na coluna — linha antiga, importação, outro
-// caminho de escrita. Este teste entra por baixo do EnsureUser de propósito,
-// porque é o único jeito de alcançar a comparação tolerante. Sem ele, trocar
-// EqualFold por `!=` passaria despercebido, e o convidado certo levaria
-// "convite não é seu" por causa de um "G" maiúsculo.
-func TestAceiteToleraCaixaEEspacoNaLinhaDoUsuario(t *testing.T) {
+// EnsureUser normalizes the email before writing, but the PORT does not promise
+// that: whoever reads `users` reads whatever is in the column — an old row, an
+// import, another write path. This test goes underneath EnsureUser on purpose,
+// because it is the only way to reach the tolerant comparison. Without it,
+// swapping EqualFold for `!=` would slip through, and the right invitee would be
+// told "this invite is not yours" over a capital G.
+func TestAcceptanceToleratesCaseAndSpaceInTheUserRow(t *testing.T) {
 	repo := newFakeRepo()
-	svc := identity.NewService(repo, relogioFixo{agora})
-	inv := convidaPara(t, repo, svc, "convidado@x.com")
+	svc := identity.NewService(repo, fixedClock{now})
+	inv := inviteFor(t, repo, svc, "invitee@x.com")
 
-	naoNormalizado := &identity.User{
-		ID: "usr-cru", Subject: "s-cru",
-		Email: " Convidado@X.Com ", EmailVerified: true,
+	unnormalized := &identity.User{
+		ID: "usr-raw", Subject: "s-raw",
+		Email: " Invitee@X.Com ", EmailVerified: true,
 	}
-	repo.byID[naoNormalizado.ID] = naoNormalizado
+	repo.byID[unnormalized.ID] = unnormalized
 
-	if _, err := svc.AcceptInvite(context.Background(), inv.ID, naoNormalizado.ID); err != nil {
-		t.Fatalf("mesmo e-mail com outra caixa deveria aceitar: %v", err)
+	if _, err := svc.AcceptInvite(context.Background(), inv.ID, unnormalized.ID); err != nil {
+		t.Fatalf("the same email in a different case should be accepted: %v", err)
 	}
 }
