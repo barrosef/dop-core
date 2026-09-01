@@ -6,19 +6,19 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// Emission é o EVENTO que a operação produz, do jeito que o domínio o enxerga:
-// tipo e conteúdo. Agregado e agregado_id não entram porque são sempre os
-// mesmos — `demand` e o id da demanda —, e isso não é economia de digitação: é
-// a regra da ADR-0006 ("log append-only POR DEMANDA") escrita de forma que não
-// dê para violar por descuido. Mensagem de thread, achado e decisão de portão
-// pertencem ao log da demanda; quem precisa recortar por thread lê `thread_id`
-// no payload.
+// Emission is the EVENT the operation produces, the way the domain sees it: type
+// and content. Aggregate and aggregate_id are not fields because they are always
+// the same — `demand` and the demand's id — and that is not saved typing: it is
+// ADR-0006's rule ("an append-only log PER DEMAND") written in a shape that
+// cannot be violated by carelessness. A thread message, a finding and a gate
+// decision all belong to the demand's log; whoever needs to slice by thread reads
+// `thread_id` from the payload.
 type Emission struct {
 	Type    string
 	Payload map[string]any
 }
 
-// Tipos de evento da demanda. O outbox deriva o assunto NATS deles (Subject).
+// The demand's event types. The outbox derives the NATS subject from them.
 const (
 	EventStarted          = "dop.demand.started"
 	EventStageAdvanced    = "dop.demand.stage.advanced"
@@ -31,29 +31,29 @@ const (
 	EventFindingPublished = "dop.demand.finding.published"
 )
 
-// Aggregate é o nome do agregado no log — um só para tudo que é da demanda.
+// Aggregate is the aggregate's name in the log — one for everything the demand owns.
 const Aggregate = "demand"
 
-// Repository é a PORTA de persistência do domínio de demanda.
+// Repository is the demand domain's persistence PORT.
 //
-// Repare no formato de TODA escrita: recebe o estado novo, a Emissão e a chave
-// de idempotência, e devolve o resultado. É proposital — a assinatura força o
-// adaptador a gravar estado e evento na MESMA transação (ADR-0019). Uma porta
-// com `Save` de um lado e `Emit` de outro deixaria a atomicidade a cargo da
-// disciplina de quem chama, que é exatamente o que a ADR existe para não
-// depender.
+// Note the shape of EVERY write: it takes the new state, the Emission and the
+// idempotency key, and returns the result. That is deliberate — the signature
+// forces the adapter to write state and event in the SAME transaction
+// (ADR-0019). A port with `Save` on one side and `Emit` on the other would leave
+// atomicity to the caller's discipline, which is exactly what the ADR exists so
+// as not to depend on.
 //
-// Toda operação recebe accountID explicitamente: isolamento multi-tenant é
-// parâmetro obrigatório da porta, não algo que o adaptador possa esquecer.
+// Every operation takes accountID explicitly: multi-tenant isolation is a
+// required parameter of the port, not something the adapter could forget.
 type Repository interface {
-	// ── demanda ──
+	// ── the demand ──
 	List(ctx context.Context, accountID, projectID string, limit int, after string) ([]Demand, error)
 	ByID(ctx context.Context, accountID, id string) (*Demand, error)
 	ByExternalKey(ctx context.Context, accountID, projectID, externalKey string) (*Demand, error)
-	// Create grava a demanda com o fluxo já congelado e suas etapas iniciais.
+	// Create writes the demand with the flow already frozen and its initial stages.
 	Create(ctx context.Context, d *Demand, ev Emission, idemKey string) (*Demand, error)
-	// SaveStage grava a etapa e o status projetado da demanda. Devolve a etapa
-	// como ficou gravada.
+	// SaveStage writes the stage and the demand's projected status. It returns the
+	// stage as it was stored.
 	SaveStage(ctx context.Context, accountID, demandID string, st Stage, status DopStatus, ev Emission, idemKey string) (*Stage, error)
 
 	// ── threads ──
@@ -62,50 +62,50 @@ type Repository interface {
 	CreateThread(ctx context.Context, t *Thread, ev Emission, idemKey string) (*Thread, error)
 	SaveThreadState(ctx context.Context, accountID, threadID string, state ThreadState, ev Emission, idemKey string) (*Thread, error)
 
-	// AppendMessage acrescenta ao log. Não existe `UpdateMessage` nem
-	// `DeleteMessage`: o log é append-only (ADR-0006).
+	// AppendMessage appends to the log. There is no `UpdateMessage` and no
+	// `DeleteMessage`: the log is append-only (ADR-0006).
 	AppendMessage(ctx context.Context, m *Message, ev Emission, idemKey string) (*Message, error)
 
-	// ── achados ──
+	// ── findings ──
 	CreateFinding(ctx context.Context, f *Finding, ev Emission, idemKey string) (*Finding, error)
-	// ListFindings devolve os achados JÁ PUBLICADOS na demanda.
+	// ListFindings returns the findings ALREADY PUBLISHED on the demand.
 	//
-	// Existe para o pacote de contexto (ADR-0009): sem os achados, um agente
-	// que retoma a demanda refaz investigação que outro já concluiu — que é
-	// exatamente o desperdício que o quadro de achados existe para evitar.
+	// It exists for the context package (ADR-0009): without the findings, an agent
+	// resuming the demand redoes an investigation another already finished — which
+	// is exactly the waste the findings board exists to prevent.
 	ListFindings(ctx context.Context, accountID, demandID string) ([]Finding, error)
 
-	// HasFinding responde se a thread já publicou achado — é o que destrava a
-	// conclusão dela.
+	// HasFinding answers whether the thread has already published a finding — it
+	// is what unlocks concluding it.
 	HasFinding(ctx context.Context, accountID, threadID string) (bool, error)
 }
 
-// FlowResolver é a porta ESTREITA para o domínio de fluxo.
+// FlowResolver is the NARROW port into the flow domain.
 //
-// A demanda precisa de UMA coisa dele, uma vez na vida: o fluxo efetivo no
-// instante em que começa, resolvido pela cadeia plataforma ◁ conta ◁ workspace
-// ◁ projeto ◁ demanda (ADR-0014). Depois disso o fluxo vivo deixa de importar —
-// o que dirige a demanda é o snapshot congelado. Por isso a porta tem um método
-// e nenhuma noção de edição, versionamento ou promoção de fluxo: essas são do
-// domínio workflow, e este pacote não as conhece.
+// The demand needs ONE thing from it, once in its life: the effective flow at
+// the instant it starts, resolved by the chain platform ◁ account ◁ workspace ◁
+// project ◁ demand (ADR-0014). After that the live flow stops mattering — what
+// drives the demand is the frozen snapshot. That is why the port has one method
+// and no notion of editing, versioning or promoting a flow: those belong to the
+// workflow domain, and this package does not know them.
 type FlowResolver interface {
-	// Resolve devolve o fluxo efetivo do escopo pedido (scope: "project",
-	// "demand", "workspace", "account"), com versão e etapas — o bastante para
-	// congelar.
+	// Resolve returns the requested scope's effective flow (scope: "project",
+	// "demand", "workspace", "account"), with version and stages — enough to
+	// freeze.
 	Resolve(ctx context.Context, accountID, scope, scopeID string) (Flow, error)
 }
 
-// Watcher é a porta de ASSINATURA de eventos, para o WatchDemand.
+// Watcher is the event SUBSCRIPTION port, for WatchDemand.
 //
-// Desenhada sobre a superfície que o domínio `event` já oferece (fan-out único
-// por processo, replay por cursor, isolamento por conta): assinar por cliente
-// no barramento criaria um consumidor durável por aba aberta do cockpit, e
-// reimplementar fan-out aqui duplicaria a política de consumidor lento em dois
-// lugares que divergem com o tempo.
+// Designed on the surface the `event` domain already offers (a single fan-out
+// per process, replay by cursor, per-account isolation): subscribing per client
+// on the bus would create a durable consumer per open cockpit tab, and
+// reimplementing fan-out here would duplicate the slow-consumer policy in two
+// places that drift apart over time.
 //
-// O filtro é por agregado e tipo porque é o que o serviço de eventos sabe
-// fazer; o recorte por DEMANDA é feito neste pacote, comparando o
-// aggregate_id — ver Service.Watch.
+// The filter is by aggregate and type because that is what the event service
+// knows how to do; the slice by DEMAND is done in this package, comparing the
+// aggregate_id — see Service.Watch.
 type Watcher interface {
 	Watch(ctx context.Context, sinceEventID string, aggregates, types []string, emit func(ports.Event) error) error
 }

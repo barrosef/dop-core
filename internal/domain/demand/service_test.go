@@ -12,16 +12,16 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM banco e SEM broker: repositório, fluxo e assinatura
-// de eventos são portas, e aqui entram duplos em memória. Os duplos moram neste
+// The domain is testable WITHOUT a database and WITHOUT a broker: repository,
+// flow and event subscription are ports, and in-memory doubles go in here. The doubles live in this
 // arquivo porque o teste de arquitetura reprova qualquer import de adaptador
 // sob internal/domain — inclusive em _test.go.
 
 // ── o congelamento do fluxo ──────────────────────────────────────────────────
 
-// É a garantia mais cara de perder: fluxo alterado depois NÃO pode reescrever o
+// It is the most expensive guarantee to lose: a flow changed later must NOT
 // passado de uma demanda em andamento (ADR-0014 §4).
-func TestStartCongelaOFluxo(t *testing.T) {
+func TestStartFreezesTheFlow(t *testing.T) {
 	repo, flows, _, svc := setup(t)
 	ctx := comConta("acc-1")
 
@@ -33,7 +33,7 @@ func TestStartCongelaOFluxo(t *testing.T) {
 		t.Fatalf("congelou errado: v%d com %d etapas", d.Flow.Version, len(d.Stages))
 	}
 
-	// O fluxo do catálogo muda — versão nova, etapas diferentes.
+	// The catalogue's flow changes — a new version, different stages.
 	flows.flow = demand.Flow{
 		ID: "flow-1", Name: "fluxo revisado", Version: 2, ResolvedFrom: "projeto",
 		Stages: []demand.StageSpec{{Key: "novo", Name: "Etapa nova", Type: demand.TypeGeneric}},
@@ -46,15 +46,15 @@ func TestStartCongelaOFluxo(t *testing.T) {
 	if recarregada.Flow.Version != 1 {
 		t.Errorf("a demanda seguiu o fluxo vivo: v%d (esperado v1 congelada)", recarregada.Flow.Version)
 	}
-	if len(recarregada.Stages) != 3 || recarregada.Stages[0].Key != "contexto" {
+	if len(recarregada.Stages) != 3 || recarregada.Stages[0].Key != "context" {
 		t.Errorf("etapas reescritas pelo fluxo novo: %+v", chaves(recarregada.Stages))
 	}
 	if recarregada.Flow.FrozenAt.IsZero() {
 		t.Error("snapshot sem instante de congelamento")
 	}
 
-	// Reiniciar a MESMA chave externa devolve a demanda como está: re-resolver
-	// seria congelar de novo, que é exatamente o que o congelamento impede.
+	// Restarting the SAME external key returns the demand as it stands:
+	// re-resolving would freeze again, which is exactly what freezing prevents.
 	outra, err := svc.Start(ctx, projeto, "SUOPT-1315", "idem-2")
 	if err != nil {
 		t.Fatalf("Start repetido: %v", err)
@@ -66,11 +66,11 @@ func TestStartCongelaOFluxo(t *testing.T) {
 		t.Errorf("o fluxo foi resolvido %d vezes; deveria ser 1", flows.chamadas)
 	}
 	if got := repo.tipos(); len(got) != 1 || got[0] != demand.EventStarted {
-		t.Errorf("eventos emitidos = %v, esperado só %s", got, demand.EventStarted)
+		t.Errorf("events emitted = %v, expected only %s", got, demand.EventStarted)
 	}
 }
 
-func TestStartRecusaFluxoQuebrado(t *testing.T) {
+func TestStartRefusesABrokenFlow(t *testing.T) {
 	_, flows, _, svc := setup(t)
 	ctx := comConta("acc-1")
 
@@ -83,80 +83,80 @@ func TestStartRecusaFluxoQuebrado(t *testing.T) {
 		{Key: "spec", Type: demand.TypeSpec}, {Key: "spec", Type: demand.TypePlan},
 	}}
 	if _, err := svc.Start(ctx, projeto, "SUOPT-2", ""); errs.KindOf(err) != errs.KindPrecondition {
-		t.Errorf("chave de etapa repetida deveria ser recusada, veio %v", err)
+		t.Errorf("chave de stage repetida deveria ser recusada, veio %v", err)
 	}
 }
 
-// ── a máquina de etapas ──────────────────────────────────────────────────────
+// ── the stage machine ────────────────────────────────────────────────────────
 
-func TestTransicaoDeEtapaInvalidaERecusada(t *testing.T) {
+func TestAnInvalidStageTransitionIsRefused(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	// pending → done pula o início: a etapa nunca teria começado.
-	_, err := svc.AdvanceStage(ctx, d.ID, "contexto", demand.StageDone, "")
-	exigeInvalido(t, err, "contexto")
+	// pending → done skips the start: the stage would never have begun.
+	_, err := svc.AdvanceStage(ctx, d.ID, "context", demand.StageDone, "")
+	requireInvalid(t, err, "context")
 
-	// Etapa fora de ordem: começar a 2ª com a 1ª pendente esconderia trabalho
-	// pulado atrás de um progresso que parece legítimo.
+	// A stage out of order: starting the 2nd with the 1st pending would hide
+	// skipped work behind progress that looks legitimate.
 	_, err = svc.AdvanceStage(ctx, d.ID, "spec", demand.StageRunning, "")
-	exigeInvalido(t, err, "contexto")
+	requireInvalid(t, err, "context")
 
-	// Etapa que não existe no fluxo congelado.
+	// A stage that does not exist in the frozen flow.
 	_, err = svc.AdvanceStage(ctx, d.ID, "inexistente", demand.StageRunning, "")
-	exigeInvalido(t, err, "inexistente")
+	requireInvalid(t, err, "inexistente")
 
 	// Status desconhecido (o UNSPECIFIED do contrato chega assim).
-	_, err = svc.AdvanceStage(ctx, d.ID, "contexto", demand.StageStatus(""), "")
+	_, err = svc.AdvanceStage(ctx, d.ID, "context", demand.StageStatus(""), "")
 	if errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("status vazio deveria ser recusado, veio %v", err)
 	}
 
-	// O caminho legítimo continua funcionando, e concluído é terminal.
-	avancar(t, svc, ctx, d.ID, "contexto", demand.StageRunning)
-	avancar(t, svc, ctx, d.ID, "contexto", demand.StageDone)
-	_, err = svc.AdvanceStage(ctx, d.ID, "contexto", demand.StageRunning, "")
-	exigeInvalido(t, err, "contexto")
+	// The legitimate path keeps working, and finished is terminal.
+	avancar(t, svc, ctx, d.ID, "context", demand.StageRunning)
+	avancar(t, svc, ctx, d.ID, "context", demand.StageDone)
+	_, err = svc.AdvanceStage(ctx, d.ID, "context", demand.StageRunning, "")
+	requireInvalid(t, err, "context")
 }
 
-// O TIPO da etapa dirige a máquina: portão humano não fecha sozinho.
-func TestPortaoHumanoNaoFechaPorAdvance(t *testing.T) {
+// The stage's TYPE drives the machine: a human gate does not close on its own.
+func TestAHumanGateDoesNotCloseThroughAdvance(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	avancar(t, svc, ctx, d.ID, "contexto", demand.StageRunning)
-	avancar(t, svc, ctx, d.ID, "contexto", demand.StageDone)
+	avancar(t, svc, ctx, d.ID, "context", demand.StageRunning)
+	avancar(t, svc, ctx, d.ID, "context", demand.StageDone)
 	avancar(t, svc, ctx, d.ID, "spec", demand.StageRunning)
 	avancar(t, svc, ctx, d.ID, "spec", demand.StageDone)
-	avancar(t, svc, ctx, d.ID, "validacao", demand.StageRunning)
+	avancar(t, svc, ctx, d.ID, "validation", demand.StageRunning)
 
-	_, err := svc.AdvanceStage(ctx, d.ID, "validacao", demand.StageDone, "")
-	exigeInvalido(t, err, "validacao")
+	_, err := svc.AdvanceStage(ctx, d.ID, "validation", demand.StageDone, "")
+	requireInvalid(t, err, "validation")
 	if !strings.Contains(err.Error(), "DecideGate") {
 		t.Errorf("a recusa deveria apontar o caminho certo: %v", err)
 	}
 
-	// Reprovar não zera a etapa: bloqueia com o comentário, para que a
-	// reprovação continue visível.
-	st, err := svc.DecideGate(ctx, d.ID, "validacao", false, "faltou critério de aceite", "")
+	// Rejecting does not clear the stage: it blocks with the comment, so the
+	// rejection stays visible.
+	st, err := svc.DecideGate(ctx, d.ID, "validation", false, "acceptance criteria missing", "")
 	if err != nil {
 		t.Fatalf("DecideGate reprovando: %v", err)
 	}
 	if st.Status != demand.StageBlocked || st.GateComment == "" {
-		t.Errorf("reprovação deveria bloquear com comentário, veio %s/%q", st.Status, st.GateComment)
+		t.Errorf("a rejection should block with a comment, got %s/%q", st.Status, st.GateComment)
 	}
 
-	st, err = svc.DecideGate(ctx, d.ID, "validacao", true, "ok", "")
+	st, err = svc.DecideGate(ctx, d.ID, "validation", true, "ok", "")
 	if err != nil {
 		t.Fatalf("DecideGate aprovando: %v", err)
 	}
 	if st.Status != demand.StageDone || st.FinishedAt == nil {
-		t.Errorf("aprovação deveria concluir a etapa, veio %s", st.Status)
+		t.Errorf("an approval should finish the stage, got %s", st.Status)
 	}
 
-	// Com todas as etapas concluídas, o status projetado da demanda fecha.
+	// With every stage finished, the demand's projected status closes.
 	final, err := svc.Get(ctx, d.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -166,37 +166,37 @@ func TestPortaoHumanoNaoFechaPorAdvance(t *testing.T) {
 	}
 }
 
-func TestDecideGateSoOndeHaPortao(t *testing.T) {
+func TestDecideGateOnlyWhereThereIsAGate(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	// Etapa sem portão não tem o que decidir.
-	_, err := svc.DecideGate(ctx, d.ID, "contexto", true, "", "")
-	exigeInvalido(t, err, "contexto")
+	// A stage with no gate has nothing to decide.
+	_, err := svc.DecideGate(ctx, d.ID, "context", true, "", "")
+	requireInvalid(t, err, "context")
 
-	// Etapa com portão que ainda nem começou.
-	_, err = svc.DecideGate(ctx, d.ID, "validacao", true, "", "")
-	exigeInvalido(t, err, "validacao")
+	// A stage with a gate that has not even started.
+	_, err = svc.DecideGate(ctx, d.ID, "validation", true, "", "")
+	requireInvalid(t, err, "validation")
 
-	// Agente aprovando o próprio trabalho: é o que o portão existe para impedir.
+	// An agent approving its own work: what the gate exists to prevent.
 	comoAgente := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: "acc-1", ActorID: "thread-9", ActorKind: ctxutil.ActorAgent})
-	if _, err := svc.DecideGate(comoAgente, d.ID, "validacao", true, "", ""); errs.KindOf(err) != errs.KindPermission {
-		t.Errorf("agente não decide portão humano, veio %v", err)
+	if _, err := svc.DecideGate(comoAgente, d.ID, "validation", true, "", ""); errs.KindOf(err) != errs.KindPermission {
+		t.Errorf("an agent does not decide a human gate, got %v", err)
 	}
 }
 
 // ── threads e achados ────────────────────────────────────────────────────────
 
-// A regra que a spec põe em uma frase: a thread não morre em silêncio.
-func TestThreadNaoConcluiSemAchadoPublicado(t *testing.T) {
+// The rule the spec puts in one sentence: the thread does not die in silence.
+func TestAThreadDoesNotConcludeWithoutAPublishedFinding(t *testing.T) {
 	repo, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	th, err := svc.CreateThread(ctx, d.ID, "forense-db", demand.AgentCard{
-		Purpose: "análise forense do banco", Model: "opus", Effort: "high",
+	th, err := svc.CreateThread(ctx, d.ID, "db-forensics", demand.AgentCard{
+		Purpose: "database forensics", Model: "opus", Effort: "high",
 		Tools: []string{"mcp:mysql"}, BudgetMicros: 500_000,
 	}, "")
 	if err != nil {
@@ -210,16 +210,16 @@ func TestThreadNaoConcluiSemAchadoPublicado(t *testing.T) {
 		t.Fatalf("PostMessage: %v", err)
 	}
 
-	// Sem achado publicado, concluir é recusado — e a recusa diz por quê.
+	// With no published finding, concluding is refused — and the refusal says why.
 	err = nil
 	if _, err = svc.ConcludeThread(ctx, th.ID, ""); errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("concluir sem achado deveria falhar com precondição, veio %v", err)
+		t.Fatalf("concluding with no finding should fail with a precondition, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "achado") {
-		t.Errorf("a recusa deveria falar do achado: %v", err)
+	if !strings.Contains(err.Error(), "finding") {
+		t.Errorf("the refusal should mention the finding: %v", err)
 	}
 
-	f, err := svc.PublishFinding(ctx, d.ID, th.ID, "deadlock na tabela X",
+	f, err := svc.PublishFinding(ctx, d.ID, th.ID, "deadlock on table X",
 		map[string]any{"janela": "14:02-14:07", "causa": "migration Y"}, "")
 	if err != nil {
 		t.Fatalf("PublishFinding: %v", err)
@@ -236,22 +236,22 @@ func TestThreadNaoConcluiSemAchadoPublicado(t *testing.T) {
 		t.Errorf("estado da thread = %s, esperado %s", concluida.State, demand.ThreadConcluded)
 	}
 
-	// Depois do achado, o registro durável é o achado: a conversa não volta.
+	// After the finding, the durable record is the finding: the conversation does not come back.
 	if _, err := svc.PostMessage(ctx, th.ID, "mais uma coisa", ""); errs.KindOf(err) != errs.KindPrecondition {
-		t.Errorf("thread concluída não recebe mensagem, veio %v", err)
+		t.Errorf("a concluded thread takes no message, got %v", err)
 	}
 
-	// Toda ação virou evento (ADR-0006) — ação sem evento é bug.
+	// Every action became an event (ADR-0006) — an action with no event is a bug.
 	esperados := []string{
 		demand.EventStarted, demand.EventThreadCreated, demand.EventMessagePosted,
 		demand.EventFindingPublished, demand.EventThreadConcluded,
 	}
 	if got := repo.tipos(); !mesmaLista(got, esperados) {
-		t.Errorf("eventos = %v, esperado %v", got, esperados)
+		t.Errorf("events = %v, esperado %v", got, esperados)
 	}
 }
 
-func TestAchadoDeOutraDemandaERecusado(t *testing.T) {
+func TestAFindingFromAnotherDemandIsRefused(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	a := iniciar(t, svc, ctx, "SUOPT-1")
@@ -261,33 +261,33 @@ func TestAchadoDeOutraDemandaERecusado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	// A demanda é a fronteira de segurança (ADR-0010 §6).
+	// The demand is the security boundary (ADR-0010 §6).
 	if _, err := svc.PublishFinding(ctx, b.ID, th.ID, "achado", nil, ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("achado cruzando demanda deveria ser recusado, veio %v", err)
 	}
 }
 
-func TestFichaDoSubagenteEObrigatoria(t *testing.T) {
+func TestTheSubagentBriefIsRequired(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	// Subagente sem propósito é caixa-preta — o que a ADR-0010 recusa.
+	// A subagent with no purpose is a black box — what ADR-0010 refuses.
 	if _, err := svc.CreateThread(ctx, d.ID, "logs", demand.AgentCard{}, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("ficha sem propósito deveria ser recusada, veio %v", err)
+		t.Errorf("a brief with no purpose should be refused, got %v", err)
 	}
 	if _, err := svc.CreateThread(ctx, d.ID, "Logs Do Servidor",
 		demand.AgentCard{Purpose: "ler logs"}, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("chave de thread inválida deveria ser recusada, veio %v", err)
+		t.Errorf("an invalid thread key should be refused, got %v", err)
 	}
 	if _, err := svc.CreateThread(ctx, d.ID, "logs",
 		demand.AgentCard{Purpose: "ler logs", Effort: "turbo"}, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("esforço fora do cardápio deveria ser recusado, veio %v", err)
+		t.Errorf("an effort outside the menu should be refused, got %v", err)
 	}
 }
 
-// Bloquear é o que alimenta a caixa de atenção.
-func TestThreadBloqueadaEntraNaCaixaDeAtencao(t *testing.T) {
+// Blocking is what feeds the attention box.
+func TestABlockedThreadEntersTheAttentionBox(t *testing.T) {
 	_, _, _, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
@@ -314,31 +314,31 @@ func TestThreadBloqueadaEntraNaCaixaDeAtencao(t *testing.T) {
 
 // ── isolamento e streaming ───────────────────────────────────────────────────
 
-func TestConsultaSemContaEInvalida(t *testing.T) {
+func TestAQueryWithNoAccountIsInvalid(t *testing.T) {
 	_, _, _, svc := setup(t)
 	if _, err := svc.Get(context.Background(), "qualquer"); errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("requisição sem conta ativa deveria ser inválida, veio %v", err)
+		t.Errorf("a request with no active account should be invalid, got %v", err)
 	}
 }
 
-func TestDemandaDeOutraContaNaoAparece(t *testing.T) {
+func TestAnotherAccountsDemandDoesNotAppear(t *testing.T) {
 	_, _, _, svc := setup(t)
 	d := iniciar(t, svc, comConta("acc-1"), "SUOPT-1315")
 
 	if _, err := svc.Get(comConta("acc-2"), d.ID); errs.KindOf(err) != errs.KindNotFound {
-		t.Error("demanda de outra conta deveria ser invisível")
+		t.Error("another account's demand should be invisible")
 	}
 }
 
-// WatchDemand entrega os eventos DESTA demanda — o recorte por id é daqui,
-// porque o filtro do barramento é por agregado e tipo.
-func TestWatchEntregaSoOsEventosDaDemanda(t *testing.T) {
+// WatchDemand delivers THIS demand's events — the slice by id belongs here,
+// because the bus filter is by aggregate and type.
+func TestWatchDeliversOnlyTheDemandsEvents(t *testing.T) {
 	_, _, watcher, svc := setup(t)
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
 	var vistos []string
-	err := watcher.entregar(ctx, svc, d.ID, []ports.Event{
+	err := watcher.deliver(ctx, svc, d.ID, []ports.Event{
 		{ID: "e1", Aggregate: "demand", AggregateID: d.ID, Type: demand.EventStarted},
 		{ID: "e2", Aggregate: "demand", AggregateID: "outra", Type: demand.EventMessagePosted},
 		{ID: "e3", Aggregate: "demand", AggregateID: d.ID, Type: demand.EventMessagePosted},
@@ -350,28 +350,28 @@ func TestWatchEntregaSoOsEventosDaDemanda(t *testing.T) {
 		t.Fatalf("Watch: %v", err)
 	}
 	if !mesmaLista(vistos, []string{"e1", "e3"}) {
-		t.Errorf("eventos entregues = %v, esperado [e1 e3]", vistos)
+		t.Errorf("events entregues = %v, esperado [e1 e3]", vistos)
 	}
 }
 
-func TestConstrutorRecusaDependenciaNula(t *testing.T) {
+func TestTheConstructorRefusesANilDependency(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Error("relógio nulo deveria explodir na montagem, não em produção")
+			t.Error("a nil clock should blow up at assembly, not in production")
 		}
 	}()
 	demand.NewService(newFakeRepo(), &fakeFlows{}, &fakeWatcher{}, nil)
 }
 
-// ── duplos em memória ────────────────────────────────────────────────────────
+// ── in-memory doubles ────────────────────────────────────────────────────────
 
 const projeto = "proj-1"
 
-// relogioFixo é o duplo do Clock: sem ele, StartedAt e FinishedAt dependeriam
-// do relógio de parede e nada seria verificável por igualdade.
-type relogioFixo struct{ t time.Time }
+// fixedClock is the Clock double: without it, StartedAt and FinishedAt would
+// depend on the wall clock and nothing would be verifiable by equality.
+type fixedClock struct{ t time.Time }
 
-func (r relogioFixo) Now() time.Time { return r.t }
+func (r fixedClock) Now() time.Time { return r.t }
 
 type fakeFlows struct {
 	flow     demand.Flow
@@ -383,7 +383,7 @@ func (f *fakeFlows) Resolve(_ context.Context, _, _, _ string) (demand.Flow, err
 	return f.flow, nil
 }
 
-// fakeWatcher guarda o filtro pedido e entrega os eventos que lhe derem.
+// fakeWatcher guarda o filtro pedido e entrega os events que lhe derem.
 type fakeWatcher struct {
 	aggregates []string
 	fila       []ports.Event
@@ -399,8 +399,8 @@ func (w *fakeWatcher) Watch(_ context.Context, _ string, aggregates, _ []string,
 	return nil
 }
 
-// entregar roda o Watch do serviço com uma fila preparada.
-func (w *fakeWatcher) entregar(ctx context.Context, svc *demand.Service, demandID string, fila []ports.Event, emit func(ports.Event) error) error {
+// deliver runs the service's Watch with a prepared queue.
+func (w *fakeWatcher) deliver(ctx context.Context, svc *demand.Service, demandID string, fila []ports.Event, emit func(ports.Event) error) error {
 	w.fila = fila
 	return svc.Watch(ctx, demandID, emit)
 }
@@ -409,10 +409,10 @@ type fakeRepo struct {
 	demands  map[string]*demand.Demand
 	threads  map[string]*demand.Thread
 	findings []demand.Finding
-	// eventos é o que prova a regra da ADR-0006: nenhuma escrita passa por
+	// events is what proves ADR-0006's rule: no write passes through
 	// aqui sem trazer o evento junto.
-	eventos []demand.Emission
-	seq     int
+	events []demand.Emission
+	seq    int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -425,8 +425,8 @@ func (f *fakeRepo) id(prefixo string) string {
 }
 
 func (f *fakeRepo) tipos() []string {
-	out := make([]string, 0, len(f.eventos))
-	for _, e := range f.eventos {
+	out := make([]string, 0, len(f.events))
+	for _, e := range f.events {
 		out = append(out, e.Type)
 	}
 	return out
@@ -469,7 +469,7 @@ func (f *fakeRepo) Create(_ context.Context, d *demand.Demand, ev demand.Emissio
 	saved := *d
 	saved.ID = f.id("dem")
 	f.demands[saved.ID] = &saved
-	f.eventos = append(f.eventos, ev)
+	f.events = append(f.events, ev)
 	return &saved, nil
 }
 
@@ -482,12 +482,12 @@ func (f *fakeRepo) SaveStage(_ context.Context, accountID, demandID string, st d
 		if d.Stages[i].Key == st.Key {
 			d.Stages[i] = st
 			d.Status = status
-			f.eventos = append(f.eventos, ev)
+			f.events = append(f.events, ev)
 			saved := st
 			return &saved, nil
 		}
 	}
-	return nil, errs.NotFound("etapa")
+	return nil, errs.NotFound("stage")
 }
 
 func (f *fakeRepo) ThreadsOf(_ context.Context, accountID, demandID string) ([]demand.Thread, error) {
@@ -513,7 +513,7 @@ func (f *fakeRepo) CreateThread(_ context.Context, t *demand.Thread, ev demand.E
 	saved := *t
 	saved.ID = f.id("thr")
 	f.threads[saved.ID] = &saved
-	f.eventos = append(f.eventos, ev)
+	f.events = append(f.events, ev)
 	return &saved, nil
 }
 
@@ -523,7 +523,7 @@ func (f *fakeRepo) SaveThreadState(_ context.Context, accountID, threadID string
 		return nil, errs.NotFound("thread")
 	}
 	t.State = state
-	f.eventos = append(f.eventos, ev)
+	f.events = append(f.events, ev)
 	copia := *t
 	return &copia, nil
 }
@@ -534,7 +534,7 @@ func (f *fakeRepo) AppendMessage(_ context.Context, m *demand.Message, ev demand
 	if t, ok := f.threads[m.ThreadID]; ok && t.State == demand.ThreadOpen {
 		t.State = demand.ThreadActive
 	}
-	f.eventos = append(f.eventos, ev)
+	f.events = append(f.events, ev)
 	return &saved, nil
 }
 
@@ -542,7 +542,7 @@ func (f *fakeRepo) CreateFinding(_ context.Context, fd *demand.Finding, ev deman
 	saved := *fd
 	saved.ID = f.id("fnd")
 	f.findings = append(f.findings, saved)
-	f.eventos = append(f.eventos, ev)
+	f.events = append(f.events, ev)
 	return &saved, nil
 }
 
@@ -568,14 +568,14 @@ func (f *fakeRepo) HasFinding(_ context.Context, accountID, threadID string) (bo
 // ── andaimes ─────────────────────────────────────────────────────────────────
 
 // fluxoPadrao imita o fluxo default da plataforma (ADR-0014 §8), encurtado:
-// contexto → spec → validação humana.
+// context → spec → human validation.
 func fluxoPadrao() demand.Flow {
 	return demand.Flow{
-		ID: "flow-1", Name: "fluxo padrão", Version: 1, ResolvedFrom: "projeto ◂ conta",
+		ID: "flow-1", Name: "default flow", Version: 1, ResolvedFrom: "project ◂ account",
 		Stages: []demand.StageSpec{
-			{Key: "contexto", Name: "Contexto", Type: demand.TypeContext},
+			{Key: "context", Name: "Contexto", Type: demand.TypeContext},
 			{Key: "spec", Name: "Spec", Type: demand.TypeSpec, Artifacts: []demand.ArtifactKind{demand.ArtifactSpec}},
-			{Key: "validacao", Name: "Validação", Type: demand.TypeHumanValidation, Gate: demand.GateHuman},
+			{Key: "validation", Name: "Validation", Type: demand.TypeHumanValidation, Gate: demand.GateHuman},
 		},
 	}
 }
@@ -586,7 +586,7 @@ func setup(t *testing.T) (*fakeRepo, *fakeFlows, *fakeWatcher, *demand.Service) 
 	flows := &fakeFlows{flow: fluxoPadrao()}
 	watcher := &fakeWatcher{}
 	svc := demand.NewService(repo, flows, watcher,
-		relogioFixo{time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)})
+		fixedClock{time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)})
 	return repo, flows, watcher, svc
 }
 
@@ -611,15 +611,15 @@ func avancar(t *testing.T, svc *demand.Service, ctx context.Context, demandID, s
 	}
 }
 
-// exigeInvalido cobra o essencial da recusa: erro de argumento inválido que
-// DIZ qual etapa. Mensagem genérica aqui vira ticket de suporte depois.
-func exigeInvalido(t *testing.T, err error, etapa string) {
+// requireInvalid demands the essentials of the refusal: an invalid-argument
+// error that SAYS which stage. A generic message here becomes a support ticket later.
+func requireInvalid(t *testing.T, err error, stage string) {
 	t.Helper()
 	if errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("esperava recusa por argumento inválido, veio %v", err)
+		t.Fatalf("expected a refusal for an invalid argument, got %v", err)
 	}
-	if !strings.Contains(err.Error(), etapa) {
-		t.Errorf("a recusa não diz qual etapa (%q): %v", etapa, err)
+	if !strings.Contains(err.Error(), stage) {
+		t.Errorf("the refusal does not say which stage (%q): %v", stage, err)
 	}
 }
 

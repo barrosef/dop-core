@@ -23,22 +23,22 @@ type Service struct {
 	clock   ports.Clock
 }
 
-// NewService recusa dependência nula.
+// NewService refuses a nil dependency.
 //
-// Panic aqui é deliberado, e pela mesma razão de identity.NewService: isto é
-// erro de MONTAGEM, e erro de montagem tem que aparecer no boot, não às três da
-// manhã na primeira demanda que alguém tentar iniciar. Aceitar nil e cair num
-// fallback por dentro é o que transforma porta em enfeite.
+// The panic here is deliberate, and for the same reason as identity.NewService:
+// this is a WIRING error, and a wiring error has to surface at boot, not at
+// three in the morning on the first demand somebody tries to start. Accepting
+// nil and falling back internally is what turns a port into decoration.
 func NewService(repo Repository, flows FlowResolver, watcher Watcher, clock ports.Clock) *Service {
 	switch {
 	case repo == nil:
-		panic("demand.NewService: repositório obrigatório")
+		panic("demand.NewService: repository is required")
 	case flows == nil:
-		panic("demand.NewService: resolvedor de fluxo obrigatório — sem ele não há o que congelar")
+		panic("demand.NewService: flow resolver is required — without it there is nothing to freeze")
 	case watcher == nil:
-		panic("demand.NewService: assinatura de eventos obrigatória — WatchDemand depende dela")
+		panic("demand.NewService: event subscription is required — WatchDemand depends on it")
 	case clock == nil:
-		panic("demand.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("demand.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, flows: flows, watcher: watcher, clock: clock}
 }
@@ -47,7 +47,7 @@ func (s *Service) now() time.Time { return s.clock.Now() }
 
 // ── leitura ──────────────────────────────────────────────────────────────────
 
-// List devolve as demandas do projeto, paginadas pelo id da última lida.
+// List returns the project's demands, paginated by the id of the last one read.
 func (s *Service) List(ctx context.Context, projectID string, size int, token string) ([]Demand, string, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -59,7 +59,7 @@ func (s *Service) List(ctx context.Context, projectID string, size int, token st
 	if size > maxPageSize {
 		size = maxPageSize
 	}
-	// Pede um a mais para saber se há próxima página sem uma contagem extra.
+	// Ask for one more to know whether there is a next page without an extra count.
 	list, err := s.repo.List(ctx, accountID, projectID, size+1, token)
 	if err != nil {
 		return nil, "", err
@@ -82,7 +82,7 @@ func (s *Service) Get(ctx context.Context, id string) (*Demand, error) {
 
 func (s *Service) load(ctx context.Context, accountID, id string) (*Demand, error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, errs.Invalid("demanda não informada")
+		return nil, errs.Invalid("demand not provided")
 	}
 	d, err := s.repo.ByID(ctx, accountID, id)
 	if err != nil {
@@ -94,17 +94,17 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Demand, erro
 	return d, nil
 }
 
-// ── início: onde o fluxo é resolvido e CONGELADO ─────────────────────────────
+// ── the start: where the flow is resolved and FROZEN ─────────────────────────
 
 // Start resolve o fluxo efetivo do projeto e o congela dentro da demanda.
 //
-// O congelamento é o ponto inteiro desta operação (ADR-0014 §4). Um fluxo é
-// editável, promovível e apagável; uma demanda em andamento não pode descobrir,
+// The freezing is this operation's whole point (ADR-0014 §4). A flow is
+// editable, promotable and deletable; a demand in progress must not discover,
 // no meio do caminho, que a etapa que ela estava executando deixou de existir.
-// Depois daqui, a máquina de etapas obedece ao SNAPSHOT — o fluxo vivo não tem
+// After this, the stage machine obeys the SNAPSHOT — the live flow has no
 // mais poder sobre esta demanda.
 //
-// Repetir o Start da mesma chave externa devolve a demanda como está, sem
+// Repeating the Start of the same external key returns the demand as it stands,
 // re-resolver nada: reiniciar seria justamente reescrever o passado que o
 // congelamento protege.
 func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey string) (*Demand, error) {
@@ -116,10 +116,10 @@ func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey str
 	projectID = strings.TrimSpace(projectID)
 	externalKey = strings.TrimSpace(externalKey)
 	if projectID == "" {
-		return nil, errs.Invalid("projeto é obrigatório para iniciar uma demanda")
+		return nil, errs.Invalid("a project is required to start a demand")
 	}
 	if externalKey == "" {
-		return nil, errs.Invalid("chave externa é obrigatória (ex.: SUOPT-1315)")
+		return nil, errs.Invalid("an external key is required (e.g. SUOPT-1315)")
 	}
 
 	if existing, err := s.repo.ByExternalKey(ctx, accountID, projectID, externalKey); err != nil {
@@ -142,9 +142,9 @@ func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey str
 		AccountID:   accountID,
 		ProjectID:   projectID,
 		ExternalKey: externalKey,
-		// Título e tipo de card vêm do provedor (Jira, ClickUp) pela
-		// integração do projeto; até a sincronização acontecer, a chave
-		// externa é o melhor rótulo honesto que temos.
+		// Title and card type come from the provider (Jira, ClickUp) through the
+		// project's integration; until the sync happens, the external key is the
+		// most honest label we have.
 		Title:     externalKey,
 		Status:    StatusNew,
 		Flow:      snap,
@@ -168,7 +168,7 @@ func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey str
 }
 
 // instantiate transforma o molde congelado nas etapas da demanda. Todas nascem
-// pendentes: progresso é evento, não estado inicial.
+// pending: progress is an event, not an initial state.
 func instantiate(snap Snapshot) []Stage {
 	out := make([]Stage, 0, len(snap.Stages))
 	for i, spec := range snap.Stages {
@@ -186,14 +186,14 @@ func instantiate(snap Snapshot) []Stage {
 
 // validateFlow recusa congelar um fluxo quebrado.
 //
-// A validação é aqui, e não só no domínio de fluxo, porque este é o instante em
-// que o molde vira passado imutável: um fluxo sem etapas ou com chave repetida
-// congelado numa demanda é um defeito que nenhuma correção posterior do fluxo
+// The validation is here, and not only in the flow domain, because this is the
+// instant the mould becomes an immutable past: a flow with no stages or with a
+// repeated key frozen into a demand is a defect no later fix of the flow
 // desfaz.
 func validateFlow(f Flow) error {
 	if len(f.Stages) == 0 {
 		return errs.Precondition(
-			"o fluxo efetivo %q não tem etapas: nada a executar", f.Name)
+			"the effective flow %q has no stages: nothing to execute", f.Name)
 	}
 	seen := make(map[string]bool, len(f.Stages))
 	for _, st := range f.Stages {
@@ -217,9 +217,9 @@ func stageKeys(snap Snapshot) []string {
 	return keys
 }
 
-// ── máquina de etapas ────────────────────────────────────────────────────────
+// ── the stage machine ────────────────────────────────────────────────────────
 
-// AdvanceStage move uma etapa dentro da máquina dirigida pelo TIPO (ADR-0014).
+// AdvanceStage moves a stage inside the machine driven by its TYPE (ADR-0014).
 func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, to StageStatus, idemKey string) (*Stage, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -254,21 +254,21 @@ func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, t
 		Payload: map[string]any{
 			"stage_key": st.Key, "stage_type": string(st.Type),
 			"from": string(from), "to": string(to),
-			// O PORTÃO viaja no evento: a caixa de atenção precisa distinguir
+			// The GATE travels in the event: the attention box has to tell apart a
 			// "etapa parada esperando gente" de "etapa parada por outro
 			// motivo", e sem isto ela teria que consultar a demanda para
-			// decidir — projeção que consulta o estado deixa de ser projeção.
+			// decide — a projection that queries state stops being a projection.
 			"gate":       string(st.Gate),
 			"dop_status": string(d.ProjectStatus()),
 		},
 	}, idemKey)
 }
 
-// DecideGate registra a decisão humana do portão.
+// DecideGate records the gate's human decision.
 //
 // Reprovar NÃO devolve a etapa para pendente: ela vai para bloqueada, com o
-// comentário. Zerar a etapa apagaria da tela o fato de que houve uma reprovação
-// — e esse fato é metade do valor da validação humana.
+// comment. Clearing the stage would erase from the screen the fact that there
+// was a rejection — and that fact is half the value of human validation.
 func (s *Service) DecideGate(ctx context.Context, demandID, stageKey string, approved bool, comment, idemKey string) (*Stage, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -277,7 +277,7 @@ func (s *Service) DecideGate(ctx context.Context, demandID, stageKey string, app
 	call, _ := ctxutil.From(ctx)
 	if call.ActorKind == ctxutil.ActorAgent || call.ActorKind == ctxutil.ActorSubagent {
 		return nil, errs.Permission(
-			"portão humano é decidido por gente: agente não aprova a própria etapa")
+			"a human gate is decided by people: an agent does not approve its own stage")
 	}
 	d, err := s.load(ctx, accountID, demandID)
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Service) ListThreads(ctx context.Context, demandID string) ([]Thread, e
 	return s.repo.ThreadsOf(ctx, accountID, demandID)
 }
 
-// CreateThread lança um subagente: a thread nasce junto com a FICHA dele
+// CreateThread launches a subagent: the thread is born together with its BRIEF
 // (ADR-0010 §2) e aparece de imediato para o dev acompanhar ou intervir.
 func (s *Service) CreateThread(ctx context.Context, demandID, key string, card AgentCard, idemKey string) (*Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -356,27 +356,27 @@ func (s *Service) CreateThread(ctx context.Context, demandID, key string, card A
 	}, idemKey)
 }
 
-// validateCard: subagente sem ficha é caixa-preta, que é exatamente o que a
-// ADR-0010 recusa. Propósito e modelo são o mínimo para o dev saber com quem
-// está falando e para o roteador saber quanto aquilo custa.
+// validateCard: a subagent with no brief is a black box, which is exactly what
+// ADR-0010 refuses. Purpose and model are the minimum for the dev to know who
+// they are talking to and for the router to know what it costs.
 func validateCard(c AgentCard) error {
 	if strings.TrimSpace(c.Purpose) == "" {
-		return errs.Invalid("a ficha do agente exige propósito")
+		return errs.Invalid("the agent brief requires a purpose")
 	}
 	if c.BudgetMicros < 0 {
-		return errs.Invalid("orçamento do agente não pode ser negativo")
+		return errs.Invalid("the agent budget cannot be negative")
 	}
 	switch c.Effort {
 	case "", "low", "medium", "high", "xhigh", "max":
 	default:
-		return errs.Invalid("esforço desconhecido: %q", c.Effort)
+		return errs.Invalid("unknown effort: %q", c.Effort)
 	}
 	return nil
 }
 
 func (s *Service) loadThread(ctx context.Context, accountID, id string) (*Thread, error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, errs.Invalid("thread não informada")
+		return nil, errs.Invalid("thread not provided")
 	}
 	t, err := s.repo.ThreadByID(ctx, accountID, id)
 	if err != nil {
@@ -389,7 +389,7 @@ func (s *Service) loadThread(ctx context.Context, accountID, id string) (*Thread
 }
 
 // PostMessage acrescenta a mensagem ao log da demanda (ADR-0006): toda mensagem
-// é evento. A thread sai de `aberta` e vira `ativa` na mesma transação.
+// is an event. The thread leaves `open` and becomes `active` in the same transaction.
 func (s *Service) PostMessage(ctx context.Context, threadID, text, idemKey string) (*Message, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -423,9 +423,9 @@ func (s *Service) PostMessage(ctx context.Context, threadID, text, idemKey strin
 
 // SetThreadBlocked marca (ou desfaz) a pergunta pendente.
 //
-// É o que alimenta a caixa de atenção: thread bloqueada é item de fila, e sem
-// esse estado o modelo multi-agente afoga o dev (spec §3, risco R-2). Não tem
-// RPC própria ainda; quem a chama hoje é o runtime do agente pela borda.
+// It is what feeds the attention box: a blocked thread is a queue item, and
+// without that state the multi-agent model drowns the dev (spec §3, risk R-2).
+// It has no RPC of its own yet; today the agent runtime calls it from the edge.
 func (s *Service) SetThreadBlocked(ctx context.Context, threadID string, blocked bool, reason, idemKey string) (*Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -436,7 +436,7 @@ func (s *Service) SetThreadBlocked(ctx context.Context, threadID string, blocked
 		return nil, err
 	}
 	if t.State == ThreadConcluded {
-		return nil, errs.Precondition("a thread %q está concluída", t.Key)
+		return nil, errs.Precondition("thread %q is concluded", t.Key)
 	}
 	state, evType := ThreadBlocked, EventThreadBlocked
 	if !blocked {
@@ -453,10 +453,10 @@ func (s *Service) SetThreadBlocked(ctx context.Context, threadID string, blocked
 	}, idemKey)
 }
 
-// PublishFinding publica a conclusão estruturada da investigação.
+// PublishFinding publishes the investigation's structured conclusion.
 //
-// É o que entra no contexto dos irmãos, no dossiê e na memória do projeto
-// (ADR-0010 §4) — e é o que DESTRAVA a conclusão da thread: sem achado
+// It is what enters the siblings' context, the dossier and the project's memory
+// (ADR-0010 §4) — and it is what UNLOCKS concluding the thread: with no finding
 // publicado, ConcludeThread recusa.
 func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title string, payload map[string]any, idemKey string) (*Finding, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -465,7 +465,7 @@ func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title 
 	}
 	call, _ := ctxutil.From(ctx)
 	if strings.TrimSpace(title) == "" {
-		return nil, errs.Invalid("o achado precisa de um título")
+		return nil, errs.Invalid("the finding needs a title")
 	}
 	d, err := s.load(ctx, accountID, demandID)
 	if err != nil {
@@ -476,10 +476,10 @@ func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title 
 		return nil, err
 	}
 	// Thread de outra demanda publicando no quadro desta seria vazamento de
-	// contexto entre demandas — e a demanda é a fronteira de segurança
+	// context between demands — and the demand is the security boundary
 	// (ADR-0010 §6).
 	if t.DemandID != d.ID {
-		return nil, errs.Invalid("a thread %q não pertence a esta demanda", t.Key)
+		return nil, errs.Invalid("thread %q does not belong to this demand", t.Key)
 	}
 	if payload == nil {
 		payload = map[string]any{}
@@ -499,11 +499,11 @@ func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title 
 	}, idemKey)
 }
 
-// ConcludeThread encerra a conversa — e só aceita se o achado já foi publicado.
+// ConcludeThread closes the conversation — and only accepts it once the finding
 //
-// É a regra literal da spec: "concluir exige publicar o achado; a thread não
-// morre em silêncio". Investigação que termina sem achado some junto com o
-// transcript, e o próximo agente refaz o mesmo trabalho.
+// It is the spec's literal rule: "concluding requires publishing the finding;
+// the thread does not die in silence". An investigation that ends with no
+// finding disappears with the transcript, and the next agent redoes the work.
 func (s *Service) ConcludeThread(ctx context.Context, threadID, idemKey string) (*Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -533,15 +533,15 @@ func (s *Service) ConcludeThread(ctx context.Context, threadID, idemKey string) 
 
 // Watch entrega ao vivo os eventos DESTA demanda.
 //
-// O fan-out, o replay e o isolamento por conta são do serviço de eventos — aqui
-// só se recorta. O recorte por demanda é feito neste lado porque o filtro do
-// barramento é por agregado e tipo, não por id: assinar "demand" e descartar o
-// que é de outra demanda custa uma comparação de string por evento e evita
-// duplicar a máquina de assinatura.
+// The fan-out, the replay and the per-account isolation belong to the event
+// service — here we only slice. The slice by demand is done on this side because
+// the bus filter is by aggregate and type, not by id: subscribing to "demand"
+// and discarding what belongs to another demand costs one string comparison per
+// event and avoids duplicating the subscription machinery.
 //
-// A demanda é carregada ANTES de abrir o fluxo: cliente que pede uma demanda
-// inexistente ou de outra conta recebe 404 na hora, e não um stream mudo que
-// ele vai interpretar como "ainda não aconteceu nada".
+// The demand is loaded BEFORE opening the stream: a client asking for a demand
+// that does not exist, or belongs to another account, gets a 404 right away and
+// not a mute stream it would read as "nothing has happened yet".
 func (s *Service) Watch(ctx context.Context, demandID string, emit func(ports.Event) error) error {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -561,17 +561,17 @@ func (s *Service) Watch(ctx context.Context, demandID string, emit func(ports.Ev
 
 // Findings devolve os achados publicados na demanda.
 //
-// Sem RPC própria no contrato ainda; existe porque o montador de pacote de
-// contexto precisa deles (ADR-0009) e o quadro de achados é justamente o que
-// impede um agente de refazer investigação que outro já concluiu.
+// No RPC of its own in the contract yet; it exists because the context package
+// assembler needs them (ADR-0009) and the findings board is precisely what
+// keeps an agent from redoing an investigation another already finished.
 func (s *Service) Findings(ctx context.Context, demandID string) ([]Finding, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Passa pelo Get antes: garante que a demanda é DESTA conta, e não só que
-	// existe — filtrar só no ListFindings deixaria o id alheio devolver vazio
-	// em vez de negar, que é vazamento de existência.
+	// It goes through Get first: that guarantees the demand belongs to THIS
+	// account, not merely that it exists — filtering only in ListFindings would
+	// let another account's id return empty instead of denying, which leaks existence.
 	if _, err := s.Get(ctx, demandID); err != nil {
 		return nil, err
 	}
