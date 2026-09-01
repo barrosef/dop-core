@@ -1,9 +1,9 @@
-// Package ports declara as PORTAS de infraestrutura, em linguagem do domínio.
+// Package ports declares the infrastructure PORTS, in the domain's language.
 //
-// Regra da ADR-0001: o domínio define a porta com a superfície mais estreita de
-// que precisa; adaptadores de fornecedor ficam em internal/adapter e são
-// escolhidos por configuração no composition root. Nenhum SDK cruza esta
-// fronteira, e capacidade que não mapeia entre adaptadores fica FORA da porta.
+// The ADR-0001 rule: the domain defines the port with the narrowest surface it
+// needs; vendor adapters live in internal/adapter and are chosen by
+// configuration at the composition root. No SDK crosses this boundary, and any
+// capability that does not map across adapters stays OUT of the port.
 package ports
 
 import (
@@ -13,32 +13,33 @@ import (
 
 // ───────────────────────── SecretStore ─────────────────────────
 
-// SecretRef é uma referência LÓGICA e opaca: só o adaptador sabe resolvê-la
-// (caminho no Secret Manager, nome de Secret no k8s). O domínio nunca conhece
-// caminho, namespace nem nome de segredo.
+// SecretRef is a LOGICAL, opaque reference: only the adapter knows how to
+// resolve it (a path in Secret Manager, a Secret name in k8s). The domain never
+// knows a path, a namespace or a secret name.
 type SecretRef struct {
 	AccountID string
 	Kind      string // integration_credential
 	OwnerID   string
 }
 
-// SecretValue é opaco por construção: sem String() útil, não serializa em log.
+// SecretValue is opaque by construction: with no useful String(), it does not
+// serialize into a log.
 type SecretValue []byte
 
 func (SecretValue) String() string { return "***" }
 
-// SecretStore — quatro operações e nada além.
+// SecretStore — four operations and nothing more.
 //
-// Garantias verificadas pelo conjunto de testes de contrato, em TODO adaptador:
-//  1. leitura-após-escrita: Put seguido de Get devolve o mesmo valor, imediatamente;
-//  2. Get de referência inexistente devolve (nil, nil) — não erro;
-//  3. Delete é idempotente;
-//  4. Put sobre referência existente substitui;
-//  5. isolamento: referência da conta A jamais resolve segredo da conta B;
-//  6. o valor nunca aparece em log, erro ou stack trace.
+// Guarantees verified by the contract suite, in EVERY adapter:
+//  1. read-after-write: Put followed by Get returns the same value, immediately;
+//  2. Get of a missing reference returns (nil, nil) — not an error;
+//  3. Delete is idempotent;
+//  4. Put over an existing reference replaces it;
+//  5. isolation: a reference of account A never resolves a secret of account B;
+//  6. the value never appears in a log, an error or a stack trace.
 //
-// Versionamento fica FORA da porta: o Secret Manager tem versões, o Secret do
-// k8s é plano. Capacidade que não mapeia não entra.
+// Versioning stays OUT of the port: Secret Manager has versions, a k8s Secret
+// is flat. A capability that does not map does not get in.
 type SecretStore interface {
 	Put(ctx context.Context, ref SecretRef, v SecretValue) error
 	Get(ctx context.Context, ref SecretRef) (SecretValue, error)
@@ -59,30 +60,34 @@ type ObjectMeta struct {
 	UpdatedAt   time.Time
 }
 
-// ObjectStore guarda artefatos de conhecimento, uploads do chat e diagramas.
-// SignedPutURL existe para o binário do upload NÃO passar pelo BFF.
+// ObjectStore holds knowledge artifacts, chat uploads and diagrams.
+// SignedPutURL exists so the upload's bytes do NOT pass through the BFF.
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
-//  1. leitura-após-escrita: Put seguido de Get devolve os mesmos bytes, imediatamente;
-//  2. Put SUBSTITUI o objeto inteiro — sem merge, sem versão — e a troca é
-//     atômica para quem lê: nunca se lê metade de um objeto;
-//  3. ausência é ERRO, com KindNotFound, em Get e Stat. Diferente do SecretStore,
-//     que devolve (nil, nil): lá a ausência é estado normal do fluxo de
-//     credencial; aqui o artefato pedido não existir é falha do caso de uso;
-//  4. Delete é idempotente: remover o que não existe devolve nil;
-//  5. a chave é OPACA e PLANA. Pode conter "/", mas isso NÃO cria hierarquia:
-//     "a/b" e "a/b/c" são dois objetos independentes, "a/b" não é prefixo
-//     navegável, e chave nenhuma escapa do bucket ("../x" é nome literal);
-//  6. o bucket isola: a mesma chave em buckets diferentes são objetos diferentes;
-//  7. Stat.Size é o tamanho exato do conteúdo gravado (zero é válido);
-//     ContentType devolve o que foi gravado, e "application/octet-stream" quando
-//     o Put não informou; UpdatedAt nunca é zero e não regride entre escritas;
-//  8. SignedPutURL/SignedGetURL ou devolvem URL não vazia sem tocar no objeto,
-//     ou falham com KindUnavailable — NUNCA string vazia com erro nil. A
-//     capacidade não existe em todo backend (armazenamento em arquivo não tem o
-//     que assinar) e a alternativa é passar o binário pelo BFF; o chamador
-//     precisa poder DESCOBRIR isso em vez de receber uma URL que não funciona;
-//  9. seguro para uso concorrente.
+// Guarantees verified by the contract suite, in EVERY adapter:
+//  1. read-after-write: Put followed by Get returns the same bytes, immediately;
+//  2. Put REPLACES the whole object — no merge, no version — and the swap is
+//     atomic to a reader: half an object is never read;
+//  3. absence is an ERROR, with KindNotFound, in Get and Stat. Unlike
+//     SecretStore, which returns (nil, nil): there, absence is a normal state of
+//     the credential flow; here, the requested artifact not existing is a
+//     failure of the use case;
+//  4. Delete is idempotent: removing what does not exist returns nil;
+//  5. the key is OPAQUE and FLAT. It may contain "/", but that does NOT create
+//     hierarchy: "a/b" and "a/b/c" are two independent objects, "a/b" is not a
+//     navigable prefix, and no key escapes the bucket ("../x" is a literal name);
+//  6. the bucket isolates: the same key in different buckets are different
+//     objects;
+//  7. Stat.Size is the exact size of the stored content (zero is valid);
+//     ContentType returns what was stored, and "application/octet-stream" when
+//     the Put did not say; UpdatedAt is never zero and does not go backwards
+//     between writes;
+//  8. SignedPutURL/SignedGetURL either return a non-empty URL without touching
+//     the object, or fail with KindUnavailable — NEVER an empty string with a
+//     nil error. The capability does not exist in every backend (file storage
+//     has nothing to sign) and the alternative is pushing the bytes through the
+//     BFF; the caller has to be able to DISCOVER that instead of receiving a URL
+//     that does not work;
+//  9. safe for concurrent use.
 type ObjectStore interface {
 	Put(ctx context.Context, ref ObjectRef, content []byte, contentType string) error
 	Get(ctx context.Context, ref ObjectRef) ([]byte, error)
@@ -94,11 +99,11 @@ type ObjectStore interface {
 
 // ───────────────────────── IdentityProvider ─────────────────────────
 
-// Principal é o resultado NORMALIZADO da verificação de token. Claims de
-// Firebase não cruzam esta fronteira — é o que permite trocar por Keycloak,
-// Zitadel ou Ory sem tocar no domínio.
+// Principal is the NORMALIZED result of token verification. Firebase claims do
+// not cross this boundary — that is what allows swapping in Keycloak, Zitadel or
+// Ory without touching the domain.
 type Principal struct {
-	// Subject é o ÚNICO campo obrigatório (garantia 3).
+	// Subject is the ONLY required field (guarantee 3).
 	Subject       string
 	Email         string
 	EmailVerified bool
@@ -107,100 +112,100 @@ type Principal struct {
 	Providers     []string
 }
 
-// IdentityProvider responde UMA pergunta: quem está chamando?
+// IdentityProvider answers ONE question: who is calling?
 //
-// A porta tem uma operação só de propósito. Emitir, renovar, revogar e
-// administrar usuário é trabalho do provedor de identidade, não do domínio; o
-// que o domínio precisa é que a resposta "quem é" tenha a MESMA forma vindo do
-// Firebase (GCP) ou de um Keycloak/Dex/Authentik dentro do cluster.
+// The port has a single operation on purpose. Issuing, renewing, revoking and
+// administering users is the identity provider's job, not the domain's; what the
+// domain needs is for the answer to "who is this" to have the SAME shape coming
+// from Firebase (GCP) or from a Keycloak/Dex/Authentik inside the cluster.
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+// Guarantees verified by the contract suite, in EVERY adapter:
 //
-//  1. token que não se prova é KindUnauthorized, SEMPRE e só ele: vazio,
-//     malformado, sem as três partes, base64 ou JSON ilegível, algoritmo não
-//     aceito ("none" e HS* inclusive — trocar o algoritmo é a forma clássica de
-//     transformar chave pública em segredo compartilhado), assinatura inválida,
-//     assinado por chave desconhecida, expirado, ainda não válido (nbf), de
-//     outro emissor, de outra audiência, ou sem sujeito. Um Kind só, porque do
-//     ponto de vista do domínio existe uma decisão só: esta chamada não está
-//     autenticada;
+//  1. a token that cannot prove itself is KindUnauthorized, ALWAYS and only
+//     that: empty, malformed, missing one of the three parts, unreadable base64
+//     or JSON, an algorithm that is not accepted ("none" and HS* included —
+//     swapping the algorithm is the classic way to turn a public key into a
+//     shared secret), an invalid signature, signed by an unknown key, expired,
+//     not yet valid (nbf), from another issuer, from another audience, or with
+//     no subject. A single Kind, because from the domain's point of view there
+//     is a single decision: this call is not authenticated;
 //
-//  2. a mensagem do erro NUNCA contém o token nem pedaço dele — nem prefixo,
-//     nem sufixo, nem o payload decodificado, nem a claim crua. Erro sobe para
-//     log, e token em log é credencial em repouso: quem lê o log entra como o
-//     dono. A mensagem descreve a CAUSA em português para o operador
-//     ("token expirado", "emissor inesperado"); o material do token fica fora;
+//  2. the error message NEVER contains the token or any piece of it — not a
+//     prefix, not a suffix, not the decoded payload, not the raw claim. Errors
+//     go to logs, and a token in a log is a credential at rest: whoever reads
+//     the log signs in as its owner. The message describes the CAUSE for the
+//     operator ("token expired", "unexpected issuer"); the token material stays
+//     out;
 //
-//  3. com erro nil, Subject NUNCA é vazio. É o único campo obrigatório do
-//     Principal, e é a identidade estável do sujeito DENTRO do emissor —
-//     emissor diferente é espaço de identidades diferente, e é por isso que o
-//     domínio guarda Subject junto do emissor que o produziu, nunca sozinho;
+//  3. with a nil error, Subject is NEVER empty. It is the Principal's only
+//     required field, and it is the subject's stable identity WITHIN the issuer
+//     — a different issuer is a different identity space, which is why the
+//     domain stores Subject together with the issuer that produced it, never
+//     alone;
 //
-//  4. Email, Name e AvatarURL são OPCIONAIS: vazio quer dizer "o emissor não
-//     informou", jamais erro. Login por telefone, por chave de acesso ou por
-//     SSO corporativo sem escopo de perfil não tem e-mail nenhum para dar, e um
-//     adaptador que exigisse e-mail tornaria a porta inutilizável nesses casos;
+//  4. Email, Name and AvatarURL are OPTIONAL: empty means "the issuer did not
+//     say", never an error. Phone login, passkey login or corporate SSO without
+//     profile scope have no email to give, and an adapter that demanded one
+//     would make the port unusable in those cases;
 //
-//  5. EmailVerified é FALSE quando o emissor não informa — não é erro. Ausência
-//     de afirmação não é afirmação: se o default fosse true, um emissor calado
-//     promoveria todo mundo a e-mail verificado, e a checagem que protege
-//     vinculação de conta por e-mail viraria carimbo;
+//  5. EmailVerified is FALSE when the issuer does not say — that is not an
+//     error. Absence of an assertion is not an assertion: if the default were
+//     true, a silent issuer would promote everyone to verified, and the check
+//     that guards email-based account linking would become a rubber stamp;
 //
-//  6. Providers é INFORMATIVO: como o sujeito se autenticou e/ou quais
-//     identidades estão vinculadas, em nomes minúsculos, sem repetição e sem
-//     entrada vazia ("password", "google.com", "oidc"). Adaptador que não sabe
-//     dizer devolve lista VAZIA — nunca inventa, nunca devolve nome interno de
-//     fornecedor, nunca devolve nil "significando alguma coisa". Como um
-//     adaptador legítimo pode não saber, DECISÃO DE AUTORIZAÇÃO NÃO PODE
-//     DEPENDER DESTE CAMPO;
+//  6. Providers is INFORMATIONAL: how the subject authenticated and/or which
+//     identities are linked, in lowercase names, without repetition and without
+//     empty entries ("password", "google.com", "oidc"). An adapter that cannot
+//     tell returns an EMPTY list — never invents, never returns an internal
+//     vendor name, never returns nil "meaning something". Because a legitimate
+//     adapter may not know, NO AUTHORIZATION DECISION MAY DEPEND ON THIS FIELD;
 //
-//  7. VerifyToken PODE fazer I/O — descobrir o emissor e buscar a chave pública
-//     é parte de verificar. Quando esse I/O falha (rede, emissor fora do ar,
-//     resposta ilegível, contexto cancelado ou prazo esgotado) o erro é
-//     KindUnavailable, NUNCA KindUnauthorized. Confundir os dois converte uma
-//     indisponibilidade do emissor em "seu login é inválido" para TODOS os
-//     usuários ao mesmo tempo, manda o usuário trocar senha que está certa e
-//     manda a equipe caçar o defeito no lugar errado;
+//  7. VerifyToken MAY do I/O — discovering the issuer and fetching the public
+//     key is part of verifying. When that I/O fails (network, issuer down,
+//     unreadable response, cancelled context or deadline exceeded) the error is
+//     KindUnavailable, NEVER KindUnauthorized. Confusing the two turns an issuer
+//     outage into "your login is invalid" for ALL users at once, sends the user
+//     to change a password that is correct, and sends the team hunting the
+//     defect in the wrong place;
 //
-//  8. a chave pública é CACHEADA, e revalidada quando aparece um `kid`
-//     desconhecido. As duas metades são obrigatórias: buscar a chave a cada
-//     requisição é negação de serviço contra o próprio emissor, e não
-//     revalidar transforma a rotação de chave — rotina no Keycloak e no
-//     Firebase — em queda total de login. A revalidação é limitada no tempo:
-//     um atacante que mande tokens com `kid` aleatório não pode virar um
-//     gerador de tráfego contra o emissor;
+//  8. the public key is CACHED, and revalidated when an unknown `kid` shows up.
+//     Both halves are mandatory: fetching the key on every request is a denial
+//     of service against the issuer itself, and not revalidating turns key
+//     rotation — routine in Keycloak and Firebase — into a total login outage.
+//     Revalidation is rate-limited: an attacker sending tokens with random `kid`
+//     must not become a traffic generator aimed at the issuer;
 //
-//  9. verificar não tem efeito colateral, é determinístico e é seguro para uso
-//     concorrente: o mesmo token, no mesmo instante, dá o mesmo resultado, e
-//     nada no provedor muda por tê-lo verificado;
+//  9. verifying has no side effect, is deterministic and is safe for concurrent
+//     use: the same token, at the same instant, yields the same result, and
+//     nothing in the provider changes for having verified it;
 //
-//  10. o token chega CRU, com ou sem o prefixo "Bearer " que a borda HTTP
-//     carrega. Token vazio é KindUnauthorized decidido SEM I/O nenhum — quem
-//     chama sem credencial não pode custar uma ida ao emissor;
+//  10. the token arrives RAW, with or without the "Bearer " prefix the HTTP edge
+//     carries. An empty token is KindUnauthorized decided with NO I/O at all —
+//     a caller with no credential must not cost a round trip to the issuer;
 //
-//  11. claim crua não cruza a porta. O domínio enxerga este struct e nada mais:
-//     nem mapa de claims, nem token original, nem bloco específico de
-//     fornecedor. É esta garantia que faz a troca de emissor ser fiação.
+//  11. raw claims do not cross the port. The domain sees this struct and nothing
+//     else: no claims map, no original token, no vendor-specific block. It is
+//     this guarantee that makes swapping issuers a wiring change.
 //
-// FORA da porta, de propósito:
+// OUT of the port, on purpose:
 //
-//   - EMISSÃO, renovação e revogação de token, e todo o CRUD de usuário. É a
-//     superfície mais assimétrica entre provedores e a que mais amarra: o
-//     domínio nunca precisou dela para responder "quem está chamando";
+//   - ISSUING, renewing and revoking tokens, and all user CRUD. It is the most
+//     asymmetric surface across providers and the one that binds hardest: the
+//     domain never needed it to answer "who is calling";
 //
-//   - CHECAGEM DE REVOGAÇÃO por requisição. O Firebase oferece (checkRevoked,
-//     com ida ao servidor a cada chamada); o OIDC genérico não oferece nada
-//     equivalente sem introspecção, que nem todo emissor publica. Prometer o
-//     que só um cumpre seria a abstração vazando — a expiração curta do token
-//     é o que limita a janela nos dois;
+//   - PER-REQUEST REVOCATION CHECKS. Firebase offers them (checkRevoked, with a
+//     server round trip on every call); generic OIDC offers nothing equivalent
+//     short of introspection, which not every issuer publishes. Promising what
+//     only one can deliver would be the abstraction leaking — short token expiry
+//     is what bounds the window in both;
 //
-//   - PAPÉIS, custom claims e escopos. Autorização é do domínio (conta,
-//     hierarquia, papel), e trazer isso do emissor faria a política de acesso
-//     morar no provedor de identidade de cada instalação;
+//   - ROLES, custom claims and scopes. Authorization belongs to the domain
+//     (account, hierarchy, role), and bringing it from the issuer would move the
+//     access policy into each installation's identity provider;
 //
-//   - MULTI-TENANT do provedor, tolerância de relógio, TTL de cache e URL de
-//     descoberta: são AJUSTE do adaptador, feitos no composition root por
-//     variável de ambiente. Não são vocabulário do domínio.
+//   - the provider's MULTI-TENANCY, clock skew, cache TTL and discovery URL:
+//     those are adapter TUNING, done at the composition root through environment
+//     variables. They are not domain vocabulary.
 type IdentityProvider interface {
 	VerifyToken(ctx context.Context, raw string) (*Principal, error)
 }
@@ -217,40 +222,42 @@ type Event struct {
 	OccurredAt  time.Time
 }
 
-// Handler processa um evento. DEVE ser idempotente: a entrega é ao-menos-uma-vez
-// (ADR-0019). Erro devolvido provoca retry com backoff; após o teto, DLQ.
+// Handler processes an event. It MUST be idempotent: delivery is at-least-once
+// (ADR-0019). A returned error triggers a retry with backoff; past the ceiling,
+// the DLQ.
 type Handler func(ctx context.Context, e Event) error
 
-// EventBus transporta BYTES, não structs.
+// EventBus transports BYTES, not structs.
 //
-// Payload é o envelope JSON do evento — o mesmo que o outbox grava. Essa frase
-// é a garantia mais importante desta porta, porque a violação dela é silenciosa:
-// um adaptador que reserialize ports.Event manda Payload []byte em base64, o
-// outro lado não reconhece nada e TODA entrega é descartada sem erro nenhum.
+// Payload is the event's JSON envelope — the same one the outbox writes. That
+// sentence is this port's most important guarantee, because violating it is
+// silent: an adapter that re-serializes ports.Event sends Payload []byte as
+// base64, the other side recognizes nothing, and EVERY delivery is dropped with
+// no error at all.
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
-//  1. os bytes de Payload chegam IDÊNTICOS aos publicados, sem recodificação;
-//  2. os demais campos do evento entregue são lidos do envelope, não copiados
-//     do struct publicado — o assinante enxerga o que trafegou no fio;
-//  3. Publish sem Payload monta um envelope a partir do evento (nunca um
-//     json.Marshal do ports.Event), preservando os campos de identificação;
-//  4. Type é o assunto da publicação; assinatura filtra por assunto com a
-//     semântica do NATS ("*" casa um token, ">" casa a cauda), e lista vazia
-//     casa tudo;
-//  5. entrega ao-menos-uma-vez, ordem NÃO garantida — o Handler precisa ser
-//     idempotente;
-//  6. o que foi publicado ANTES da assinatura é entregue quando o durável
-//     aparece (retenção), senão a espinha de eventos só funcionaria com a ordem
-//     de boot certa;
-//  7. erro do Handler provoca reentrega; sucesso não;
-//  8. mensagem ilegível é DESCARTADA com registro, não reentregue para sempre:
-//     uma mensagem venenosa não pode travar a fila;
-//  9. Publish é seguro para uso concorrente; evento sem Type é recusado.
+// Guarantees verified by the contract suite, in EVERY adapter:
+//  1. Payload's bytes arrive IDENTICAL to those published, with no re-encoding;
+//  2. the delivered event's other fields are read from the envelope, not copied
+//     from the published struct — the subscriber sees what travelled the wire;
+//  3. Publish with no Payload builds an envelope from the event (never a
+//     json.Marshal of ports.Event), preserving the identifying fields;
+//  4. Type is the publication subject; subscriptions filter by subject with
+//     NATS semantics ("*" matches one token, ">" matches the tail), and an empty
+//     list matches everything;
+//  5. at-least-once delivery, order NOT guaranteed — the Handler must be
+//     idempotent;
+//  6. what was published BEFORE the subscription is delivered once the durable
+//     appears (retention); otherwise the event spine would only work with the
+//     right boot order;
+//  7. a Handler error triggers redelivery; success does not;
+//  8. an unreadable message is DROPPED with a log entry, not redelivered
+//     forever: a poison message must not block the queue;
+//  9. Publish is safe for concurrent use; an event with no Type is refused.
 //
-// FORA da porta, de propósito: desduplicação. O JetStream desduplica por ID
-// dentro de uma janela; o adaptador em memória não desduplica. Como a entrega é
-// ao-menos-uma-vez em ambos, consumidor idempotente é obrigatório de qualquer
-// jeito — prometer dedup seria prometer o que só um adaptador cumpre.
+// OUT of the port, on purpose: deduplication. JetStream deduplicates by ID
+// within a window; the in-memory adapter does not. Since delivery is
+// at-least-once in both, an idempotent consumer is mandatory anyway — promising
+// dedup would be promising what only one adapter delivers.
 type EventBus interface {
 	Publish(ctx context.Context, e Event) error
 	Subscribe(ctx context.Context, stream, durable string, subjects []string, h Handler) error
@@ -259,21 +266,22 @@ type EventBus interface {
 
 // ───────────────────────── SandboxLauncher ─────────────────────────
 
-// IsolationTier é o nível de isolamento do substrato onde a demanda executa.
+// IsolationTier is the isolation level of the substrate where a demand runs.
 //
-// É DECLARADO, nunca presumido. Quem provisiona diz qual quer; o launcher
-// entrega EXATAMENTE aquele ou recusa. Não existe degradação silenciosa: um
-// sandbox que pediu microVM e recebeu container continua parecendo saudável, e
-// a diferença só aparece no dia do incidente. RuntimeClass de Kata falta na
-// maioria das distribuições (spec do substrato §2 e R-4) — por isso a ausência
-// precisa virar recusa com mensagem, não um nível a menos sem aviso.
+// It is DECLARED, never presumed. Whoever provisions says which one they want;
+// the launcher delivers EXACTLY that or refuses. There is no silent
+// degradation: a sandbox that asked for a microVM and got a container still
+// looks healthy, and the difference only shows up on the day of the incident.
+// A Kata RuntimeClass is missing from most distributions (substrate spec §2 and
+// R-4) — which is why its absence has to become a refusal with a message, not
+// one tier less with no warning.
 type IsolationTier string
 
 const (
 	TierUnspecified    IsolationTier = ""
 	TierHardware       IsolationTier = "hardware"        // Kata/Firecracker — microVM
 	TierKernelEmulated IsolationTier = "kernel_emulated" // gVisor / Edera
-	TierNamespace      IsolationTier = "namespace"       // container com securityContext estrito
+	TierNamespace      IsolationTier = "namespace"       // container with a strict securityContext
 )
 
 func ValidIsolationTier(t IsolationTier) bool {
@@ -284,44 +292,45 @@ func ValidIsolationTier(t IsolationTier) bool {
 	return false
 }
 
-// SandboxWorkspacePath é onde o workspace da demanda é montado DENTRO do
-// sandbox, idêntico em todo adaptador.
+// SandboxWorkspacePath is where the demand's workspace is mounted INSIDE the
+// sandbox, identical in every adapter.
 //
-// É constante da PORTA, e não campo da spec, porque é o único caminho cuja
-// sobrevivência à suspensão é prometida. Se cada adaptador escolhesse o seu,
-// "o trabalho sobrevive ao suspender" viraria promessa que depende de qual
-// implantação atendeu a chamada — que é exatamente o tipo de diferença que a
-// suíte de contrato existe para não deixar passar.
+// It is a constant of the PORT, and not a field of the spec, because it is the
+// only path whose survival across suspension is promised. If each adapter chose
+// its own, "the work survives suspension" would become a promise that depends on
+// which deployment served the call — exactly the kind of difference the contract
+// suite exists to catch.
 const SandboxWorkspacePath = "/workspace"
 
-// SandboxHandle identifica um sandbox JÁ provisionado. O ID é do domínio: o
-// adaptador nunca inventa identidade, só a carimba no que cria.
+// SandboxHandle identifies an ALREADY provisioned sandbox. The ID belongs to the
+// domain: the adapter never invents identity, it only stamps it on what it
+// creates.
 type SandboxHandle struct {
 	ID        string
-	Namespace string // dop-<id-curto> — um por demanda (spec §1)
+	Namespace string // dop-<short-id> — one per demand (spec §1)
 }
 
-// SandboxSpec é tudo o que o substrato precisa para materializar um sandbox.
-// Repare no que NÃO está aqui: nada de kubeconfig, socket, runtimeClassName,
-// nome de imagem de registry interno ou limite de cgroup. Isso é vocabulário de
-// fornecedor e mora do lado de lá da porta.
+// SandboxSpec is everything the substrate needs to materialize a sandbox. Note
+// what is NOT here: no kubeconfig, no socket, no runtimeClassName, no internal
+// registry image name, no cgroup limit. That is vendor vocabulary and it lives
+// on the far side of the port.
 type SandboxSpec struct {
 	SandboxHandle
 	AccountID string
 	DemandID  string
 	Tier      IsolationTier
 	Image     string
-	// Command vazio = entrypoint da imagem. Existe porque o substrato precisa
-	// ser exercitável com uma imagem genérica na suíte de contrato — sem ele,
-	// provar as garantias exigiria uma imagem de devbox publicada, e a suíte
-	// deixaria de rodar no laptop de quem mexe no adaptador.
+	// An empty Command means the image's entrypoint. It exists so the substrate
+	// can be exercised with a generic image in the contract suite — without it,
+	// proving the guarantees would require a published devbox image, and the
+	// suite would stop running on the laptop of whoever works on the adapter.
 	Command []string
 	Env     map[string]string
 }
 
-// SandboxPhase é o que o SUBSTRATO enxerga. Não é o estado do domínio: aqui não
-// existe "destruído", porque para o launcher destruído e nunca existido são a
-// mesma coisa — a memória de um sandbox destruído vive no Postgres.
+// SandboxPhase is what the SUBSTRATE sees. It is not the domain's state: there
+// is no "destroyed" here, because to the launcher destroyed and never-existed
+// are the same thing — the memory of a destroyed sandbox lives in Postgres.
 type SandboxPhase string
 
 const (
@@ -330,12 +339,12 @@ const (
 	PhaseSuspended    SandboxPhase = "suspended"
 )
 
-// SandboxEndpoint é uma porta publicada pela pilha da demanda.
+// SandboxEndpoint is a port published by the demand's stack.
 //
-// Não tem URL de propósito: a URL é `<serviço>--<demanda>.<domínio>` (spec §5),
-// e o domínio do ingress é política da instalação, não fato do substrato. Se
-// cada adaptador montasse a URL, a mesma regra de nomeação existiria em dois
-// lugares e divergiria no primeiro dia em que o domínio mudasse.
+// It has no URL on purpose: the URL is `<service>--<demand>.<domain>` (spec §5),
+// and the ingress domain is installation policy, not a fact about the substrate.
+// If each adapter built the URL, the same naming rule would exist in two places
+// and would diverge the first day the domain changed.
 type SandboxEndpoint struct {
 	Name  string
 	Port  int32
@@ -343,210 +352,221 @@ type SandboxEndpoint struct {
 }
 
 type SandboxStatus struct {
-	// Phase e Tier são o que o substrato ESTÁ entregando agora — não o que foi
-	// pedido. É essa distinção que torna "declarado, nunca presumido"
-	// verificável depois do provisionamento, e não só no momento dele.
+	// Phase and Tier are what the substrate IS delivering right now — not what
+	// was asked for. It is that distinction that makes "declared, never
+	// presumed" verifiable after provisioning, and not only at the moment of it.
 	Phase     SandboxPhase
 	Tier      IsolationTier
 	Endpoints []SandboxEndpoint
 }
 
-// LogQuery seleciona o que sair pelo Tail. Service nomeia um processo DENTRO do
-// sandbox (contêiner do pod, serviço do compose); vazio = o processo principal.
+// LogQuery selects what comes out of Tail. Service names a process INSIDE the
+// sandbox (a pod's container, a compose service); empty = the main process.
 type LogQuery struct {
 	Service   string
-	TailLines int  // 0 = tudo o que o substrato ainda guarda
-	Follow    bool // false = devolve o que já existe e retorna
+	TailLines int  // 0 = everything the substrate still holds
+	Follow    bool // false = return what already exists and stop
 }
 
-// LogLine é uma linha crua do substrato. Classificação de origem (app, test,
-// infra) NÃO está aqui: é convenção do que roda dentro do sandbox, e mora no
-// domínio, onde muda em um lugar só.
+// LogLine is a raw line from the substrate. Classifying its origin (app, test,
+// infra) is NOT here: that is a convention of what runs inside the sandbox, and
+// it lives in the domain, where it changes in one place.
 type LogLine struct {
 	Service string
-	// Stream é stdout ou stderr — quando o substrato separa os dois. O
-	// Kubernetes não separa (funde tudo no log do contêiner) e devolve sempre
-	// "stdout"; o Docker separa. Por isso a suíte de contrato não promete nada
-	// sobre este campo: quem depender dele estará dependendo do adaptador.
+	// Stream is stdout or stderr — when the substrate separates the two.
+	// Kubernetes does not (it merges everything into the container log) and
+	// always returns "stdout"; Docker separates them. That is why the contract
+	// suite promises nothing about this field: depending on it means depending
+	// on the adapter.
 	Stream string
 	Text   string
 	At     time.Time
 }
 
-// ───────────────────────── execução de comando ─────────────────────────
+// ───────────────────────── command execution ─────────────────────────
 
-// ExecRequest é UM comando a rodar dentro de um sandbox ATIVO.
+// ExecRequest is ONE command to run inside an ACTIVE sandbox.
 //
-// Repare no que NÃO está aqui, porque a ausência é o desenho:
+// Note what is NOT here, because the absence is the design:
 //
-//   - VARIÁVEL DE AMBIENTE. O Docker aceita `Env` no `/exec/create`; o
-//     `pods/exec` do Kubernetes não aceita nada além do comando. Cumpri-la no
-//     k8s exigiria prefixar `env K=V …` no argv — e valor em argv é visível no
-//     `ps` de qualquer processo do sandbox, que é onde roda código de agente.
-//     Capacidade que não mapeia fica fora (ADR-0001), e neste caso ficar fora é
-//     também a escolha segura: **a porta não tem por onde receber credencial**.
-//     Não é promessa de disciplina, é ausência de campo;
+//   - ENVIRONMENT VARIABLES. Docker accepts `Env` on `/exec/create`;
+//     Kubernetes' `pods/exec` accepts nothing beyond the command. Honouring it
+//     on k8s would mean prefixing `env K=V …` onto the argv — and a value in
+//     argv is visible in the `ps` of any process in the sandbox, which is where
+//     agent code runs. A capability that does not map stays out (ADR-0001), and
+//     in this case staying out is also the safe choice: **the port has no field
+//     through which a credential could arrive**. It is not a promise of
+//     discipline, it is the absence of a field;
 //
-//   - DIRETÓRIO DE TRABALHO. Mesma assimetria: o Docker tem `WorkingDir`, o k8s
-//     não. Em vez de emular, os dois adaptadores fixam o diretório de trabalho
-//     do CONTÊINER em SandboxWorkspacePath no provisionamento, e o exec o
-//     herda. Vira garantia uniforme (14) em vez de campo que só um honra;
+//   - WORKING DIRECTORY. Same asymmetry: Docker has `WorkingDir`, k8s does not.
+//     Instead of emulating it, both adapters fix the CONTAINER's working
+//     directory to SandboxWorkspacePath at provisioning time, and exec inherits
+//     it. That turns it into a uniform guarantee (14) instead of a field only
+//     one adapter honours;
 //
-//   - STDIN, TTY e REDIMENSIONAMENTO. Isso é SESSÃO, não comando: é o terminal
-//     do dev, que é PTY do dop-app (spec §5) e continua fora desta porta. O que
-//     entrou é a execução de UM comando, sem interação, com código de saída —
-//     que é exatamente o que o laço de ferramenta do agente precisa.
+//   - STDIN, TTY and RESIZE. That is a SESSION, not a command: it is the
+//     developer's terminal, which is dop-app's PTY (spec §5), and it stays
+//     outside this port. What came in is the execution of ONE command, without
+//     interaction, with an exit code — which is exactly what the agent's tool
+//     loop needs.
 type ExecRequest struct {
-	// Command é argv. NÃO há shell implícito: quem quiser pipeline passa
-	// ["sh","-c","…"] e o shell fica visível na auditoria em vez de escondido
-	// dentro do adaptador.
+	// Command is argv. There is NO implicit shell: whoever wants a pipeline
+	// passes ["sh","-c","…"] and the shell shows up in the audit trail instead
+	// of hiding inside the adapter.
 	Command []string
-	// TimeoutSeconds é o teto DESTE comando. Zero usa DefaultExecTimeout.
-	// Estourar não é erro da porta — ver a garantia 17.
+	// TimeoutSeconds is THIS command's ceiling. Zero uses DefaultExecTimeout.
+	// Hitting it is not a port error — see guarantee 17.
 	TimeoutSeconds int
-	// MaxOutputBytes é o teto de CADA fluxo (stdout e stderr, separadamente).
-	// Zero usa DefaultExecMaxOutputBytes. Saída de ferramenta vira contexto de
-	// modelo, e contexto é dinheiro (ADR-0011): um `cat` de log de 200 MB sem
-	// teto não é um problema de memória, é uma fatura.
+	// MaxOutputBytes is the ceiling of EACH stream (stdout and stderr,
+	// separately). Zero uses DefaultExecMaxOutputBytes. Tool output becomes
+	// model context, and context is money (ADR-0011): an uncapped `cat` of a
+	// 200 MB log is not a memory problem, it is an invoice.
 	MaxOutputBytes int
 }
 
-// ExecResult é o que o comando produziu. Note que não há campo de erro: falha
-// do COMANDO é resultado, não falha da porta (garantia 15).
+// ExecResult is what the command produced. Note there is no error field:
+// failure of the COMMAND is a result, not a failure of the port (guarantee 15).
 type ExecResult struct {
-	// ExitCode é o código do processo. -1 significa que NÃO HOUVE código: o
-	// processo não terminou (TimedOut) ou o substrato não soube dizer. Zero
-	// afirmaria sucesso, que é outra coisa.
+	// ExitCode is the process's code. -1 means there was NO code: the process
+	// did not finish (TimedOut) or the substrate could not tell. Zero would
+	// assert success, which is a different thing.
 	ExitCode int
 	Stdout   string
 	Stderr   string
-	// Truncated: algum dos fluxos bateu em MaxOutputBytes. Quem monta o
-	// resultado para o modelo PRECISA dizer isso — um agente que conclui a
-	// partir de saída cortada em silêncio conclui errado.
+	// Truncated: one of the streams hit MaxOutputBytes. Whoever assembles the
+	// result for the model MUST say so — an agent that draws conclusions from
+	// silently cut output draws the wrong ones.
 	Truncated bool
-	// TimedOut: o comando não terminou dentro do prazo. O que já saiu é
-	// entregue: um comando que pendurou depois de imprimir o essencial ainda
-	// informa.
+	// TimedOut: the command did not finish within the deadline. What already
+	// came out is delivered: a command that hung after printing the essentials
+	// still informs.
 	TimedOut bool
 }
 
 const (
-	// DefaultExecTimeout é o prazo de um comando quando o chamador não escolhe.
-	// Vive na PORTA, e não em cada adaptador, porque um default por adaptador
-	// faria o mesmo comando ter prazos diferentes conforme onde o sandbox subiu
-	// — que é a divergência que a suíte de contrato existe para não deixar
-	// passar.
+	// DefaultExecTimeout is a command's deadline when the caller does not pick
+	// one. It lives in the PORT, and not in each adapter, because a per-adapter
+	// default would give the same command different deadlines depending on where
+	// the sandbox came up — the very divergence the contract suite exists to
+	// catch.
 	DefaultExecTimeout = 2 * time.Minute
-	// DefaultExecMaxOutputBytes é o teto de saída por fluxo. 64 KiB é da ordem
-	// de 16 mil tokens: cabe num turno sem dominá-lo.
+	// DefaultExecMaxOutputBytes is the per-stream output ceiling. 64 KiB is on
+	// the order of 16 thousand tokens: it fits in a turn without dominating it.
 	DefaultExecMaxOutputBytes = 64 << 10
 )
 
-// SandboxLauncher é o substrato onde a demanda executa: microVM ou contêiner
-// com o agente, o workspace e um Docker interno (spec do substrato §1).
+// SandboxLauncher is the substrate where a demand executes: a microVM or a
+// container holding the agent, the workspace and an inner Docker (substrate spec
+// §1).
 //
-// Duas coisas vivem dentro de um sandbox, e a porta inteira gira em torno da
-// diferença entre elas: a EXECUÇÃO, efêmera e barata de recriar, e o WORKSPACE,
-// que é o trabalho da demanda e não se recria. Suspender derruba a primeira e
-// preserva o segundo; destruir leva os dois e não volta.
+// Two things live inside a sandbox, and the whole port turns on the difference
+// between them: the EXECUTION, ephemeral and cheap to recreate, and the
+// WORKSPACE, which is the demand's work and does not get recreated. Suspending
+// tears down the first and preserves the second; destroying takes both and does
+// not come back.
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+// Guarantees verified by the contract suite, in EVERY adapter:
 //
-//  1. Launch entrega o tier PEDIDO ou falha. Status.Tier é sempre igual a
-//     Spec.Tier quando o erro é nil — degradar em silêncio é proibido, e um
-//     tier que o substrato não oferece vira KindPrecondition com mensagem
-//     dizendo o que falta;
-//  2. tier recusado NÃO deixa rastro: depois da recusa, Describe devolve
-//     KindNotFound. Recusa que provisiona metade é pior que recusa nenhuma;
-//  3. SupportedTiers responde o que ESTE substrato oferece agora — é o que
-//     permite ao domínio recusar antes de gravar estado. Nunca devolve lista
-//     vazia sem erro: substrato que não oferece nível nenhum é substrato
-//     indisponível (KindUnavailable);
-//  4. Launch é IDEMPOTENTE por SandboxHandle.ID: relançar a mesma spec devolve
-//     o sandbox existente em vez de criar um segundo. Sem isso, um retry de
-//     rede duplicaria microVM — e a conta chega no fim do mês;
-//  5. Suspend derruba a execução e PRESERVA tudo o que está sob
-//     SandboxWorkspacePath. Nada FORA desse caminho é prometido: o adaptador
-//     k8s apaga o pod inteiro na suspensão e só o PVC sobrevive, enquanto o
-//     Docker mantém a camada gravável do contêiner. Prometer o que só um
-//     cumpre seria a abstração vazando;
-//  6. Resume recria a execução SOBRE o workspace existente e devolve a fase
-//     ativa. Depois de Resume, o que estava no workspace continua lá;
-//  7. Suspend e Resume são idempotentes: suspender suspenso e retomar ativo
-//     não erram e não mudam nada;
-//  8. Destroy é IRREVERSÍVEL e idempotente: leva execução e workspace, e
-//     destruir o que não existe devolve nil. Depois dele, Describe devolve
-//     KindNotFound e Resume RECUSA — não há caminho de volta pela porta;
-//  9. Describe, Suspend e Resume de sandbox inexistente devolvem KindNotFound.
-//     Só Destroy trata ausência como sucesso, porque só nele a ausência é o
-//     resultado desejado;
-//  10. sandboxes coexistem sem interferência: operação em um jamais altera ou
-//     revela o outro, mesmo com a mesma imagem e o mesmo comando (spec §1);
-//  11. Tail entrega as linhas do sandbox e MORRE JUNTO com o chamador: com o
-//     contexto cancelado, retorna sem erro e sem deixar goroutine viva. Com
-//     Follow=false, retorna ao fim do que existe;
-//  12. erro do emit interrompe o Tail e sobe — é como o servidor descobre que
-//     o cliente sumiu.
+//  1. Launch delivers the REQUESTED tier or fails. Status.Tier always equals
+//     Spec.Tier when the error is nil — silent degradation is forbidden, and a
+//     tier the substrate does not offer becomes KindPrecondition with a message
+//     saying what is missing;
+//  2. a refused tier leaves NO trace: after the refusal, Describe returns
+//     KindNotFound. A refusal that provisions half is worse than no refusal;
+//  3. SupportedTiers answers what THIS substrate offers now — that is what lets
+//     the domain refuse before writing state. It never returns an empty list
+//     with no error: a substrate offering no tier at all is an unavailable
+//     substrate (KindUnavailable);
+//  4. Launch is IDEMPOTENT by SandboxHandle.ID: relaunching the same spec
+//     returns the existing sandbox instead of creating a second one. Without
+//     that, a network retry would duplicate a microVM — and the bill arrives at
+//     the end of the month;
+//  5. Suspend tears down the execution and PRESERVES everything under
+//     SandboxWorkspacePath. Nothing OUTSIDE that path is promised: the k8s
+//     adapter deletes the whole pod on suspension and only the PVC survives,
+//     while Docker keeps the container's writable layer. Promising what only one
+//     delivers would be the abstraction leaking;
+//  6. Resume recreates the execution OVER the existing workspace and returns the
+//     active phase. After Resume, what was in the workspace is still there;
+//  7. Suspend and Resume are idempotent: suspending a suspended sandbox and
+//     resuming an active one neither error nor change anything;
+//  8. Destroy is IRREVERSIBLE and idempotent: it takes execution and workspace,
+//     and destroying what does not exist returns nil. After it, Describe returns
+//     KindNotFound and Resume REFUSES — there is no way back through the port;
+//  9. Describe, Suspend and Resume of a nonexistent sandbox return KindNotFound.
+//     Only Destroy treats absence as success, because only there is absence the
+//     desired outcome;
+//  10. sandboxes coexist without interference: an operation on one never alters
+//     or reveals the other, even with the same image and the same command
+//     (spec §1);
+//  11. Tail delivers the sandbox's lines and DIES WITH the caller: with the
+//     context cancelled, it returns without error and without leaving a live
+//     goroutine. With Follow=false, it returns at the end of what exists;
+//  12. an error from emit interrupts Tail and propagates — that is how the
+//     server finds out the client is gone.
 //
-// ── EXEC: por que ele ENTROU na porta (e o que continua fora) ────────────────
+// ── EXEC: why it CAME INTO the port (and what stays out) ─────────────────────
 //
-// Esta porta declarava, até a entrega do laço de ferramenta, que exec ficava de
-// fora: "o k8s exige upgrade de conexão (SPDY/WebSocket) com semântica própria
-// de stream; o Docker usa hijack de HTTP". Isso é verdade e continua verdade —
-// mas é uma afirmação sobre TRANSPORTE, e transporte é exatamente o que um
-// adaptador existe para absorver. A regra desta casa é outra: *fica de fora o
-// que não é cumprível por TODOS os adaptadores*. Rodar um comando dentro do
-// sandbox e devolver saída e código de saída é cumprível pelos dois — o k8s por
-// `pods/exec` sobre WebSocket (canais 1/2/3: stdout, stderr, status com o código
-// de saída), o Docker por `/exec/create` + `/exec/start` com o mesmo stream
-// multiplexado que o Tail já desmonta. O critério certo reprova a exclusão.
+// Until the tool loop shipped, this port declared that exec stayed out: "k8s
+// requires a connection upgrade (SPDY/WebSocket) with its own stream semantics;
+// Docker uses HTTP hijacking". That is true and remains true — but it is a
+// statement about TRANSPORT, and transport is exactly what an adapter exists to
+// absorb. This house's rule is a different one: *what stays out is what cannot
+// be delivered by ALL adapters*. Running a command inside the sandbox and
+// returning its output and exit code is deliverable by both — k8s through
+// `pods/exec` over WebSocket (channels 1/2/3: stdout, stderr, status with the
+// exit code), Docker through `/exec/create` + `/exec/start` with the same
+// multiplexed stream Tail already unpacks. The right criterion rejects the
+// exclusion.
 //
-// A exclusão também custava caro: sem exec na porta, o agente CONVERSA e não
-// AGE. O caminho alternativo — um processo dentro do sandbox expondo uma API
-// para o núcleo chamar — é pior nas duas pontas: exigiria que o sandbox fosse
-// alcançável (a spec §5 diz o contrário: o agente fala de dentro para fora) e
-// exigiria uma credencial DENTRO do sandbox para autenticar essa chamada, que é
-// precisamente o que o sandbox não pode carregar.
+// The exclusion was also expensive: without exec in the port, the agent TALKS
+// and does not ACT. The alternative path — a process inside the sandbox exposing
+// an API for the core to call — is worse at both ends: it would require the
+// sandbox to be reachable (spec §5 says the opposite: the agent speaks outward)
+// and it would require a credential INSIDE the sandbox to authenticate that
+// call, which is precisely what the sandbox must not carry.
 //
-// O que continua fora é a SESSÃO: stdin, TTY, redimensionamento, fluxo
-// bidirecional. Aquilo é o terminal do dev, é PTY do dop-app (spec §5), e aquilo
-// sim tem semântica que não mapeia. Entrou a fatia estreita: um comando, sem
-// interação, com prazo, com teto de saída e com código de saída.
+// What stays out is the SESSION: stdin, TTY, resize, bidirectional streaming.
+// That is the developer's terminal, that is dop-app's PTY (spec §5), and that
+// really does have semantics which do not map. What came in is the narrow
+// slice: one command, no interaction, with a deadline, an output ceiling and an
+// exit code.
 //
-// Garantias de Exec, também verificadas nos DOIS adaptadores:
+// Exec's guarantees, also verified in BOTH adapters:
 //
-//  13. Exec roda DENTRO do sandbox pedido: o comando enxerga o workspace sob
-//     SandboxWorkspacePath e o mesmo sistema de arquivos da execução corrente;
-//  14. o comando começa em SandboxWorkspacePath. Não é campo da requisição (ver
-//     ExecRequest): é o diretório de trabalho do contêiner, fixado no
-//     provisionamento pelos dois adaptadores;
-//  15. CÓDIGO DE SAÍDA DIFERENTE DE ZERO NÃO É ERRO DA PORTA. Volta em
-//     ExecResult.ExitCode com erro nil. É a garantia que sustenta o laço de
-//     ferramenta do agente: o modelo precisa VER que o comando falhou para
-//     corrigir, e um erro de transporte no lugar disso apagaria a diferença
-//     entre "o teste reprovou" e "o substrato caiu";
-//  16. stdout e stderr chegam SEPARADOS. Diferente do Tail — onde o k8s funde
-//     os dois no log do contêiner e a porta não promete nada —, aqui os dois
-//     substratos separam de verdade: canais 1 e 2 no k8s, quadros 1 e 2 no
-//     Docker;
-//  17. a saída é LIMITADA e o prazo é RESPEITADO, e nenhum dos dois é erro:
-//     Truncated e TimedOut são campos do resultado. Comando que despeja
-//     megabytes é cortado; comando que pendura é abandonado com o que já saiu;
-//  18. Exec de sandbox inexistente é KindNotFound e de sandbox SUSPENSO é
-//     KindPrecondition — nunca um código de saída inventado. Substrato sem
-//     execução não roda comando, e dizer isso é diferente de dizer que o
-//     comando falhou.
+//  13. Exec runs INSIDE the requested sandbox: the command sees the workspace
+//     under SandboxWorkspacePath and the same filesystem as the current
+//     execution;
+//  14. the command starts in SandboxWorkspacePath. It is not a request field
+//     (see ExecRequest): it is the container's working directory, fixed at
+//     provisioning time by both adapters;
+//  15. A NON-ZERO EXIT CODE IS NOT A PORT ERROR. It comes back in
+//     ExecResult.ExitCode with a nil error. This is the guarantee that holds up
+//     the agent's tool loop: the model has to SEE that the command failed in
+//     order to fix it, and a transport error in its place would erase the
+//     difference between "the test failed" and "the substrate went down";
+//  16. stdout and stderr arrive SEPARATED. Unlike Tail — where k8s merges the
+//     two into the container log and the port promises nothing — here both
+//     substrates genuinely separate them: channels 1 and 2 on k8s, frames 1 and
+//     2 on Docker;
+//  17. output is CAPPED and the deadline is RESPECTED, and neither is an error:
+//     Truncated and TimedOut are result fields. A command that dumps megabytes
+//     is cut; a command that hangs is abandoned with what already came out;
+//  18. Exec on a nonexistent sandbox is KindNotFound and on a SUSPENDED sandbox
+//     is KindPrecondition — never a made-up exit code. A substrate with no
+//     execution runs no command, and saying that is different from saying the
+//     command failed.
 //
-// FORA da porta, de propósito:
+// OUT of the port, on purpose:
 //
-//   - SESSÃO INTERATIVA no sandbox (stdin, TTY, resize). Ver acima: é o PTY do
-//     dop-app, e a semântica de stream bidirecional não mapeia;
-//   - SNAPSHOT/restauração de microVM. O suporte no Kata é limitado e o desenho
-//     não depende dele (spec §3): entraria como capacidade que o domínio
-//     acabaria assumindo existir;
-//   - LIMITES de cpu/memória. Não mapeiam entre um cgroup do Docker e um
-//     ResourceQuota de namespace com LimitRange sem virar o denominador comum
-//     do primeiro fornecedor que inspirou a porta.
+//   - an INTERACTIVE SESSION in the sandbox (stdin, TTY, resize). See above: it
+//     is dop-app's PTY, and bidirectional stream semantics do not map;
+//   - microVM SNAPSHOT/restore. Kata's support is limited and the design does
+//     not depend on it (spec §3): it would come in as a capability the domain
+//     would eventually assume exists;
+//   - cpu/memory LIMITS. They do not map between a Docker cgroup and a namespace
+//     ResourceQuota with a LimitRange without becoming the lowest common
+//     denominator of whichever vendor inspired the port first.
 type SandboxLauncher interface {
 	SupportedTiers(ctx context.Context) ([]IsolationTier, error)
 	Launch(ctx context.Context, spec SandboxSpec) (*SandboxStatus, error)
@@ -555,168 +575,177 @@ type SandboxLauncher interface {
 	Destroy(ctx context.Context, h SandboxHandle) error
 	Describe(ctx context.Context, h SandboxHandle) (*SandboxStatus, error)
 	Tail(ctx context.Context, h SandboxHandle, q LogQuery, emit func(LogLine) error) error
-	// Exec roda UM comando dentro do sandbox e espera ele terminar.
+	// Exec runs ONE command inside the sandbox and waits for it to finish.
 	//
-	// O erro é reservado para falha do SUBSTRATO (sandbox inexistente,
-	// suspenso, cluster fora do ar). Tudo o que o comando fez — inclusive
-	// falhar — vem em ExecResult.
+	// The error is reserved for a SUBSTRATE failure (nonexistent sandbox,
+	// suspended sandbox, cluster down). Everything the command did — including
+	// failing — comes back in ExecResult.
 	Exec(ctx context.Context, h SandboxHandle, req ExecRequest) (*ExecResult, error)
 }
 
 // ───────────────────────── Mailer ─────────────────────────
 
-// Mail é a INTENÇÃO de avisar alguém — nunca o artefato do aviso.
+// Mail is the INTENT to notify someone — never the notification artifact.
 //
-// Repare no que NÃO está aqui: assunto, corpo, HTML, `template_id`. A ADR-0025
-// decidiu que o índice de templates, a resolução e a renderização moram no
-// ADAPTADOR, e este struct é o que sobra quando isso sai: "aconteceu ISTO, para
-// ESTE endereço, com ESTES dados". Renderizar no domínio pareceria mais limpo e
-// seria pior — a plataforma nunca poderia usar template de provedor (perdendo
-// editor, versionamento e localização) e a porta passaria a carregar um blob de
-// HTML, que é artefato de renderização, não intenção.
+// Note what is NOT here: subject, body, HTML, `template_id`. ADR-0025 decided
+// that the template index, its resolution and its rendering live in the
+// ADAPTER, and this struct is what remains once that leaves: "THIS happened, to
+// THIS address, with THIS data". Rendering in the domain would look cleaner and
+// would be worse — the platform could never use a provider template (losing its
+// editor, versioning and localization) and the port would start carrying a blob
+// of HTML, which is a rendering artifact, not an intent.
 type Mail struct {
-	// AccountID é a conta em nome de quem se avisa. Vai ao adaptador porque um
-	// dia o remetente será por conta (domínio verificado), não para filtrar.
+	// AccountID is the account on whose behalf the notice goes out. It reaches
+	// the adapter because one day the sender will be per account (a verified
+	// domain), not in order to filter.
 	AccountID string
-	// Kind é o TIPO LÓGICO da notificação, no vocabulário do domínio
-	// ("invite", "attention_digest"). É string, e não o tipo nomeado do pacote
-	// notification, porque `notification` importa `ports` (relógio) e o
-	// caminho de volta seria ciclo de importação.
+	// Kind is the notification's LOGICAL TYPE, in the domain's vocabulary
+	// ("invite", "attention_digest"). It is a string, and not the named type
+	// from the notification package, because `notification` imports `ports` (for
+	// the clock) and the way back would be an import cycle.
 	Kind string
-	// To é UM endereço. Fan-out é decisão da regra, não do canal: um `[]string`
-	// aqui faria o adaptador escolher entre uma mensagem com todo mundo em
-	// cópia — que vaza os endereços entre si — e N mensagens, que é o que o
-	// chamador já sabe fazer.
+	// To is ONE address. Fan-out is the rule's decision, not the channel's: a
+	// `[]string` here would make the adapter choose between one message with
+	// everybody in copy — which leaks the addresses to each other — and N
+	// messages, which is what the caller already knows how to do.
 	To     string
 	ToName string
-	// Data são os dados do template, livres. O adaptador decide o que faz com
-	// eles: o SendGrid manda como `dynamic_template_data`, o SMTP renderiza
-	// local. Chave faltando NÃO é erro (garantia 8).
+	// Data is the template's data, free-form. The adapter decides what to do
+	// with it: SendGrid sends it as `dynamic_template_data`, SMTP renders
+	// locally. A missing key is NOT an error (guarantee 8).
 	Data map[string]any
 }
 
-// MailState é o desfecho do envio, no vocabulário que o projeto irmão já provou
-// útil em operação.
+// MailState is the outcome of a send, in the vocabulary the sibling project has
+// already proven useful in operation.
 type MailState string
 
 const (
-	// MailSent: o fornecedor aceitou a mensagem.
+	// MailSent: the provider accepted the message.
 	MailSent MailState = "sent"
-	// MailSentLocal: ENSAIO. Não havia credencial, o adaptador imprimiu em vez
-	// de enviar e ninguém recebeu nada. É estado próprio, e não `sent`, porque
-	// a diferença entre "avisamos" e "fingimos avisar" não pode depender de
-	// quem lê o log lembrar em que ambiente aquilo rodou.
+	// MailSentLocal: a REHEARSAL. There was no credential, the adapter printed
+	// instead of sending and nobody received anything. It is a state of its own,
+	// and not `sent`, because the difference between "we notified" and "we
+	// pretended to notify" cannot depend on whoever reads the log remembering
+	// which environment that ran in.
 	MailSentLocal MailState = "sent_local"
 )
 
-// MailReceipt é o comprovante. Não tem corpo, não tem HTML, não tem retorno do
-// fornecedor: só o que o chamador precisa para REGISTRAR o que aconteceu.
+// MailReceipt is the proof of send. No body, no HTML, no provider response:
+// only what the caller needs in order to RECORD what happened.
 type MailReceipt struct {
 	State MailState
-	// Provider identifica quem atendeu ("sendgrid", "smtp"). Serve à operação:
-	// "não chegou" é uma investigação diferente conforme quem enviou.
+	// Provider identifies who served it ("sendgrid", "smtp"). It serves
+	// operations: "it never arrived" is a different investigation depending on
+	// who sent it.
 	Provider string
-	// Reference é o id do fornecedor quando houver (o `X-Message-Id` do
-	// SendGrid). Vazio é NORMAL — o SMTP não tem o que devolver —, e por isso
-	// nada no domínio pode depender deste campo.
+	// Reference is the provider's id when there is one (SendGrid's
+	// `X-Message-Id`). Empty is NORMAL — SMTP has nothing to give back — and
+	// that is why nothing in the domain may depend on this field.
 	Reference string
 }
 
-// Mailer é o CANAL de e-mail. O gatilho — decidir o que notificar e para quem —
-// é do domínio (internal/domain/notification); aqui só acontece o disparo.
+// Mailer is the email CHANNEL. The trigger — deciding what to notify and to
+// whom — belongs to the domain (internal/domain/notification); only the dispatch
+// happens here.
 //
-// A porta é por CANAL, e não uma só para tudo, porque canais não têm a mesma
-// forma: e-mail tem assunto, HTML e anexo; push tem título, badge e link
-// profundo; SMS tem 160 caracteres e nenhuma formatação. Uma porta única teria a
-// união de tudo — com a maioria dos campos nunca usada — ou o mínimo denominador
-// comum, perdendo o que cada canal faz bem. `Pusher` e `SMSer` nascem quando
-// houver push e SMS (ADR-0025).
+// The port is per CHANNEL, and not one port for everything, because channels do
+// not share a shape: email has a subject, HTML and attachments; push has a
+// title, a badge and a deep link; SMS has 160 characters and no formatting. A
+// single port would carry the union of all of it — with most fields never used —
+// or the lowest common denominator, losing what each channel does well. `Pusher`
+// and `SMSer` are born when there is push and SMS (ADR-0025).
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+// Guarantees verified by the contract suite, in EVERY adapter:
 //
-//  1. RESOLUÇÃO COMPLETA: o adaptador resolve TODOS os tipos que o domínio sabe
-//     emitir. É a garantia mais importante desta porta, e a única cuja violação
-//     é invisível: um tipo que existe na política e não tem template no
-//     fornecedor faz o evento acontecer, o consumidor rodar e NINGUÉM receber.
-//     Tipo fora do índice do adaptador é KindNotFound, em Send e em Resolve —
-//     nunca uma mensagem genérica, nunca um sucesso silencioso;
+//  1. COMPLETE RESOLUTION: the adapter resolves EVERY type the domain can emit.
+//     It is this port's most important guarantee, and the only one whose
+//     violation is invisible: a type that exists in the policy and has no
+//     template at the provider makes the event happen, the consumer run, and
+//     NOBODY receive anything. A type outside the adapter's index is
+//     KindNotFound, in Send and in Resolve — never a generic message, never a
+//     silent success;
 //
-//  2. Resolve responde a mesma coisa que Send resolveria, SEM I/O e SEM enviar.
-//     Existe para que a suíte de contrato (e o composition root, no boot)
-//     possam perguntar "você sabe montar isto?" sem mandar e-mail para
-//     ninguém. As duas respostas CONCORDAM: tipo que Resolve aceita, Send não
-//     recusa por falta de template, e vice-versa;
+//  2. Resolve answers the same thing Send would resolve, with NO I/O and
+//     WITHOUT sending. It exists so the contract suite (and the composition
+//     root, at boot) can ask "do you know how to build this?" without mailing
+//     anyone. The two answers AGREE: a type Resolve accepts, Send does not
+//     refuse for want of a template, and vice versa;
 //
-//  3. ENSAIO LOCAL: sem credencial configurada, o adaptador NÃO fala com o
-//     fornecedor — imprime a mensagem e devolve MailSentLocal. É o modo de
-//     desenvolvimento do projeto irmão, e ele acontece DEPOIS da resolução do
-//     template, nunca antes: um ensaio que pulasse a resolução esconderia
-//     exatamente o defeito da garantia 1 em todo ambiente sem chave, que é
-//     onde a suíte roda;
+//  3. LOCAL REHEARSAL: with no credential configured, the adapter does NOT talk
+//     to the provider — it prints the message and returns MailSentLocal. It is
+//     the sibling project's development mode, and it happens AFTER template
+//     resolution, never before: a rehearsal that skipped resolution would hide
+//     exactly the defect of guarantee 1 in every environment without a key,
+//     which is where the suite runs;
 //
-//  4. o SEGREDO não sai: chave de API e senha de SMTP nunca aparecem em erro,
-//     em log, no String() do adaptador nem num `%+v` dele. Não é promessa de
-//     disciplina — a credencial é capturada em CLOSURE, não guardada em campo,
-//     porque o fmt lê campo não exportado por reflexão e não consegue chamar o
-//     String() dele;
+//  4. the SECRET does not get out: an API key and an SMTP password never appear
+//     in an error, in a log, in the adapter's String() or in a `%+v` of it. It
+//     is not a promise of discipline — the credential is captured in a CLOSURE,
+//     not held in a field, because fmt reads unexported fields by reflection and
+//     cannot call their String();
 //
-//  5. destinatário vazio, sem "@", ou tipo vazio são KindInvalid decididos SEM
-//     I/O: quem chama sem endereço não pode custar uma ida ao fornecedor;
+//  5. an empty recipient, one without "@", or an empty kind are KindInvalid
+//     decided with NO I/O: a caller with no address must not cost a round trip
+//     to the provider;
 //
-//  6. com erro nil, State é SEMPRE MailSent ou MailSentLocal — nunca vazio,
-//     nunca outro valor. Estado vazio viraria registro que não diz se alguém
-//     recebeu;
+//  6. with a nil error, State is ALWAYS MailSent or MailSentLocal — never
+//     empty, never another value. An empty state would become a record that
+//     does not say whether anyone received anything;
 //
-//  7. a tradução do erro é a da casa: fornecedor fora do ar, rede, prazo
-//     esgotado e resposta ilegível são KindUnavailable; credencial recusada é
-//     KindUnauthorized; conteúdo ou endereço recusado pelo fornecedor é
-//     KindInvalid. Confundir os dois primeiros grupos manda a equipe caçar
-//     defeito no lugar errado;
+//  7. error translation is the house's: provider down, network, deadline
+//     exceeded and unreadable response are KindUnavailable; a refused credential
+//     is KindUnauthorized; content or an address refused by the provider is
+//     KindInvalid. Confusing the first two groups sends the team hunting the
+//     defect in the wrong place;
 //
-//  8. Data é OPCIONAL e livre. Chave ausente NÃO é erro — o template decide o
-//     que fazer com a falta, e derrubar um convite porque um campo cosmético
-//     não veio trocaria um problema de aparência por um bloqueio de acesso;
+//  8. Data is OPTIONAL and free-form. A missing key is NOT an error — the
+//     template decides what to do with the gap, and dropping an invite because a
+//     cosmetic field did not arrive would trade a cosmetic problem for an access
+//     blocker;
 //
-//  9. Send NÃO grava nada e não tem efeito colateral além do envio: o registro
-//     do que foi disparado é do chamador (ADR-0025), e um adaptador que também
-//     registrasse teria duas responsabilidades e uma delas impossível de testar
-//     sem banco;
+//  9. Send writes NOTHING and has no side effect beyond the send itself:
+//     recording what was dispatched belongs to the caller (ADR-0025), and an
+//     adapter that also recorded would have two responsibilities, one of them
+//     impossible to test without a database;
 //
-//  10. seguro para uso concorrente.
+//  10. safe for concurrent use.
 //
-// FORA da porta, de propósito:
+// OUT of the port, on purpose:
 //
-//   - ASSUNTO e CORPO. São artefato de renderização; ver Mail;
-//   - ANEXO. O SendGrid aceita base64 no corpo do JSON, o SMTP exige MIME
-//     multipart, e nenhum aviso da plataforma precisa de anexo hoje.
-//     Capacidade que não mapeia e que ninguém usa não entra;
-//   - AGENDAMENTO (`send_at` do SendGrid). Não existe em SMTP, e agendar é
-//     política — o atraso do resumo é decisão do domínio, calibrável, e não
-//     pode depender de qual fornecedor atendeu;
-//   - RASTREIO de abertura e clique, e consulta de status posterior. É
-//     assimétrico entre fornecedores e traria vocabulário de marketing para
-//     dentro de uma porta que só precisa avisar gente.
+//   - SUBJECT and BODY. They are rendering artifacts; see Mail;
+//   - ATTACHMENTS. SendGrid accepts base64 in the JSON body, SMTP requires MIME
+//     multipart, and no platform notice needs an attachment today. A capability
+//     that does not map and that nobody uses does not get in;
+//   - SCHEDULING (SendGrid's `send_at`). It does not exist in SMTP, and
+//     scheduling is policy — the digest delay is a domain decision, tunable, and
+//     it cannot depend on which provider served the call;
+//   - open and click TRACKING, and later status lookups. It is asymmetric across
+//     providers and would bring marketing vocabulary into a port that only needs
+//     to notify people.
 type Mailer interface {
 	Send(ctx context.Context, m Mail) (*MailReceipt, error)
 	Resolve(ctx context.Context, kind string) error
 }
 
-// ───────────────────────── Clock e IDs ─────────────────────────
-// Pequenas, mas reais: é o que torna o domínio determinístico em teste.
+// ───────────────────────── Clock and IDs ─────────────────────────
+// Small, but real: this is what makes the domain deterministic in tests.
 
-// Clock é a ÚNICA fonte de "agora" do domínio.
+// Clock is the domain's ONLY source of "now".
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
-//  1. Now nunca devolve o instante zero;
-//  2. Now devolve sempre UTC — instante sem fuso definido é ambiguidade que
-//     vira erro de comparação quando o processo e o banco discordam de TZ;
-//  3. Now não regride entre chamadas sucessivas;
-//  4. seguro para uso concorrente.
+// Guarantees verified by the contract suite, in EVERY adapter:
+//  1. Now never returns the zero instant;
+//  2. Now always returns UTC — an instant with no defined zone is an ambiguity
+//     that turns into a comparison bug when the process and the database
+//     disagree about TZ;
+//  3. Now does not go backwards between successive calls;
+//  4. safe for concurrent use.
 //
-// O domínio recebe a porta e NUNCA chama time.Now() por dentro, nem como
-// fallback para clock nulo: o fallback desliga a porta sem ninguém perceber e
-// devolve ao teste a dependência do relógio de parede que a porta existe para
-// remover. Serviço que precisa de tempo EXIGE o relógio no construtor.
+// The domain receives the port and NEVER calls time.Now() internally, not even
+// as a fallback for a nil clock: the fallback switches the port off without
+// anyone noticing and hands the test back the wall-clock dependency the port
+// exists to remove. A service that needs time REQUIRES the clock in its
+// constructor.
 type Clock interface{ Now() time.Time }
 
 type IDGenerator interface{ NewID() string }
