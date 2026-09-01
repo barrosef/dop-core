@@ -19,40 +19,40 @@ type Service struct {
 	providers GitProviders
 }
 
-// NewService exige as três portas.
+// NewService requires the three ports.
 //
-// O relógio é obrigatório pelo mesmo motivo que em identity: aceitar nil
-// deixaria o serviço cair em time.Now() por dentro, e nenhum teste de
-// evidência ("a execução é deste commit e terminou quando?") seria
-// determinístico. Panic aqui é deliberado — erro de montagem se detecta no
-// boot, não em produção.
-// NewService recebe `providers` OPCIONAL: sem ele, o PR é registrado só na
-// nossa base e não é aberto no provedor. Isso é degradação DECLARADA — há
-// ambiente (teste, e o local sem credencial) em que não existe provedor —, e o
-// serviço avisa no PR devolvido em vez de fingir que abriu.
+// The clock is required for the same reason as in identity: accepting nil would
+// let the service fall back to time.Now() internally, and no evidence test
+// ("is this run from this commit, and when did it end?") would be
+// deterministic. The panic here is deliberate — a wiring error is caught at
+// boot, not in production.
+// NewService takes `providers` OPTIONALLY: without it, the PR is recorded only
+// in our own database and is not opened at the provider. That is DECLARED
+// degradation — there are environments (tests, and local with no credential)
+// where no provider exists — and the service says so in the returned PR instead
 func NewService(repo Repository, demands Demands, clock ports.Clock, providers GitProviders) *Service {
 	if repo == nil {
-		panic("delivery.NewService: repositório obrigatório")
+		panic("delivery.NewService: repository is required")
 	}
 	if demands == nil {
-		panic("delivery.NewService: porta de demandas obrigatória")
+		panic("delivery.NewService: the demands port is required")
 	}
 	if clock == nil {
-		panic("delivery.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("delivery.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{repo: repo, demands: demands, clock: clock, providers: providers}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
 
-// ─────────────────────────── evidência ───────────────────────────
+// ─────────────────────────── evidence ─────────────────────────────
 
-// RecordVerification registra UMA execução de verificação.
+// RecordVerification records ONE verification run.
 //
-// É por aqui que a evidência entra no sistema, e é por isso que não existe
-// nenhuma RPC que diga "este PR está verde": o verde é derivado destas linhas.
-// Quem quiser burlar precisa forjar uma execução com commit, suíte, resultado
-// e rastro — que é exatamente o registro que se quer auditável.
+// This is how evidence enters the system, and it is why there is no RPC saying
+// "this PR is green": green is derived from these rows. Whoever wants to cheat
+// has to forge a run with a commit, a suite, an outcome and a trace — which is
+// exactly the record we want auditable.
 func (s *Service) RecordVerification(ctx context.Context, run VerificationRun, idemKey string) (*VerificationRun, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -61,7 +61,7 @@ func (s *Service) RecordVerification(ctx context.Context, run VerificationRun, i
 	if err := run.Validate(); err != nil {
 		return nil, err
 	}
-	// A demanda precisa existir NA CONTA: sem isso, evidência de uma conta
+	// The demand has to exist IN THE ACCOUNT: without that, evidence from one
 	// provaria o verde de outra.
 	if _, err := s.demands.Demand(ctx, accountID, run.DemandID); err != nil {
 		return nil, err
@@ -77,21 +77,21 @@ func (s *Service) RecordVerification(ctx context.Context, run VerificationRun, i
 }
 
 // Evidence responde "o que se sabe sobre o verde deste commit" — a consulta que
-// o crítico, o cockpit e a recusa da fila compartilham.
+// the critic, the cockpit and the queue's refusal all share.
 func (s *Service) Evidence(ctx context.Context, demandID, repoID, commit string) (Evidence, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return Evidence{}, err
 	}
 	if demandID == "" || repoID == "" || commit == "" {
-		return Evidence{}, errs.Invalid("evidência é sempre de uma demanda, um repositório e um commit")
+		return Evidence{}, errs.Invalid("evidence is always about one demand, one repository and one commit")
 	}
 	return s.repo.EvidenceFor(ctx, accountID, demandID, repoID, commit)
 }
 
 // ─────────────────────────── pull requests ───────────────────────────
 
-// OpenSpec é o pedido de abertura de PR.
+// OpenSpec is the request to open a PR.
 type OpenSpec struct {
 	DemandID     string
 	RepoID       string
@@ -102,28 +102,28 @@ type OpenSpec struct {
 	URL          string
 	ExternalID   string
 	Reviewers    []Reviewer
-	// Título e corpo do PR no provedor. Vazios, o adaptador usa o nome do
-	// branch — PR sem título existe e é ruim, PR não aberto é pior.
+	// The PR's title and body at the provider. Empty, the adapter uses the
+	// branch name — a PR with no title exists and is bad, a PR not opened is worse.
 	Title string
 	Body  string
 }
 
-// OpenPullRequest é a ADR-0007 no ponto exato onde ela vale: não existe PR sem
-// evidência de verde do commit que ele carrega.
+// OpenPullRequest is ADR-0007 at the exact point where it bites: there is no PR
+// without evidence of green for the commit it carries.
 //
-// A recusa diz o que falta, item por item. "Falha de precondição" sem dizer
-// qual precondição faz o agente tentar de novo às cegas — e tentar de novo às
-// cegas é como um PR quebrado acaba chegando ao humano por outro caminho.
+// The refusal says what is missing, item by item. "Precondition failed" without
+// saying which precondition makes the agent retry blindly — and retrying blindly
+// is how a broken PR ends up reaching the human by another route.
 func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey string) (*PullRequest, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(spec.DemandID) == "" || strings.TrimSpace(spec.RepoID) == "" {
-		return nil, errs.Invalid("PR precisa de demanda e repositório")
+		return nil, errs.Invalid("a PR needs a demand and a repository")
 	}
 	if strings.TrimSpace(spec.HeadCommit) == "" {
-		return nil, errs.Invalid("PR sem commit de topo: não há o que verificar")
+		return nil, errs.Invalid("a PR with no head commit: there is nothing to verify")
 	}
 	if strings.TrimSpace(spec.SourceBranch) == "" {
 		return nil, errs.Invalid("PR sem branch de origem")
@@ -146,11 +146,11 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 		target = "main"
 	}
 
-	// O PR é aberto NO PROVEDOR antes de ser registrado aqui.
+	// The PR is opened AT THE PROVIDER before being recorded here.
 	//
 	// A ordem importa: registrar primeiro deixaria a nossa base afirmando um PR
-	// que não existe, e é a nossa base que a fila de merge consulta. Falhar ao
-	// abrir é melhor que registrar mentira.
+	// that does not exist, and it is our database the merge queue consults.
+	// Failing to open beats recording a lie.
 	if s.providers != nil {
 		p, err := s.providers.For(ctx, accountID, spec.RepoID)
 		if err != nil {
@@ -166,9 +166,9 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 		if err != nil {
 			return nil, err
 		}
-		// O que o provedor devolve VENCE o que o chamador disse: id e URL são
+		// What the provider returns WINS over what the caller said: id and URL
 		// dele, e aceitar os do chamador deixaria a nossa base apontando para
-		// um PR que talvez não seja aquele.
+		// a PR that may not be that one.
 		spec.ExternalID, spec.URL = aberto.ExternalID, aberto.URL
 	}
 
@@ -199,18 +199,18 @@ func (s *Service) ListPullRequests(ctx context.Context, f PRFilter) ([]PullReque
 
 // ─────────────────────────── fila de merge ───────────────────────────
 
-// GetMergeQueue devolve a fila de UM repositório, em ordem determinística e
-// com as posições numeradas (ADR-0008 §1).
+// GetMergeQueue returns ONE repository's queue, in a deterministic order and
+// with numbered positions (ADR-0008 §1).
 //
-// A fila é por repositório porque é o repositório que serializa: dois PRs em
-// repositórios diferentes não invalidam um ao outro.
+// The queue is per repository because the repository is what serializes: two
+// PRs in different repositories do not invalidate each other.
 func (s *Service) GetMergeQueue(ctx context.Context, repoID string) ([]MergeQueueEntry, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(repoID) == "" {
-		return nil, errs.Invalid("a fila de merge é sempre de um repositório (ADR-0008)")
+		return nil, errs.Invalid("a merge queue is always about one repository (ADR-0008)")
 	}
 	entries, err := s.repo.QueueOfRepo(ctx, accountID, repoID, false)
 	if err != nil {
@@ -219,21 +219,21 @@ func (s *Service) GetMergeQueue(ctx context.Context, repoID string) ([]MergeQueu
 	return SortQueue(entries), nil
 }
 
-// EnqueueMerge é a porta da fila — e é onde a ADR-0007 é cobrada pela segunda
+// EnqueueMerge is the queue's door — and it is where ADR-0007 is enforced a
 // vez, agora contra o commit ATUAL do PR.
 //
-// Cobrar de novo não é redundância: entre a abertura do PR e a entrada na fila
-// o branch pode ter avançado, e o verde do commit antigo não é o verde do
-// commit novo. Este é o mesmo raciocínio que faz a fila re-verificar a cada
-// posição (ADR-0008 §1) — o verde é sempre sobre um estado do código, nunca
-// sobre uma intenção.
+// Enforcing it again is not redundancy: between opening the PR and entering the
+// queue the branch may have moved, and the old commit's green is not the new
+// commit's green. It is the same reasoning that makes the queue re-verify at
+// each position (ADR-0008 §1) — green is always about a state of the code, never
+// about an intention.
 func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey string) (*MergeQueueEntry, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(repoID) == "" || strings.TrimSpace(demandID) == "" {
-		return nil, errs.Invalid("entrar na fila exige repositório e demanda")
+		return nil, errs.Invalid("entering the queue requires a repository and a demand")
 	}
 	if _, err := s.demands.Demand(ctx, accountID, demandID); err != nil {
 		return nil, err
@@ -245,11 +245,11 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 	}
 	if pr == nil {
 		return nil, errs.Precondition(
-			"a demanda %s ainda não tem PR aberto no repositório %s — e não há PR sem evidência de verde (ADR-0007)",
+			"demand %s has no open PR on repository %s yet — and there is no PR without evidence of green (ADR-0007)",
 			demandID, repoID)
 	}
 	if pr.Merged {
-		return nil, errs.Precondition("o PR da demanda %s já foi mergeado", demandID)
+		return nil, errs.Precondition("demand %s's PR has already been merged", demandID)
 	}
 
 	ev, err := s.repo.EvidenceFor(ctx, accountID, demandID, repoID, pr.HeadCommit)
@@ -257,12 +257,12 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 		return nil, err
 	}
 	if falta := ev.Missing(); len(falta) > 0 {
-		// FailedPrecondition, e não Invalid: o pedido está bem formado; o que
-		// falta é um estado do mundo que o chamador pode providenciar (rodar a
-		// aceitação, chamar o crítico) e tentar de novo.
+		// FailedPrecondition, and not Invalid: the request is well formed; what
+		// is missing is a state of the world the caller can provide (run the
+		// acceptance, call the critic) and try again.
 		return nil, errs.Precondition(
-			"a fila de merge recusa entrada sem evidência de verde do commit %s (ADR-0007): %s",
-			curto(pr.HeadCommit), strings.Join(falta, "; "))
+			"the merge queue refuses an entry with no evidence of green for commit %s (ADR-0007): %s",
+			short(pr.HeadCommit), strings.Join(falta, "; "))
 	}
 
 	entry := &MergeQueueEntry{
@@ -278,9 +278,9 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 	return s.repo.Enqueue(ctx, entry, idemKey)
 }
 
-// AdvanceQueue move a entrada pelo fluxo `na fila → rebase → re-verificação →
-// merge`. Transição fora da máquina de estados é recusada — é o que impede
-// "mergeado" sem passar pela re-verificação.
+// AdvanceQueue moves the entry through the flow `queued → rebase →
+// re-verification → merge`. A transition outside the state machine is refused —
+// it is what prevents "merged" without going through re-verification.
 func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueState, idemKey string) (*MergeQueueEntry, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -290,19 +290,19 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 		return nil, errs.Invalid("estado de fila desconhecido: %q", to)
 	}
 	if to == StateConflict {
-		// Conflito carrega relato; tem caminho próprio, com evento próprio.
-		return nil, errs.Invalid("conflito entra por ReportConflict, com o relato que a caixa de atenção precisa")
+		// A conflict carries a report; it has its own path, with its own event.
+		return nil, errs.Invalid("a conflict enters through ReportConflict, with the report the attention box needs")
 	}
 	entry, err := s.queueEntry(ctx, accountID, entryID)
 	if err != nil {
 		return nil, err
 	}
 	if entry.State == to {
-		return entry, nil // repetição é inócua
+		return entry, nil // a repeat is harmless
 	}
 	if !entry.State.CanTransitionTo(to) {
 		return nil, errs.Precondition(
-			"a fila não vai de %s para %s (ADR-0008: na fila → rebase → re-verificação → merge)",
+			"the queue does not go from %s to %s (ADR-0008: queued → rebase → re-verification → merge)",
 			entry.State, to)
 	}
 	return s.repo.SetQueueState(ctx, accountID, entryID, to, nil, idemKey)
@@ -310,11 +310,11 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 
 // ReportConflict transforma o conflito em ITEM DE DECISÃO HUMANA.
 //
-// A ADR-0008 §2 é explícita: rebase e resolução são tarefa do agente da
-// demanda; falha ESCALA ao humano pela caixa de atenção, com o contexto do
-// conflito. Escalar é gravar estado e emitir evento na mesma transação — quem
-// alimenta a caixa é o evento. Devolver erro aqui seria a versão silenciosa do
-// mesmo fato: o agente veria uma falha, o humano não veria nada.
+// ADR-0008 §2 is explicit: rebasing and resolving are the demand agent's task;
+// a failure ESCALATES to the human through the attention box, with the
+// conflict's context. Escalating means writing state and emitting the event in
+// the same transaction — the event is what feeds the box. Returning an error
+// here would be the silent version of the same fact: the agent would see a
 func (s *Service) ReportConflict(ctx context.Context, entryID string, c ConflictReport, idemKey string) (*MergeQueueEntry, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -328,7 +328,7 @@ func (s *Service) ReportConflict(ctx context.Context, entryID string, c Conflict
 		return nil, err
 	}
 	if entry.State.IsTerminal() {
-		return nil, errs.Precondition("entrada já mergeada não entra em conflito")
+		return nil, errs.Precondition("an already merged entry does not enter a conflict")
 	}
 	if c.ReportedAt.IsZero() {
 		c.ReportedAt = s.now()
@@ -338,7 +338,7 @@ func (s *Service) ReportConflict(ctx context.Context, entryID string, c Conflict
 
 func (s *Service) queueEntry(ctx context.Context, accountID, entryID string) (*MergeQueueEntry, error) {
 	if strings.TrimSpace(entryID) == "" {
-		return nil, errs.Invalid("entrada de fila não informada")
+		return nil, errs.Invalid("queue entry not provided")
 	}
 	entry, err := s.repo.QueueEntryByID(ctx, accountID, entryID)
 	if err != nil {
@@ -352,11 +352,11 @@ func (s *Service) queueEntry(ctx context.Context, accountID, entryID string) (*M
 
 // ─────────────────────────── diretrizes ───────────────────────────
 
-// ProposeDirective é o techlead acionando a caixa de atenção com uma provocação
-// de decisão (ADR-0015 §3): opções prontas e uma recomendação.
+// ProposeDirective is the techlead invoking the attention box with a request
+// for a decision (ADR-0015 §3): ready-made options and a recommendation.
 //
-// Não existe caminho para propor "pausar a demanda X": Validate percorre as
-// instruções de cada opção e só deixa passar o vocabulário de coordenação.
+// There is no path to propose "pause demand X": Validate walks each option's
+// instructions and only lets the coordination vocabulary through.
 func (s *Service) ProposeDirective(ctx context.Context, d Directive, idemKey string) (*Directive, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -365,8 +365,8 @@ func (s *Service) ProposeDirective(ctx context.Context, d Directive, idemKey str
 	if err := d.Validate(); err != nil {
 		return nil, err
 	}
-	// Toda demanda instruída precisa existir na conta e pertencer ao projeto
-	// da diretriz — coordenação entre projetos diferentes não é coordenação, é
+	// Every instructed demand has to exist in the account and belong to the
+	// directive's project — coordination across different projects is not
 	// engano.
 	for _, id := range instructedDemands(d) {
 		info, err := s.demands.Demand(ctx, accountID, id)
@@ -375,7 +375,7 @@ func (s *Service) ProposeDirective(ctx context.Context, d Directive, idemKey str
 		}
 		if info.ProjectID != d.ProjectID {
 			return nil, errs.Invalid(
-				"a demanda %s não pertence ao projeto da diretriz", id)
+				"demand %s does not belong to the directive's project", id)
 		}
 	}
 	d.AccountID = accountID
@@ -391,26 +391,26 @@ func (s *Service) ListDirectives(ctx context.Context, projectID string) ([]Direc
 		return nil, err
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return nil, errs.Invalid("diretrizes são sempre de um projeto (ADR-0015)")
+		return nil, errs.Invalid("directives always belong to a project (ADR-0015)")
 	}
 	return s.repo.ListDirectives(ctx, accountID, projectID)
 }
 
-// Chaves aceitas no Struct de decisão do contrato. São duas porque a ADR-0015
+// Keys accepted in the contract's decision Struct. There are two because
 // pede as duas: a escolha e o motivo dela.
 const (
 	DecisionKeyOption    = "option"
 	DecisionKeyRationale = "rationale"
 )
 
-// DecideDirective registra a escolha do dev: QUEM decidiu, QUAL opção e POR QUÊ.
+// DecideDirective records the dev's choice: WHO decided, WHICH option and WHY.
 //
-// E aqui está a regra de ouro, dita de novo porque é a que mais tenta escapar:
-// decidir uma diretriz NÃO interrompe demanda nenhuma. Não há como: a única
-// porta deste domínio para o domínio de demanda é de leitura, e o que a decisão
-// produz são instruções do vocabulário de coordenação — trabalho a fazer,
-// condicionado ao que já está acontecendo. A demanda 1 segue até onde der; quando
-// a condição se cumprir, aplica a coordenação e continua.
+// And here is the golden rule, said again because it is the one that most tries
+// to escape: deciding a directive INTERRUPTS no demand. There is no way to: this
+// domain's only port into the demand domain is read-only, and what the decision
+// produces are instructions from the coordination vocabulary — work to do,
+// conditioned on what is already happening. Demand 1 goes as far as it can; when
+// the condition is met, it applies the coordination and carries on.
 func (s *Service) DecideDirective(ctx context.Context, directiveID string, decision map[string]any, idemKey string) (*Directive, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -418,28 +418,28 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 	}
 	call, _ := ctxutil.From(ctx)
 	if call.ActorID == "" {
-		return nil, errs.New(errs.KindUnauthorized, "decisão de diretriz exige ator identificado")
+		return nil, errs.New(errs.KindUnauthorized, "deciding a directive requires an identified actor")
 	}
-	// Quem decide é o dev (ADR-0015 §4): o techlead detecta, planeja e propõe;
-	// a escolha é humana. Deixar um agente decidir a própria proposta fecharia
-	// o laço sem o único participante que a diretriz existe para consultar.
+	// The dev decides (ADR-0015 §4): the techlead detects, plans and proposes;
+	// the choice is human. Letting an agent decide its own proposal would close
+	// the loop without the one participant the directive exists to consult.
 	if call.ActorKind == ctxutil.ActorAgent || call.ActorKind == ctxutil.ActorSubagent {
-		return nil, errs.Permission("agentes propõem diretrizes; quem decide é o dev (ADR-0015 §4)")
+		return nil, errs.Permission("agents propose directives; the dev decides (ADR-0015 §4)")
 	}
 	if strings.TrimSpace(directiveID) == "" {
-		return nil, errs.Invalid("diretriz não informada")
+		return nil, errs.Invalid("directive not provided")
 	}
 
 	option := texto(decision[DecisionKeyOption])
 	rationale := texto(decision[DecisionKeyRationale])
 	if option == "" {
-		return nil, errs.Invalid("a decisão precisa dizer qual opção (%q)", DecisionKeyOption)
+		return nil, errs.Invalid("the decision has to say which option (%q)", DecisionKeyOption)
 	}
-	// Motivo é obrigatório. Coordenação entre demandas paralelas é decisão de
-	// engenharia: sem o porquê registrado, ninguém entende três semanas depois
-	// por que a demanda 2 esperou a 1 — e a diretriz vira mágica invisível.
+	// A reason is required. Coordination between parallel demands is an
+	// engineering decision: with no recorded why, nobody understands three weeks
+	// later why demand 2 waited on 1 — and the directive becomes invisible magic.
 	if rationale == "" {
-		return nil, errs.Invalid("a decisão precisa registrar o motivo (%q)", DecisionKeyRationale)
+		return nil, errs.Invalid("the decision has to record the reason (%q)", DecisionKeyRationale)
 	}
 
 	d, err := s.repo.DirectiveByID(ctx, accountID, directiveID)
@@ -451,10 +451,10 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 	}
 	if d.Status == DirectiveDecided && d.Decision != nil {
 		if d.Decision.Option == option {
-			return d, nil // repetição da mesma decisão é inócua
+			return d, nil // repeating the same decision is harmless
 		}
 		return nil, errs.Conflict(
-			"a diretriz já foi decidida (%s) por %s — proponha uma nova em vez de reescrever a decisão",
+			"the directive was already decided (%s) by %s — propose a new one instead of rewriting the decision",
 			d.Decision.Option, d.Decision.DecidedBy)
 	}
 	if d.Status == DirectiveSuperseded {
@@ -463,7 +463,7 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 
 	opt, ok := d.Option(option)
 	if !ok {
-		return nil, errs.Invalid("a opção %q não está entre as oferecidas: %s",
+		return nil, errs.Invalid("option %q is not among those offered: %s",
 			option, strings.Join(chaves(d.Options), ", "))
 	}
 	for _, ins := range opt.Instructions {
@@ -514,7 +514,7 @@ func chaves(opts []DirectiveOption) []string {
 }
 
 // texto extrai string do Struct do contrato sem explodir com tipo inesperado —
-// o corpo vem de fora, e valor de tipo errado é erro de cliente, não pânico.
+// the body comes from outside, and a wrong-typed value is a client error, not a panic.
 func texto(v any) string {
 	s, ok := v.(string)
 	if !ok {

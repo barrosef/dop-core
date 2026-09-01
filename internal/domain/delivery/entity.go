@@ -1,23 +1,23 @@
-// Package delivery é o domínio da entrega: o caminho do código verificado até
-// a `main` — evidência de verde, pull request, fila de merge por repositório e
-// as diretrizes de coordenação do techlead.
+// Package delivery is the delivery domain: the path from verified code to
+// `main` — evidence of green, pull request, per-repository merge queue and the
+// techlead's coordination directives.
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK de provedor
+// House rule: this package knows nothing of Postgres, gRPC or a git provider's
 // git. Ele declara o que precisa como PORTA (repository.go) e o composition
 // root liga.
 //
-// Duas decisões organizam tudo o que está aqui:
+// Two decisions organize everything here:
 //
-//   - **Evidência é dado, não confiança** (ADR-0007). Não existe campo
-//     `verified bool` vindo do chamador. O que existe é uma lista de execuções
-//     — qual suíte, sobre qual commit, com qual resultado, com que rastro — e o
-//     verde é uma FUNÇÃO dessa lista. Um "sem verde, sem PR" que aceita um
-//     booleano de quem chama não prova nada.
-//   - **Diretriz coordena, nunca pausa** (ADR-0015 §5). O vocabulário de ações
-//     de uma diretriz é fechado e não contém "pausar", "bloquear" nem
-//     "suspender" — e a porta para o domínio de demanda é somente leitura. Não
-//     há caminho, nem por engano, pelo qual uma decisão de coordenação pare uma
-//     demanda que já está andando.
+//   - **Evidence is data, not trust** (ADR-0007). There is no
+//     `verified bool` field coming from the caller. What exists is a list of runs
+//     — which suite, over which commit, with which outcome, with what trace — and
+//     green is a FUNCTION of that list. A "no green, no PR" that accepts a
+//     boolean from the caller proves nothing.
+//   - **A directive coordinates, it never pauses** (ADR-0015 §5). The vocabulary
+//     of a directive's actions is closed and contains no "pause", "block" or
+//     "suspend" — and the port into the demand domain is read-only. There is no
+//     path, not even by mistake, through which a coordination decision stops a
+//     demand that is already moving.
 package delivery
 
 import (
@@ -29,20 +29,20 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// ─────────────────────────── evidência de verde ───────────────────────────
+// ─────────────────────────── evidence of green ────────────────────────────
 
-// CheckKind é a natureza de uma execução de verificação.
+// CheckKind is the nature of one verification run.
 //
-// `critic` é uma execução como as outras de propósito: o parecer do crítico
-// (ADR-0007 §3) é evidência com resultado, rastro e commit — não um adjetivo
+// `critic` is a run like any other on purpose: the critic's opinion (ADR-0007
+// §3) is evidence with an outcome, a trace and a commit — not an adjective
 // pendurado no PR.
 type CheckKind string
 
 const (
-	CheckAcceptance CheckKind = "acceptance" // critérios executáveis da spec
+	CheckAcceptance CheckKind = "acceptance" // the spec's executable criteria
 	CheckUnit       CheckKind = "unit"
 	CheckE2E        CheckKind = "e2e"
-	CheckCritic     CheckKind = "critic" // parecer da instância independente
+	CheckCritic     CheckKind = "critic" // the independent instance's opinion
 )
 
 func ValidCheckKind(k CheckKind) bool {
@@ -53,8 +53,8 @@ func ValidCheckKind(k CheckKind) bool {
 	return false
 }
 
-// Outcome é o veredito de UMA execução. Não há "desconhecido": execução sem
-// resultado não é evidência, é ruído.
+// Outcome is ONE run's verdict. There is no "unknown": a run with no outcome is
+// not evidence, it is noise.
 type Outcome string
 
 const (
@@ -71,62 +71,62 @@ func ValidOutcome(o Outcome) bool {
 	return false
 }
 
-// VerificationRun é UMA execução verificável — a unidade da evidência.
+// VerificationRun is ONE verifiable run — the unit of evidence.
 //
-// Commit é o campo que dá valor a tudo: evidência que não diz sobre QUAL
-// código rodou serve para provar qualquer coisa, e portanto não prova nada. É
-// por isso que o verde é sempre perguntado para um commit específico, e não
+// Commit is the field that gives everything else its value: evidence that does
+// not say WHICH code ran can prove anything, and therefore proves nothing. That
+// is why green is always asked for a specific commit, and not for
 // para "a demanda".
 type VerificationRun struct {
 	ID        string
 	AccountID string
 	DemandID  string
 	RepoID    string
-	Commit    string // SHA exato sobre o qual a execução rodou
+	Commit    string // the exact SHA the run executed over
 	Kind      CheckKind
-	Suite     string // nome da suíte ou do critério — o QUE rodou
+	Suite     string // the suite's or criterion's name — WHAT ran
 	Outcome   Outcome
 	Total     int
 	Passed    int
 	Failed    int
-	// Rastro: onde rodou (sandbox) e onde estão os logs (ObjectStore).
-	// Um dos dois é obrigatório — "passou" sem rastro é palavra, não evidência.
+	// The trace: where it ran (sandbox) and where the logs are (ObjectStore).
+	// One of the two is required — "it passed" with no trace is a word, not evidence.
 	SandboxID string
 	LogRef    string
-	Detail    map[string]any // parecer do crítico, motivos da falha
-	Attempts  int            // quantas vezes esta suíte rodou neste commit
+	Detail    map[string]any // the critic's opinion, the failure's reasons
+	Attempts  int            // how many times this suite ran on this commit
 	StartedAt time.Time
 	EndedAt   time.Time
 }
 
-// Validate recusa a execução que não serviria como prova.
+// Validate refuses a run that would not serve as proof.
 func (r VerificationRun) Validate() error {
 	if strings.TrimSpace(r.DemandID) == "" || strings.TrimSpace(r.RepoID) == "" {
-		return errs.Invalid("execução de verificação sem demanda ou repositório")
+		return errs.Invalid("verification run with no demand or repository")
 	}
 	if strings.TrimSpace(r.Commit) == "" {
-		return errs.Invalid("execução de verificação sem commit: evidência que não diz sobre qual código rodou não é evidência")
+		return errs.Invalid("verification run with no commit: evidence that does not say which code ran is not evidence")
 	}
 	if !ValidCheckKind(r.Kind) {
-		return errs.Invalid("tipo de verificação desconhecido: %q", r.Kind)
+		return errs.Invalid("unknown verification kind: %q", r.Kind)
 	}
 	if !ValidOutcome(r.Outcome) {
-		return errs.Invalid("resultado de verificação desconhecido: %q", r.Outcome)
+		return errs.Invalid("unknown verification outcome: %q", r.Outcome)
 	}
 	if strings.TrimSpace(r.Suite) == "" {
-		return errs.Invalid("execução de verificação sem identificação do que rodou")
+		return errs.Invalid("verification run with no identification of what ran")
 	}
 	if r.SandboxID == "" && r.LogRef == "" {
-		return errs.Invalid("execução sem rastro (sandbox ou log): resultado sem onde conferir não prova verde")
+		return errs.Invalid("run with no trace (sandbox or log): an outcome with nowhere to check does not prove green")
 	}
 	if r.Outcome == OutcomePassed && r.Failed > 0 {
-		return errs.Invalid("execução aprovada com %d falha(s) é incoerente", r.Failed)
+		return errs.Invalid("a passed run with %d failure(s) is incoherent", r.Failed)
 	}
 	return nil
 }
 
-// Evidence é o pacote de evidência de UM commit: as execuções que provaram —
-// ou não provaram — que aquele código exato está verde.
+// Evidence is ONE commit's evidence package: the runs that proved — or failed
+// to prove — that this exact code is green.
 type Evidence struct {
 	DemandID string
 	RepoID   string
@@ -134,31 +134,31 @@ type Evidence struct {
 	Runs     []VerificationRun
 }
 
-// Missing devolve TUDO o que falta para o commit estar verde, em português.
+// Missing returns EVERYTHING that is missing for the commit to be green.
 //
-// Lista, e não booleano, porque quem for recusado precisa saber o que
-// providenciar. "Precondição falhou" sem dizer qual precondição é o mesmo que
-// não responder.
+// A list, not a boolean, because whoever is refused needs to know what to
+// provide. "Precondition failed" without saying which precondition is the same
+// as not answering.
 func (e Evidence) Missing() []string {
 	var falta []string
 	if strings.TrimSpace(e.Commit) == "" {
-		return []string{"não há commit a verificar: o PR precisa apontar para um commit"}
+		return []string{"there is no commit to verify: the PR has to point at a commit"}
 	}
 
 	var aceitacao, critico int
 	for _, r := range e.Runs {
-		// Execução de outro commit não conta — nem contra, nem a favor. Foi o
-		// que barrou a quebra semântica que a ADR-0008 descreve: o verde de
-		// ontem não é o verde de agora.
+		// A run from another commit does not count — neither for nor against. It
+		// is what caught the semantic break ADR-0008 describes: yesterday's green
+		// is not today's green.
 		if r.Commit != e.Commit {
 			falta = append(falta, fmt.Sprintf(
-				"a execução %q é do commit %s, não do commit %s em revisão",
-				r.Suite, curto(r.Commit), curto(e.Commit)))
+				"run %q belongs to commit %s, not to commit %s under review",
+				r.Suite, short(r.Commit), short(e.Commit)))
 			continue
 		}
 		if r.Outcome != OutcomePassed {
 			falta = append(falta, fmt.Sprintf(
-				"a execução %q (%s) terminou em %s", r.Suite, r.Kind, r.Outcome))
+				"run %q (%s) ended in %s", r.Suite, r.Kind, r.Outcome))
 			continue
 		}
 		switch r.Kind {
@@ -170,23 +170,23 @@ func (e Evidence) Missing() []string {
 	}
 	if aceitacao == 0 {
 		falta = append(falta, fmt.Sprintf(
-			"nenhuma execução de aceitação aprovada para o commit %s (ADR-0007 §1)", curto(e.Commit)))
+			"no passed acceptance run for commit %s (ADR-0007 §1)", short(e.Commit)))
 	}
 	if critico == 0 {
 		falta = append(falta, fmt.Sprintf(
-			"falta o parecer do crítico para o commit %s (ADR-0007 §3)", curto(e.Commit)))
+			"the critic's opinion for commit %s is missing (ADR-0007 §3)", short(e.Commit)))
 	}
 	return falta
 }
 
-// Green é a pergunta que a ADR-0007 faz. A resposta vem da lista de execuções,
-// nunca de um campo que alguém preencheu.
+// Green is the question ADR-0007 asks. The answer comes from the list of runs,
+// never from a field somebody filled in.
 func (e Evidence) Green() bool { return len(e.Missing()) == 0 }
 
-// Reason junta o que falta numa frase única, para a mensagem de recusa.
+// Reason joins what is missing into a single sentence, for the refusal message.
 func (e Evidence) Reason() string { return strings.Join(e.Missing(), "; ") }
 
-func curto(sha string) string {
+func short(sha string) string {
 	if len(sha) > 8 {
 		return sha[:8]
 	}
@@ -201,21 +201,21 @@ type Reviewer struct {
 	Status   string // approved | rejected | pending
 }
 
-// PullRequest é o PR já aberto — e, por construção, um PR só existe se o
-// commit dele estava verde no momento da abertura (ADR-0007). A regra é
-// verificada aqui, no serviço, e de novo por TRIGGER no banco: invariante que
-// não pode ser violada por nenhum caminho não vive só no código de aplicação.
+// PullRequest is the PR once opened — and, by construction, a PR only exists if
+// its commit was green at the moment of opening (ADR-0007). The rule is checked
+// here, in the service, and again by a database TRIGGER: an invariant that
+// cannot be violated by any path does not live only in application code.
 type PullRequest struct {
 	ID           string
 	AccountID    string
 	DemandID     string
 	RepoID       string
-	Repo         string // nome legível, "org/repo"
+	Repo         string // the readable name, "org/repo"
 	SourceBranch string
 	TargetBranch string
-	HeadCommit   string // o commit que a evidência cobre
+	HeadCommit   string // the commit the evidence covers
 	URL          string
-	ExternalID   string // número/id no provedor
+	ExternalID   string // the provider's number/id
 	Merged       bool
 	HasConflict  bool
 	Reviewers    []Reviewer
@@ -225,8 +225,8 @@ type PullRequest struct {
 
 // ─────────────────────────── fila de merge ───────────────────────────
 
-// QueueState são os estados da ADR-0008: na fila → rebase → re-verificação →
-// merge, um de cada vez, por repositório.
+// QueueState are ADR-0008's states: queued → rebase → re-verification → merge,
+// one at a time, per repository.
 type QueueState string
 
 const (
@@ -245,15 +245,15 @@ func ValidQueueState(s QueueState) bool {
 	return false
 }
 
-// IsTerminal: merge é o fim da linha. Conflito NÃO é terminal — é espera por
-// gente, e volta para o rebase quando alguém resolver.
+// IsTerminal: a merge is the end of the line. A conflict is NOT terminal — it is
+// waiting on a person, and it goes back to rebase once somebody resolves it.
 func (s QueueState) IsTerminal() bool { return s == StateMerged }
 
-// NeedsHuman marca o estado que alimenta a caixa de atenção.
+// NeedsHuman marks the state that feeds the attention box.
 func (s QueueState) NeedsHuman() bool { return s == StateConflict }
 
-// CanTransitionTo escreve o fluxo da ADR-0008 como máquina de estados. Sem
-// isso, "verificando → na fila" acontece por acidente de código e ninguém nota.
+// CanTransitionTo writes ADR-0008's flow as a state machine. Without it,
+// "verifying → queued" happens by accident of code and nobody notices.
 func (s QueueState) CanTransitionTo(n QueueState) bool {
 	switch s {
 	case StateQueued:
@@ -261,8 +261,8 @@ func (s QueueState) CanTransitionTo(n QueueState) bool {
 	case StateRebasing:
 		return n == StateVerifying || n == StateConflict
 	case StateVerifying:
-		// Re-verificação reprovada devolve o PR ao agente: o conflito aqui é
-		// semântico, não textual — é exatamente o caso que a fila existe para
+		// A failed re-verification sends the PR back to the agent: the conflict
+		// here is semantic, not textual — it is exactly the case the queue exists
 		// pegar.
 		return n == StateMerged || n == StateConflict
 	case StateConflict:
@@ -271,12 +271,12 @@ func (s QueueState) CanTransitionTo(n QueueState) bool {
 	return false
 }
 
-// DefaultPriority é a prioridade de quem entra sem diretriz de ordem. Vale
-// deixá-la longe de zero: diretriz de ordem precisa poder colocar alguém ANTES
-// do que já está na fila sem renumerar o mundo.
+// DefaultPriority is the priority of whoever enters with no ordering directive.
+// It is worth keeping far from zero: an ordering directive has to be able to put
+// somebody AHEAD of what is already queued without renumbering the world.
 const DefaultPriority = 100
 
-// ConflictReport é o conflito virado DADO — o que a caixa de atenção precisa
+// ConflictReport is the conflict turned into DATA — what the attention box needs
 // para o humano decidir sem arqueologia (ADR-0008 §2).
 type ConflictReport struct {
 	Files      []string
@@ -288,40 +288,40 @@ type ConflictReport struct {
 
 func (c ConflictReport) Validate() error {
 	if len(c.Files) == 0 && strings.TrimSpace(c.Detail) == "" {
-		return errs.Invalid("relato de conflito sem arquivos nem descrição não serve para ninguém decidir")
+		return errs.Invalid("a conflict report with neither files nor a description gives nobody anything to decide")
 	}
 	return nil
 }
 
-// MergeQueueEntry é a posição de um PR na fila de UM repositório (ADR-0008).
+// MergeQueueEntry is a PR's position in ONE repository's queue (ADR-0008).
 type MergeQueueEntry struct {
 	ID            string
 	AccountID     string
 	RepoID        string
 	DemandID      string
 	PullRequestID string
-	// Seq é a sequência de chegada DENTRO do repositório, única por
-	// repositório (constraint no banco). É o desempate que impede duas
+	// Seq is the arrival sequence WITHIN the repository, unique per repository
+	// (a database constraint). It is the tie-break that keeps two entries from
 	// entradas de ficarem ambiguamente lado a lado.
 	Seq int64
-	// Priority é onde a diretriz de ordem preferencial (ADR-0015) atua. Menor
-	// entra antes. Repare que reordenar não pausa ninguém: a demanda que
-	// perdeu a vez continua correndo, só mergeia depois.
+	// Priority is where the preferred-ordering directive (ADR-0015) acts. Lower
+	// goes first. Note that reordering pauses nobody: the demand that lost its
+	// turn keeps running, it just merges later.
 	Priority         int
-	Position         int32 // DERIVADO da ordem; não é estado persistido
+	Position         int32 // DERIVED from the order; it is not persisted state
 	State            QueueState
-	OverlappingFiles []string // detecção do techlead (ADR-0008 §3)
+	OverlappingFiles []string // the techlead's detection (ADR-0008 §3)
 	Conflict         *ConflictReport
 	EnqueuedAt       time.Time
 	UpdatedAt        time.Time
 }
 
-// Before é a ordem TOTAL da fila: (prioridade, sequência).
+// Before is the queue's TOTAL order: (priority, sequence).
 //
-// Total, e não parcial, é o ponto inteiro: como Seq é única por repositório,
-// não existe par de entradas para o qual `a.Before(b)` e `b.Before(a)` sejam
-// ambos falsos. Fila com empate é fila cuja ordem depende de quem executou o
-// ORDER BY — e aí a posição mostrada no cockpit muda sozinha entre dois
+// Total, and not partial, is the whole point: because Seq is unique per
+// repository, there is no pair of entries for which both `a.Before(b)` and
+// `b.Before(a)` are false. A queue with ties is a queue whose order depends on
+// who ran the ORDER BY — and then the position shown in the cockpit changes on
 // refreshes.
 func (e MergeQueueEntry) Before(o MergeQueueEntry) bool {
 	if e.Priority != o.Priority {
@@ -330,12 +330,12 @@ func (e MergeQueueEntry) Before(o MergeQueueEntry) bool {
 	return e.Seq < o.Seq
 }
 
-// SortQueue ordena e NUMERA as posições (1-based).
+// SortQueue orders and NUMBERS the positions (1-based).
 //
-// A ordem é do domínio, não do ORDER BY: o adaptador já devolve ordenado, e
+// The order belongs to the domain, not to the ORDER BY: the adapter already
 // ainda assim reordenamos aqui. Uma fila serializa merges — a regra de quem
-// vai antes é regra de negócio, e regra de negócio que mora só no SQL não é
-// testável sem banco.
+// goes first is a business rule, and a business rule that lives only in SQL is
+// not testable without a database.
 func SortQueue(entries []MergeQueueEntry) []MergeQueueEntry {
 	out := make([]MergeQueueEntry, len(entries))
 	copy(out, entries)
@@ -348,14 +348,14 @@ func SortQueue(entries []MergeQueueEntry) []MergeQueueEntry {
 
 // ─────────────────────────── diretrizes ───────────────────────────
 
-// DirectiveKind é o vocabulário INICIAL da ADR-0015 §6 — e também o vocabulário
-// das ações que uma diretriz instrui.
+// DirectiveKind is ADR-0015 §6's INITIAL vocabulary — and also the vocabulary of
+// the actions a directive instructs.
 //
-// Repare no que não existe aqui e não vai existir: pausar, bloquear, suspender,
+// Note what is not here and will not be: pause, block, suspend,
 // esperar. A regra de ouro da ADR-0015 ("transversal identificada NUNCA pausa
-// demanda") não é um cuidado de quem implementa: é a ausência de um valor no
-// tipo. Demanda 1 segue até onde der; quando a condição da diretriz se cumprir,
-// aplica a coordenação e continua.
+// demand") is not a care taken by whoever implements: it is the absence of a
+// value in the type. Demand 1 goes as far as it can; when the directive's
+// condition is met, it applies the coordination and carries on.
 type DirectiveKind string
 
 const (
@@ -381,44 +381,44 @@ const (
 	DirectiveSuperseded DirectiveStatus = "superseded"
 )
 
-// Instruction é o que uma diretriz decidida entrega a UMA demanda.
+// Instruction is what a decided directive hands to ONE demand.
 //
-// É sempre TRABALHO A FAZER — "faça cherry-pick quando a 0 commitar", "rode a
-// aceitação da 1 sobre o resultado da 0". When é a condição que dispara a
-// aplicação, e existir uma condição é o oposto de bloquear: a demanda segue e
-// aplica a coordenação quando a condição se cumprir.
+// It is always WORK TO DO — "cherry-pick when 0 commits", "run 1's acceptance
+// over 0's result". When is the condition that fires the application, and
+// having a condition is the opposite of blocking: the demand carries on and
+// applies the coordination once the condition is met.
 type Instruction struct {
 	DemandID string
 	Action   DirectiveKind
-	When     string // condição em linguagem do domínio: "demanda X commitou"
+	When     string // the condition in domain language: "demand X committed"
 	Payload  map[string]any
 }
 
 func (i Instruction) Validate() error {
 	if strings.TrimSpace(i.DemandID) == "" {
-		return errs.Invalid("instrução de coordenação sem demanda destino")
+		return errs.Invalid("coordination instruction with no target demand")
 	}
-	// A porta estreita: só o vocabulário de coordenação passa. Uma "instrução"
-	// de pausar simplesmente não tem como ser expressa.
+	// The narrow gate: only the coordination vocabulary passes. A pause
+	// "instruction" simply cannot be expressed.
 	if !ValidDirectiveKind(i.Action) {
 		return errs.Invalid(
-			"ação de coordenação fora do vocabulário: %q — diretriz coordena, nunca pausa demanda (ADR-0015 §5)",
+			"coordination action outside the vocabulary: %q — a directive coordinates, it never pauses a demand (ADR-0015 §5)",
 			i.Action)
 	}
 	return nil
 }
 
-// DirectiveOption é uma das saídas prontas que o techlead traz junto com o
-// problema. A caixa de atenção recebe item de decisão, não alarme cru.
+// DirectiveOption is one of the ready-made ways out the techlead brings along
+// with the problem. The attention box receives a decision item, not a raw alarm.
 type DirectiveOption struct {
 	Key          string
 	Summary      string
 	Instructions []Instruction
 }
 
-// Decision registra QUEM decidiu e POR QUÊ. As duas coisas são obrigatórias:
-// coordenação entre demandas paralelas é decisão de engenharia, e decisão sem
-// motivo registrado vira mágica invisível três semanas depois (ADR-0015).
+// Decision records WHO decided and WHY. Both are required: coordination between
+// parallel demands is an engineering decision, and a decision with no recorded
+// reason becomes invisible magic three weeks later (ADR-0015).
 type Decision struct {
 	Option    string
 	Rationale string
@@ -427,7 +427,7 @@ type Decision struct {
 	DecidedAt time.Time
 }
 
-// Directive é a provocação de decisão do techlead sobre uma transversal.
+// Directive is the techlead's request for a decision about a cross-cutting concern.
 type Directive struct {
 	ID        string
 	AccountID string
@@ -435,19 +435,19 @@ type Directive struct {
 	Kind      DirectiveKind
 	Summary   string
 	Payload   map[string]any // sinais: arquivos sobrepostos, diffs, specs lidas
-	// AffectedDemands são as demandas que a transversal toca. Estão aqui como
-	// referência, e SÓ como referência: nada neste domínio escreve no estado
+	// AffectedDemands are the demands the concern touches. They are here as a
+	// reference, and ONLY as a reference: nothing in this domain writes into the
 	// delas.
 	AffectedDemands []string
 	Options         []DirectiveOption
-	Recommended     string // chave da opção recomendada
+	Recommended     string // the recommended option's key
 	Status          DirectiveStatus
 	Decision        *Decision
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
-// Option devolve a opção pela chave.
+// Option returns the option by key.
 func (d Directive) Option(key string) (DirectiveOption, bool) {
 	for _, o := range d.Options {
 		if o.Key == key {
@@ -457,9 +457,9 @@ func (d Directive) Option(key string) (DirectiveOption, bool) {
 	return DirectiveOption{}, false
 }
 
-// Validate exige o que a ADR-0015 §3 exige de uma provocação de decisão:
-// opções prontas (no mínimo duas — com uma só não há o que decidir, é alarme
-// com botão de OK) e uma recomendação entre elas.
+// Validate demands what ADR-0015 §3 demands of a request for a decision:
+// ready-made options (at least two — with only one there is nothing to decide,
+// it is an alarm with an OK button) and a recommendation among them.
 func (d Directive) Validate() error {
 	if strings.TrimSpace(d.ProjectID) == "" {
 		return errs.Invalid("diretriz sem projeto")
@@ -471,22 +471,22 @@ func (d Directive) Validate() error {
 		return errs.Invalid("diretriz sem enunciado da transversal detectada")
 	}
 	if len(d.Options) < 2 {
-		return errs.Invalid("diretriz precisa de ao menos duas opções: uma opção só é alarme, não decisão (ADR-0015 §3)")
+		return errs.Invalid("a directive needs at least two options: one option is an alarm, not a decision (ADR-0015 §3)")
 	}
 	vistas := make(map[string]bool, len(d.Options))
 	for _, o := range d.Options {
 		if strings.TrimSpace(o.Key) == "" {
-			return errs.Invalid("opção de diretriz sem chave")
+			return errs.Invalid("directive option with no key")
 		}
 		if vistas[o.Key] {
-			return errs.Invalid("opção %q duplicada na diretriz", o.Key)
+			return errs.Invalid("option %q duplicated in the directive", o.Key)
 		}
 		vistas[o.Key] = true
 		if strings.TrimSpace(o.Summary) == "" {
-			return errs.Invalid("opção %q sem descrição do que ela faz", o.Key)
+			return errs.Invalid("option %q with no description of what it does", o.Key)
 		}
 		if len(o.Instructions) == 0 {
-			return errs.Invalid("opção %q não instrui nenhuma demanda: decisão que não vira coordenação não serve", o.Key)
+			return errs.Invalid("option %q instructs no demand: a decision that does not become coordination is useless", o.Key)
 		}
 		for _, ins := range o.Instructions {
 			if err := ins.Validate(); err != nil {
@@ -495,7 +495,7 @@ func (d Directive) Validate() error {
 		}
 	}
 	if _, ok := d.Option(d.Recommended); !ok {
-		return errs.Invalid("a recomendação %q não está entre as opções oferecidas", d.Recommended)
+		return errs.Invalid("the recommendation %q is not among the offered options", d.Recommended)
 	}
 	return nil
 }

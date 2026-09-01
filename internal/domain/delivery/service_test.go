@@ -12,16 +12,16 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// O domínio é testável SEM banco: repositório e demandas são portas, e aqui
-// entram duplos em memória. Eles moram NESTE arquivo porque o teste de
+// The domain is testable WITHOUT a database: repository and demands are ports,
+// and in-memory doubles go in here. They live in THIS file because the
 // arquitetura reprova qualquer import de adaptador sob internal/domain,
 // inclusive em arquivo _test.go.
 
-// relogioFixo é o duplo do ports.Clock — instante fixo para que "a evidência é
-// deste commit e terminou quando?" seja verificável por igualdade.
-type relogioFixo struct{ t time.Time }
+// fixedClock is the ports.Clock double — a fixed instant so that "is this
+// evidence from this commit, and when did it end?" is verifiable by equality.
+type fixedClock struct{ t time.Time }
 
-func (r relogioFixo) Now() time.Time { return r.t }
+func (r fixedClock) Now() time.Time { return r.t }
 
 var agora = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
@@ -36,9 +36,9 @@ const (
 
 // ── duplo da porta de demandas ──────────────────────────────────────────────
 
-// fakeDemands é a porta ESTREITA e SOMENTE LEITURA para o domínio de demanda.
-// Repare que não há nada a espionar além de leitura: a entrega não tem como
-// mexer no estado de uma demanda, e é isso que o teste da regra de ouro
+// fakeDemands is the NARROW and READ-ONLY port into the demand domain.
+// Note there is nothing to spy on beyond reads: delivery has no way to touch a
+// demand's state, and that is what the golden rule's test
 // verifica estruturalmente.
 type fakeDemands struct {
 	demandas map[string]delivery.DemandInfo
@@ -59,16 +59,16 @@ func (f *fakeDemands) Demand(_ context.Context, accountID, id string) (*delivery
 
 var _ delivery.Demands = (*fakeDemands)(nil)
 
-// ── duplo do repositório ────────────────────────────────────────────────────
+// ── repository double ───────────────────────────────────────────────────────
 
 type fakeRepo struct {
 	runs       []delivery.VerificationRun
 	prs        []delivery.PullRequest
 	entries    []delivery.MergeQueueEntry
 	directives map[string]*delivery.Directive
-	// entregues guarda as instruções aplicadas por uma decisão — é onde o
-	// teste confere que a coordenação é trabalho, nunca pausa.
-	entregues []delivery.Instruction
+	// delivered keeps the instructions a decision applied — it is where the test
+	// checks that coordination is work, never a pause.
+	delivered []delivery.Instruction
 	seq       int
 }
 
@@ -145,12 +145,12 @@ func (f *fakeRepo) PullRequestOf(_ context.Context, accountID, demandID, repoID 
 	return nil, nil
 }
 
-// OpenPullRequest replica a trigger do banco: sem verde, não grava. O duplo
-// precisa ser tão duro quanto o Postgres, senão o teste passa e a produção não.
+// OpenPullRequest replicates the database trigger: no green, no write. The
+// double has to be as strict as Postgres, otherwise the test passes and production does not.
 func (f *fakeRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest, _ string) (*delivery.PullRequest, error) {
 	ev, _ := f.EvidenceFor(ctx, pr.AccountID, pr.DemandID, pr.RepoID, pr.HeadCommit)
 	if !ev.Green() {
-		return nil, errs.Precondition("sem verde, sem PR: %s", ev.Reason())
+		return nil, errs.Precondition("sem green, sem PR: %s", ev.Reason())
 	}
 	pr.ID = f.id("pr")
 	f.prs = append(f.prs, *pr)
@@ -180,14 +180,14 @@ func (f *fakeRepo) QueueEntryByID(_ context.Context, accountID, id string) (*del
 	return nil, nil
 }
 
-// Enqueue imita as duas constraints do banco: um PR não entra duas vezes na
-// fila do mesmo repositório, e a sequência é atribuída pelo repositório.
+// Enqueue mimics the database's two constraints: a PR does not enter the same
+// repository's queue twice, and the sequence is assigned by the repository.
 func (f *fakeRepo) Enqueue(_ context.Context, e *delivery.MergeQueueEntry, _ string) (*delivery.MergeQueueEntry, error) {
 	var maior int64
 	for _, x := range f.entries {
 		if x.RepoID == e.RepoID {
 			if x.PullRequestID == e.PullRequestID {
-				return nil, errs.New(errs.KindAlreadyExists, "o PR já está na fila deste repositório")
+				return nil, errs.New(errs.KindAlreadyExists, "the PR is already in this repository's queue")
 			}
 			if x.Seq > maior {
 				maior = x.Seq
@@ -208,7 +208,7 @@ func (f *fakeRepo) SetQueueState(_ context.Context, accountID, entryID string, t
 			return &f.entries[i], nil
 		}
 	}
-	return nil, errs.NotFound("entrada da fila")
+	return nil, errs.NotFound("entrada da queue")
 }
 
 func (f *fakeRepo) ListDirectives(_ context.Context, accountID, projectID string) ([]delivery.Directive, error) {
@@ -244,9 +244,9 @@ func (f *fakeRepo) DecideDirective(_ context.Context, accountID, id string, dec 
 	}
 	d.Status = delivery.DirectiveDecided
 	d.Decision = &dec
-	f.entregues = append(f.entregues, ins...)
-	// A ordem preferencial é a única coordenação que a entrega aplica sozinha:
-	// mexe na PRIORIDADE da fila, nunca no estado da demanda.
+	f.delivered = append(f.delivered, ins...)
+	// The preferred order is the only coordination delivery applies on its own:
+	// mexe na PRIORIDADE da queue, nunca no estado da demanda.
 	for _, i := range ins {
 		if i.Action != delivery.DirectiveMergeOrder {
 			continue
@@ -267,7 +267,7 @@ func (f *fakeRepo) DecideDirective(_ context.Context, accountID, id string, dec 
 
 var _ delivery.Repository = (*fakeRepo)(nil)
 
-// ── cenário ─────────────────────────────────────────────────────────────────
+// ── scenario ────────────────────────────────────────────────────────────────
 
 func cenario() (*delivery.Service, *fakeRepo, *fakeDemands) {
 	repo := novoRepo()
@@ -276,7 +276,7 @@ func cenario() (*delivery.Service, *fakeRepo, *fakeDemands) {
 		"dem-1": {ID: "dem-1", ProjectID: projeto, Active: true},
 		"dem-2": {ID: "dem-2", ProjectID: projeto, Active: true},
 	}}
-	return delivery.NewService(repo, dem, relogioFixo{agora}, nil), repo, dem
+	return delivery.NewService(repo, dem, fixedClock{agora}, nil), repo, dem
 }
 
 func comoAtor(id string) context.Context {
@@ -294,9 +294,9 @@ func execucao(demanda, repoID, commit string, kind delivery.CheckKind, out deliv
 	}
 }
 
-// verde registra o pacote mínimo que a ADR-0007 exige: aceitação aprovada mais
-// parecer do crítico, os dois sobre o MESMO commit.
-func verde(t *testing.T, svc *delivery.Service, ctx context.Context, demanda, repoID, commit string) {
+// green records the minimum package ADR-0007 requires: a passed acceptance plus
+// the critic's opinion, both over the SAME commit.
+func green(t *testing.T, svc *delivery.Service, ctx context.Context, demanda, repoID, commit string) {
 	t.Helper()
 	for _, k := range []delivery.CheckKind{delivery.CheckAcceptance, delivery.CheckCritic} {
 		if _, err := svc.RecordVerification(ctx, execucao(demanda, repoID, commit, k, delivery.OutcomePassed), ""); err != nil {
@@ -317,21 +317,21 @@ func abrePR(t *testing.T, svc *delivery.Service, ctx context.Context, demanda, r
 	return pr
 }
 
-// ── evidência de verde (ADR-0007) ───────────────────────────────────────────
+// ── evidence of green (ADR-0007) ────────────────────────────────────────────
 
-func TestEvidenciaSemExecucaoNaoEVerde(t *testing.T) {
+func TestEvidenceWithNoRunIsNotGreen(t *testing.T) {
 	ev := delivery.Evidence{DemandID: "dem-1", RepoID: repo1, Commit: commit1}
 	if ev.Green() {
-		t.Fatal("commit sem nenhuma execução não pode ser considerado verde")
+		t.Fatal("a commit with no runs at all cannot be considered green")
 	}
-	// A recusa precisa DIZER o que falta — precondição sem qual precondição faz
-	// o agente tentar de novo às cegas.
+	// The refusal has to SAY what is missing — a precondition with no which
+	// precondition makes the agent retry blindly.
 	if len(ev.Missing()) < 2 {
-		t.Errorf("faltavam aceitação e crítico, veio: %v", ev.Missing())
+		t.Errorf("acceptance and critic were missing, got: %v", ev.Missing())
 	}
 }
 
-func TestEvidenciaDeOutroCommitNaoVale(t *testing.T) {
+func TestEvidenceFromAnotherCommitDoesNotCount(t *testing.T) {
 	ev := delivery.Evidence{
 		DemandID: "dem-1", RepoID: repo1, Commit: commit2,
 		Runs: []delivery.VerificationRun{
@@ -339,16 +339,16 @@ func TestEvidenciaDeOutroCommitNaoVale(t *testing.T) {
 			execucao("dem-1", repo1, commit1, delivery.CheckCritic, delivery.OutcomePassed),
 		},
 	}
-	// É o coração da ADR-0008: o verde de ontem não é o verde de agora.
+	// It is ADR-0008's heart: yesterday's green is not today's green.
 	if ev.Green() {
-		t.Fatal("evidência de outro commit não pode aprovar o commit em revisão")
+		t.Fatal("evidence from another commit must not approve the commit under review")
 	}
-	if !strings.Contains(ev.Reason(), "não do commit") {
+	if !strings.Contains(ev.Reason(), "not to commit") {
 		t.Errorf("a recusa deveria apontar o commit divergente: %s", ev.Reason())
 	}
 }
 
-func TestEvidenciaComFalhaNaoEVerde(t *testing.T) {
+func TestEvidenceWithAFailureIsNotGreen(t *testing.T) {
 	ev := delivery.Evidence{
 		DemandID: "dem-1", RepoID: repo1, Commit: commit1,
 		Runs: []delivery.VerificationRun{
@@ -358,11 +358,11 @@ func TestEvidenciaComFalhaNaoEVerde(t *testing.T) {
 		},
 	}
 	if ev.Green() {
-		t.Fatal("uma execução reprovada derruba o verde inteiro")
+		t.Fatal("one failed run brings down the whole green")
 	}
 }
 
-func TestEvidenciaExigeParecerDoCritico(t *testing.T) {
+func TestEvidenceRequiresTheCriticsOpinion(t *testing.T) {
 	ev := delivery.Evidence{
 		DemandID: "dem-1", RepoID: repo1, Commit: commit1,
 		Runs: []delivery.VerificationRun{
@@ -370,24 +370,24 @@ func TestEvidenciaExigeParecerDoCritico(t *testing.T) {
 		},
 	}
 	if ev.Green() {
-		t.Fatal("aceitação sem parecer do crítico não fecha o portão da ADR-0007 §3")
+		t.Fatal("an acceptance with no critic opinion does not close ADR-0007 §3's gate")
 	}
 }
 
-func TestExecucaoSemRastroNaoEEvidencia(t *testing.T) {
+func TestARunWithNoTraceIsNotEvidence(t *testing.T) {
 	r := execucao("dem-1", repo1, commit1, delivery.CheckAcceptance, delivery.OutcomePassed)
 	r.SandboxID, r.LogRef = "", ""
 	if err := r.Validate(); err == nil {
-		t.Error("'passou' sem sandbox nem log é palavra, não evidência")
+		t.Error("'it passed' with no sandbox and no log is a word, not evidence")
 	}
 	r = execucao("dem-1", repo1, commit1, delivery.CheckAcceptance, delivery.OutcomePassed)
 	r.Commit = ""
 	if err := r.Validate(); err == nil {
-		t.Error("execução sem commit não prova nada e deveria ser recusada")
+		t.Error("a run with no commit proves nothing and should be refused")
 	}
 }
 
-func TestPRNaoAbreSemVerde(t *testing.T) {
+func TestAPRDoesNotOpenWithoutGreen(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
@@ -395,35 +395,35 @@ func TestPRNaoAbreSemVerde(t *testing.T) {
 		DemandID: "dem-1", RepoID: repo1, SourceBranch: "feat/x", HeadCommit: commit1,
 	}, "idem-1")
 	if err == nil || errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("sem verde, sem PR (ADR-0007); erro veio: %v", err)
+		t.Fatalf("sem green, sem PR (ADR-0007); erro veio: %v", err)
 	}
-	if !strings.Contains(err.Error(), "aceitação") {
+	if !strings.Contains(err.Error(), "acceptance") {
 		t.Errorf("a recusa deveria dizer o que falta: %v", err)
 	}
 }
 
-// ── a fila recusa sem evidência (ADR-0007 + ADR-0008) ───────────────────────
+// ── the queue refuses without evidence (ADR-0007 + ADR-0008) ────────────────
 
-func TestEnqueueSemPRERecusado(t *testing.T) {
+func TestEnqueueWithoutAPRIsRefused(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
 	_, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	if err == nil || errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("demanda sem PR não entra na fila; erro veio: %v", err)
+		t.Fatalf("a demand with no PR does not enter the queue; error was: %v", err)
 	}
 }
 
-func TestEnqueueSemEvidenciaDeVerdeERecusado(t *testing.T) {
+func TestEnqueueWithoutEvidenceOfGreenIsRefused(t *testing.T) {
 	svc, repo, _ := cenario()
 	ctx := comoAtor("ed")
 
-	// PR aberto com o commit verde...
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	// PR aberto com o commit green...
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	pr := abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 
-	// ...e depois o branch andou: o PR agora aponta para um commit que ninguém
-	// verificou. É exatamente o buraco que a re-verificação da ADR-0008 fecha.
+	// ...and then the branch moved: the PR now points at a commit nobody
+	// verified. It is exactly the hole ADR-0008's re-verification closes.
 	for i := range repo.prs {
 		if repo.prs[i].ID == pr.ID {
 			repo.prs[i].HeadCommit = commit2
@@ -432,99 +432,99 @@ func TestEnqueueSemEvidenciaDeVerdeERecusado(t *testing.T) {
 
 	_, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	if err == nil {
-		t.Fatal("a fila aceitou entrada sem evidência do commit atual")
+		t.Fatal("the queue accepted an entry with no evidence for the current commit")
 	}
 	if errs.KindOf(err) != errs.KindPrecondition {
 		t.Fatalf("recusa deveria ser failed_precondition, veio %s: %v", errs.KindOf(err), err)
 	}
-	// A mensagem precisa dizer O QUE falta, não só que faltou.
-	if !strings.Contains(err.Error(), "aceitação") || !strings.Contains(err.Error(), "crítico") {
-		t.Errorf("a recusa não diz o que falta: %v", err)
+	// The message has to say WHAT is missing, not only that something was.
+	if !strings.Contains(err.Error(), "acceptance") || !strings.Contains(err.Error(), "critic") {
+		t.Errorf("the refusal does not say what is missing: %v", err)
 	}
 }
 
-func TestEnqueueComAceitacaoReprovadaERecusado(t *testing.T) {
+func TestEnqueueWithAFailedAcceptanceIsRefused(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 
-	// Uma suíte nova reprova no MESMO commit: o verde deixa de existir.
+	// A new suite fails on the SAME commit: the green ceases to exist.
 	if _, err := svc.RecordVerification(ctx,
 		execucao("dem-1", repo1, commit1, delivery.CheckE2E, delivery.OutcomeFailed), ""); err != nil {
-		t.Fatalf("registrar reprovação: %v", err)
+		t.Fatalf("recording the failure: %v", err)
 	}
 
 	if _, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1"); err == nil {
-		t.Fatal("a fila aceitou PR com execução reprovada no commit")
+		t.Fatal("the queue accepted a PR with a failed run on the commit")
 	}
 }
 
-func TestEnqueueComVerdeEntraNaFila(t *testing.T) {
+func TestEnqueueWithGreenEntersTheQueue(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 
 	e, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	if err != nil {
-		t.Fatalf("com evidência de verde a entrada deveria ser aceita: %v", err)
+		t.Fatalf("with evidence of green the entry should be accepted: %v", err)
 	}
 	if e.State != delivery.StateQueued || e.Seq == 0 {
 		t.Errorf("entrada malformada: estado=%s seq=%d", e.State, e.Seq)
 	}
 }
 
-func TestUmPRNaoEntraDuasVezesNaFilaDoMesmoRepo(t *testing.T) {
+func TestOnePRDoesNotEnterTheSameRepoQueueTwice(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	if _, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1"); err != nil {
 		t.Fatalf("primeira entrada: %v", err)
 	}
 	if _, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q2"); err == nil {
-		t.Fatal("o mesmo PR entrou duas vezes na fila do mesmo repositório")
+		t.Fatal("the same PR entered the same repository's queue twice")
 	}
 }
 
-func TestFilaESemprePorRepositorio(t *testing.T) {
+func TestTheQueueIsAlwaysPerRepository(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
 	for _, d := range []string{"dem-1", "dem-2"} {
-		verde(t, svc, ctx, d, repo1, commit1)
+		green(t, svc, ctx, d, repo1, commit1)
 		abrePR(t, svc, ctx, d, repo1, commit1)
 		if _, err := svc.EnqueueMerge(ctx, repo1, d, "idem-"+d); err != nil {
 			t.Fatalf("enfileirar %s: %v", d, err)
 		}
 	}
-	verde(t, svc, ctx, "dem-0", repo2, commit2)
+	green(t, svc, ctx, "dem-0", repo2, commit2)
 	abrePR(t, svc, ctx, "dem-0", repo2, commit2)
 	if _, err := svc.EnqueueMerge(ctx, repo2, "dem-0", "idem-dem-0"); err != nil {
 		t.Fatalf("enfileirar no repo 2: %v", err)
 	}
 
-	fila1, _ := svc.GetMergeQueue(ctx, repo1)
-	fila2, _ := svc.GetMergeQueue(ctx, repo2)
-	if len(fila1) != 2 || len(fila2) != 1 {
-		t.Fatalf("as filas não são independentes por repositório: %d e %d", len(fila1), len(fila2))
+	queue1, _ := svc.GetMergeQueue(ctx, repo1)
+	queue2, _ := svc.GetMergeQueue(ctx, repo2)
+	if len(queue1) != 2 || len(queue2) != 1 {
+		t.Fatalf("the queues are not independent per repository: %d and %d", len(queue1), len(queue2))
 	}
-	// Cada fila numera do 1: a posição é dentro do repositório, não global.
-	if fila1[0].Position != 1 || fila2[0].Position != 1 {
-		t.Errorf("posições fora do repositório: %d e %d", fila1[0].Position, fila2[0].Position)
+	// Each queue numbers from 1: the position is within the repository, not global.
+	if queue1[0].Position != 1 || queue2[0].Position != 1 {
+		t.Errorf("positions outside the repository: %d and %d", queue1[0].Position, queue2[0].Position)
 	}
 }
 
-// ── ordem determinística (ADR-0008) ─────────────────────────────────────────
+// ── deterministic order (ADR-0008) ──────────────────────────────────────────
 
-// Duas entradas com a MESMA prioridade não podem empatar: a sequência por
-// repositório desempata sempre. Fila com empate é fila cuja ordem muda entre
+// Two entries with the SAME priority must not tie: the per-repository sequence
+// always breaks it. A queue with ties is a queue whose order changes between
 // dois refreshes do cockpit.
-func TestOrdemDaFilaEDeterministicaSobEmpate(t *testing.T) {
+func TestQueueOrderIsDeterministicUnderATie(t *testing.T) {
 	base := []delivery.MergeQueueEntry{
 		{ID: "c", RepoID: repo1, Priority: delivery.DefaultPriority, Seq: 3, State: delivery.StateQueued},
 		{ID: "a", RepoID: repo1, Priority: delivery.DefaultPriority, Seq: 1, State: delivery.StateQueued},
@@ -532,113 +532,113 @@ func TestOrdemDaFilaEDeterministicaSobEmpate(t *testing.T) {
 	}
 	esperado := []string{"a", "b", "c"}
 
-	// Entrada embaralhada de várias formas produz SEMPRE a mesma saída.
+	// Input shuffled in various ways ALWAYS produces the same output.
 	for _, entrada := range [][]delivery.MergeQueueEntry{
 		{base[0], base[1], base[2]},
 		{base[2], base[0], base[1]},
 		{base[1], base[2], base[0]},
 	} {
-		fila := delivery.SortQueue(entrada)
-		for i := range fila {
-			if fila[i].ID != esperado[i] || fila[i].Position != int32(i+1) {
-				t.Fatalf("ordem instável: %s na posição %d, esperado %s",
-					fila[i].ID, fila[i].Position, esperado[i])
+		queue := delivery.SortQueue(entrada)
+		for i := range queue {
+			if queue[i].ID != esperado[i] || queue[i].Position != int32(i+1) {
+				t.Fatalf("unstable order: %s at position %d, expected %s",
+					queue[i].ID, queue[i].Position, esperado[i])
 			}
 		}
 	}
 
 	// Ordem TOTAL: para nenhum par distinto os dois lados podem ser falsos —
-	// é isso que significa "não existe empate ambíguo".
+	// that is what "there is no ambiguous tie" means.
 	for i := range base {
 		for j := range base {
 			if i == j {
 				continue
 			}
 			if !base[i].Before(base[j]) && !base[j].Before(base[i]) {
-				t.Errorf("empate ambíguo entre %s e %s", base[i].ID, base[j].ID)
+				t.Errorf("ambiguous tie between %s and %s", base[i].ID, base[j].ID)
 			}
 		}
 	}
 }
 
-func TestPrioridadeVemAntesDaChegada(t *testing.T) {
+func TestPriorityComesBeforeArrival(t *testing.T) {
 	// Diretriz de ordem preferencial (ADR-0015 §6) mexe na prioridade: quem
-	// chegou depois pode mergear antes. Repare que ninguém PAROU: a demanda
-	// que perdeu a vez continua correndo, só mergeia depois.
-	fila := delivery.SortQueue([]delivery.MergeQueueEntry{
+	// arrived later may merge earlier. Note that nobody STOPPED: the demand that
+	// lost its turn keeps running, it just merges later.
+	queue := delivery.SortQueue([]delivery.MergeQueueEntry{
 		{ID: "primeiro", Priority: delivery.DefaultPriority, Seq: 1},
 		{ID: "urgente", Priority: 10, Seq: 2},
 	})
-	if fila[0].ID != "urgente" || fila[1].ID != "primeiro" {
-		t.Fatalf("prioridade não foi respeitada: %s, %s", fila[0].ID, fila[1].ID)
+	if queue[0].ID != "urgente" || queue[1].ID != "primeiro" {
+		t.Fatalf("priority was not honoured: %s, %s", queue[0].ID, queue[1].ID)
 	}
 }
 
-func TestFilaNaoMostraOQueJaMergeou(t *testing.T) {
+func TestTheQueueDoesNotShowWhatAlreadyMerged(t *testing.T) {
 	svc, repo, _ := cenario()
 	ctx := comoAtor("ed")
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	e, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	repo.entries[0].State = delivery.StateMerged
 
-	fila, err := svc.GetMergeQueue(ctx, repo1)
+	queue, err := svc.GetMergeQueue(ctx, repo1)
 	if err != nil {
-		t.Fatalf("consultar fila: %v", err)
+		t.Fatalf("consultar queue: %v", err)
 	}
-	if len(fila) != 0 {
-		t.Errorf("entrada %s mergeada continua ocupando a fila", e.ID)
+	if len(queue) != 0 {
+		t.Errorf("entrada %s mergeada continua ocupando a queue", e.ID)
 	}
 }
 
-// ── conflito vira item de decisão humana (ADR-0008 §2) ──────────────────────
+// ── a conflict becomes a human decision item (ADR-0008 §2) ──────────────────
 
-func TestConflitoEscalaComRelato(t *testing.T) {
+func TestAConflictEscalatesWithItsReport(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	e, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 
 	if _, err := svc.AdvanceQueue(ctx, e.ID, delivery.StateRebasing, "idem-r1"); err != nil {
 		t.Fatalf("ir para rebase: %v", err)
 	}
-	// Relato vazio não serve para ninguém decidir — a caixa de atenção recebe
-	// contexto, não alarme.
+	// An empty report gives nobody anything to decide — the attention box gets
+	// context, not an alarm.
 	if _, err := svc.ReportConflict(ctx, e.ID, delivery.ConflictReport{}, "idem-c0"); err == nil {
-		t.Error("conflito sem arquivos nem descrição deveria ser recusado")
+		t.Error("a conflict with neither files nor a description should be refused")
 	}
 
 	got, err := svc.ReportConflict(ctx, e.ID, delivery.ConflictReport{
 		Files: []string{"internal/app/register.go"}, BaseCommit: commit2, Attempts: 3,
-		Detail: "rebase falhou três vezes no mesmo hunk",
+		Detail: "the rebase failed three times on the same hunk",
 	}, "idem-c1")
 	if err != nil {
 		t.Fatalf("escalar conflito: %v", err)
 	}
 	if !got.State.NeedsHuman() {
-		t.Error("conflito precisa marcar estado que alimenta a caixa de atenção")
+		t.Error("a conflict has to set the state that feeds the attention box")
 	}
 	if got.Conflict == nil || got.Conflict.ReportedAt.IsZero() {
 		t.Error("o relato do conflito precisa ficar gravado, com quando")
 	}
-	// Conflito não é fim: resolvido, volta para o rebase.
+	// A conflict is not the end: once resolved, it goes back to the rebase.
 	if !delivery.StateConflict.CanTransitionTo(delivery.StateRebasing) {
 		t.Error("conflito resolvido deveria voltar para o rebase")
 	}
 }
 
-func TestFilaNaoPulaAReverificacao(t *testing.T) {
+func TestTheQueueDoesNotSkipReverification(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	e, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 
-	// "na fila → mergeado" pularia o rebase e a re-verificação, que é onde a
-	// quebra semântica entre demandas paralelas aparece (ADR-0008).
+	// "queued → merged" would skip the rebase and the re-verification, which is
+	// where the semantic break between parallel demands shows up (ADR-0008).
 	if _, err := svc.AdvanceQueue(ctx, e.ID, delivery.StateMerged, "idem-x"); err == nil {
-		t.Fatal("a fila deixou mergear sem passar por rebase e re-verificação")
+		t.Fatal("the queue allowed a merge without going through rebase and re-verification")
 	}
 }
 
@@ -648,7 +648,7 @@ func diretrizExemplo() delivery.Directive {
 	return delivery.Directive{
 		ProjectID: projeto,
 		Kind:      delivery.DirectiveCherryPick,
-		Summary:   "a demanda 1 depende do contrato que a demanda 0 está escrevendo",
+		Summary:   "demand 1 depends on the contract demand 0 is writing",
 		Payload: map[string]any{
 			"overlapping_files": []any{"internal/app/register.go"},
 		},
@@ -676,33 +676,33 @@ func diretrizExemplo() delivery.Directive {
 	}
 }
 
-func TestDiretrizPrecisaDeOpcoesERecomendacao(t *testing.T) {
+func TestADirectiveNeedsOptionsAndARecommendation(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 
 	d := diretrizExemplo()
 	d.Options = d.Options[:1]
 	if _, err := svc.ProposeDirective(ctx, d, "idem-d0"); err == nil {
-		t.Error("uma opção só é alarme com botão de OK, não provocação de decisão")
+		t.Error("a single option is an alarm with an OK button, not a request for a decision")
 	}
 
 	d = diretrizExemplo()
 	d.Recommended = "inexistente"
 	if _, err := svc.ProposeDirective(ctx, d, "idem-d0"); err == nil {
-		t.Error("recomendação fora das opções deveria ser recusada")
+		t.Error("a recommendation outside the options should be refused")
 	}
 }
 
-// A regra de ouro da ADR-0015 §5 escrita como TIPO: não existe valor no
-// vocabulário que expresse parar uma demanda.
-func TestVocabularioDeCoordenacaoNaoTemPausa(t *testing.T) {
-	for _, tentativa := range []delivery.DirectiveKind{"pause", "block", "suspend", "wait", ""} {
-		if delivery.ValidDirectiveKind(tentativa) {
-			t.Errorf("%q não pode existir no vocabulário de coordenação", tentativa)
+// ADR-0015 §5's golden rule written as a TYPE: there is no value in the
+// vocabulary that expresses stopping a demand.
+func TestTheCoordinationVocabularyHasNoPause(t *testing.T) {
+	for _, attempt := range []delivery.DirectiveKind{"pause", "block", "suspend", "wait", ""} {
+		if delivery.ValidDirectiveKind(attempt) {
+			t.Errorf("%q must not exist in the coordination vocabulary", attempt)
 		}
-		ins := delivery.Instruction{DemandID: "dem-1", Action: tentativa}
+		ins := delivery.Instruction{DemandID: "dem-1", Action: attempt}
 		if err := ins.Validate(); err == nil {
-			t.Errorf("instrução %q deveria ser recusada", tentativa)
+			t.Errorf("instruction %q should be refused", attempt)
 		}
 	}
 
@@ -711,11 +711,11 @@ func TestVocabularioDeCoordenacaoNaoTemPausa(t *testing.T) {
 	d := diretrizExemplo()
 	d.Options[0].Instructions[0].Action = "pause"
 	if _, err := svc.ProposeDirective(ctx, d, "idem-d0"); err == nil {
-		t.Fatal("o domínio aceitou uma diretriz que pausaria a demanda")
+		t.Fatal("the domain accepted a directive that would pause the demand")
 	}
 }
 
-func TestDecidirExigeQuemEPorQue(t *testing.T) {
+func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := comoAtor("ed")
 	d, err := svc.ProposeDirective(ctx, diretrizExemplo(), "idem-d1")
@@ -723,77 +723,77 @@ func TestDecidirExigeQuemEPorQue(t *testing.T) {
 		t.Fatalf("propor: %v", err)
 	}
 
-	// Sem motivo: recusado. Decisão sem porquê vira mágica invisível.
+	// With no reason: refused. A decision with no why becomes invisible magic.
 	if _, err := svc.DecideDirective(ctx, d.ID,
 		map[string]any{"option": "cherry-pick"}, "idem-x1"); err == nil {
 		t.Error("decidir sem motivo deveria ser recusado")
 	}
-	// Opção que não foi oferecida: recusada, dizendo quais existem.
+	// An option that was not offered: refused, saying which ones exist.
 	_, err = svc.DecideDirective(ctx, d.ID,
 		map[string]any{"option": "cancelar-tudo", "rationale": "porque sim"}, "idem-x2")
 	if err == nil || !strings.Contains(err.Error(), "cherry-pick") {
-		t.Errorf("a recusa deveria listar as opções oferecidas: %v", err)
+		t.Errorf("the refusal should list the options offered: %v", err)
 	}
-	// Sem ator identificado: ninguém para registrar como autor da decisão.
+	// With no identified actor: nobody to record as the decision's author.
 	semAtor := ctxutil.Into(context.Background(), ctxutil.Call{AccountID: conta})
 	if _, err := svc.DecideDirective(semAtor, d.ID,
 		map[string]any{"option": "cherry-pick", "rationale": "ok"}, "idem-x3"); err == nil {
-		t.Error("decisão sem ator identificado deveria ser recusada")
+		t.Error("a decision with no identified actor should be refused")
 	}
 
-	// Agente não decide a própria proposta: o techlead detecta e propõe, o dev
+	// An agent does not decide its own proposal: the techlead detects and
 	// escolhe (ADR-0015 §4).
 	comoAgente := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: conta, ActorID: "thread-7", ActorKind: ctxutil.ActorAgent})
 	if _, err := svc.DecideDirective(comoAgente, d.ID, map[string]any{
 		"option": "cherry-pick", "rationale": "eu mesmo resolvo",
 	}, "idem-x0"); err == nil || errs.KindOf(err) != errs.KindPermission {
-		t.Errorf("agente não deveria decidir diretriz; erro veio: %v", err)
+		t.Errorf("an agent should not decide a directive; error was: %v", err)
 	}
 
-	decidida, err := svc.DecideDirective(ctx, d.ID, map[string]any{
-		"option": "cherry-pick", "rationale": "a 1 só precisa do contrato, não do resto",
+	decided, err := svc.DecideDirective(ctx, d.ID, map[string]any{
+		"option": "cherry-pick", "rationale": "1 only needs the contract, not the rest",
 	}, "idem-x4")
 	if err != nil {
 		t.Fatalf("decidir: %v", err)
 	}
-	if decidida.Decision == nil || decidida.Decision.DecidedBy != "ed" ||
-		decidida.Decision.Rationale == "" || !decidida.Decision.DecidedAt.Equal(agora) {
-		t.Fatalf("a decisão precisa registrar quem, o quê e por quê: %+v", decidida.Decision)
+	if decided.Decision == nil || decided.Decision.DecidedBy != "ed" ||
+		decided.Decision.Rationale == "" || !decided.Decision.DecidedAt.Equal(agora) {
+		t.Fatalf("the decision has to record who, what and why: %+v", decided.Decision)
 	}
-	// Repetir a MESMA decisão é inócuo; mudar de ideia exige diretriz nova.
+	// Repeating the SAME decision is harmless; changing your mind needs a new directive.
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
 		"option": "cherry-pick", "rationale": "de novo",
 	}, "idem-x4"); err != nil {
-		t.Errorf("repetir a mesma decisão deveria ser inócuo: %v", err)
+		t.Errorf("repeating the same decision should be harmless: %v", err)
 	}
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
 		"option": "ordem-de-merge", "rationale": "mudei de ideia",
 	}, "idem-x5"); err == nil {
-		t.Error("reescrever uma decisão já tomada deveria ser conflito")
+		t.Error("rewriting a decision already made should be a conflict")
 	}
 }
 
 // O teste que a regra de ouro pede: decidir uma diretriz NÃO interrompe a
-// demanda que já está andando.
+// a demand that is already moving.
 //
-// Duas afirmações, e as duas importam. A primeira é de estado: a demanda 1
-// continua ativa, e a entrada dela na fila continua onde estava. A segunda é
-// estrutural: tudo o que a decisão produziu foi TRABALHO A FAZER — nenhuma
-// instrução fora do vocabulário de coordenação, porque nenhuma poderia existir.
-func TestDecidirDiretrizNaoInterrompeDemandaEmAndamento(t *testing.T) {
+// Two assertions, and both matter. The first is about state: demand 1 stays
+// active, and its queue entry stays where it was. The second is structural:
+// everything the decision produced was WORK TO DO — no instruction outside the
+// coordination vocabulary, because none could exist.
+func TestDecidingADirectiveDoesNotInterruptARunningDemand(t *testing.T) {
 	svc, repo, dem := cenario()
 	ctx := comoAtor("ed")
 
-	// A demanda 1 está andando: PR verde aberto e entrada na fila.
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	// Demand 1 is moving: a green PR open and an entry in the queue.
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	entrada, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	if err != nil {
 		t.Fatalf("enfileirar: %v", err)
 	}
 	if _, err := svc.AdvanceQueue(ctx, entrada.ID, delivery.StateRebasing, "idem-r1"); err != nil {
-		t.Fatalf("avançar: %v", err)
+		t.Fatalf("advancing: %v", err)
 	}
 
 	// O techlead detecta a transversal com a demanda 0 e o dev decide.
@@ -807,40 +807,40 @@ func TestDecidirDiretrizNaoInterrompeDemandaEmAndamento(t *testing.T) {
 		t.Fatalf("decidir: %v", err)
 	}
 
-	// 1. A demanda continua ativa — a entrega só LÊ demanda, não há como parar.
+	// 1. The demand stays active — delivery only READS demands, there is no way to stop one.
 	if info, _ := dem.Demand(ctx, conta, "dem-1"); !info.Active {
 		t.Error("a demanda parou por causa de uma transversal identificada (ADR-0015 §5)")
 	}
-	// 2. A entrada dela na fila continua exatamente onde estava.
-	viva, _ := repo.QueueEntryByID(ctx, conta, entrada.ID)
-	if viva.State != delivery.StateRebasing {
-		t.Errorf("a decisão mexeu no andamento da demanda: estado virou %s", viva.State)
+	// 2. A entrada dela na queue continua exatamente onde estava.
+	alive, _ := repo.QueueEntryByID(ctx, conta, entrada.ID)
+	if alive.State != delivery.StateRebasing {
+		t.Errorf("the decision touched the demand's progress: state became %s", alive.State)
 	}
-	// 3. E o que a decisão entregou foi trabalho, não uma ordem de parar.
-	if len(repo.entregues) == 0 {
-		t.Fatal("a decisão não entregou coordenação nenhuma")
+	// 3. And what the decision delivered was work, not an order to stop.
+	if len(repo.delivered) == 0 {
+		t.Fatal("the decision delivered no coordination at all")
 	}
-	for _, ins := range repo.entregues {
+	for _, ins := range repo.delivered {
 		if err := ins.Validate(); err != nil {
-			t.Errorf("instrução entregue fora do vocabulário de coordenação: %v", err)
+			t.Errorf("instruction delivered outside the coordination vocabulary: %v", err)
 		}
 		if ins.Action == delivery.DirectiveCherryPick && ins.When == "" {
-			t.Error("cherry-pick sem condição vira espera: a demanda precisa saber QUANDO aplicar")
+			t.Error("a cherry-pick with no condition becomes a wait: the demand has to know WHEN to apply it")
 		}
 	}
 }
 
-// Ordem preferencial é o caso em que a diretriz TOCA a fila — e ainda assim não
-// para ninguém: mexe na prioridade, o estado da demanda não muda.
-func TestDiretrizDeOrdemReordenaSemParar(t *testing.T) {
+// A preferred order is the case where the directive TOUCHES the queue — and even
+// so it stops nobody: it changes the priority, the demand's state does not move.
+func TestAnOrderingDirectiveReordersWithoutStopping(t *testing.T) {
 	svc, repo, _ := cenario()
 	ctx := comoAtor("ed")
 
-	verde(t, svc, ctx, "dem-1", repo1, commit1)
+	green(t, svc, ctx, "dem-1", repo1, commit1)
 	abrePR(t, svc, ctx, "dem-1", repo1, commit1)
 	entrada, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 	if _, err := svc.AdvanceQueue(ctx, entrada.ID, delivery.StateRebasing, "idem-r1"); err != nil {
-		t.Fatalf("avançar: %v", err)
+		t.Fatalf("advancing: %v", err)
 	}
 
 	d, _ := svc.ProposeDirective(ctx, diretrizExemplo(), "idem-d1")
@@ -850,23 +850,23 @@ func TestDiretrizDeOrdemReordenaSemParar(t *testing.T) {
 		t.Fatalf("decidir: %v", err)
 	}
 
-	depois, _ := repo.QueueEntryByID(ctx, conta, entrada.ID)
-	if depois.Priority != 200 {
-		t.Errorf("a ordem preferencial não foi aplicada: prioridade %d", depois.Priority)
+	after, _ := repo.QueueEntryByID(ctx, conta, entrada.ID)
+	if after.Priority != 200 {
+		t.Errorf("the preferred order was not applied: priority %d", after.Priority)
 	}
-	if depois.State != delivery.StateRebasing {
-		t.Errorf("reordenar mudou o andamento da demanda: %s", depois.State)
+	if after.State != delivery.StateRebasing {
+		t.Errorf("reordenar mudou o andamento da demanda: %s", after.State)
 	}
 }
 
 // ── isolamento por conta ────────────────────────────────────────────────────
 
-func TestOperacaoSemContaAtivaERecusada(t *testing.T) {
+func TestAnOperationWithNoActiveAccountIsRefused(t *testing.T) {
 	svc, _, _ := cenario()
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "ed"})
 
 	if _, err := svc.GetMergeQueue(ctx, repo1); err == nil {
-		t.Error("consultar fila sem conta ativa deveria ser recusado")
+		t.Error("consultar queue sem conta ativa deveria ser recusado")
 	}
 	if _, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "k"); err == nil {
 		t.Error("enfileirar sem conta ativa deveria ser recusado")
@@ -876,10 +876,10 @@ func TestOperacaoSemContaAtivaERecusada(t *testing.T) {
 	}
 }
 
-func TestServicoRecusaRelogioNulo(t *testing.T) {
+func TestTheServiceRefusesANilClock(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Error("relógio nil precisa falhar no boot, não em produção")
+			t.Error("a nil clock has to fail at boot, not in production")
 		}
 	}()
 	delivery.NewService(novoRepo(), &fakeDemands{}, nil, nil)

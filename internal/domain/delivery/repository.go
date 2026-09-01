@@ -5,71 +5,71 @@ import (
 	"time"
 )
 
-// Repository é a PORTA de persistência do domínio de entrega.
+// Repository is the delivery domain's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in
+// internal/adapter/postgres. The domain never sees SQL.
 //
-// Duas obrigações valem para TODA implementação, e não são negociáveis:
+// Two obligations hold for EVERY implementation, and they are not negotiable:
 //
-//   - toda leitura e toda escrita filtram por accountID — isolamento
-//     multi-tenant é constraint, não confiança no chamador;
-//   - toda escrita grava o estado novo e o evento na MESMA transação
-//     (ADR-0019). Commit ⇒ os dois, ou nenhum.
+//   - every read and every write filters by accountID — multi-tenant isolation
+//     is a constraint, not trust in the caller;
+//   - every write stores the new state and the event in the SAME transaction
+//     (ADR-0019). A commit means both, or neither.
 type Repository interface {
-	// ── evidência de verde (ADR-0007) ──
+	// ── evidence of green (ADR-0007) ──
 
-	// RecordVerification grava UMA execução. Repetir a mesma suíte no mesmo
-	// commit ATUALIZA a linha e incrementa o contador de tentativas — o
-	// histórico de quantas vezes se tentou é parte da evidência, não ruído.
+	// RecordVerification stores ONE run. Repeating the same suite on the same
+	// commit UPDATES the row and increments the attempt counter — the history of
+	// how many times it was tried is part of the evidence, not noise.
 	RecordVerification(ctx context.Context, run *VerificationRun, idemKey string) (*VerificationRun, error)
 
-	// EvidenceFor devolve tudo o que se sabe sobre o verde de um commit. Nunca
-	// devolve erro por ausência: evidência vazia é uma resposta legítima — e é
-	// exatamente a que faz a fila recusar.
+	// EvidenceFor returns everything known about a commit's green. It never
+	// returns an error for absence: empty evidence is a legitimate answer — and it
+	// is exactly the one that makes the queue refuse.
 	EvidenceFor(ctx context.Context, accountID, demandID, repoID, commit string) (Evidence, error)
 
 	// ── pull requests ──
 
 	ListPullRequests(ctx context.Context, accountID string, f PRFilter) ([]PullRequest, error)
 	PullRequestByID(ctx context.Context, accountID, id string) (*PullRequest, error)
-	// PullRequestOf devolve (nil, nil) quando a demanda ainda não abriu PR no
-	// repositório: ausência não é erro do adaptador, é decisão do domínio.
+	// PullRequestOf returns (nil, nil) when the demand has not opened a PR on the
+	// repository yet: absence is not the adapter's error, it is the domain's decision.
 	PullRequestOf(ctx context.Context, accountID, demandID, repoID string) (*PullRequest, error)
-	// OpenPullRequest grava o PR. A evidência vai junto porque o banco confere
-	// a regra "sem verde, sem PR" por trigger — o serviço confere antes, com
-	// mensagem útil; o banco confere sempre, inclusive nos caminhos que
-	// ninguém previu.
+	// OpenPullRequest stores the PR. The evidence goes with it because the
+	// database checks the "no green, no PR" rule through a trigger — the service
+	// checks first, with a useful message; the database checks always, including
+	// on the paths nobody anticipated.
 	OpenPullRequest(ctx context.Context, pr *PullRequest, idemKey string) (*PullRequest, error)
 
-	// ── fila de merge (ADR-0008) ──
+	// ── merge queue (ADR-0008) ──
 
-	// QueueOfRepo devolve a fila do repositório. A ORDEM final é do domínio
-	// (SortQueue); o adaptador devolve o que está gravado, incluindo Seq.
+	// QueueOfRepo returns the repository's queue. The final ORDER belongs to the
+	// domain (SortQueue); the adapter returns what is stored, including Seq.
 	QueueOfRepo(ctx context.Context, accountID, repoID string, includeMerged bool) ([]MergeQueueEntry, error)
 	QueueEntryByID(ctx context.Context, accountID, id string) (*MergeQueueEntry, error)
-	// Enqueue ATRIBUI a sequência do repositório, serializando as entradas
-	// concorrentes. Devolver Seq preenchido é obrigação da implementação: sem
-	// ela a ordem da fila é ambígua.
+	// Enqueue ASSIGNS the repository's sequence, serializing concurrent entries.
+	// Returning Seq filled in is the implementation's obligation: without it the
+	// queue's order is ambiguous.
 	Enqueue(ctx context.Context, e *MergeQueueEntry, idemKey string) (*MergeQueueEntry, error)
-	// SetQueueState move a entrada. O relato de conflito é opcional em toda
-	// transição menos a que vai para `conflict`.
+	// SetQueueState moves the entry. The conflict report is optional on every
+	// transition except the one going to `conflict`.
 	SetQueueState(ctx context.Context, accountID, entryID string, to QueueState, c *ConflictReport, idemKey string) (*MergeQueueEntry, error)
 
-	// ── diretrizes (ADR-0015) ──
+	// ── directives (ADR-0015) ──
 
 	ListDirectives(ctx context.Context, accountID, projectID string) ([]Directive, error)
 	DirectiveByID(ctx context.Context, accountID, id string) (*Directive, error)
 	CreateDirective(ctx context.Context, d *Directive, idemKey string) (*Directive, error)
-	// DecideDirective grava a decisão E aplica, na MESMA transação, a
-	// coordenação que este domínio sabe aplicar sozinho — hoje, a ordem
-	// preferencial na fila de merge. As demais instruções viajam no evento
-	// para quem é dono delas.
+	// DecideDirective stores the decision AND applies, in the SAME transaction,
+	// the coordination this domain knows how to apply alone — today, the preferred
+	// ordering in the merge queue. The other instructions travel in the event to
+	// whoever owns them.
 	DecideDirective(ctx context.Context, accountID, id string, dec Decision, ins []Instruction, idemKey string) (*Directive, error)
 }
 
-// PRFilter é o recorte de ListPullRequests. Campo vazio = sem filtro; a conta
-// nunca é filtro opcional, vem à parte.
+// PRFilter is ListPullRequests' slice. An empty field means no filter; the
+// account is never an optional filter, it comes separately.
 type PRFilter struct {
 	DemandID  string
 	ProjectID string
@@ -77,27 +77,27 @@ type PRFilter struct {
 	OnlyOpen  bool
 }
 
-// Demands é a porta ESTREITA para o domínio da demanda — e é SOMENTE LEITURA.
+// Demands is the NARROW port into the demand domain — and it is READ-ONLY.
 //
-// A superfície é o argumento inteiro: entrega precisa saber que a demanda
-// existe na conta ativa e em que projeto ela vive. Só. Não há Pause, Block,
-// Suspend nem Advance aqui, e a ausência é a regra de ouro da ADR-0015 §5
-// escrita como tipo — este domínio não tem como parar demanda nenhuma, nem por
-// engano, nem por um caminho que alguém acrescente distraído daqui a seis meses.
+// The surface is the entire argument: delivery needs to know that the demand
+// exists in the active account and which project it lives in. That is all. There
+// is no Pause, Block, Suspend or Advance here, and the absence is ADR-0015 §5's
+// golden rule written as a type — this domain has no way to stop any demand, not
+// by mistake, not through a path somebody adds absent-mindedly six months from now.
 //
-// Foi desenhada para que o serviço do domínio `demand` a satisfaça com um
-// adaptador de cola mínimo no composition root; o pacote dele NÃO é importado
-// aqui (está sendo escrito em paralelo, e domínio não depende de domínio irmão
-// além do estritamente necessário).
+// It was designed so the `demand` domain's service satisfies it with a minimal
+// glue adapter in the composition root; its package is NOT imported here (it was
+// being written in parallel, and a domain does not depend on a sibling domain
+// beyond what is strictly necessary).
 type Demands interface {
 	Demand(ctx context.Context, accountID, demandID string) (*DemandInfo, error)
 }
 
-// DemandInfo é o mínimo que a entrega enxerga de uma demanda.
+// DemandInfo is the minimum delivery sees of a demand.
 type DemandInfo struct {
 	ID        string
 	ProjectID string
-	// Active diz se a demanda ainda está andando. É informação de LEITURA:
+	// Active says whether the demand is still moving. It is READ information:
 	// serve para o evento contar a verdade ("a diretriz foi decidida e a
 	// demanda 1 continua em andamento"), nunca para decidir se ela para.
 	Active bool
@@ -105,195 +105,195 @@ type DemandInfo struct {
 
 // ─────────────────────────── GitProvider ───────────────────────────
 
-// GitProvider é a porta do provedor de código (GitHub, GitLab).
+// GitProvider is the code provider's port (GitHub, GitLab).
 //
-// A superfície é o mínimo do fluxo da ADR-0008: abrir o PR com o pacote de
-// evidência, reaplicar sobre a base atual, mergear um de cada vez, e perguntar
-// se o provedor já tem fila própria. Falar com GitHub/GitLab é adaptador, não
-// domínio.
+// The surface is the minimum of ADR-0008's flow: open the PR with the evidence
+// package, reapply over the current base, merge one at a time, and ask whether
+// the provider already has a queue of its own. Talking to GitHub/GitLab is
+// adapter work, not domain work.
 //
-// Uma instância fala por UMA credencial e por UM ator. O token chega PRONTO no
-// construtor do adaptador (ADR-0013: token de provedor é credencial de recurso,
-// guardada atrás de ports.SecretStore). O adaptador de git não conhece o cofre,
-// não o consulta e não sabe que ele existe — quem monta resolve o segredo e
+// One instance speaks for ONE credential and ONE actor. The token arrives READY
+// in the adapter's constructor (ADR-0013: a provider token is a resource
+// credential, kept behind ports.SecretStore). The git adapter does not know the
+// vault, does not query it and does not know it exists — whoever assembles
 // entrega o valor.
 //
-// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+// Guarantees verified by the contract suite, in EVERY adapter:
 //
-//  1. CONFLITO É DADO, ERRO É FALHA. Rebase e Merge devolvem Conflicted=true
-//     com erro NIL quando o provedor diz que aquele conteúdo não integra. Erro
+//  1. A CONFLICT IS DATA, AN ERROR IS A FAILURE. Rebase and Merge return
+//     Conflicted=true with a NIL error when the provider says that content does
 //     fica para o que impede de SABER: rede, provedor fora do ar, credencial
-//     inválida, permissão, repositório inexistente, resposta ilegível. A
-//     distinção é operacional, não estética — conflito vira tarefa do agente e,
-//     se ele não resolver, item da caixa de atenção (ADR-0008 §2), enquanto
+//     invalid, permission, nonexistent repository, unreadable response. The
+//     distinction is operational, not aesthetic — a conflict becomes the agent's
+//     task and, if it does not resolve it, an attention box item (ADR-0008 §2),
 //     erro vira retry e alerta de infra. Trocar um pelo outro ou esconde o
-//     conflito do humano ou enche a caixa de atenção com queda de rede;
+//     the human's conflict or fills the attention box with a network outage;
 //
-//  2. Conflicted=true SEMPRE traz Detail não vazio, e Files é BEST-EFFORT: pode
+//  2. Conflicted=true ALWAYS carries a non-empty Detail, and Files is
 //     vir vazia mesmo havendo conflito. Nenhum dos dois provedores publica a
-//     lista de arquivos em conflito na API de PR/MR — o GitHub não a expõe, e
-//     no GitLab ela só existe numa rota interna do Rails, fora do /api/v4, sem
-//     versão e sem promessa. Prometer Files seria prometer o que só sai de um
-//     `git merge` local; quem decidir com base nela estará decidindo com base
-//     em sorte. Detail carrega o que o provedor de fato diz, e é o campo que a
-//     caixa de atenção mostra;
+//     conflicted files in the PR/MR API — GitHub does not expose it, and on
+//     GitLab it only exists on an internal Rails route, outside /api/v4, with no
+//     version and no promise. Promising Files would be promising what only comes
+//     out of a local `git merge`; whoever decided on it would be deciding on
+//     luck. Detail carries what the provider actually says, and it is the field
+//     the attention box shows;
 //
-//  3. ABRIR PR É IDEMPOTENTE por (repositório, branch de origem, branch de
-//     destino). Chamar duas vezes NÃO cria dois PRs e NÃO é erro: a segunda
-//     chamada devolve o PR que já existe. Os dois provedores recusam o segundo
-//     PR — o GitHub com 422, o GitLab com 409 — e é o adaptador que transforma
-//     essa recusa em "aqui está o que existe". Sem isso, cada timeout de rede
-//     numa frota de agentes viraria um item de atenção sobre um PR que foi
+//  3. OPENING A PR IS IDEMPOTENT by (repository, source branch, target branch).
+//     Calling twice does NOT create two PRs and is NOT an error: the second call
+//     returns the PR that already exists. Both providers refuse the second PR —
+//     GitHub with 422, GitLab with 409 — and it is the adapter that turns that
+//     refusal into "here is what exists". Without it, every network timeout in a
+//     fleet of agents would become an attention item about a PR that was
 //     aberto com sucesso;
 //
-//  4. reabrir com título ou corpo diferentes NÃO reescreve o PR existente: a
-//     porta devolve o que está lá, e atualizar PR fica FORA (ver abaixo).
-//     Idempotência que sobrescreve não é idempotência — é a última chamada
-//     ganhando, e o pacote de evidência da ADR-0007 §4 é justamente o que não
+//  4. reopening with a different title or body does NOT rewrite the existing PR:
+//     the port returns what is there, and updating a PR stays OUT (see below).
+//     Idempotency that overwrites is not idempotency — it is the last call
+//     winning, and ADR-0007 §4's evidence package is precisely what must not
 //     pode ser trocado por um retry;
 //
-//  5. com erro nil, ProviderPR tem ExternalID e URL NÃO VAZIOS. ExternalID é a
-//     identidade do PR no provedor e é o que Merge recebe depois: devolver PR
-//     sem identificador é devolver algo que não se consegue mergear;
+//  5. with a nil error, ProviderPR has a NON-EMPTY ExternalID and URL.
+//     ExternalID is the PR's identity at the provider and it is what Merge
+//     receives later: returning a PR with no identifier is returning something
 //
-//  6. MERGE É IDEMPOTENTE: mergear um PR já mergeado devolve Merged=true com o
-//     commit de merge que já existe — não erro, não conflito. Cumprir isto
-//     custa uma leitura extra, porque os DOIS provedores recusam o PR já
-//     mergeado com o MESMO código HTTP que usam para "há conflito": a resposta
-//     crua é ambígua e o adaptador precisa ler o PR para desempatar;
+//  6. MERGE IS IDEMPOTENT: merging an already merged PR returns Merged=true with
+//     the merge commit that already exists — not an error, not a conflict.
+//     Honouring this costs an extra read, because BOTH providers refuse an
+//     already merged PR with the SAME HTTP code they use for "there is a
+//     conflict": the raw response is ambiguous and the adapter has to read the PR
 //
-//  7. Merged=true só quando o provedor CONFIRMA o merge, nunca por aceitação de
-//     pedido, e nesse caso MergeCommit não é vazio. "Aceitei seu pedido" e
-//     "está na main" são fatos diferentes, e a fila da ADR-0008 libera a
-//     próxima posição com base no segundo;
+//  7. Merged=true only when the provider CONFIRMS the merge, never on the
+//     acceptance of a request, and in that case MergeCommit is not empty. "I
+//     accepted your request" and "it is on main" are different facts, and
+//     ADR-0008's queue releases the next position based on the second;
 //
-//  8. Merged=false COM Conflicted=false é resposta LEGÍTIMA: o merge não
-//     aconteceu e o motivo não é conflito — pipeline do provedor rodando,
-//     aprovação faltando, PR em rascunho, regra de proteção de branch. Detail
+//  8. Merged=false WITH Conflicted=false is a LEGITIMATE answer: the merge did
+//     not happen and the reason is not a conflict — the provider's pipeline is
+//     running, an approval is missing, the PR is a draft, a branch protection
 //     diz qual. Sem esse terceiro estado o adaptador seria obrigado a mentir em
-//     um dos dois campos, e "conflito" viraria o balde de tudo o que não
-//     mergeou — mandando um humano resolver um pipeline que ainda está rodando;
+//     one of the two fields, and "conflict" would become the bucket for
+//     everything that did not merge — sending a human to resolve a pipeline that
 //
-//  9. REBASE É SÍNCRONO NA PORTA. Os provedores respondem antes de terminar (o
-//     GitHub aceita a mutação e processa depois; o GitLab devolve "rebase em
-//     andamento" e faz o trabalho num worker), e é o ADAPTADOR que espera o
+//  9. REBASE IS SYNCHRONOUS AT THE PORT. The providers answer before finishing
+//     (GitHub accepts the mutation and processes later; GitLab returns "rebase in
+//     progress" and does the work in a worker), and it is the ADAPTER that waits
 //     desfecho dentro do contexto do chamador. Contexto cancelado ou prazo
-//     esgotado é KindUnavailable — nunca um Conflicted=false, que significaria
-//     "não conflitou" quando o que houve foi "não sei";
+//     is KindUnavailable — never a Conflicted=false, which would mean "it did
+//     not conflict" when what happened was "I do not know";
 //
-//  10. REBASE EXIGE PR ABERTO, e `Onto` NÃO É LIVRE. RebaseSpec parece uma
-//     operação de git e não é: nenhum dos dois provedores reaplica um branch
-//     solto. O GitHub reaplica o branch de um PR, e só por GraphQL — o REST
-//     dele não tem rebase nenhum, só um `update-branch` que MERGEIA a base
+//  10. REBASE REQUIRES AN OPEN PR, and `Onto` IS NOT FREE. RebaseSpec looks like
+//     a git operation and is not: neither provider reapplies a loose branch.
+//     GitHub reapplies a PR's branch, and only through GraphQL — its REST has no
+//     rebase at all, only an `update-branch` that MERGES the base
 //     dentro do branch. O GitLab reaplica o branch de um MR. Os dois reaplicam
 //     sempre sobre o destino DAQUELE PR/MR. Por isso: sem PR aberto para
-//     (Branch → Onto), a resposta é KindPrecondition com a explicação — nunca
-//     uma reaplicação silenciosa sobre outra base, que é o que a fila da
-//     ADR-0008 re-verificaria acreditando ser outro estado do código;
+//     (Branch → Onto), the answer is KindPrecondition with the explanation —
+//     never a silent reapplication over another base, which is what ADR-0008's
+//     queue would re-verify believing it to be another state of the code;
 //
 //  11. NOMES DO PROVEDOR NÃO CRUZAM A PORTA. `mergeable_state`, `merge_status`,
-//     `detailed_merge_status`, número de PR e iid de MR ficam do lado de lá.
-//     ExternalID é OPACO: é o que a porta devolveu e o que ela aceita de volta,
-//     sem formato prometido. É esta garantia que faz trocar de provedor ser
-//     fiação;
+//     `detailed_merge_status`, PR numbers and MR iids stay on the far side.
+//     ExternalID is OPAQUE: it is what the port returned and what it accepts
+//     back, with no promised format. It is this guarantee that makes swapping
+//     providers a wiring change;
 //
-//  12. REPOSITÓRIO INEXISTENTE OU INVISÍVEL é KindNotFound; token que existe
-//     mas não pode agir sobre o recurso é KindPermission; token ausente,
-//     inválido ou expirado é KindUnauthorized. E a ressalva honesta: o GitHub
-//     responde 404 para repositório privado que o token não enxerga, DE
-//     PROPÓSITO, para não revelar que ele existe. O adaptador não adivinha qual
-//     dos dois é — repassa NotFound. Prometer distinguir seria prometer o que o
+//  12. A NONEXISTENT OR INVISIBLE REPOSITORY is KindNotFound; a token that
+//     exists but cannot act on the resource is KindPermission; a missing,
+//     invalid or expired token is KindUnauthorized. And the honest caveat:
+//     GitHub answers 404 for a private repository the token cannot see, ON
+//     PURPOSE, so as not to reveal that it exists. The adapter does not guess
+//     which of the two it is — it passes NotFound through. Promising to tell them
 //     provedor esconde;
 //
 //  13. O TOKEN NÃO APARECE EM LUGAR NENHUM: nem em mensagem de erro, nem em
 //     log, nem em campo de struct, nem no texto de %v, %+v ou %#v do
-//     adaptador. Erro sobe para log, e token de provedor em log é credencial em
-//     repouso: quem lê o log abre PR e mergeia como o dono. A suíte de contrato
-//     usa um token sentinela e varre TODA saída de erro atrás dele;
+//     adapter. Errors go to logs, and a provider token in a log is a credential
+//     at rest: whoever reads the log opens PRs and merges as the owner. The
+//     contract suite uses a sentinel token and sweeps EVERY error output for it;
 //
-//  14. ActorID é CONFERIDO, não resolvido. A instância foi construída para um
-//     ator (ADR-0003: quem conduziu assina); pedido em nome de OUTRO ator é
+//  14. ActorID is CHECKED, not resolved. The instance was built for one actor
+//     (ADR-0003: whoever conducted signs); a request on behalf of ANOTHER actor
 //     recusado com KindPermission. Ignorar o campo seria pior que recusar: o PR
 //     sairia assinado por quem quer que seja o dono do token fiado, e "quem
 //     conduziu assina" viraria mentira silenciosa no lugar exato onde a
 //     rastreabilidade importa;
 //
-//  15. HasNativeQueue NUNCA INVENTA. Quando o adaptador não consegue OLHAR —
-//     sem permissão para ler as regras do repositório, escopo de token que não
-//     alcança o projeto — devolve ERRO com a causa, jamais `false`. `false` é
-//     uma AFIRMAÇÃO ("este repositório não tem fila nativa, pode orquestrar por
-//     cima") e afirmá-la sem ter olhado é o mesmo defeito de degradar
-//     isolamento em silêncio: o sistema segue parecendo saudável e a diferença
-//     só aparece no dia do incidente — aqui, com duas filas mergeando o mesmo
-//     repositório. Repare no que a pergunta ESCONDE: a merge queue do GitHub é
-//     por BRANCH (é regra de ruleset) e o merge train do GitLab é por PROJETO.
-//     A porta pergunta por repositório, e a resposta é sobre o branch que a
-//     fila da ADR-0008 disputa — o padrão;
+//  15. HasNativeQueue NEVER INVENTS. When the adapter cannot LOOK — no
+//     permission to read the repository's rules, a token scope that does not
+//     reach the project — it returns an ERROR with the cause, never `false`.
+//     `false` is an ASSERTION ("this repository has no native queue, you may
+//     orchestrate on top") and asserting it without having looked is the same
+//     defect as silently degrading isolation: the system keeps looking healthy
+//     and the difference only shows up on the day of the incident — here, with
+//     two queues merging the same repository. Note what the question HIDES:
+//     GitHub's merge queue is per BRANCH (it is a ruleset rule) and GitLab's
+//     merge train is per PROJECT. The port asks per repository, and the answer
+//     is about the branch ADR-0008's queue contends for — the default one;
 //
-//  16. HasNativeQueue é LEITURA: não cria, não altera e não configura fila
-//     nenhuma. A porta responde se existe; entrar nela não está aqui;
+//  16. HasNativeQueue is a READ: it creates nothing, changes nothing and
+//     configures no queue. The port answers whether one exists; joining it is
 //
-//  17. as quatro operações são seguras para uso concorrente.
+//  17. all four operations are safe for concurrent use.
 //
-// FORA da porta, de propósito:
+// OUT of the port, on purpose:
 //
-//   - ENTRAR na fila nativa do provedor. Perguntar se existe é uma pergunta só
-//     nos dois; ENTRAR não é a mesma operação: no GitHub a merge queue é
+//   - JOINING the provider's native queue. Asking whether one exists is a single
+//     question in both; JOINING is not the same operation: on GitHub the merge
 //     configurada por ruleset de branch e o PR entra por auto-merge; no GitLab
-//     o merge train é uma fila de pipelines, de plano pago, em que se entra por
+//     the merge train is a pipeline queue, on a paid plan, joined through
 //     auto merge. A ADR-0008 §4 pede que a plataforma saiba quando NÃO duplicar
-//     a fila — não que ela dirija a fila alheia;
+//     the queue — not that it drives somebody else's;
 //
-//   - REVISÃO: pedir revisor, aprovar, comentar, resolver conversa. É a
-//     superfície mais assimétrica entre os dois — o GitHub tem revisões com
-//     veredito por pessoa, o GitLab tem aprovações por REGRA, com contagem
-//     mínima e escopo de plano. Não existe denominador comum que não seja o
-//     vocabulário de um dos dois disfarçado de porta;
+//   - REVIEW: requesting a reviewer, approving, commenting, resolving a thread.
+//     It is the most asymmetric surface between the two — GitHub has reviews with
+//     a verdict per person, GitLab has approvals per RULE, with a minimum count
+//     and a plan-dependent scope. There is no common denominator that is not one
+//     of the two's vocabulary disguised as a port;
 //
-//   - STATUS E CHECKS do provedor. O verde do DOP é a evidência da ADR-0007,
+//   - the provider's STATUS AND CHECKS. DOP's green is ADR-0007's evidence,
 //     produzida no sandbox e gravada como VerificationRun. Trazer o check do
-//     provedor para cá faria a plataforma aceitar como prova um verde que não
-//     foi ela que produziu — que é exatamente a confiança que a ADR-0007 recusa;
+//     provider in here would make the platform accept as proof a green it did not
+//     produce — which is exactly the trust ADR-0007 refuses;
 //
-//   - CRIAR, APAGAR E EMPURRAR BRANCH, e qualquer operação de git. Esta porta é
-//     sobre o PEDIDO DE INTEGRAÇÃO, não sobre o repositório;
+//   - CREATING, DELETING AND PUSHING BRANCHES, and any git operation. This port
+//     is about the INTEGRATION REQUEST, not about the repository;
 //
-//   - ATUALIZAR o PR (título, corpo, destino), rascunho, rótulo, marco,
-//     responsável, e FECHAR sem mergear. Nada disso é exigido pelo fluxo da
-//     ADR-0008, e cada um traz um vocabulário que diverge entre os dois;
+//   - UPDATING the PR (title, body, target), draft status, label, milestone,
+//     assignee, and CLOSING without merging. None of that is required by
+//     ADR-0008's flow, and each brings a vocabulary that diverges between the two;
 //
-//   - MÉTODO DE MERGE (merge commit, squash, rebase) e mensagem do commit. É
-//     política do fluxo git, que a ADR-0013 trata como recurso governado
-//     (`git_flow`) e o composition root injeta no adaptador. E é traduzível só
-//     em parte: no GitHub o método vai na chamada de merge; no GitLab ele é
-//     configuração do PROJETO, e a chamada só aceita `squash`. A fila da
-//     ADR-0008 precisa que o merge aconteça, não que ele aconteça de um jeito;
+//   - THE MERGE METHOD (merge commit, squash, rebase) and the commit message. It
+//     is git-flow policy, which ADR-0013 treats as a governed resource
+//     (`git_flow`) and the composition root injects into the adapter. And it is
+//     only partly translatable: on GitHub the method goes in the merge call; on
+//     GitLab it is PROJECT configuration, and the call only accepts `squash`.
+//     ADR-0008's queue needs the merge to happen, not to happen a particular way;
 //
-//   - WEBHOOKS e assinatura de evento. É o provedor chamando a plataforma, não
-//     a plataforma chamando o provedor — outra direção, outra porta.
+//   - WEBHOOKS and event subscription. That is the provider calling the platform,
+//     not the platform calling the provider — another direction, another port.
 type GitProvider interface {
 	OpenPullRequest(ctx context.Context, spec OpenPRSpec) (ProviderPR, error)
 	Rebase(ctx context.Context, spec RebaseSpec) (RebaseResult, error)
 	Merge(ctx context.Context, spec MergeSpec) (MergeResult, error)
-	// HasNativeQueue diz se o provedor tem merge queue própria (merge queue do
+	// HasNativeQueue says whether the provider has a merge queue of its own
 	// GitHub, merge trains do GitLab). A fila do DOP orquestra por cima e cobre
-	// quem não tem.
+	// who does not.
 	HasNativeQueue(ctx context.Context, repoExternalID string) (bool, error)
 }
 
-// GitProviders resolve QUAL provedor atende um repositório.
+// GitProviders resolves WHICH provider serves a repository.
 //
-// Não é escolha de boot, como SecretStore ou EventBus: o provedor é do
-// REPOSITÓRIO (ADR-0013), e é justamente por isso que `ProjectRepo` carrega
+// It is not a boot-time choice, like SecretStore or EventBus: the provider
+// belongs to the REPOSITORY (ADR-0013), and that is precisely why `ProjectRepo`
 // `IntegrationID` — um projeto com um repo no GitHub e outro no GitLab tem que
-// ser representável. Um provedor único escolhido por configuração tornaria isso
-// impossível, silenciosamente.
+// representable. A single provider chosen by configuration would make that
+// impossible, silently.
 //
-// É a mesma natureza da porta de provedor de agente (ADR-0022): escolhida por
-// requisição, vários adaptadores ativos ao mesmo tempo.
+// It is the same nature as the agent provider port (ADR-0022): chosen per
+// request, several adapters active at once.
 //
-// Quem implementa também resolve a CREDENCIAL, no cofre — por isso a porta
-// devolve um `GitProvider` já pronto, e nenhum adaptador de git conhece o cofre.
+// Whoever implements it also resolves the CREDENTIAL, in the vault — which is
+// why the port returns a ready `GitProvider`, and no git adapter knows the vault.
 type GitProviders interface {
 	For(ctx context.Context, accountID, repoID string) (GitProvider, error)
 }
@@ -303,11 +303,11 @@ type OpenPRSpec struct {
 	SourceBranch   string
 	TargetBranch   string
 	Title          string
-	// Body é o pacote de evidência já renderizado (ADR-0007 §4): resultado da
-	// aceitação, parecer do crítico, links do trace, quem pediu.
+	// Body is the evidence package already rendered (ADR-0007 §4): the
+	// acceptance outcome, the critic's opinion, trace links, who asked.
 	Body string
-	// Actor é a credencial de AUTORIA: quem conduziu assina os commits
-	// (ADR-0003). A resolução da credencial é do adaptador; o domínio só diz
+	// Actor is the AUTHORSHIP credential: whoever conducted signs the commits
+	// (ADR-0003). Resolving the credential is the adapter's job; the domain only
 	// em nome de quem.
 	ActorID string
 }
@@ -326,7 +326,7 @@ type RebaseSpec struct {
 	Onto           string
 }
 
-// RebaseResult carrega o conflito como dado — ver o comentário de GitProvider.
+// RebaseResult carries the conflict as data — see GitProvider's comment.
 type RebaseResult struct {
 	HeadCommit string
 	BaseCommit string
