@@ -563,6 +563,144 @@ type SandboxLauncher interface {
 	Exec(ctx context.Context, h SandboxHandle, req ExecRequest) (*ExecResult, error)
 }
 
+// ───────────────────────── Mailer ─────────────────────────
+
+// Mail é a INTENÇÃO de avisar alguém — nunca o artefato do aviso.
+//
+// Repare no que NÃO está aqui: assunto, corpo, HTML, `template_id`. A ADR-0025
+// decidiu que o índice de templates, a resolução e a renderização moram no
+// ADAPTADOR, e este struct é o que sobra quando isso sai: "aconteceu ISTO, para
+// ESTE endereço, com ESTES dados". Renderizar no domínio pareceria mais limpo e
+// seria pior — a plataforma nunca poderia usar template de provedor (perdendo
+// editor, versionamento e localização) e a porta passaria a carregar um blob de
+// HTML, que é artefato de renderização, não intenção.
+type Mail struct {
+	// AccountID é a conta em nome de quem se avisa. Vai ao adaptador porque um
+	// dia o remetente será por conta (domínio verificado), não para filtrar.
+	AccountID string
+	// Kind é o TIPO LÓGICO da notificação, no vocabulário do domínio
+	// ("invite", "attention_digest"). É string, e não o tipo nomeado do pacote
+	// notification, porque `notification` importa `ports` (relógio) e o
+	// caminho de volta seria ciclo de importação.
+	Kind string
+	// To é UM endereço. Fan-out é decisão da regra, não do canal: um `[]string`
+	// aqui faria o adaptador escolher entre uma mensagem com todo mundo em
+	// cópia — que vaza os endereços entre si — e N mensagens, que é o que o
+	// chamador já sabe fazer.
+	To     string
+	ToName string
+	// Data são os dados do template, livres. O adaptador decide o que faz com
+	// eles: o SendGrid manda como `dynamic_template_data`, o SMTP renderiza
+	// local. Chave faltando NÃO é erro (garantia 8).
+	Data map[string]any
+}
+
+// MailState é o desfecho do envio, no vocabulário que o projeto irmão já provou
+// útil em operação.
+type MailState string
+
+const (
+	// MailSent: o fornecedor aceitou a mensagem.
+	MailSent MailState = "sent"
+	// MailSentLocal: ENSAIO. Não havia credencial, o adaptador imprimiu em vez
+	// de enviar e ninguém recebeu nada. É estado próprio, e não `sent`, porque
+	// a diferença entre "avisamos" e "fingimos avisar" não pode depender de
+	// quem lê o log lembrar em que ambiente aquilo rodou.
+	MailSentLocal MailState = "sent_local"
+)
+
+// MailReceipt é o comprovante. Não tem corpo, não tem HTML, não tem retorno do
+// fornecedor: só o que o chamador precisa para REGISTRAR o que aconteceu.
+type MailReceipt struct {
+	State MailState
+	// Provider identifica quem atendeu ("sendgrid", "smtp"). Serve à operação:
+	// "não chegou" é uma investigação diferente conforme quem enviou.
+	Provider string
+	// Reference é o id do fornecedor quando houver (o `X-Message-Id` do
+	// SendGrid). Vazio é NORMAL — o SMTP não tem o que devolver —, e por isso
+	// nada no domínio pode depender deste campo.
+	Reference string
+}
+
+// Mailer é o CANAL de e-mail. O gatilho — decidir o que notificar e para quem —
+// é do domínio (internal/domain/notification); aqui só acontece o disparo.
+//
+// A porta é por CANAL, e não uma só para tudo, porque canais não têm a mesma
+// forma: e-mail tem assunto, HTML e anexo; push tem título, badge e link
+// profundo; SMS tem 160 caracteres e nenhuma formatação. Uma porta única teria a
+// união de tudo — com a maioria dos campos nunca usada — ou o mínimo denominador
+// comum, perdendo o que cada canal faz bem. `Pusher` e `SMSer` nascem quando
+// houver push e SMS (ADR-0025).
+//
+// Garantias verificadas pela suíte de contrato, em TODO adaptador:
+//
+//  1. RESOLUÇÃO COMPLETA: o adaptador resolve TODOS os tipos que o domínio sabe
+//     emitir. É a garantia mais importante desta porta, e a única cuja violação
+//     é invisível: um tipo que existe na política e não tem template no
+//     fornecedor faz o evento acontecer, o consumidor rodar e NINGUÉM receber.
+//     Tipo fora do índice do adaptador é KindNotFound, em Send e em Resolve —
+//     nunca uma mensagem genérica, nunca um sucesso silencioso;
+//
+//  2. Resolve responde a mesma coisa que Send resolveria, SEM I/O e SEM enviar.
+//     Existe para que a suíte de contrato (e o composition root, no boot)
+//     possam perguntar "você sabe montar isto?" sem mandar e-mail para
+//     ninguém. As duas respostas CONCORDAM: tipo que Resolve aceita, Send não
+//     recusa por falta de template, e vice-versa;
+//
+//  3. ENSAIO LOCAL: sem credencial configurada, o adaptador NÃO fala com o
+//     fornecedor — imprime a mensagem e devolve MailSentLocal. É o modo de
+//     desenvolvimento do projeto irmão, e ele acontece DEPOIS da resolução do
+//     template, nunca antes: um ensaio que pulasse a resolução esconderia
+//     exatamente o defeito da garantia 1 em todo ambiente sem chave, que é
+//     onde a suíte roda;
+//
+//  4. o SEGREDO não sai: chave de API e senha de SMTP nunca aparecem em erro,
+//     em log, no String() do adaptador nem num `%+v` dele. Não é promessa de
+//     disciplina — a credencial é capturada em CLOSURE, não guardada em campo,
+//     porque o fmt lê campo não exportado por reflexão e não consegue chamar o
+//     String() dele;
+//
+//  5. destinatário vazio, sem "@", ou tipo vazio são KindInvalid decididos SEM
+//     I/O: quem chama sem endereço não pode custar uma ida ao fornecedor;
+//
+//  6. com erro nil, State é SEMPRE MailSent ou MailSentLocal — nunca vazio,
+//     nunca outro valor. Estado vazio viraria registro que não diz se alguém
+//     recebeu;
+//
+//  7. a tradução do erro é a da casa: fornecedor fora do ar, rede, prazo
+//     esgotado e resposta ilegível são KindUnavailable; credencial recusada é
+//     KindUnauthorized; conteúdo ou endereço recusado pelo fornecedor é
+//     KindInvalid. Confundir os dois primeiros grupos manda a equipe caçar
+//     defeito no lugar errado;
+//
+//  8. Data é OPCIONAL e livre. Chave ausente NÃO é erro — o template decide o
+//     que fazer com a falta, e derrubar um convite porque um campo cosmético
+//     não veio trocaria um problema de aparência por um bloqueio de acesso;
+//
+//  9. Send NÃO grava nada e não tem efeito colateral além do envio: o registro
+//     do que foi disparado é do chamador (ADR-0025), e um adaptador que também
+//     registrasse teria duas responsabilidades e uma delas impossível de testar
+//     sem banco;
+//
+//  10. seguro para uso concorrente.
+//
+// FORA da porta, de propósito:
+//
+//   - ASSUNTO e CORPO. São artefato de renderização; ver Mail;
+//   - ANEXO. O SendGrid aceita base64 no corpo do JSON, o SMTP exige MIME
+//     multipart, e nenhum aviso da plataforma precisa de anexo hoje.
+//     Capacidade que não mapeia e que ninguém usa não entra;
+//   - AGENDAMENTO (`send_at` do SendGrid). Não existe em SMTP, e agendar é
+//     política — o atraso do resumo é decisão do domínio, calibrável, e não
+//     pode depender de qual fornecedor atendeu;
+//   - RASTREIO de abertura e clique, e consulta de status posterior. É
+//     assimétrico entre fornecedores e traria vocabulário de marketing para
+//     dentro de uma porta que só precisa avisar gente.
+type Mailer interface {
+	Send(ctx context.Context, m Mail) (*MailReceipt, error)
+	Resolve(ctx context.Context, kind string) error
+}
+
 // ───────────────────────── Clock e IDs ─────────────────────────
 // Pequenas, mas reais: é o que torna o domínio determinístico em teste.
 

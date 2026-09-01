@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -106,6 +107,50 @@ type Config struct {
 	// aconteça, não que ele aconteça de um jeito. Fica no adaptador.
 	GitMergeMethod string // merge | squash | rebase
 
+	// ── comunicação (ADR-0025) ──
+	// MailBackend escolhe o adaptador da porta Mailer. `smtp` é o caminho do
+	// self-hosted; `sendgrid`, o do SaaS. Os dois passam pela mesma suíte de
+	// contrato.
+	MailBackend string // sendgrid | smtp
+	// MailFrom/MailFromName são o remetente da INSTALAÇÃO. Não é vocabulário do
+	// domínio: quem avisa é a plataforma, e o endereço dela muda por instalação.
+	MailFrom     string
+	MailFromName string
+	// SendGridAPI existe para apontar o adaptador para outro host — o serviço
+	// tem endpoint regional na UE, e a suíte de contrato aponta para um duplo.
+	// A CHAVE não está aqui de propósito: ela é credencial, mora no cofre
+	// (ADR-0023), e chega ao adaptador já resolvida pelo composition root.
+	SendGridAPI string
+	// SendGridTemplates é tipo → `template_id`, lido de SENDGRID_TEMPLATE_<TIPO>.
+	// É a metade da resolução que muda por instalação; a outra — QUE tipos
+	// existem — é compilada no adaptador, onde a suíte de contrato a exercita.
+	SendGridTemplates map[string]string
+	// SMTPAddr vazio liga o ENSAIO LOCAL: o adaptador imprime em vez de enviar.
+	// É o mesmo gesto da chave vazia no SendGrid, e é ele que faz o ambiente de
+	// desenvolvimento não precisar de servidor de e-mail nenhum.
+	SMTPAddr string
+	SMTPUser string
+	// SendGridAPIKey e SMTPPassword são credenciais DA INSTALAÇÃO, e por isso
+	// vêm do ambiente — como o DATABASE_URL, entregues pelo Secret do
+	// Kubernetes que o Deployment monta.
+	//
+	// NÃO vão para o cofre, e a distinção importa: o cofre existe para
+	// credencial de CLIENTE (integração de conta, ADR-0013), com isolamento
+	// por conta no nome do segredo. Credencial da instalação não pertence a
+	// conta nenhuma — guardá-la lá inventaria uma conta fictícia para ser dona
+	// dela, e afrouxaria a garantia 5 da porta para acomodar a exceção.
+	SendGridAPIKey string
+	SMTPPassword   string
+	SMTPStartTLS   bool
+	// CockpitBaseURL é a base dos links do e-mail. Vazio faz o aviso sair sem
+	// link — degradação declarada: link quebrado custa mais confiança que
+	// ausência de link.
+	CockpitBaseURL string
+	// DigestDelay é o atraso do aviso de atenção (ADR-0025). Configurável
+	// porque 15 minutos é palpite informado, não medição: o valor certo para
+	// uma equipe de plantão não é o de quem olha a caixa de manhã.
+	DigestDelay time.Duration
+
 	RelayInterval time.Duration
 	LogLevel      string
 }
@@ -149,8 +194,37 @@ func Load(mode string) (*Config, error) {
 		GitRebaseTimeout: time.Duration(
 			envInt("GIT_REBASE_TIMEOUT_SECONDS", 180)) * time.Second,
 		GitMergeMethod: env("GIT_MERGE_METHOD", "merge"),
-		RelayInterval:  time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
-		LogLevel:       env("LOG_LEVEL", "info"),
+		MailBackend:    env("MAIL_BACKEND", "smtp"),
+		MailFrom:       env("MAIL_FROM", "noreply@dop.local"),
+		MailFromName:   env("MAIL_FROM_NAME", "DOP"),
+		SendGridAPI:    env("SENDGRID_API", "https://api.sendgrid.com"),
+		SMTPAddr:       env("SMTP_ADDR", ""),
+		SMTPUser:       env("SMTP_USER", ""),
+		SendGridAPIKey: env("SENDGRID_API_KEY", ""),
+		SMTPPassword:   env("SMTP_PASSWORD", ""),
+		SMTPStartTLS:   env("SMTP_STARTTLS", "") == "true",
+		CockpitBaseURL: env("COCKPIT_BASE_URL", ""),
+		DigestDelay: time.Duration(
+			envInt("DIGEST_DELAY_SECONDS", 900)) * time.Second,
+		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
+		LogLevel:      env("LOG_LEVEL", "info"),
+	}
+	// Os ids de template vêm por variável POR TIPO, e não numa string com
+	// separador: uma lista achatada erra em silêncio quando alguém troca a
+	// ordem, e o sintoma seria o convite chegar com o layout do resumo.
+	//
+	// A varredura é por PREFIXO, e não por uma lista de tipos conhecidos, para
+	// que este pacote não precise importar o domínio de notificação só para
+	// saber que tipos existem — quem confere se todos têm template é a suíte de
+	// contrato do adaptador, que é onde essa checagem tem dente.
+	c.SendGridTemplates = map[string]string{}
+	const prefixo = "SENDGRID_TEMPLATE_"
+	for _, kv := range os.Environ() {
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 || !strings.HasPrefix(kv, prefixo) || i+1 >= len(kv) {
+			continue
+		}
+		c.SendGridTemplates[strings.ToLower(kv[len(prefixo):i])] = kv[i+1:]
 	}
 	// Token da service account, quando rodando dentro do cluster.
 	if b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
@@ -186,6 +260,15 @@ func Load(mode string) (*Config, error) {
 	case "merge", "squash", "rebase":
 	default:
 		return nil, fmt.Errorf("GIT_MERGE_METHOD desconhecido: %q (use merge, squash ou rebase)", c.GitMergeMethod)
+	}
+	// Mesmo raciocínio no canal de e-mail: backend desconhecido cairia no
+	// default e a instalação inteira mandaria aviso pelo caminho errado —
+	// descoberto no primeiro convite que não chega, com o processo verde há
+	// semanas.
+	switch c.MailBackend {
+	case "sendgrid", "smtp":
+	default:
+		return nil, fmt.Errorf("MAIL_BACKEND desconhecido: %q (use sendgrid ou smtp)", c.MailBackend)
 	}
 	return c, nil
 }

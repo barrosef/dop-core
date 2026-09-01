@@ -13,6 +13,7 @@ import (
 
 	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
@@ -31,6 +32,7 @@ type Deps struct {
 	Objects  ports.ObjectStore
 	Identity ports.IdentityProvider
 	Launcher ports.SandboxLauncher
+	Mailer   ports.Mailer
 	Cfg      *config.Config
 }
 
@@ -103,6 +105,32 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
+	// O canal de e-mail também é porta com dois adaptadores reais: SendGrid
+	// para quem usa serviço gerenciado, SMTP para self-hosted — o mesmo par
+	// GCP/OKD das outras. Com SMTP_ADDR vazio o adaptador entra em ENSAIO
+	// LOCAL: imprime em vez de enviar, e o pipeline inteiro fica testável sem
+	// gastar envio nem poluir caixa de ninguém.
+	var correio ports.Mailer
+	switch cfg.MailBackend {
+	case "sendgrid":
+		correio = mailer.NewSendGrid(mailer.SendGridConfig{
+			APIKey:    cfg.SendGridAPIKey,
+			BaseURL:   cfg.SendGridAPI,
+			From:      cfg.MailFrom,
+			FromName:  cfg.MailFromName,
+			Templates: cfg.SendGridTemplates,
+		})
+	default:
+		correio = mailer.NewSMTP(mailer.SMTPConfig{
+			Addr:     cfg.SMTPAddr,
+			Username: cfg.SMTPUser,
+			Password: cfg.SMTPPassword,
+			From:     cfg.MailFrom,
+			FromName: cfg.MailFromName,
+			StartTLS: cfg.SMTPStartTLS,
+		})
+	}
+
 	// Ponte STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST (ADR-0020).
 	// Sem ela, upload local vai para o bucket REAL.
 	if ep := objectstore.ResolveEmulatorHost(); ep != "" {
@@ -137,7 +165,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
-		Identity: idp, Launcher: launcher, Cfg: cfg}
+		Identity: idp, Launcher: launcher, Mailer: correio, Cfg: cfg}
 	cleanup := func() {
 		// Adaptadores que abrem conexão própria registram o fechamento aqui.
 		// A porta não tem Close — fechar é preocupação de quem MONTA, não do

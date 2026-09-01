@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,10 +25,20 @@ func TestParticoesFuturasSaoCriadasEEhIdempotente(t *testing.T) {
 	if err != nil || pool.Ping(ctx) != nil {
 		t.Skipf("Postgres indisponível: %v", err)
 	}
-	defer pool.Close()
+	// `t.Cleanup` roda DEPOIS que a função de teste retorna, e `defer` roda
+	// ANTES — então fechar o pool com defer deixaria a limpeza sem conexão.
+	// Registrado aqui, o fecho vira o ÚLTIMO cleanup (eles rodam ao contrário
+	// da ordem de registro), depois do DROP lá embaixo.
+	t.Cleanup(pool.Close)
 
 	// Uma data bem à frente, para não depender do que já existe hoje.
 	futuro := time.Date(2027, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	// Apaga ANTES, não só depois: teste que depende da limpeza da execução
+	// anterior ter funcionado falha por motivo errado quando ela não funcionou
+	// — foi exatamente o que aconteceu aqui, e o sintoma ("nenhuma partição
+	// criada") mandava procurar no código de produção.
+	limparParticoes(t, ctx, pool)
 
 	criadas, err := postgres.EnsureMonthlyPartitions(ctx, pool, futuro, 3)
 	if err != nil {
@@ -59,14 +70,7 @@ func TestParticoesFuturasSaoCriadasEEhIdempotente(t *testing.T) {
 		t.Error("events_2027_06 não existe depois da criação")
 	}
 
-	t.Cleanup(func() {
-		for _, tabela := range []string{"events", "cost_usage"} {
-			for m := 6; m <= 9; m++ {
-				_, _ = pool.Exec(ctx,
-					"DROP TABLE IF EXISTS "+tabela+"_2027_0"+string(rune('0'+m)))
-			}
-		}
-	})
+	t.Cleanup(func() { limparParticoes(t, context.Background(), pool) })
 }
 
 // O buraco não é hipotético: as migrações param em outubro de 2026, e hoje é
@@ -105,4 +109,22 @@ func TestOBuracoDeNovembroEhFechadoPeloCicloReal(t *testing.T) {
 	t.Logf("evento do mês seguinte caiu em %s", destino)
 
 	_, _ = pool.Exec(ctx, `DELETE FROM events WHERE type = 'dop.teste.particao'`)
+}
+
+// limparParticoes remove as partições que este teste cria.
+//
+// O erro é REPORTADO, não engolido: a primeira versão usava `_` e a falha de
+// limpeza ficou invisível por execuções inteiras — a partição sobrevivente
+// fazia a execução seguinte falhar dizendo "nenhuma partição criada", que
+// aponta para o código de produção em vez de para a limpeza.
+func limparParticoes(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	for _, tabela := range postgres.PartitionedTables {
+		for mes := 6; mes <= 10; mes++ {
+			nome := fmt.Sprintf("%s_2027_%02d", tabela, mes)
+			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS "+nome); err != nil {
+				t.Logf("limpeza de %s falhou: %v", nome, err)
+			}
+		}
+	}
 }

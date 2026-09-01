@@ -8,6 +8,7 @@ import (
 
 	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/notifier"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
@@ -21,6 +22,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
+	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
@@ -142,6 +144,23 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	return nil
 }
 
+// buildNotification monta o gatilho de comunicação.
+//
+// Como buildExecution, existe porque DOIS processos precisam dele: o worker,
+// que reage a evento, e o sched, que varre o resumo atrasado da caixa de
+// atenção. Montar nos dois lugares separadamente é como as montagens divergem.
+func buildNotification(deps *Deps) *notification.Service {
+	return notification.NewService(
+		postgres.NewNotificationRepo(deps.Pool),
+		deps.Mailer,
+		clock.NewSystem(),
+		notification.Config{
+			BaseURL:     deps.Cfg.CockpitBaseURL,
+			DigestDelay: deps.Cfg.DigestDelay,
+		},
+	)
+}
+
 // buildExecution monta o serviço de execução.
 //
 // Existe como função porque DOIS processos precisam dele: o `serve`, que atende
@@ -183,8 +202,20 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 		return err
 	}
 
-	log.Info("projeções registradas", "total", 2,
-		"consumidores", []string{"timeline", "attention"})
+	// Comunicação: o GATILHO (ADR-0025). Assina só os assuntos que a regra sabe
+	// traduzir, e o decisor é tabela — quando a reação virar dado (P-29), troca
+	// o carregador, não quem chama.
+	//
+	// Nada de caso de uso chama o Mailer direto: se chamasse, ele viraria o
+	// gatilho, difuso por quantos casos de uso mandassem e-mail.
+	notificacao := buildNotification(deps)
+	if err := deps.Bus.Subscribe(ctx, "", "notification",
+		notification.Subjects(), notifier.NewConsumer(notificacao).Handle); err != nil {
+		return err
+	}
+
+	log.Info("projeções registradas", "total", 3,
+		"consumidores", []string{"timeline", "attention", "notification"})
 	return nil
 }
 
@@ -245,6 +276,19 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 		} else if suspensos > 0 {
 			log.Info("sandboxes ociosos suspensos", "contas", contas, "sandboxes", suspensos)
 		}
+	}
+
+	// Resumo atrasado da caixa de atenção (ADR-0025): item aberto há mais que o
+	// atraso, e ainda aberto, vira e-mail. O que foi resolvido antes do corte
+	// não vira — quem estava no cockpit já resolveu.
+	//
+	// O atraso é PREDICADO DE CONSULTA, não agendador: não há timer para
+	// cancelar quando o item fecha, e caminho de cancelamento só roda no caso
+	// raro, que é onde ele quebra calado.
+	if contas, avisos, err := buildNotification(deps).SweepDigest(ctx); err != nil {
+		log.Error("varredura do resumo de atenção falhou", logging.FieldError, err.Error())
+	} else if avisos > 0 {
+		log.Info("resumos de atenção enviados", "contas", contas, "avisos", avisos)
 	}
 
 	log.Debug("ciclo do scheduler")
