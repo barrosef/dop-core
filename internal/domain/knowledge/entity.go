@@ -1,13 +1,15 @@
-// Package knowledge é a base de conhecimento do projeto — regras, índice e
-// memória — e a montagem do pacote de contexto por demanda (ADR-0009).
+// Package knowledge is the project's knowledge base — rules, index and memory —
+// and the assembly of the per-demand context package (ADR-0009).
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK nenhum. Ele
-// declara o que precisa como PORTA (repository.go) e o composition root liga.
+// House rule: this package knows nothing of Postgres, gRPC or any SDK. It
+// declares what it needs as a PORT (repository.go) and the composition root
+// wires it.
 //
-// A ideia que organiza o arquivo inteiro: contexto NÃO é "juntar arquivos e
-// mandar para o modelo". O pacote é SELECIONADO — cresce com a demanda, não
-// com o projeto — e a seleção é uma função pura, testável sem banco, porque é
-// ela que decide se o agente nasce sabendo ou nasce escavando.
+// The idea that organizes the whole file: context is NOT "gather files and send
+// them to the model". The package is SELECTED — it grows with the demand, not
+// with the project — and the selection is a pure function, testable without a
+// database, because it is what decides whether the agent is born knowing or born
+// digging.
 package knowledge
 
 import (
@@ -21,20 +23,22 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// ── as três camadas (ADR-0009 §1) ────────────────────────────────────────────
+// ── the three layers (ADR-0009 §1) ───────────────────────────────────────────
 
 type Kind string
 
 const (
-	// KindRule é convenção que o agente OBEDECE ("nunca mergear desenv na
-	// feature"). Regra que não entrou no pacote é regra violada.
+	// KindRule is a convention the agent OBEYS ("never merge develop into the
+	// feature branch"). A rule that did not make it into the package is a rule
+	// that gets violated.
 	KindRule Kind = "rule"
-	// KindIndex é o mapa de UM repositório: o que vive onde, como buildar,
-	// como testar. Sem ele, cada demanda gasta os primeiros 30 minutos
-	// redescobrindo o repositório.
+	// KindIndex is ONE repository's map: what lives where, how to build, how to
+	// test. Without it, every demand spends its first 30 minutes rediscovering
+	// the repository.
 	KindIndex Kind = "index"
-	// KindMemory é achado, lição e análise forense de demandas passadas.
-	// É a camada que mais cresce e a que mais vira ruído sem curadoria (R-1).
+	// KindMemory is a finding, a lesson and forensic analysis from past demands.
+	// It is the layer that grows fastest and the one that most easily becomes
+	// noise without curation (R-1).
 	KindMemory Kind = "memory"
 )
 
@@ -46,12 +50,12 @@ func ValidKind(k Kind) bool {
 	return false
 }
 
-// ── escopo e herança ─────────────────────────────────────────────────────────
+// ── scope and inheritance ────────────────────────────────────────────────────
 
-// ScopeLevel é onde o artefato vive na hierarquia. A herança é o motivo de o
-// nível existir: uma regra da conta vale para todo projeto dela, e um projeto
-// pode substituí-la por uma regra de mesmo nome — sem copiar a regra em todo
-// lugar, que é como bases de conhecimento apodrecem.
+// ScopeLevel is where the artifact lives in the hierarchy. Inheritance is the
+// reason the level exists: an account's rule applies to all of its projects, and
+// a project can replace it with a rule of the same name — without copying the
+// rule everywhere, which is how knowledge bases rot.
 type ScopeLevel string
 
 const (
@@ -60,7 +64,7 @@ const (
 	ScopeProject   ScopeLevel = "project"
 )
 
-// Specificity ordena a herança: o mais específico ganha do mais geral.
+// Specificity orders the inheritance: the more specific wins over the more general.
 func (l ScopeLevel) Specificity() int {
 	switch l {
 	case ScopeProject:
@@ -73,10 +77,10 @@ func (l ScopeLevel) Specificity() int {
 	return -1
 }
 
-// Scope amarra o artefato à conta SEMPRE, e ao workspace ou projeto quando o
-// nível pede. AccountID nunca é opcional: conhecimento vazado entre contas é o
-// pior defeito possível nesta plataforma, então a conta é campo do escopo, não
-// parâmetro que o adaptador possa esquecer.
+// Scope ties the artifact to the account ALWAYS, and to the workspace or project
+// when the level calls for it. AccountID is never optional: knowledge leaked
+// between accounts is the worst defect possible on this platform, so the account
+// is a field of the scope, not a parameter the adapter could forget.
 type Scope struct {
 	Level       ScopeLevel
 	AccountID   string
@@ -96,100 +100,105 @@ func ProjectScope(accountID, projectID string) Scope {
 	return Scope{Level: ScopeProject, AccountID: accountID, ProjectID: projectID}
 }
 
-// Validate recusa escopo incoerente na ESCRITA. O banco repete a checagem por
-// CHECK constraint; aqui a mensagem é útil, lá é o último anteparo.
+// Validate refuses an incoherent scope on WRITE. The database repeats the check
+// through a CHECK constraint; here the message is useful, there it is the last
+// barrier.
 func (s Scope) Validate() error {
 	if strings.TrimSpace(s.AccountID) == "" {
-		return errs.Invalid("artefato de conhecimento sem conta")
+		return errs.Invalid("knowledge artifact with no account")
 	}
 	switch s.Level {
 	case ScopeAccount:
 		if s.WorkspaceID != "" || s.ProjectID != "" {
-			return errs.Invalid("escopo de conta não aponta para workspace nem projeto")
+			return errs.Invalid("an account scope points at neither a workspace nor a project")
 		}
 	case ScopeWorkspace:
 		if s.WorkspaceID == "" || s.ProjectID != "" {
-			return errs.Invalid("escopo de workspace exige workspace e nenhum projeto")
+			return errs.Invalid("a workspace scope requires a workspace and no project")
 		}
 	case ScopeProject:
 		if s.ProjectID == "" || s.WorkspaceID != "" {
-			return errs.Invalid("escopo de projeto exige projeto e nenhum workspace")
+			return errs.Invalid("a project scope requires a project and no workspace")
 		}
 	default:
-		return errs.Invalid("escopo desconhecido: %q", s.Level)
+		return errs.Invalid("unknown scope: %q", s.Level)
 	}
 	return nil
 }
 
-// ── o artefato ───────────────────────────────────────────────────────────────
+// ── the artifact ─────────────────────────────────────────────────────────────
 
-// Artifact é uma peça de conhecimento versionada.
+// Artifact is one versioned piece of knowledge.
 //
-// O conteúdo mora em UM de dois lugares, nunca nos dois:
+// The content lives in ONE of two places, never both:
 //
-//   - Body, no Postgres, quando é pequeno — porque o que é pequeno precisa ser
-//     indexável (trigrama e vetor) e lido sem uma segunda viagem de rede;
-//   - ObjectRef, no ObjectStore, quando é grande — porque um mapa de
-//     repositório de 4 MB dentro de uma linha transforma toda leitura da tabela
-//     numa leitura de 4 MB, e o Postgres não é object store (ADR-0009 §2).
+//   - Body, in Postgres, when it is small — because what is small needs to be
+//     indexable (trigram and vector) and read without a second network round
+//     trip;
+//   - ObjectRef, in the ObjectStore, when it is large — because a 4 MB
+//     repository map inside a row turns every read of the table into a 4 MB
+//     read, and Postgres is not an object store (ADR-0009 §2).
 type Artifact struct {
 	ID        string
 	Scope     Scope
 	Kind      Kind
-	Name      string // rule: título; index: NOME DO REPO; memory: título do achado
+	Name      string // rule: title; index: THE REPO NAME; memory: the finding's title
 	Version   int32
 	Body      string
 	ObjectRef string
 	SizeBytes int
 	EstTokens int
-	Embedding []float32 // só memória tem; vazio quando não há Embedder ligado
+	Embedding []float32 // only memory has one; empty when no Embedder is wired
 	Meta      map[string]any
 	CreatedBy string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-// AccountID é usado o tempo todo — nas queries, nos eventos e na conversão de
-// borda. Vale o atalho.
+// AccountID is used constantly — in queries, in events and in edge conversion.
+// The shortcut earns its keep.
 func (a Artifact) AccountID() string { return a.Scope.AccountID }
 
-// Externalized diz se o conteúdo está no ObjectStore. Quem lê um artefato
-// externalizado recebe a REFERÊNCIA, não os bytes: o sandbox busca no storage,
-// somente leitura, sem passar o binário pelo core.
+// Externalized says whether the content is in the ObjectStore. Whoever reads an
+// externalized artifact receives the REFERENCE, not the bytes: the sandbox
+// fetches from storage, read-only, without pushing the binary through the
+// core.
 func (a Artifact) Externalized() bool { return a.ObjectRef != "" }
 
-// InlineMaxBytes é a fronteira entre "cabe na linha" e "vai para o storage".
+// InlineMaxBytes is the boundary between "fits in the row" and "goes to
+// storage".
 //
-// 16 KiB não é número mágico de sorte: é a ordem de grandeza de um documento
-// que um agente lê inteiro sem estourar orçamento (≈4k tokens), e é pequeno o
-// bastante para o Postgres guardar em linha sem TOAST na maioria dos casos.
+// 16 KiB is not a lucky magic number: it is the order of magnitude of a document
+// an agent reads whole without blowing its budget (≈4k tokens), and it is small
+// enough for Postgres to keep in-row without TOAST in most cases.
 const InlineMaxBytes = 16 * 1024
 
-// ArtifactContentType é o Content-Type usado ao gravar no ObjectStore.
+// ArtifactContentType is the Content-Type used when writing to the ObjectStore.
 //
-// Cuidado documentado, e o motivo de NÃO ser application/json: o emulador de
-// Storage do ambiente local PENDURA — a conexão fica aberta até o timeout do
-// cliente — em upload com esse tipo exato (dop-infra/docs/ambiente-local.md,
-// pendência P-13 do ROADMAP). "text/plain; charset=utf-8" responde 200 no
-// emulador e no GCS de verdade, e o conteúdo de conhecimento é texto (markdown,
-// JSON de índice) de qualquer forma. Trocar isto por application/json trava o
-// ambiente local sem nenhuma mensagem de erro — o pior tipo de regressão.
+// A documented caution, and the reason it is NOT application/json: the local
+// environment's Storage emulator HANGS — the connection stays open until the
+// client's timeout — on an upload with that exact type
+// (dop-infra/docs/ambiente-local.md, ROADMAP item P-13). "text/plain;
+// charset=utf-8" answers 200 in the emulator and in real GCS, and knowledge
+// content is text (markdown, index JSON) anyway. Swapping this for
+// application/json freezes the local environment with no error message at all —
+// the worst kind of regression.
 const ArtifactContentType = "text/plain; charset=utf-8"
 
-// KnowledgeBucket concentra os artefatos de conhecimento. A chave é OPACA e
-// PLANA por contrato da porta (ports.ObjectStore); o prefixo com a conta serve
-// para operação e auditoria, não para navegação — o isolamento real vem da
-// query, que sempre filtra por conta antes de devolver qualquer referência.
+// KnowledgeBucket holds the knowledge artifacts. The key is OPAQUE and FLAT by
+// the port's contract (ports.ObjectStore); the account prefix serves operations
+// and auditing, not navigation — the real isolation comes from the query, which
+// always filters by account before returning any reference.
 const KnowledgeBucket = "dop-knowledge"
 
-// ObjectRefFor deriva a referência do conteúdo a partir da IDENTIDADE do
-// artefato (conta, escopo, tipo, nome) — nunca do id da linha.
+// ObjectRefFor derives the content's reference from the artifact's IDENTITY
+// (account, scope, kind, name) — never from the row's id.
 //
-// Duas consequências, ambas desejadas: o conteúdo pode ser gravado ANTES de a
-// linha existir (o id é do banco, e gravar o objeto primeiro é o que evita
-// linha apontando para objeto inexistente); e uma versão nova SUBSTITUI o
-// objeto atomicamente, que é a garantia 2 da porta. O histórico de conteúdo
-// não é promessa desta camada: a versão é o número na linha.
+// Two consequences, both wanted: the content can be written BEFORE the row
+// exists (the id belongs to the database, and writing the object first is what
+// avoids a row pointing at a nonexistent object); and a new version REPLACES the
+// object atomically, which is the port's guarantee 2. Content history is not a
+// promise of this layer: the version is the number on the row.
 func ObjectRefFor(s Scope, kind Kind, name string) ports.ObjectRef {
 	sum := sha256.Sum256([]byte(strings.Join(
 		[]string{string(s.Level), s.AccountID, s.WorkspaceID, s.ProjectID, string(kind), name}, "|")))
@@ -204,23 +213,23 @@ const nameMaxLen = 200
 func ValidateName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errs.Invalid("o artefato de conhecimento precisa de um nome")
+		return errs.Invalid("the knowledge artifact needs a name")
 	}
 	if len(name) > nameMaxLen {
-		return errs.Invalid("o nome do artefato pode ter no máximo %d caracteres", nameMaxLen)
+		return errs.Invalid("the artifact name may have at most %d characters", nameMaxLen)
 	}
 	return nil
 }
 
-// EstimateTokens estima o custo do texto em tokens.
+// EstimateTokens estimates the text's cost in tokens.
 //
-// A medição REAL do pacote é por token counting na borda (endpoint gratuito,
-// ADR-0012) — mas o CORTE precisa acontecer aqui, offline e determinístico:
-// uma seleção que dependesse de chamada de rede seria não-determinística, e
-// pacote não-determinístico invalida o prefixo cacheado do prompt, que é de
-// onde vem 90% do desconto. Quatro bytes por token é a aproximação usual para
-// texto latino; erra por pouco e erra SEMPRE do mesmo jeito, que é o que
-// importa para o cache.
+// The package's REAL measurement is token counting at the edge (a free endpoint,
+// ADR-0012) — but the CUT has to happen here, offline and deterministic: a
+// selection that depended on a network call would be non-deterministic, and a
+// non-deterministic package invalidates the prompt's cached prefix, which is
+// where 90% of the discount comes from. Four bytes per token is the usual
+// approximation for Latin text; it errs by a little and it errs ALWAYS THE SAME
+// WAY, which is what matters for the cache.
 func EstimateTokens(s string) int {
 	if s == "" {
 		return 0
@@ -228,14 +237,15 @@ func EstimateTokens(s string) int {
 	return (len(s) + 3) / 4
 }
 
-// perItemOverhead cobre o cabeçalho que a serialização do pacote acrescenta a
-// cada item (nome, delimitador, rótulo da camada). Sem contá-lo, o orçamento
-// vaza um pouco por item — e "um pouco por item" numa memória longa é o
-// suficiente para estourar a janela.
+// perItemOverhead covers the header the package's serialization adds to each
+// item (name, delimiter, layer label). Without counting it, the budget leaks a
+// little per item — and "a little per item" over a long memory is enough to blow
+// the window.
 const perItemOverhead = 8
 
-// TokenCost é o que o artefato custa DENTRO do pacote. Artefato externalizado
-// custa só o cabeçalho: o pacote leva a referência, não os bytes.
+// TokenCost is what the artifact costs INSIDE the package. An externalized
+// artifact costs only the header: the package carries the reference, not the
+// bytes.
 func (a Artifact) TokenCost() int {
 	cost := EstimateTokens(a.Name) + perItemOverhead
 	if a.Externalized() {
@@ -247,16 +257,16 @@ func (a Artifact) TokenCost() int {
 	return cost + EstimateTokens(a.Body)
 }
 
-// ScoredArtifact é o artefato com a relevância que a busca lhe atribuiu.
-// Score é comparável dentro de UMA busca, não entre buscas.
+// ScoredArtifact is the artifact with the relevance the search assigned it.
+// Score is comparable within ONE search, not across searches.
 type ScoredArtifact struct {
 	Artifact Artifact
 	Score    float32
 }
 
-// Finding é a conclusão publicada por um subagente na demanda (ADR-0010).
-// Vive no domínio de demanda; aqui entra pela porta Demands, com a superfície
-// mínima que a montagem do pacote consome.
+// Finding is the conclusion a subagent published on the demand (ADR-0010). It
+// lives in the demand domain; here it comes in through the Demands port, with
+// the minimal surface the package assembly consumes.
 type Finding struct {
 	ID       string
 	ThreadID string
@@ -268,21 +278,22 @@ func (f Finding) TokenCost() int {
 	return EstimateTokens(f.Title) + EstimateTokens(f.Summary) + perItemOverhead
 }
 
-// ── herança de regras ────────────────────────────────────────────────────────
+// ── rule inheritance ─────────────────────────────────────────────────────────
 
-// ResolveRules aplica a herança da hierarquia sobre as regras de um escopo.
+// ResolveRules applies the hierarchy's inheritance over a scope's rules.
 //
-// Duas decisões, ambas visíveis no resultado:
+// Two decisions, both visible in the result:
 //
-//  1. o mais específico GANHA: uma regra de projeto com o mesmo nome de uma
-//     regra da conta substitui a da conta. É o que permite "a política de teste
-//     da casa, exceto neste projeto legado" sem duplicar a política;
-//  2. a lista sai do mais específico para o mais geral. Isso não é estética: é
-//     o que faz o corte por orçamento sacrificar primeiro a regra genérica —
-//     a que o projeto tem menos motivo para depender.
+//  1. the more specific WINS: a project rule with the same name as an account
+//     rule replaces the account's. It is what allows "the house testing policy,
+//     except in this legacy project" without duplicating the policy;
+//  2. the list comes out from the most specific to the most general. That is not
+//     aesthetics: it is what makes the budget cut sacrifice the generic rule
+//     first — the one the project has least reason to depend on.
 //
-// Regra externalizada NÃO entra: regra é texto que o agente lê inteiro, e
-// PutArtifact recusa regra que não caiba inline exatamente por isto.
+// An externalized rule does NOT get in: a rule is text the agent reads whole,
+// and PutArtifact refuses a rule that does not fit inline for exactly this
+// reason.
 func ResolveRules(rules []Artifact) []string {
 	ordered := make([]Artifact, len(rules))
 	copy(ordered, rules)
@@ -291,8 +302,8 @@ func ResolveRules(rules []Artifact) []string {
 		if si != sj {
 			return si > sj
 		}
-		// Desempate por nome: a ordem do pacote precisa ser estável entre
-		// execuções, senão o prefixo cacheado do prompt muda sem motivo.
+		// Tie-break by name: the package's order has to be stable across runs,
+		// otherwise the prompt's cached prefix changes for no reason.
 		return ordered[i].Name < ordered[j].Name
 	})
 
@@ -308,31 +319,33 @@ func ResolveRules(rules []Artifact) []string {
 	return out
 }
 
-// ── orçamento e seleção do pacote (ADR-0012) ─────────────────────────────────
+// ── budget and package selection (ADR-0012) ──────────────────────────────────
 
-// Budget é o orçamento do pacote, em tokens.
+// Budget is the package's budget, in tokens.
 //
-// É PARÂMETRO, não constante enterrada: o teto muda por projeto, por modelo e
-// por decisão de custo, e um número escondido no meio da montagem seria
-// impossível de ajustar sem recompilar. As frações limitam CADA camada, para
-// que a memória — a única que cresce sem fim — não coma o pacote inteiro (R-1).
+// It is a PARAMETER, not a buried constant: the ceiling changes per project, per
+// model and per cost decision, and a number hidden in the middle of the assembly
+// would be impossible to adjust without recompiling. The fractions bound EACH
+// layer, so that memory — the only one that grows without end — does not eat the
+// whole package (R-1).
 type Budget struct {
-	Total        int     // teto do pacote inteiro
-	FindingShare float64 // fração do total reservada aos achados da demanda
-	IndexShare   float64 // ...ao índice dos repositórios da demanda
-	MemoryShare  float64 // ...às memórias relevantes
+	Total        int     // ceiling of the whole package
+	FindingShare float64 // fraction of the total reserved for the demand's findings
+	IndexShare   float64 // ...for the index of the demand's repositories
+	MemoryShare  float64 // ...for the relevant memories
 }
 
-// DefaultBudget é o ponto de partida — e nada além disso. Quem monta o
-// serviço escolhe o teto; este valor existe para que "não escolhi" não
-// signifique "sem teto".
+// DefaultBudget is the starting point — and nothing more. Whoever assembles the
+// service picks the ceiling; this value exists so that "I did not pick one" does
+// not mean "no ceiling".
 func DefaultBudget() Budget {
 	return Budget{Total: 24000, FindingShare: 0.20, IndexShare: 0.35, MemoryShare: 0.30}
 }
 
-// Normalize preenche o que veio zerado. Orçamento zero é "use o padrão", nunca
-// "não cabe nada": um pacote vazio por engano de configuração seria um agente
-// que nasce cego, e isso precisa ser uma decisão explícita, não um default.
+// Normalize fills in whatever arrived as zero. A zero budget means "use the
+// default", never "nothing fits": an empty package through a configuration
+// mistake would be an agent born blind, and that has to be an explicit decision,
+// not a default.
 func (b Budget) Normalize() Budget {
 	d := DefaultBudget()
 	if b.Total <= 0 {
@@ -352,11 +365,12 @@ func (b Budget) Normalize() Budget {
 
 func share(total int, frac float64) int { return int(float64(total) * frac) }
 
-// Dropped conta o que FICOU DE FORA por camada.
+// Dropped counts what was LEFT OUT, per layer.
 //
-// Existe para ser emitido junto com a medição: "o pacote coube" e "o pacote
-// coube porque jogamos fora metade da memória relevante" são fatos diferentes,
-// e só o segundo explica um agente que não sabia o que devia saber.
+// It exists to be emitted together with the measurement: "the package fit" and
+// "the package fit because we threw away half the relevant memory" are different
+// facts, and only the second explains an agent that did not know what it should
+// have known.
 type Dropped struct {
 	Rules    int
 	Findings int
@@ -366,8 +380,9 @@ type Dropped struct {
 
 func (d Dropped) Any() bool { return d.Rules+d.Findings+d.Index+d.Memories > 0 }
 
-// Candidates é tudo que PODERIA entrar no pacote, já filtrado por conta e por
-// demanda pelas consultas. A seleção decide o que de fato entra.
+// Candidates is everything that COULD enter the package, already filtered by
+// account and by demand in the queries. The selection decides what actually
+// enters.
 type Candidates struct {
 	Rules    []Artifact
 	Findings []Finding
@@ -375,11 +390,11 @@ type Candidates struct {
 	Memories []ScoredArtifact
 }
 
-// Package é a bagagem de bordo do agente (ADR-0009 §3).
+// Package is the agent's carry-on luggage (ADR-0009 §3).
 //
-// Sem timestamp e sem id volátil de propósito: o pacote entra no PREFIXO
-// cacheado do prompt, e um byte que muda a cada montagem queima o desconto de
-// cache em silêncio (ADR-0012 §1).
+// No timestamp and no volatile id, on purpose: the package enters the prompt's
+// CACHED PREFIX, and a byte that changes on every assembly burns the cache
+// discount in silence (ADR-0012 §1).
 type Package struct {
 	DemandID        string
 	Rules           []string
@@ -391,92 +406,96 @@ type Package struct {
 	Dropped         Dropped
 }
 
-// Truncated diz se a curadoria precisou cortar. É o gatilho do alerta: teto
-// batendo com frequência significa demanda grande demais ou memória mal podada.
+// Truncated says whether curation had to cut. It is the alert's trigger: a
+// ceiling hit often means a demand that is too large or a memory badly pruned.
 func (p Package) Truncated() bool { return p.Dropped.Any() }
 
-// SelectPackage monta o pacote dentro do orçamento. É O CORAÇÃO DESTE DOMÍNIO,
-// e é função pura para poder ser testada sem banco, sem rede e sem modelo.
+// SelectPackage assembles the package within the budget. It is THIS DOMAIN'S
+// HEART, and it is a pure function so it can be tested without a database,
+// without a network and without a model.
 //
-// O que entra, em qual ordem e por qual critério:
+// What goes in, in what order and by what criterion:
 //
-//  1. REGRAS, já resolvidas pela herança (mais específica primeiro). Entram
-//     antes de tudo porque regra ignorada é retrabalho garantido: o agente
-//     abre PR contra a branch errada e o custo é um ciclo inteiro de revisão.
-//  2. ACHADOS já publicados na demanda. Em retomada, é o que impede o agente
-//     de refazer investigação que um irmão já concluiu (ADR-0010/0012 §3).
-//  3. ÍNDICE DOS REPOSITÓRIOS DA DEMANDA — não do projeto inteiro. É aqui que
-//     mora a disciplina "cresce com a DEMANDA": o projeto pode ter 40 repos, a
-//     demanda toca dois. Quem selecionou os dois foi a consulta; esta função
-//     apenas respeita o orçamento.
-//  4. MEMÓRIAS, por relevância decrescente. Ficam por último porque são a
-//     camada mais volumosa e a de menor precisão: é o primeiro lugar onde
-//     cortar dói pouco, e o agente pode pedir mais em execução (SearchMemory).
+//  1. RULES, already resolved by inheritance (most specific first). They go in
+//     ahead of everything because an ignored rule is guaranteed rework: the
+//     agent opens a PR against the wrong branch and the cost is a whole review
+//     cycle.
+//  2. FINDINGS already published on the demand. On a resume, it is what keeps
+//     the agent from redoing an investigation a sibling already finished
+//     (ADR-0010/0012 §3).
+//  3. THE INDEX OF THE DEMAND'S REPOSITORIES — not the whole project's. This is
+//     where the discipline "it grows with the DEMAND" lives: the project may
+//     have 40 repos, the demand touches two. The query is what selected the two;
+//     this function only respects the budget.
+//  4. MEMORIES, by descending relevance. They come last because they are the
+//     bulkiest and least precise layer: it is the first place where cutting
+//     hurts little, and the agent can ask for more during execution
+//     (SearchMemory).
 //
-// O que fica de fora, e por quê:
+// What is left out, and why:
 //
-//   - o que não couber no teto da própria camada — a memória não invade a
-//     cota do índice mesmo quando há espaço sobrando;
-//   - dentro de uma camada, TUDO a partir do primeiro item que não coube. Não
-//     pulamos o item grande para encaixar o próximo menor: isso trocaria a
-//     ordem de relevância por uma heurística de empacotamento, e devolveria um
-//     pacote onde a 7ª memória entrou e a 3ª não. Curadoria não é mochila.
+//   - whatever does not fit its own layer's ceiling — memory does not invade the
+//     index's quota even when there is room to spare;
+//   - within a layer, EVERYTHING from the first item that did not fit. We do not
+//     skip the large item to squeeze in the next smaller one: that would trade
+//     relevance order for a packing heuristic, and would return a package where
+//     the 7th memory got in and the 3rd did not. Curation is not a knapsack.
 func SelectPackage(b Budget, in Candidates) Package {
 	b = b.Normalize()
 	p := Package{Budget: b.Total}
 
-	restante := b.Total
-	// gastar tenta pagar `custo` respeitando o teto da camada e o do pacote.
-	gastar := func(custo int, tetoCamada *int) bool {
-		if custo > restante || custo > *tetoCamada {
+	remaining := b.Total
+	// spend tries to pay `cost` respecting the layer's ceiling and the package's.
+	spend := func(cost int, layerCeiling *int) bool {
+		if cost > remaining || cost > *layerCeiling {
 			return false
 		}
-		restante -= custo
-		*tetoCamada -= custo
+		remaining -= cost
+		*layerCeiling -= cost
 		return true
 	}
 
-	// Regras não têm cota própria: o teto delas é o pacote inteiro. Uma base de
-	// regras que sozinha estoura o orçamento é um problema de curadoria de
-	// regras, e o Dropped o denuncia — mas cortar regra para caber memória
-	// seria a troca errada.
-	tetoRegras := b.Total
-	regras := ResolveRules(in.Rules)
-	for i, r := range regras {
-		if !gastar(EstimateTokens(r)+perItemOverhead, &tetoRegras) {
-			p.Dropped.Rules = len(regras) - i
+	// Rules have no quota of their own: their ceiling is the whole package. A
+	// rule base that on its own blows the budget is a rule-curation problem, and
+	// Dropped reports it — but cutting a rule to fit memory would be the wrong
+	// trade.
+	rulesCeiling := b.Total
+	rules := ResolveRules(in.Rules)
+	for i, r := range rules {
+		if !spend(EstimateTokens(r)+perItemOverhead, &rulesCeiling) {
+			p.Dropped.Rules = len(rules) - i
 			break
 		}
 		p.Rules = append(p.Rules, r)
 	}
 
-	tetoAchados := share(b.Total, b.FindingShare)
+	findingsCeiling := share(b.Total, b.FindingShare)
 	for i, f := range in.Findings {
-		if !gastar(f.TokenCost(), &tetoAchados) {
+		if !spend(f.TokenCost(), &findingsCeiling) {
 			p.Dropped.Findings = len(in.Findings) - i
 			break
 		}
 		p.Findings = append(p.Findings, f)
 	}
 
-	// Índice em ordem estável de nome: o repositório A vem antes do B em toda
-	// montagem, hoje e daqui a um mês.
+	// The index in a stable name order: repository A comes before B in every
+	// assembly, today and a month from now.
 	index := make([]Artifact, len(in.Index))
 	copy(index, in.Index)
 	sort.SliceStable(index, func(i, j int) bool { return index[i].Name < index[j].Name })
 
-	tetoIndice := share(b.Total, b.IndexShare)
+	indexCeiling := share(b.Total, b.IndexShare)
 	for i := range index {
-		if !gastar(index[i].TokenCost(), &tetoIndice) {
+		if !spend(index[i].TokenCost(), &indexCeiling) {
 			p.Dropped.Index = len(index) - i
 			break
 		}
 		p.Index = append(p.Index, index[i])
 	}
 
-	// Memórias por relevância; empate desfeito pelo id, de novo por
-	// determinismo — duas memórias com o mesmo score não podem trocar de lugar
-	// entre duas montagens da mesma demanda.
+	// Memories by relevance; ties broken by id, again for determinism — two
+	// memories with the same score must not swap places between two assemblies of
+	// the same demand.
 	mem := make([]ScoredArtifact, len(in.Memories))
 	copy(mem, in.Memories)
 	sort.SliceStable(mem, func(i, j int) bool {
@@ -486,15 +505,15 @@ func SelectPackage(b Budget, in Candidates) Package {
 		return mem[i].Artifact.ID < mem[j].Artifact.ID
 	})
 
-	tetoMemoria := share(b.Total, b.MemoryShare)
+	memoryCeiling := share(b.Total, b.MemoryShare)
 	for i := range mem {
-		if !gastar(mem[i].Artifact.TokenCost(), &tetoMemoria) {
+		if !spend(mem[i].Artifact.TokenCost(), &memoryCeiling) {
 			p.Dropped.Memories = len(mem) - i
 			break
 		}
 		p.Memories = append(p.Memories, mem[i].Artifact)
 	}
 
-	p.EstimatedTokens = b.Total - restante
+	p.EstimatedTokens = b.Total - remaining
 	return p
 }

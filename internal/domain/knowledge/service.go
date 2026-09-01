@@ -12,7 +12,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/idem"
 )
 
-// Service concentra as regras de conhecimento. Recebe apenas PORTAS.
+// Service concentrates the knowledge rules. It takes only PORTS.
 type Service struct {
 	repo     Repository
 	objects  ports.ObjectStore
@@ -22,35 +22,37 @@ type Service struct {
 	budget   Budget
 }
 
-// NewService exige repositório, ObjectStore, demandas e relógio; o Embedder é
-// o único opcional.
+// NewService requires a repository, an ObjectStore, demands and a clock; the
+// Embedder is the only optional one.
 //
-// Panic aqui é deliberado — é erro de MONTAGEM, detectado no boot, não em
-// produção às três da manhã. Vale em especial para o relógio: aceitar nil o
-// faria cair em time.Now() por dentro, e a porta viraria enfeite.
+// The panic here is deliberate — it is a WIRING error, caught at boot, not in
+// production at three in the morning. It holds especially for the clock:
+// accepting nil would make it fall back to time.Now() internally, and the port
+// would become decoration.
 //
-// O Embedder é opcional porque a alternativa seria pior. Sem serviço de
-// embedding ligado, exigir a porta deixaria o domínio inteiro fora do ar; com
-// ela nula, a busca de memória cai no caminho LEXICAL (trigrama) e o restante
-// funciona. A degradação é explícita, não silenciosa: quem monta o serviço
-// escolhe, e SearchMemory diz por qual caminho respondeu.
+// The Embedder is optional because the alternative would be worse. With no
+// embedding service wired, requiring the port would take the whole domain
+// offline; with it nil, the memory search falls back to the LEXICAL path
+// (trigram) and everything else works. The degradation is explicit, not silent:
+// whoever assembles the service chooses, and SearchMemory says which path
+// answered.
 //
-// O orçamento é PARÂMETRO, e não constante escondida na montagem: o teto do
-// pacote muda por projeto, por modelo e por decisão de custo. Budget zerado
-// significa "use o padrão" (ver Budget.Normalize), nunca "não cabe nada".
+// The budget is a PARAMETER, not a constant hidden in the assembly: the
+// package's ceiling changes per project, per model and per cost decision. A zero
+// Budget means "use the default" (see Budget.Normalize), never "nothing fits".
 func NewService(repo Repository, objects ports.ObjectStore, demands Demands,
 	embedder Embedder, clock ports.Clock, budget Budget) *Service {
 	if repo == nil {
-		panic("knowledge.NewService: repositório obrigatório")
+		panic("knowledge.NewService: repository is required")
 	}
 	if objects == nil {
-		panic("knowledge.NewService: ObjectStore obrigatório — artefato grande não cabe na linha")
+		panic("knowledge.NewService: ObjectStore is required — a large artifact does not fit in the row")
 	}
 	if demands == nil {
-		panic("knowledge.NewService: porta de demandas obrigatória — o pacote de contexto é POR demanda")
+		panic("knowledge.NewService: the demands port is required — the context package is PER demand")
 	}
 	if clock == nil {
-		panic("knowledge.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("knowledge.NewService: clock is required — use clock.NewSystem()")
 	}
 	return &Service{
 		repo: repo, objects: objects, demands: demands,
@@ -58,28 +60,28 @@ func NewService(repo Repository, objects ports.ObjectStore, demands Demands,
 	}
 }
 
-// memoryCandidates é quantas memórias a busca traz para a montagem CONSIDERAR.
-// O corte final é do orçamento; trazer mais candidatas do que cabe é o que
-// permite ao orçamento escolher entre elas por relevância em vez de aceitar o
-// que a consulta devolveu.
+// memoryCandidates is how many memories the search brings for the assembly to
+// CONSIDER. The final cut belongs to the budget; bringing more candidates than
+// fit is what lets the budget choose among them by relevance instead of
+// accepting whatever the query returned.
 const memoryCandidates = 24
 
-// BuildContextPackage monta a bagagem de bordo do agente para uma demanda.
+// BuildContextPackage assembles the agent's carry-on luggage for a demand.
 //
-// É aqui que a economia de token acontece (ADR-0012): o pacote é SELECIONADO,
-// não despejado. A composição vem da ADR-0009 §3 — regras + índice DOS
-// REPOSITÓRIOS DA DEMANDA + memórias relevantes + achados já publicados — e o
-// critério de corte está inteiro em SelectPackage, que é função pura.
+// This is where the token saving happens (ADR-0012): the package is SELECTED,
+// not dumped. The composition comes from ADR-0009 §3 — rules + the index OF THE
+// DEMAND'S REPOSITORIES + relevant memories + findings already published — and
+// the cut criterion lives entirely in SelectPackage, which is a pure function.
 //
-// budget zerado usa o orçamento do serviço; passar um valor permite ao
-// chamador apertar o teto sem remontar o serviço.
+// A zero budget uses the service's; passing a value lets the caller tighten the
+// ceiling without reassembling the service.
 func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budget Budget) (*Package, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(demandID) == "" {
-		return nil, errs.Invalid("demanda não informada")
+		return nil, errs.Invalid("demand not provided")
 	}
 	if budget.Total <= 0 {
 		budget = s.budget
@@ -90,7 +92,7 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 		return nil, err
 	}
 	if dc == nil {
-		return nil, errs.NotFound("demanda")
+		return nil, errs.NotFound("demand")
 	}
 
 	rules, err := s.repo.RulesFor(ctx, accountID, dc.ProjectID)
@@ -98,17 +100,17 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 		return nil, err
 	}
 
-	// Índice: só os repositórios que a demanda toca. O projeto pode ter
-	// quarenta; a demanda toca dois. Esta linha É a disciplina "o pacote cresce
-	// com a DEMANDA, não com o projeto".
+	// The index: only the repositories the demand touches. The project may have
+	// forty; the demand touches two. This line IS the discipline "the package
+	// grows with the DEMAND, not with the project".
 	index, err := s.repo.IndexFor(ctx, accountID, dc.ProjectID, dc.Repos)
 	if err != nil {
 		return nil, err
 	}
 
-	// Relevância é medida contra o que a demanda PEDE — título e enunciado —,
-	// não contra o projeto. Memória relevante para o projeto inteiro é a
-	// memória inteira, e aí não há seleção nenhuma.
+	// Relevance is measured against what the demand ASKS FOR — title and
+	// statement — not against the project. Memory relevant to the whole project
+	// is the whole memory, and then there is no selection at all.
 	memories, err := s.searchMemory(ctx, accountID, dc.ProjectID,
 		strings.TrimSpace(dc.Title+"\n"+dc.Spec), memoryCandidates)
 	if err != nil {
@@ -123,9 +125,10 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 	})
 	pkg.DemandID = demandID
 
-	// Medição da montagem como EVENTO (ADR-0009 §3): sem número, "o pacote
-	// cresce com a demanda" é impressão. Dropped acompanha porque "coube" e
-	// "coube porque jogamos fora metade da memória" são fatos diferentes.
+	// The assembly's measurement as an EVENT (ADR-0009 §3): with no number, "the
+	// package grows with the demand" is an impression. Dropped comes along
+	// because "it fit" and "it fit because we threw away half the memory" are
+	// different facts.
 	if err := s.repo.RecordContextBuild(ctx, accountID, demandID, PackageMetrics{
 		At:              s.clock.Now(),
 		EstimatedTokens: pkg.EstimatedTokens,
@@ -146,19 +149,19 @@ const (
 	searchLimitMax     = 50
 )
 
-// SearchMemory é a consulta que o agente faz DURANTE a execução: o que não
-// coube no pacote entra por aqui (ADR-0009 §3).
+// SearchMemory is the query the agent makes DURING execution: what did not fit
+// in the package comes in through here (ADR-0009 §3).
 //
-// projectID vazio busca a memória de escopo de conta — a que vale para todos
-// os projetos. O inverso não existe: memória de um projeto nunca aparece na
-// busca de outro, nem de outra conta.
+// An empty projectID searches account-scoped memory — the memory that applies to
+// every project. The inverse does not exist: one project's memory never appears
+// in another's search, nor in another account's.
 func (s *Service) SearchMemory(ctx context.Context, projectID, query string, limit int) ([]ScoredArtifact, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(query) == "" {
-		return nil, errs.Invalid("busca de memória sem consulta")
+		return nil, errs.Invalid("memory search with no query")
 	}
 	switch {
 	case limit <= 0:
@@ -169,61 +172,61 @@ func (s *Service) SearchMemory(ctx context.Context, projectID, query string, lim
 	return s.searchMemory(ctx, accountID, projectID, query, limit)
 }
 
-// searchMemory escolhe o caminho da busca. Semântico quando há Embedder;
-// lexical quando não há — ver MemoryQuery.
+// searchMemory picks the search path. Semantic when there is an Embedder;
+// lexical when there is not — see MemoryQuery.
 func (s *Service) searchMemory(ctx context.Context, accountID, projectID, text string, limit int) ([]ScoredArtifact, error) {
 	q := MemoryQuery{AccountID: accountID, ProjectID: projectID, Text: text, Limit: limit}
 	if s.embedder != nil && strings.TrimSpace(text) != "" {
 		vec, err := s.embedder.Embed(ctx, text)
 		if err != nil {
-			return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao vetorizar a consulta")
+			return nil, errs.Wrap(errs.KindUnavailable, err, "failed to vectorize the query")
 		}
-		// Dimensão errada não é detalhe: buscar com um embedder diferente do
-		// que gerou os vetores devolve resultado PLAUSÍVEL e errado, que é o
-		// pior modo de falha de uma busca. Melhor recusar.
+		// The wrong dimension is not a detail: searching with a different embedder
+		// from the one that generated the vectors returns a PLAUSIBLE and wrong
+		// result, which is a search's worst failure mode. Better to refuse.
 		if len(vec) != EmbeddingDim {
 			return nil, errs.Internal(
-				"embedder devolveu %d dimensões; a memória foi indexada com %d", len(vec), EmbeddingDim)
+				"the embedder returned %d dimensions; memory was indexed with %d", len(vec), EmbeddingDim)
 		}
 		q.Embedding = vec
 	}
 	return s.repo.SearchMemory(ctx, q)
 }
 
-// ReadIndex devolve o mapa de um repositório. Índice ausente é NotFound de
-// propósito: o agente precisa saber que não há mapa — índice desatualizado é
-// pior que índice ausente porque mente com confiança (spec §5, R-2), e índice
-// silenciosamente vazio seria a mesma mentira em outra forma.
+// ReadIndex returns a repository's map. A missing index is NotFound on purpose:
+// the agent needs to know there is no map — a stale index is worse than a
+// missing one because it lies with confidence (spec §5, R-2), and a silently
+// empty index would be the same lie in another shape.
 func (s *Service) ReadIndex(ctx context.Context, projectID, repo string) (*Artifact, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return nil, errs.Invalid("projeto não informado")
+		return nil, errs.Invalid("project not provided")
 	}
 	if strings.TrimSpace(repo) == "" {
-		return nil, errs.Invalid("repositório não informado")
+		return nil, errs.Invalid("repository not provided")
 	}
 	a, err := s.repo.IndexOf(ctx, accountID, projectID, repo)
 	if err != nil {
 		return nil, err
 	}
 	if a == nil {
-		return nil, errs.NotFound("índice do repositório %q", repo)
+		return nil, errs.NotFound("index of repository %q", repo)
 	}
 	return a, nil
 }
 
-// ListRules devolve as regras que VALEM para o projeto, com a herança da
-// hierarquia já resolvida (conta → workspace → projeto).
+// ListRules returns the rules that APPLY to the project, with the hierarchy's
+// inheritance already resolved (account → workspace → project).
 func (s *Service) ListRules(ctx context.Context, projectID string) ([]string, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return nil, errs.Invalid("projeto não informado")
+		return nil, errs.Invalid("project not provided")
 	}
 	rules, err := s.repo.RulesFor(ctx, accountID, projectID)
 	if err != nil {
@@ -232,8 +235,8 @@ func (s *Service) ListRules(ctx context.Context, projectID string) ([]string, er
 	return ResolveRules(rules), nil
 }
 
-// PutInput é uma escrita na base de conhecimento. WorkspaceID e ProjectID
-// vazios significam escopo de CONTA — a regra que vale em todo lugar.
+// PutInput is a write into the knowledge base. Empty WorkspaceID and ProjectID
+// mean ACCOUNT scope — the rule that applies everywhere.
 type PutInput struct {
 	Kind           Kind
 	WorkspaceID    string
@@ -244,21 +247,22 @@ type PutInput struct {
 	IdempotencyKey string
 }
 
-// PutArtifact grava conhecimento — é o lado da ESCRITA DE VOLTA do ciclo
-// (ADR-0009 §4): o achado de hoje é o contexto da demanda de amanhã.
+// PutArtifact writes knowledge — it is the WRITE-BACK side of the cycle
+// (ADR-0009 §4): today's finding is tomorrow's demand's context.
 //
-// A decisão que estrutura o método: onde o conteúdo mora.
+// The decision that structures the method: where the content lives.
 //
-//   - pequeno vai para o Postgres, porque é lá que ele é indexável (vetor e
-//     trigrama) e legível sem uma segunda viagem;
-//   - grande vai para o ObjectStore pela porta, e a LINHA GUARDA SÓ A
-//     REFERÊNCIA. Guardar 4 MB de mapa numa coluna transformaria toda leitura
-//     da tabela numa leitura de 4 MB.
+//   - small goes to Postgres, because that is where it is indexable (vector and
+//     trigram) and readable without a second round trip;
+//   - large goes to the ObjectStore through the port, and THE ROW KEEPS ONLY THE
+//     REFERENCE. Keeping a 4 MB map in a column would turn every read of the
+//     table into a 4 MB read.
 //
-// A ordem é storage primeiro, linha depois — mesma lógica da credencial: se a
-// linha falhar, sobra um objeto órfão (inerte, e substituído na próxima
-// tentativa pela chave derivada); a ordem inversa deixaria a linha afirmando
-// ter conteúdo que não existe, e a falha apareceria longe daqui.
+// The order is storage first, row second — the same logic as the credential: if
+// the row fails, an orphan object is left behind (inert, and replaced on the
+// next attempt through the derived key); the reverse order would leave the row
+// claiming content that does not exist, and the failure would surface far from
+// here.
 func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -266,14 +270,14 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 	}
 	call, _ := ctxutil.From(ctx)
 	if !ValidKind(in.Kind) {
-		return nil, errs.Invalid("tipo de conhecimento desconhecido: %q", in.Kind)
+		return nil, errs.Invalid("unknown knowledge kind: %q", in.Kind)
 	}
 	name := strings.TrimSpace(in.Name)
 	if err := ValidateName(name); err != nil {
 		return nil, err
 	}
 	if len(in.Content) == 0 {
-		return nil, errs.Invalid("artefato de conhecimento sem conteúdo")
+		return nil, errs.Invalid("knowledge artifact with no content")
 	}
 
 	scope := Scope{
@@ -292,12 +296,12 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 		return nil, err
 	}
 
-	// Regra é texto que o agente lê INTEIRO, em todo pacote de todo projeto do
-	// escopo. Se não cabe inline, não é regra — é documento, e documento é
-	// memória ou índice.
+	// A rule is text the agent reads WHOLE, in every package of every project in
+	// scope. If it does not fit inline, it is not a rule — it is a document, and
+	// a document is memory or index.
 	if in.Kind == KindRule && len(in.Content) > InlineMaxBytes {
 		return nil, errs.Invalid(
-			"regra excede %d bytes; conteúdo desse tamanho é memória ou índice, não regra", InlineMaxBytes)
+			"the rule exceeds %d bytes; content that size is memory or index, not a rule", InlineMaxBytes)
 	}
 
 	a := &Artifact{
@@ -313,30 +317,30 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 	if len(in.Content) > InlineMaxBytes {
 		ref := ObjectRefFor(scope, in.Kind, name)
 		if err := s.objects.Put(ctx, ref, in.Content, ArtifactContentType); err != nil {
-			return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao guardar o conteúdo do artefato")
+			return nil, errs.Wrap(errs.KindUnavailable, err, "failed to store the artifact content")
 		}
 		a.ObjectRef = ref.Bucket + "/" + ref.Key
 	} else {
 		a.Body = string(in.Content)
 	}
 
-	// Só memória é vetorizada: regra e índice são buscados por identidade
-	// (nome do repositório, escopo), não por similaridade. Vetorizar os três
-	// gastaria embedding para responder pergunta que ninguém faz.
+	// Only memory is vectorized: rules and index are looked up by identity
+	// (repository name, scope), not by similarity. Vectorizing all three would
+	// spend embeddings answering a question nobody asks.
 	if in.Kind == KindMemory && s.embedder != nil {
 		vec, err := s.embedder.Embed(ctx, name+"\n"+embedText(in.Content))
 		if err != nil {
-			return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao vetorizar o artefato")
+			return nil, errs.Wrap(errs.KindUnavailable, err, "failed to vectorize the artifact")
 		}
 		if len(vec) != EmbeddingDim {
 			return nil, errs.Internal(
-				"embedder devolveu %d dimensões; a coluna é vector(%d)", len(vec), EmbeddingDim)
+				"the embedder returned %d dimensions; the column is vector(%d)", len(vec), EmbeddingDim)
 		}
 		a.Embedding = vec
 	}
 
-	// A assinatura da requisição cobre a IDENTIDADE e o CONTEÚDO: repetir a
-	// chave com outro conteúdo é conflito, não repetição (ADR-0017).
+	// The request's signature covers the IDENTITY and the CONTENT: repeating the
+	// key with different content is a conflict, not a repeat (ADR-0017).
 	sum := sha256.Sum256(in.Content)
 	return s.repo.Put(ctx, a, Idempotency{
 		Key: strings.TrimSpace(in.IdempotencyKey),
@@ -345,9 +349,9 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 	})
 }
 
-// embedMaxBytes limita o texto enviado ao Embedder. Documento longo não é
-// vetorizado inteiro por nenhum modelo útil, e mandar 4 MB para descobrir isso
-// custa dinheiro e latência. O começo do documento é onde mora o resumo.
+// embedMaxBytes bounds the text sent to the Embedder. A long document is not
+// vectorized whole by any useful model, and sending 4 MB to find that out costs
+// money and latency. The start of a document is where the summary lives.
 const embedMaxBytes = 8 * 1024
 
 func embedText(content []byte) string {

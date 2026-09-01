@@ -5,68 +5,68 @@ import (
 	"time"
 )
 
-// Repository é a PORTA de persistência do domínio de conhecimento.
+// Repository is the knowledge domain's persistence PORT.
 //
-// Declarada aqui, em linguagem de domínio; implementada em
-// internal/adapter/postgres. O domínio nunca vê SQL.
+// Declared here, in domain language; implemented in internal/adapter/postgres.
+// The domain never sees SQL.
 //
-// Toda operação recebe accountID explicitamente. Não é redundância com o
-// Scope: é a leitura, onde não há escopo para carregar a conta. Conhecimento
-// que vaza de uma conta para outra é o pior defeito concebível nesta
-// plataforma — o filtro é parâmetro obrigatório da porta, nunca confiança no
-// chamador.
+// Every operation takes accountID explicitly. It is not redundant with Scope:
+// this is the read side, where there is no scope to carry the account. Knowledge
+// that leaks from one account to another is the worst conceivable defect on this
+// platform — the filter is a required parameter of the port, never trust in the
+// caller.
 type Repository interface {
-	// Put grava o artefato e emite o evento na MESMA transação, honrando a
-	// chave de idempotência: repetir a mesma escrita devolve o mesmo artefato
-	// em vez de criar uma versão nova (ADR-0017/0019).
+	// Put writes the artifact and emits the event in the SAME transaction,
+	// honouring the idempotency key: repeating the same write returns the same
+	// artifact instead of creating a new version (ADR-0017/0019).
 	Put(ctx context.Context, a *Artifact, idem Idempotency) (*Artifact, error)
 
-	// IndexOf devolve o mapa de UM repositório do projeto. (nil, nil) quando
-	// não existe: "índice ausente" é resposta legítima, e quem decide se isso
-	// é erro é o caso de uso.
+	// IndexOf returns ONE of the project's repositories' map. (nil, nil) when it
+	// does not exist: "index absent" is a legitimate answer, and the use case is
+	// what decides whether that is an error.
 	IndexOf(ctx context.Context, accountID, projectID, repo string) (*Artifact, error)
 
-	// IndexFor traz o índice DOS REPOSITÓRIOS PEDIDOS — os da demanda, não os
-	// do projeto inteiro. Lista vazia devolve nada, e não "tudo": é a
-	// diferença entre um pacote que cresce com a demanda e um que cresce com o
-	// projeto.
+	// IndexFor brings the index OF THE REQUESTED REPOSITORIES — the demand's, not
+	// the whole project's. An empty list returns nothing, not "everything": it is
+	// the difference between a package that grows with the demand and one that
+	// grows with the project.
 	IndexFor(ctx context.Context, accountID, projectID string, repos []string) ([]Artifact, error)
 
-	// RulesFor devolve as regras que ALCANÇAM o projeto: as dele, as do
-	// workspace que o contém e as da conta. A resolução da herança é do
-	// domínio (ResolveRules); a esta porta cabe apenas trazer as candidatas —
-	// assim a regra de precedência existe em um lugar só.
+	// RulesFor returns the rules that REACH the project: its own, its containing
+	// workspace's and the account's. Resolving the inheritance belongs to the
+	// domain (ResolveRules); this port only brings the candidates — that way the
+	// precedence rule exists in one place.
 	RulesFor(ctx context.Context, accountID, projectID string) ([]Artifact, error)
 
-	// SearchMemory busca na camada de memória. Ver MemoryQuery.
+	// SearchMemory searches the memory layer. See MemoryQuery.
 	SearchMemory(ctx context.Context, q MemoryQuery) ([]ScoredArtifact, error)
 
-	// RecordContextBuild registra a MEDIÇÃO da montagem como evento (ADR-0009
-	// §3, ADR-0012 §1). Não é telemetria opcional: "o pacote cresce com a
-	// demanda" precisa ter número, senão vira impressão — e o corte silencioso
-	// é justamente o defeito que ninguém percebe.
+	// RecordContextBuild records the assembly's MEASUREMENT as an event
+	// (ADR-0009 §3, ADR-0012 §1). It is not optional telemetry: "the package
+	// grows with the demand" needs a number, otherwise it is an impression — and
+	// a silent cut is exactly the defect nobody notices.
 	RecordContextBuild(ctx context.Context, accountID, demandID string, m PackageMetrics) error
 }
 
-// Idempotency é a chave da escrita e a assinatura do conteúdo que ela carrega.
+// Idempotency is the write's key and the signature of the content it carries.
 //
-// As duas viajam juntas porque a MESMA chave com corpo diferente é conflito,
-// não repetição: sem o hash, um bug de cliente reaproveitando chave viraria
-// corrupção silenciosa da base de conhecimento.
+// The two travel together because the SAME key with a different body is a
+// conflict, not a repeat: without the hash, a client bug reusing a key would
+// become silent corruption of the knowledge base.
 type Idempotency struct {
 	Key         string
 	RequestHash string
 }
 
-// MemoryQuery é uma busca na memória. Os dois caminhos convivem de propósito:
+// MemoryQuery is a search in memory. The two paths coexist on purpose:
 //
-//   - com Embedding preenchido, a busca é SEMÂNTICA (pgvector): encontra a
-//     lição sobre "timeout de conexão" quando a demanda fala em "queda
-//     intermitente do banco";
-//   - sem ele, a busca é LEXICAL (trigrama). Não é o caminho pretendido, é o
-//     que sobra quando não há serviço de embedding ligado — e devolver nada
-//     nesse caso seria pior: uma memória encontrada por palavra ainda é
-//     melhor do que um agente que começa do zero.
+//   - with Embedding filled in, the search is SEMANTIC (pgvector): it finds the
+//     lesson about "connection timeout" when the demand talks about "intermittent
+//     database drops";
+//   - without it, the search is LEXICAL (trigram). It is not the intended path,
+//     it is what is left when no embedding service is wired — and returning
+//     nothing in that case would be worse: a memory found by word is still better
+//     than an agent starting from zero.
 type MemoryQuery struct {
 	AccountID string
 	ProjectID string
@@ -75,10 +75,11 @@ type MemoryQuery struct {
 	Limit     int
 }
 
-// PackageMetrics é o que a medição da montagem publica.
+// PackageMetrics is what the assembly's measurement publishes.
 type PackageMetrics struct {
-	// At vem do relógio do serviço (ports.Clock), não do banco: é o instante
-	// da MONTAGEM, e é ele que torna a medição determinística em teste.
+	// At comes from the service's clock (ports.Clock), not from the database: it
+	// is the instant of the ASSEMBLY, and it is what makes the measurement
+	// deterministic in tests.
 	At              time.Time
 	EstimatedTokens int
 	Budget          int
@@ -89,57 +90,58 @@ type PackageMetrics struct {
 	Dropped         Dropped
 }
 
-// ── portas estreitas para fora do domínio ────────────────────────────────────
+// ── narrow ports out of the domain ───────────────────────────────────────────
 
-// Embedder vetoriza texto para a busca semântica.
+// Embedder vectorizes text for semantic search.
 //
-// É porta, e é ESTREITA de propósito: o domínio não sabe se do outro lado há
-// um modelo hospedado, uma API de terceiro ou um serviço local, e não deve
-// saber. Duas operações e nada além.
+// It is a port, and it is NARROW on purpose: the domain does not know whether on
+// the other side there is a hosted model, a third-party API or a local service,
+// and it must not know. Two operations and nothing more.
 //
-// Dimensions existe para que a incompatibilidade apareça no boot, não em
-// silêncio: gravar vetor de 768 dimensões numa coluna vector(1536) é erro do
-// banco, mas BUSCAR com um embedder diferente do que gerou os vetores devolve
-// resultado plausível e errado — o pior modo de falha de uma busca.
+// Dimensions exists so that an incompatibility surfaces at boot, not in silence:
+// writing a 768-dimension vector into a vector(1536) column is a database error,
+// but SEARCHING with a different embedder from the one that generated the vectors
+// returns a plausible and wrong result — the worst failure mode a search can
+// have.
 //
-// Não há adaptador para esta porta ainda; a fiação a satisfaz quando houver
-// serviço de embedding. Até lá, o serviço aceita Embedder nulo e cai na busca
-// lexical (ver MemoryQuery), o que está documentado em NewService.
+// There is no adapter for this port yet; the wiring satisfies it when there is an
+// embedding service. Until then, the service accepts a nil Embedder and falls
+// back to lexical search (see MemoryQuery), which is documented in NewService.
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 	Dimensions() int
 }
 
-// EmbeddingDim é a dimensão da coluna `vector` da migração 0007. Trocar de
-// modelo de embedding implica migração da coluna E reindexação de toda a
-// memória: os vetores antigos não são comparáveis com os novos.
+// EmbeddingDim is the dimension of migration 0007's `vector` column. Changing
+// embedding model implies migrating the column AND reindexing all of memory: the
+// old vectors are not comparable with the new ones.
 const EmbeddingDim = 1536
 
-// Demands é a porta ESTREITA para o domínio de demanda — a demanda é a unidade
-// que o pacote de contexto serve, e o conhecimento precisa saber três coisas
-// sobre ela: em qual projeto vive, quais repositórios toca e o que já foi
-// concluído nela. Nada além disso.
+// Demands is the NARROW port into the demand domain — the demand is the unit the
+// context package serves, and knowledge needs three things about it: which
+// project it lives in, which repositories it touches and what has already been
+// concluded on it. Nothing beyond that.
 //
-// Declarada aqui, e não importada de lá, pelo mesmo motivo que resource.Access
-// existe: o domínio de conhecimento não pode depender do formato interno de
-// outro domínio, e a fiação liga as duas pontas.
+// Declared here, and not imported from there, for the same reason
+// resource.Access exists: the knowledge domain must not depend on another
+// domain's internal shape, and the wiring joins the two ends.
 type Demands interface {
 	ContextOf(ctx context.Context, accountID, demandID string) (*DemandContext, error)
 }
 
-// DemandContext é o recorte da demanda que a montagem consome.
+// DemandContext is the slice of the demand the assembly consumes.
 type DemandContext struct {
 	DemandID  string
 	ProjectID string
 	Title     string
-	// Spec é o enunciado da demanda. Alimenta a BUSCA por memórias relevantes
-	// — a relevância é medida contra o que a demanda pede, não contra o
-	// projeto inteiro.
+	// Spec is the demand's statement. It feeds the SEARCH for relevant memories —
+	// relevance is measured against what the demand asks for, not against the
+	// whole project.
 	Spec string
-	// Repos são os repositórios que a demanda toca. É o filtro que mantém o
-	// índice proporcional à demanda (ADR-0009 §3).
+	// Repos are the repositories the demand touches. It is the filter that keeps
+	// the index proportional to the demand (ADR-0009 §3).
 	Repos []string
-	// Findings são os achados já publicados na demanda — vazio no início,
-	// povoado em retomada (ADR-0012 §3).
+	// Findings are the findings already published on the demand — empty at the
+	// start, populated on a resume (ADR-0012 §3).
 	Findings []Finding
 }
