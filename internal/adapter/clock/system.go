@@ -1,10 +1,10 @@
-// Adaptadores da porta Clock.
+// Adapters for the Clock port.
 //
-// Duas implementações desde o primeiro dia, pela mesma razão da ADR-0001: a
-// porta com um adaptador só é palpite. Aqui a dupla tem função prática — o
-// relógio de sistema roda em produção e o fixo roda no teste, e é o segundo
-// que transforma regra de prazo (convite de 14 dias) em asserção exata em vez
-// de espera cronometrada.
+// Two implementations from day one, for the same reason as ADR-0001: a port
+// with a single adapter is a guess. Here the pair also earns its keep — the
+// system clock runs in production and the fixed one runs in tests, and it is
+// the second that turns a deadline rule (a 14-day invite) into an exact
+// assertion instead of a timed wait.
 package clock
 
 import (
@@ -13,20 +13,21 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// System é o relógio de parede do processo.
+// System is the process's wall clock.
 type System struct{}
 
 func NewSystem() System { return System{} }
 
-// Now devolve o instante em UTC, sempre.
+// Now returns the instant in UTC, always.
 //
-// Por que normalizar aqui e não em cada chamador: timestamp sem fuso definido
-// é ambiguidade que só aparece quando o processo sobe numa máquina com TZ
-// diferente do banco — e aí a comparação de expiração erra por horas. O fuso é
-// decisão de apresentação, e apresentação é da borda.
+// Why normalize here and not at each caller: a timestamp with no defined zone
+// is an ambiguity that only shows up when the process starts on a machine whose
+// TZ differs from the database's — and then expiry comparisons are off by
+// hours. The time zone is a presentation decision, and presentation belongs to
+// the edge.
 //
-// Efeito colateral desejado de .UTC(): a leitura monotônica é descartada, de
-// modo que dois relógios diferentes produzam instantes comparáveis entre si.
+// Intended side effect of .UTC(): the monotonic reading is dropped, so that
+// instants produced by two different clocks stay comparable with each other.
 func (System) Now() time.Time { return time.Now().UTC() }
 
 var _ ports.Clock = System{}

@@ -1,5 +1,6 @@
-// Package errs define os erros de domínio e sua tradução para gRPC.
-// O domínio nunca importa google.golang.org/grpc — a tradução vive na borda.
+// Package errs defines the domain errors and their translation to gRPC.
+// The domain never imports google.golang.org/grpc — that translation lives at
+// the edge.
 package errs
 
 import (
@@ -21,9 +22,26 @@ const (
 	KindInternal      Kind = "internal"
 )
 
+// Error carries two different things on purpose, for two different readers.
+//
+// Message is for the DEVELOPER: it lands in logs and in `go test` output, it
+// is written in English, and nothing user-facing may be built from it. Wording
+// here changes freely, because nothing depends on it.
+//
+// Code and Params are for the USER, through translation at the edge. Code is a
+// stable identifier ("invite.wrong_recipient") and Params carries the values
+// the sentence needs. They exist because a human-facing message cannot be
+// hardcoded in any language: the cockpit resolves Code against its catalogue
+// and fills in Params.
+//
+// Code is OPTIONAL, and its absence is meaningful: an error with no Code never
+// reaches a person as prose — it is a fault, and the edge shows a generic
+// message for its Kind. Only errors a user is meant to act on earn a Code.
 type Error struct {
 	Kind    Kind
 	Message string
+	Code    string
+	Params  map[string]any
 	Cause   error
 }
 
@@ -34,6 +52,17 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s: %s", e.Kind, e.Message)
 }
 func (e *Error) Unwrap() error { return e.Cause }
+
+// WithCode attaches the translation key and its parameters.
+//
+// It is a separate call, and not a parameter of every constructor, so that
+// adding a code to an existing error is a one-line change — and so that the
+// call sites that legitimately have no code stay short.
+func (e *Error) WithCode(code string, params map[string]any) *Error {
+	e.Code = code
+	e.Params = params
+	return e
+}
 
 func New(k Kind, msg string, args ...any) *Error {
 	return &Error{Kind: k, Message: fmt.Sprintf(msg, args...)}
@@ -49,11 +78,11 @@ func Conflict(msg string, a ...any) *Error     { return New(KindConflict, msg, a
 func Precondition(msg string, a ...any) *Error { return New(KindPrecondition, msg, a...) }
 func Internal(msg string, a ...any) *Error     { return New(KindInternal, msg, a...) }
 
-// classifiers permite que outros pacotes registrem a tradução dos seus erros
-// sentinela, sem que este pacote precise importá-los (o que criaria ciclo).
+// classifiers lets other packages register the translation of their sentinel
+// errors without this package having to import them (which would be a cycle).
 var classifiers []func(error) (Kind, bool)
 
-// RegisterClassifier associa um erro sentinela a um Kind.
+// RegisterClassifier maps a sentinel error to a Kind.
 func RegisterClassifier(f func(error) (Kind, bool)) {
 	classifiers = append(classifiers, f)
 }
@@ -69,4 +98,15 @@ func KindOf(err error) Kind {
 		}
 	}
 	return KindInternal
+}
+
+// CodeOf returns the translation key, or "" when the error carries none.
+// The edge uses it to decide between a translated sentence and the generic
+// message for the Kind.
+func CodeOf(err error) (string, map[string]any) {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Code, e.Params
+	}
+	return "", nil
 }

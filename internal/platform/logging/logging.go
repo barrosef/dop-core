@@ -1,8 +1,8 @@
-// Package logging entrega log estruturado em JSON para todos os modos do core.
+// Package logging provides structured JSON logging for every mode of the core.
 //
-// Formato idêntico ao do BFF (dop-api): mesmos nomes de campo, mesmo formato de
-// tempo, mesma política de máscara. Um log agregado de plataforma só é útil se as
-// duas pontas falarem a mesma língua.
+// The format is identical to the BFF's (dop-api): same field names, same time
+// format, same masking policy. An aggregated platform log is only useful if
+// both ends speak the same language.
 package logging
 
 import (
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Campos canônicos — os mesmos no core e no BFF.
+// Canonical fields — the same in the core and in the BFF.
 const (
 	FieldRequestID  = "request_id"
 	FieldAccountID  = "account_id"
@@ -24,17 +24,17 @@ const (
 	FieldError      = "error"
 )
 
-// Chaves cujo valor nunca é escrito em log — redação de segredos é requisito
-// (F-10), não conveniência. Espelha a máscara automática do BFF.
+// Keys whose value is never written to the log — redacting secrets is a
+// requirement (F-10), not a convenience. Mirrors the BFF's automatic masking.
 var masked = map[string]bool{
 	"password": true, "token": true, "secret": true, "authorization": true,
 	"api_key": true, "private_key": true, "client_secret": true,
-	"credential": true, "credential_ref": false, // a REFERÊNCIA pode aparecer
+	"credential": true, "credential_ref": false, // the REFERENCE may appear
 }
 
 const redacted = "***"
 
-// New devolve o logger raiz do processo.
+// New returns the process's root logger.
 func New(mode string) *slog.Logger {
 	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level:       level(),
@@ -56,7 +56,7 @@ func level() slog.Level {
 	}
 }
 
-// redact aplica a máscara e normaliza o timestamp para RFC3339 em UTC.
+// redact applies the mask and normalizes the timestamp to RFC3339 in UTC.
 func redact(_ []string, a slog.Attr) slog.Attr {
 	if a.Key == slog.TimeKey {
 		a.Key = "ts"
@@ -74,12 +74,12 @@ func redact(_ []string, a slog.Attr) slog.Attr {
 
 type ctxKey struct{}
 
-// Into guarda o logger no contexto para propagação por camada.
+// Into stores the logger in the context so it propagates across layers.
 func Into(ctx context.Context, l *slog.Logger) context.Context {
 	return context.WithValue(ctx, ctxKey{}, l)
 }
 
-// From recupera o logger do contexto; devolve o default se não houver.
+// From retrieves the logger from the context; returns the default if absent.
 func From(ctx context.Context) *slog.Logger {
 	if l, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
 		return l

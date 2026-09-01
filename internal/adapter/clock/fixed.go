@@ -7,28 +7,30 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// referencia é o instante usado quando ninguém escolhe um.
+// reference is the instant used when nobody picks one.
 //
-// Existe para que NewFixed(time.Time{}) continue cumprindo a garantia da porta
-// ("Now nunca devolve o zero") em vez de produzir um relógio que passa no
-// compilador e falha no contrato.
-var referencia = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+// It exists so that NewFixed(time.Time{}) still honours the port's guarantee
+// ("Now never returns the zero value") instead of producing a clock that
+// satisfies the compiler and violates the contract.
+var reference = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-// Fixed é o relógio controlado pelo teste: só anda quando mandam andar.
+// Fixed is the clock the test controls: it only moves when told to.
 //
-// É o que substitui time.Sleep. Testar "convite vence em 14 dias" com relógio
-// de verdade exige ou esperar 14 dias, ou fabricar um ExpiresAt no passado —
-// isto é, testar outra coisa. Com o relógio fixo, o teste avança 14 dias em
-// nanossegundos e verifica a regra REAL, a mesma que roda em produção.
+// This is what replaces time.Sleep. Testing "an invite expires in 14 days" with
+// a real clock means either waiting 14 days or fabricating an ExpiresAt in the
+// past — that is, testing something else. With the fixed clock the test
+// advances 14 days in nanoseconds and checks the REAL rule, the same one that
+// runs in production.
 type Fixed struct {
 	mu  sync.RWMutex
 	now time.Time
 }
 
-// NewFixed cria o relógio parado em t (normalizado para UTC, como manda a porta).
+// NewFixed creates the clock stopped at t (normalized to UTC, as the port
+// requires).
 func NewFixed(t time.Time) *Fixed {
 	if t.IsZero() {
-		t = referencia
+		t = reference
 	}
 	return &Fixed{now: t.UTC()}
 }
@@ -39,15 +41,15 @@ func (f *Fixed) Now() time.Time {
 	return f.now
 }
 
-// Advance empurra o relógio para frente e devolve o novo instante.
+// Advance pushes the clock forward and returns the new instant.
 //
-// Só para frente, de propósito: a porta garante que Now não regride, e um
-// relógio de teste que anda para trás produziria um adaptador que passa no
-// contrato por acidente do caminho percorrido. Duração negativa é erro de
-// teste, e erro de teste tem que aparecer alto.
+// Forward only, on purpose: the port guarantees Now does not go backwards, and
+// a test clock that rewound would let an adapter pass the contract by accident
+// of the path taken. A negative duration is a bug in the test, and a bug in the
+// test has to be loud.
 func (f *Fixed) Advance(d time.Duration) time.Time {
 	if d < 0 {
-		panic("clock.Fixed.Advance: o relógio não anda para trás")
+		panic("clock.Fixed.Advance: the clock does not run backwards")
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

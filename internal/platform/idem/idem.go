@@ -1,5 +1,6 @@
-// Package idem implementa a idempotência exigida em toda RPC de escrita
-// (ADR-0017): com eventos e retries, repetir uma chamada não pode duplicar efeito.
+// Package idem implements the idempotency required of every write RPC
+// (ADR-0017): with events and retries, repeating a call must not duplicate its
+// effect.
 package idem
 
 import (
@@ -9,18 +10,18 @@ import (
 	"time"
 )
 
-// Store guarda o resultado de uma operação por chave, para que a repetição
-// devolva a mesma resposta em vez de executar de novo.
+// Store keeps the result of an operation under a key, so that a repeat returns
+// the recorded response instead of executing again.
 type Store interface {
-	// Begin tenta reservar a chave. Se já existir com o mesmo hash de
-	// requisição, devolve a resposta gravada e done=true.
+	// Begin tries to reserve the key. If it already exists with the same
+	// request hash, it returns the recorded response and done=true.
 	Begin(ctx context.Context, key, requestHash string, ttl time.Duration) (response []byte, done bool, err error)
-	// Complete grava a resposta da execução bem-sucedida.
+	// Complete records the response of a successful execution.
 	Complete(ctx context.Context, key string, response []byte) error
 }
 
-// Hash gera a assinatura da requisição — a mesma chave com corpo diferente é
-// conflito, não repetição.
+// Hash builds the request signature — the same key with a different body is a
+// conflict, not a repeat.
 func Hash(parts ...string) string {
 	h := sha256.New()
 	for _, p := range parts {

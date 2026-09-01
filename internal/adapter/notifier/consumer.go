@@ -1,12 +1,13 @@
-// Package notifier liga a ESPINHA DE EVENTOS ao gatilho de comunicação.
+// Package notifier connects the EVENT SPINE to the communication trigger.
 //
-// É o mesmo papel — e a mesma forma — de adapter/postgres/projection/attention:
-// desembrulhar o envelope que trafegou no fio e entregar ao domínio um evento
-// em vocabulário de domínio. A decisão do que notificar mora em
-// internal/domain/notification; aqui só acontece a tradução.
+// It plays the same role — and takes the same shape — as
+// adapter/postgres/projection/attention: unwrap the envelope that travelled the
+// wire and hand the domain an event in domain vocabulary. The decision of what
+// to notify lives in internal/domain/notification; only the translation happens
+// here.
 //
-// A separação não é cerimônia: o envelope é JSON porque o barramento é JSON, e
-// um domínio que soubesse disso não conseguiria ser testado sem inventar bytes.
+// The separation is not ceremony: the envelope is JSON because the bus is JSON,
+// and a domain that knew that could not be tested without inventing bytes.
 package notifier
 
 import (
@@ -19,14 +20,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
 )
 
-// Consumer é o assinante. Idempotente por construção — a idempotência real
-// mora na reserva do serviço, e a entrega do JetStream é ao-menos-uma-vez
-// (ADR-0019).
+// Consumer is the subscriber. Idempotent by construction — the real
+// idempotency lives in the service's claim, and JetStream delivery is
+// at-least-once (ADR-0019).
 type Consumer struct{ svc *notification.Service }
 
 func NewConsumer(svc *notification.Service) *Consumer {
 	if svc == nil {
-		panic("notifier.NewConsumer: serviço obrigatório")
+		panic("notifier.NewConsumer: service is required")
 	}
 	return &Consumer{svc: svc}
 }
@@ -42,20 +43,21 @@ func (c *Consumer) Handle(ctx context.Context, e ports.Event) error {
 		OccurredAt  time.Time      `json:"occurred_at"`
 	}
 	if err := json.Unmarshal(e.Payload, &env); err != nil {
-		// Evento ilegível nunca melhora com retry — e mensagem venenosa não
-		// pode travar a fila (garantia 8 do EventBus).
+		// An unreadable event never improves with a retry — and a poison
+		// message must not block the queue (EventBus guarantee 8).
 		return nil
 	}
-	// Evento sem conta (`user.ensured`, migração 0003) não pertence a
-	// notificação nenhuma: não há membros a avisar nem conta em nome de quem
-	// avisar.
+	// An event with no account (`user.ensured`, migration 0003) belongs to no
+	// notification: there are no members to warn and no account to warn on
+	// behalf of.
 	if env.AccountID == "" {
 		return nil
 	}
 
-	// O consumidor roda como SISTEMA, com a conta do evento — o mesmo Call que
-	// o interceptor montaria numa chamada de usuário. É isso que faz o filtro
-	// por conta continuar valendo dentro do worker, sem abrir exceção.
+	// The consumer runs as SYSTEM, under the event's account — the same Call
+	// the interceptor would build for a user request. That is what keeps the
+	// per-account filter in force inside the worker, with no exception carved
+	// out for it.
 	ctx = ctxutil.Into(ctx, ctxutil.Call{
 		AccountID: env.AccountID,
 		ActorID:   "notifier",
