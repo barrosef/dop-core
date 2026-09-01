@@ -5,50 +5,51 @@ import (
 	"time"
 )
 
-// A tabela é a política inteira. Estes testes verificam as propriedades que a
-// tornam SUBSTITUÍVEL por dado (P-29) — não o conteúdo de cada linha, que muda.
+// The table is the entire policy. These tests check the properties that make it
+// REPLACEABLE by data (P-29) — not the content of each row, which changes.
 
 func TestTodaLinhaTemNomeAcaoTipoEPorque(t *testing.T) {
 	for _, r := range Rules() {
 		if r.Name == "" {
-			t.Errorf("regra sem nome: o nome entra na chave de idempotência, "+
-				"e chave com pedaço vazio colide com a próxima regra sem nome: %+v", r)
+			t.Errorf("rule with no name: the name goes into the idempotency key, "+
+				"and a key with an empty piece collides with the next unnamed rule: %+v", r)
 		}
 		if r.Action == "" {
-			t.Errorf("regra %q sem ação: no P-29 a ação deixa de ser só e-mail, e "+
-				"a chave já precisa carregá-la", r.Name)
+			t.Errorf("rule %q has no action: under P-29 the action stops being only "+
+				"email, and the key already has to carry it", r.Name)
 		}
 		if r.Kind == "" {
-			t.Errorf("regra %q sem tipo: é o tipo que todo adaptador precisa resolver", r.Name)
+			t.Errorf("rule %q has no kind: the kind is what every adapter has to resolve", r.Name)
 		}
 		if r.Why == "" {
-			t.Errorf("regra %q sem justificativa: política sem porquê não é auditável — "+
-				"ninguém consegue discordar de 'invite.created → e-mail'", r.Name)
+			t.Errorf("rule %q has no reason: a policy with no why is not auditable — "+
+				"nobody can disagree with 'invite.created → email'", r.Name)
 		}
 		switch r.Trigger {
 		case TriggerEvent:
 			if r.Event == "" {
-				t.Errorf("regra %q é de evento e não diz qual", r.Name)
+				t.Errorf("rule %q is event-triggered and does not say which", r.Name)
 			}
 		case TriggerAttentionBox:
 			if r.Delay <= 0 {
-				t.Errorf("regra %q é da caixa e não tem atraso: sem espera, um e-mail "+
-					"por item torna a caixa de entrada inútil", r.Name)
+				t.Errorf("rule %q hangs off the box and has no delay: with no wait, one "+
+					"email per item makes the inbox useless", r.Name)
 			}
 		default:
-			t.Errorf("regra %q tem gatilho desconhecido %q", r.Name, r.Trigger)
+			t.Errorf("rule %q has an unknown trigger %q", r.Name, r.Trigger)
 		}
 	}
 }
 
 func TestNomesDeRegraSaoUnicos(t *testing.T) {
-	// Nome repetido é chave de idempotência repetida: a segunda regra do mesmo
-	// evento seria descartada como duplicata da primeira — em silêncio, que é o
+	// A repeated name is a repeated idempotency key: the second rule for the same
+	// event would be discarded as a duplicate of the first — in silence, which is
+	// the
 	// modo de falhar que a chave composta existe para evitar.
 	vistos := map[string]bool{}
 	for _, r := range Rules() {
 		if vistos[r.Name] {
-			t.Fatalf("duas regras chamadas %q", r.Name)
+			t.Fatalf("two rules named %q", r.Name)
 		}
 		vistos[r.Name] = true
 	}
@@ -57,7 +58,7 @@ func TestNomesDeRegraSaoUnicos(t *testing.T) {
 func TestKindsVemDaTabelaESemRepeticao(t *testing.T) {
 	ks := Kinds()
 	if len(ks) == 0 {
-		t.Fatal("nenhum tipo: a suíte de contrato do Mailer não provaria nada")
+		t.Fatal("no kinds: the Mailer contract suite would prove nothing")
 	}
 	naTabela := map[Kind]bool{}
 	for _, r := range Rules() {
@@ -70,29 +71,29 @@ func TestKindsVemDaTabelaESemRepeticao(t *testing.T) {
 		}
 		vistos[k] = true
 		if !naTabela[k] {
-			t.Errorf("tipo %q não vem de regra nenhuma: Kinds() virou lista à mão, e "+
-				"lista à mão é o que deixa a suíte de contrato verde com template "+
+			t.Errorf("kind %q comes from no rule: Kinds() became a hand-written list, "+
+				"and a hand-written list is what leaves the contract suite green with a "+
 				"faltando", k)
 		}
 	}
 	for k := range naTabela {
 		if !vistos[k] {
-			t.Errorf("a regra declara o tipo %q e Kinds() não o devolve", k)
+			t.Errorf("a rule declares kind %q and Kinds() does not return it", k)
 		}
 	}
 }
 
 func TestSubjectsCobreTodosOsEventosDaTabela(t *testing.T) {
-	// Assinatura a MENOS faz o evento nunca chegar — ninguém recebe e nada
-	// falha. É a mesma armadilha de attention.Subjects, e aqui ela é derivada
-	// justamente para não depender de alguém lembrar.
+	// One subscription too FEW makes the event never arrive — nobody receives it
+	// and nothing fails. It is the same trap as attention.Subjects, and here it is
+	// derived precisely so it does not depend on somebody remembering.
 	assinados := map[string]bool{}
 	for _, s := range Subjects() {
 		assinados[s] = true
 	}
 	for _, r := range Rules() {
 		if r.Trigger == TriggerEvent && !assinados[r.Event] {
-			t.Errorf("a regra %q reage a %q e o consumidor não assina esse assunto",
+			t.Errorf("rule %q reacts to %q and the consumer does not subscribe to that subject",
 				r.Name, r.Event)
 		}
 	}
@@ -101,12 +102,12 @@ func TestSubjectsCobreTodosOsEventosDaTabela(t *testing.T) {
 func TestDigestRuleEhUnicaEAchadaPeloNome(t *testing.T) {
 	r, ok := DigestRule()
 	if !ok {
-		t.Fatal("sem regra de resumo, a caixa nunca vira e-mail")
+		t.Fatal("with no digest rule, the box never becomes an email")
 	}
 	if r.Name == "" {
-		t.Fatal("a regra de resumo precisa de nome: ele é gravado na chave de " +
-			"idempotência, e uma varredura que assumisse posição na tabela gravaria " +
-			"chave errada no dia em que alguém reordenasse o literal")
+		t.Fatal("the digest rule needs a name: it is written into the idempotency " +
+			"key, and a sweep that assumed a position in the table would write the " +
+			"wrong key the day somebody reordered the literal")
 	}
 	n := 0
 	for _, c := range Rules() {
@@ -115,21 +116,22 @@ func TestDigestRuleEhUnicaEAchadaPeloNome(t *testing.T) {
 		}
 	}
 	if n != 1 {
-		t.Fatalf("%d regras de caixa: DigestRule devolveria uma arbitrária", n)
+		t.Fatalf("%d box rules: DigestRule would return an arbitrary one", n)
 	}
 }
 
 func TestApplyIgnoraOQueNaoEstaNaTabela(t *testing.T) {
 	e := Event{ID: "ev-1", AccountID: "conta-1", Type: "dop.demand.stage.advanced",
 		OccurredAt: time.Now(), Payload: map[string]any{}}
-	if cs := Apply(e, semDestinatario); len(cs) != 0 {
+	if cs := Apply(e, noRecipient); len(cs) != 0 {
 		t.Fatalf("evento fora da tabela virou %d comando(s)", len(cs))
 	}
 }
 
 func TestApplyIgnoraEventoSemConta(t *testing.T) {
 	// `dop.identity.user.ensured` ocorre no primeiro login, antes de a conta
-	// pessoal existir (migração 0003). Não há conta em nome de quem avisar.
+	// personal account exists (migration 0003). There is no account to notify on
+	// behalf of.
 	e := Event{ID: "ev-1", Type: EvInviteCreated,
 		Payload: map[string]any{"email": "a@b.test"}}
 	if cs := Apply(e, payloadEmail); len(cs) != 0 {
@@ -149,37 +151,37 @@ func TestApplyDoConviteMontaAChaveComposta(t *testing.T) {
 	}
 	c := cs[0]
 	if !c.Valid() {
-		t.Fatalf("comando inválido: %+v", c)
+		t.Fatalf("invalid command: %+v", c)
 	}
-	ev, regra, acao := c.Key()
-	if ev != "ev-1" || regra == "" || acao == "" {
-		t.Fatalf("chave incompleta: (%q, %q, %q) — chave só pelo evento descartaria "+
-			"a segunda ação do mesmo evento como duplicata, em silêncio", ev, regra, acao)
+	ev, ruleName, action := c.Key()
+	if ev != "ev-1" || ruleName == "" || action == "" {
+		t.Fatalf("incomplete key: (%q, %q, %q) — a key made only of the event would "+
+			"discard the same event's second action as a duplicate, in silence", ev, ruleName, action)
 	}
 	if c.Kind != KindInvite {
 		t.Fatalf("tipo %q, esperava %q", c.Kind, KindInvite)
 	}
 	if len(c.Recipients) != 1 || c.Recipients[0].Email != "convidado@exemplo.test" {
-		t.Fatalf("destinatário: %+v — o convidado AINDA NÃO É USUÁRIO, e o único "+
-			"lugar onde o endereço dele existe é o payload", c.Recipients)
+		t.Fatalf("recipient: %+v — the invitee IS NOT YET A USER, and the only place "+
+			"their address exists is the payload", c.Recipients)
 	}
 	if c.Data["role"] != "member" {
-		t.Fatalf("os dados do template não trouxeram `role`: %+v", c.Data)
+		t.Fatalf("the template data did not carry `role`: %+v", c.Data)
 	}
 }
 
 func TestApplySemDestinatarioNaoViraComando(t *testing.T) {
-	// Sem destinatário não há o que disparar, e isso NÃO é erro: parar o
-	// consumidor aqui atrasaria todas as notificações da fila.
+	// With no recipient there is nothing to fire, and that is NOT an error:
+	// stopping the consumer here would delay every notification in the queue.
 	e := Event{ID: "ev-1", AccountID: "conta-1", Type: EvInviteCreated,
 		Payload: map[string]any{"email": "isto-nao-e-endereco"}}
 	if cs := Apply(e, payloadEmail); len(cs) != 0 {
-		t.Fatalf("endereço inválido virou %d comando(s)", len(cs))
+		t.Fatalf("an invalid address became %d command(s)", len(cs))
 	}
 }
 
 func TestRulesDevolveCopia(t *testing.T) {
-	// Política que o chamador consegue editar em memória deixa de ser política.
+	// A policy the caller can edit in memory stops being a policy.
 	rs := Rules()
 	if len(rs) == 0 {
 		t.Fatal("tabela vazia")
@@ -187,25 +189,25 @@ func TestRulesDevolveCopia(t *testing.T) {
 	original := rs[0].Name
 	rs[0].Name = "sabotado"
 	if Rules()[0].Name != original {
-		t.Fatal("Rules() devolveu a fatia interna: quem chama consegue reescrever a política")
+		t.Fatal("Rules() returned the internal slice: the caller can rewrite the policy")
 	}
 }
 
-func semDestinatario(recipientSpec, Event) []Recipient { return nil }
+func noRecipient(recipientSpec, Event) []Recipient { return nil }
 
-// Um `{campo}` no LinkPath que não esteja em Data vira URL com chave literal no
-// e-mail — a pessoa clica, quebra, e conclui que o convite não presta. O erro é
-// invisível no código (a linha parece certa) e caro em produção, então a tabela
-// se recusa a ter essa forma.
-func TestPlaceholderDoLinkPrecisaEstarEmData(t *testing.T) {
+// A `{field}` in LinkPath that is not in Data becomes a URL with a literal key in
+// the email — the person clicks, it breaks, and they conclude the invite is
+// worthless. The error is invisible in the code (the row looks right) and
+// expensive in production, so the table refuses to take that shape.
+func TestLinkPlaceholderMustBeInData(t *testing.T) {
 	for _, r := range Rules() {
-		campos := map[string]bool{}
+		fields := map[string]bool{}
 		for _, d := range r.Data {
-			campos[d] = true
+			fields[d] = true
 		}
 		for _, ph := range placeholders(r.LinkPath) {
-			if !campos[ph] {
-				t.Errorf("regra %q: LinkPath usa {%s}, que não está em Data %v",
+			if !fields[ph] {
+				t.Errorf("rule %q: LinkPath uses {%s}, which is not in Data %v",
 					r.Name, ph, r.Data)
 			}
 		}
@@ -219,8 +221,8 @@ func TestResolvePathTrocaOCampoEEscapa(t *testing.T) {
 	}
 }
 
-// Campo ausente ou vazio apaga o link inteiro. Meio-link é pior que link
-// nenhum: o botão aparece e leva a lugar nenhum.
+// A missing or empty field erases the whole link. Half a link is worse than no
+// link: the button shows up and leads nowhere.
 func TestResolvePathSemOCampoApagaOLink(t *testing.T) {
 	for nome, dados := range map[string]map[string]any{
 		"ausente": {},
