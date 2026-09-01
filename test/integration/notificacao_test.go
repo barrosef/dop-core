@@ -121,7 +121,7 @@ func TestConviteCriadoVIRAEmail(t *testing.T) {
 		AccountID: conta, Email: convidado, Role: identity.RoleDeveloper,
 		ExpiresAt: time.Now().Add(72 * time.Hour).UTC(),
 	}
-	if _, err := postgres.NewIdentityRepo(pool).CreateInvite(ctx, inv, fmt.Sprintf("hash-%d", time.Now().UnixNano())); err != nil {
+	if _, err := postgres.NewIdentityRepo(pool).CreateInvite(ctx, inv); err != nil {
 		t.Fatalf("criar convite: %v", err)
 	}
 
@@ -144,6 +144,19 @@ func TestConviteCriadoVIRAEmail(t *testing.T) {
 	}
 	if k := espiao.enviados[0].Kind; k != string(notification.KindInvite) {
 		t.Fatalf("tipo %q", k)
+	}
+
+	// O botão precisa endereçar ESTE convite, não a lista de convites: quem
+	// recebe ainda não é usuário e não tem lista para olhar.
+	//
+	// Esta linha é a única que amarra as três fronteiras que ninguém enxerga de
+	// dentro: `CreateInvite` emitir `invite_id` no payload, a regra copiá-lo
+	// para os dados do template, e o LinkPath `/convites/{invite_id}` resolvê-lo.
+	// Se qualquer uma ceder, o e-mail sai com um botão que leva a lugar nenhum —
+	// e nada mais no sistema reclama.
+	querLink := "https://cockpit.test/convites/" + inv.ID
+	if got := fmt.Sprint(espiao.enviados[0].Data["link"]); got != querLink {
+		t.Fatalf("link do e-mail: %q, esperado %q", got, querLink)
 	}
 
 	// ── idempotência CONTRA O ÍNDICE ÚNICO, não contra um duplo ─────────────

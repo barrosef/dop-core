@@ -192,3 +192,43 @@ func TestRulesDevolveCopia(t *testing.T) {
 }
 
 func semDestinatario(recipientSpec, Event) []Recipient { return nil }
+
+// Um `{campo}` no LinkPath que não esteja em Data vira URL com chave literal no
+// e-mail — a pessoa clica, quebra, e conclui que o convite não presta. O erro é
+// invisível no código (a linha parece certa) e caro em produção, então a tabela
+// se recusa a ter essa forma.
+func TestPlaceholderDoLinkPrecisaEstarEmData(t *testing.T) {
+	for _, r := range Rules() {
+		campos := map[string]bool{}
+		for _, d := range r.Data {
+			campos[d] = true
+		}
+		for _, ph := range placeholders(r.LinkPath) {
+			if !campos[ph] {
+				t.Errorf("regra %q: LinkPath usa {%s}, que não está em Data %v",
+					r.Name, ph, r.Data)
+			}
+		}
+	}
+}
+
+func TestResolvePathTrocaOCampoEEscapa(t *testing.T) {
+	got := resolvePath("/convites/{invite_id}", map[string]any{"invite_id": "inv-1/2"})
+	if got != "/convites/inv-1%2F2" {
+		t.Errorf("caminho resolvido %q — o valor precisa ser escapado, ou ele inventa segmento de URL", got)
+	}
+}
+
+// Campo ausente ou vazio apaga o link inteiro. Meio-link é pior que link
+// nenhum: o botão aparece e leva a lugar nenhum.
+func TestResolvePathSemOCampoApagaOLink(t *testing.T) {
+	for nome, dados := range map[string]map[string]any{
+		"ausente": {},
+		"vazio":   {"invite_id": ""},
+		"branco":  {"invite_id": "   "},
+	} {
+		if got := resolvePath("/convites/{invite_id}", dados); got != "" {
+			t.Errorf("%s: caminho deveria ser vazio, veio %q", nome, got)
+		}
+	}
+}

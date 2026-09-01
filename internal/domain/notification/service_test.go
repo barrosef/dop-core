@@ -140,7 +140,15 @@ func eventoDeConvite(id string) Event {
 	return Event{
 		ID: id, AccountID: "conta-1", Aggregate: "invite", AggregateID: "inv-1",
 		Type: EvInviteCreated, OccurredAt: time.Now().UTC(),
-		Payload: map[string]any{"email": "convidado@exemplo.test", "role": "member"},
+		// Este payload precisa ser o QUE O PRODUTOR EMITE, campo a campo. Ele é
+		// montado em adapter/postgres/identity.go:CreateInvite, e um teste de
+		// integração cruzado (test/integration/convite_email_test.go) confere
+		// que os dois não divergiram — aqui não há como saber.
+		Payload: map[string]any{
+			"invite_id": "inv-1",
+			"email":     "convidado@exemplo.test",
+			"role":      "member",
+		},
 	}
 }
 
@@ -159,7 +167,9 @@ func TestConviteViraUmEmail(t *testing.T) {
 	if m.Kind != string(KindInvite) || m.To != "convidado@exemplo.test" {
 		t.Fatalf("mensagem errada: %+v", m)
 	}
-	if m.Data["link"] != "https://cockpit.test/convites" {
+	// O link endereça O CONVITE, não a lista: quem recebe ainda não é usuário
+	// e não tem lista para olhar.
+	if m.Data["link"] != "https://cockpit.test/convites/inv-1" {
 		t.Fatalf("link do aviso: %v", m.Data["link"])
 	}
 	if len(repo.liquidados) != 1 || repo.liquidados[0].State != StateSent {

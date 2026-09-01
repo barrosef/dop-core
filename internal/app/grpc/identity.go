@@ -101,18 +101,18 @@ func (s *IdentityServer) CreateInvite(ctx context.Context, req *dopv1.CreateInvi
 			Level:      g.GetLevel(),
 		})
 	}
-	inv, _, err := s.svc.CreateInvite(ctx, req.GetEmail(), roleFromProto(req.GetRole()), grants)
+	inv, err := s.svc.CreateInvite(ctx, req.GetEmail(), roleFromProto(req.GetRole()), grants)
 	if err != nil {
 		return nil, err
 	}
-	// O token NÃO volta no proto: ele é entregue pelo canal de comunicação
-	// (P-11). Quem perder o link precisa de convite novo.
+	// Não há token para devolver: o convite não tem segredo. O e-mail (P-11)
+	// leva só o id, e o aceite confere quem está logado.
 	return inviteToProto(inv), nil
 }
 
 func (s *IdentityServer) AcceptInvite(ctx context.Context, req *dopv1.AcceptInviteRequest) (*dopv1.Membership, error) {
 	call, _ := ctxutil.From(ctx)
-	m, err := s.svc.AcceptInvite(ctx, req.GetToken(), call.ActorID)
+	m, err := s.svc.AcceptInvite(ctx, req.GetInviteId(), call.ActorID)
 	if err != nil {
 		return nil, err
 	}

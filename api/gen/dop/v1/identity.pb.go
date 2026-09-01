@@ -1145,10 +1145,14 @@ func (x *CreateInviteRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+// O aceite endereça o convite pelo id — NÃO por segredo. O id sozinho não
+// concede nada: o servidor exige que o e-mail verificado da sessão seja o do
+// convite. Um cliente antigo que mandar o token aqui simplesmente não acha a
+// linha, que é a falha correta.
 type AcceptInviteRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
-	Token          string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	InviteId       string                 `protobuf:"bytes,2,opt,name=invite_id,json=inviteId,proto3" json:"invite_id,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1191,9 +1195,9 @@ func (x *AcceptInviteRequest) GetCtx() *CallContext {
 	return nil
 }
 
-func (x *AcceptInviteRequest) GetToken() string {
+func (x *AcceptInviteRequest) GetInviteId() string {
 	if x != nil {
-		return x.Token
+		return x.InviteId
 	}
 	return ""
 }
@@ -1416,10 +1420,10 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12 \n" +
 	"\x04role\x18\x03 \x01(\x0e2\f.dop.v1.RoleR\x04role\x121\n" +
 	"\x06grants\x18\x04 \x03(\v2\x19.dop.v1.ResourceGrantSpecR\x06grants\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"{\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\x82\x01\n" +
 	"\x13AcceptInviteRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\x12'\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\tinvite_id\x18\x02 \x01(\tR\binviteId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"L\n" +
 	"\x13RevokeInviteRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +

@@ -247,34 +247,39 @@ func (r *IdentityRepo) UpdateMembershipRole(ctx context.Context, membershipID st
 	return &m, nil
 }
 
-func (r *IdentityRepo) CreateInvite(ctx context.Context, inv *identity.Invite, tokenHash string) (*identity.Invite, error) {
+func (r *IdentityRepo) CreateInvite(ctx context.Context, inv *identity.Invite) (*identity.Invite, error) {
 	grants, _ := json.Marshal(inv.Grants)
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO invites (account_id, email, role, grants, token_hash, invited_by, expires_at)
-			VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,$7)
+			INSERT INTO invites (account_id, email, role, grants, invited_by, expires_at)
+			VALUES ($1,$2,$3,$4,NULLIF($5,'')::uuid,$6)
 			RETURNING id, created_at`,
-			inv.AccountID, inv.Email, string(inv.Role), grants, tokenHash, inv.InvitedBy, inv.ExpiresAt).
+			inv.AccountID, inv.Email, string(inv.Role), grants, inv.InvitedBy, inv.ExpiresAt).
 			Scan(&inv.ID, &inv.CreatedAt); err != nil {
 			return Translate(err, "convite")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: inv.AccountID, Aggregate: "invite", AggregateID: inv.ID,
-			Type:    "dop.identity.invite.created",
-			Payload: mustJSON(map[string]any{"email": inv.Email, "role": inv.Role}),
+			Type: "dop.identity.invite.created",
+			// invite_id em texto claro é seguro AGORA: sozinho ele não concede
+			// nada — o aceite ainda exige a sessão do convidado.
+			Payload: mustJSON(map[string]any{
+				"invite_id": inv.ID, "email": inv.Email, "role": inv.Role,
+				"expires_at": inv.ExpiresAt,
+			}),
 		})
 	})
 	return inv, err
 }
 
-func (r *IdentityRepo) InviteByTokenHash(ctx context.Context, tokenHash string) (*identity.Invite, error) {
+func (r *IdentityRepo) InviteByID(ctx context.Context, id string) (*identity.Invite, error) {
 	var inv identity.Invite
 	var role, status string
 	var grants []byte
 	var invitedBy *string
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, account_id, email, role, grants, status, invited_by, expires_at, created_at
-		  FROM invites WHERE token_hash = $1`, tokenHash).
+		  FROM invites WHERE id = $1`, id).
 		Scan(&inv.ID, &inv.AccountID, &inv.Email, &role, &grants, &status,
 			&invitedBy, &inv.ExpiresAt, &inv.CreatedAt)
 	if NoRows(err) {

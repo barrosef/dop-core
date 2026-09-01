@@ -1,0 +1,14 @@
+-- O convite deixa de ter segredo.
+--
+-- Antes: o link carregava um token opaco e o aceite conferia só o hash dele.
+-- Quem tivesse o link entrava na conta — credencial de PORTADOR. Por isso o
+-- token não podia aparecer em evento, projeção nem e-mail, o que na prática
+-- impedia o convite de virar link clicável.
+--
+-- Agora: o aceite exige que o e-mail VERIFICADO da sessão seja o do convite.
+-- O link precisa apenas ENDEREÇAR a linha, e `id` já faz isso. Sem segredo,
+-- não há segredo para vazar em `events`, `outbox`, JetStream ou `timeline`.
+--
+-- A coluna cai em vez de ficar NULL: guardar hash de um segredo que ninguém
+-- mais confere é manter superfície sem dono.
+ALTER TABLE invites DROP COLUMN IF EXISTS token_hash;

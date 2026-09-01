@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 	"time"
@@ -187,35 +186,34 @@ func (s *Service) Authorize(ctx context.Context, userID, accountID string) (*Mem
 }
 
 // CreateInvite compõe papel e concessões NO CONVITE — sem defaults.
-func (s *Service) CreateInvite(ctx context.Context, email string, role Role, grants []GrantSpec) (*Invite, string, error) {
+func (s *Service) CreateInvite(ctx context.Context, email string, role Role, grants []GrantSpec) (*Invite, error) {
 	call, _ := ctxutil.From(ctx)
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if !ValidRole(role) {
-		return nil, "", errs.Invalid("papel desconhecido: %q", role)
+		return nil, errs.Invalid("papel desconhecido: %q", role)
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
-		return nil, "", errs.Invalid("e-mail inválido")
+		return nil, errs.Invalid("e-mail inválido")
 	}
 	for _, g := range grants {
 		if g.Level != "use" && g.Level != "manage" {
-			return nil, "", errs.Invalid("nível de concessão inválido: %q", g.Level)
+			return nil, errs.Invalid("nível de concessão inválido: %q", g.Level)
 		}
 	}
 
 	// Quem convida precisa poder gerir membros.
 	actor, err := s.Authorize(ctx, call.ActorID, accountID)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if !actor.Role.CanManageMembers() {
-		return nil, "", errs.Permission("apenas owner ou admin podem convidar")
+		return nil, errs.Permission("apenas owner ou admin podem convidar")
 	}
 
-	token := randomToken()
 	inv := &Invite{
 		AccountID: accountID,
 		Email:     email,
@@ -225,22 +223,24 @@ func (s *Service) CreateInvite(ctx context.Context, email string, role Role, gra
 		InvitedBy: call.ActorID,
 		ExpiresAt: s.now().Add(InviteTTL),
 	}
-	saved, err := s.repo.CreateInvite(ctx, inv, hashToken(token))
+	saved, err := s.repo.CreateInvite(ctx, inv)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	// O token só existe aqui: o banco guarda o hash. Quem perder o link
-	// precisa de um convite novo — que é o comportamento correto.
-	return saved, token, nil
+	// NÃO existe mais token. O aceite confere o e-mail VERIFICADO da sessão
+	// contra o do convite, então o link precisa apenas ENDEREÇAR o convite —
+	// e um id que não concede nada pode viajar no e-mail, no evento e na
+	// timeline sem virar credencial em repouso.
+	return saved, nil
 }
 
 // AcceptInvite valida a expiração por TEMPO, não só por status: a varredura de
 // expirados pode não ter passado ainda.
-func (s *Service) AcceptInvite(ctx context.Context, token, userID string) (*Membership, error) {
+func (s *Service) AcceptInvite(ctx context.Context, inviteID, userID string) (*Membership, error) {
 	if userID == "" {
 		return nil, errs.New(errs.KindUnauthorized, "aceite exige sessão autenticada")
 	}
-	inv, err := s.repo.InviteByTokenHash(ctx, hashToken(token))
+	inv, err := s.repo.InviteByID(ctx, inviteID)
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +250,37 @@ func (s *Service) AcceptInvite(ctx context.Context, token, userID string) (*Memb
 	if !inv.IsUsable(s.now()) {
 		return nil, errs.Precondition("convite %s", inv.Status)
 	}
+
+	// O convite é para UMA pessoa, e agora ele exige que ela seja ela.
+	//
+	// Antes o aceite conferia só o token: qualquer usuário autenticado que
+	// tivesse o link entrava na conta, com o papel concedido a outra pessoa.
+	// Era credencial de PORTADOR, e por isso não podia aparecer em evento nem
+	// em projeção — o que impedia o e-mail de carregar link de aceite.
+	//
+	// Exigindo o e-mail VERIFICADO da sessão, o link deixa de conceder
+	// qualquer coisa a quem apenas o possui: é preciso SER o convidado. Foi
+	// isso que liberou o `invite_id` para viajar em texto claro.
+	u, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, errs.New(errs.KindUnauthorized, "sessão sem usuário")
+	}
+	// Não verificado é recusa SEPARADA da divergência: "confirme seu e-mail" e
+	// "este convite não é seu" mandam a pessoa fazer coisas diferentes, e um
+	// erro só faria as duas parecerem a mesma parede.
+	if !u.EmailVerified {
+		return nil, errs.Precondition(
+			"o aceite exige e-mail verificado: confirme %s antes de entrar na conta", u.Email)
+	}
+	if !strings.EqualFold(strings.TrimSpace(u.Email), strings.TrimSpace(inv.Email)) {
+		// A mensagem NÃO diz para quem era o convite: isso transformaria o link
+		// num oráculo de e-mail para quem o encontrasse.
+		return nil, errs.New(errs.KindPermission, "este convite foi feito para outro e-mail")
+	}
+
 	return s.repo.AcceptInvite(ctx, inv.ID, userID)
 }
 
@@ -325,19 +356,8 @@ func mergeProviders(existing, incoming []string) []string {
 	return out
 }
 
-func randomToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 func randomSuffix(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)[:n]
-}
-
-func hashToken(t string) string {
-	sum := sha256.Sum256([]byte(t))
-	return hex.EncodeToString(sum[:])
 }

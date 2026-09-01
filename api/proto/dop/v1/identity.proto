@@ -116,7 +116,11 @@ message CreateInviteRequest {
   repeated ResourceGrantSpec grants = 4;
   string idempotency_key = 5;
 }
-message AcceptInviteRequest { CallContext ctx = 1; string token = 2; string idempotency_key = 3; }
+// O aceite endereça o convite pelo id — NÃO por segredo. O id sozinho não
+// concede nada: o servidor exige que o e-mail verificado da sessão seja o do
+// convite. Um cliente antigo que mandar o token aqui simplesmente não acha a
+// linha, que é a falha correta.
+message AcceptInviteRequest { CallContext ctx = 1; string invite_id = 2; string idempotency_key = 3; }
 message RevokeInviteRequest { CallContext ctx = 1; string id = 2; }
 message UpdateMembershipRequest {
   CallContext ctx = 1;

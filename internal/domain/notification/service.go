@@ -2,6 +2,8 @@ package notification
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -235,8 +237,11 @@ func (s *Service) digestDaConta(ctx context.Context, regra Rule, accountID strin
 		"account_id": accountID,
 		"total":      len(pegos),
 		"items":      itensParaDados(pegos),
-		"link":       s.link(regra.LinkPath),
 	}
+	// Passa pelo MESMO resolvedor do outro gatilho, mesmo que a regra do resumo
+	// não tenha placeholder hoje: dois caminhos para montar link é como um
+	// deles fica para trás quando a tabela muda.
+	dados["link"] = s.link(resolvePath(regra.LinkPath, dados))
 	recibo, envErr := s.enviar(ctx, accountID, regra.Kind, dest, dados)
 	if _, err := s.repo.Settle(ctx, desfecho(accountID, cobertos, regra.Kind, enderecos, recibo, envErr)); err != nil {
 		return 0, err
@@ -268,10 +273,13 @@ func (s *Service) executar(ctx context.Context, c Command) error {
 		return nil
 	}
 
-	dados := map[string]any{"account_id": c.AccountID, "link": s.linkDaRegra(c.Rule)}
+	dados := map[string]any{"account_id": c.AccountID}
 	for k, v := range c.Data {
 		dados[k] = v
 	}
+	// O link se resolve DEPOIS de `dados` estar completo: `/convites/{invite_id}`
+	// precisa do payload do evento, que só existe aqui.
+	dados["link"] = s.linkDaRegra(c.Rule, dados)
 
 	recibo, envErr := s.enviar(ctx, c.AccountID, c.Kind, c.Recipients, dados)
 	if _, err := s.repo.Settle(ctx, desfecho(c.AccountID, []DeliveryKey{chave}, c.Kind,
@@ -347,13 +355,57 @@ func (s *Service) link(path string) string {
 	return strings.TrimRight(s.cfg.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
 }
 
-func (s *Service) linkDaRegra(nome string) string {
+func (s *Service) linkDaRegra(nome string, dados map[string]any) string {
 	for _, r := range Rules() {
 		if r.Name == nome {
-			return s.link(r.LinkPath)
+			return s.link(resolvePath(r.LinkPath, dados))
 		}
 	}
 	return ""
+}
+
+// resolvePath troca cada `{campo}` pelo valor de `dados[campo]`.
+//
+// Campo ausente ou vazio devolve caminho VAZIO — e caminho vazio apaga o link
+// (o template esconde o botão). É deliberado: mandar a pessoa para
+// `/convites/{invite_id}` é pior do que não mandar link nenhum, porque ela
+// clica, quebra, e conclui que o convite não vale. O teste da tabela impede
+// que isso chegue em produção; isto aqui é a rede embaixo.
+func resolvePath(path string, dados map[string]any) string {
+	if !strings.Contains(path, "{") {
+		return path
+	}
+	for _, campo := range placeholders(path) {
+		v, ok := dados[campo]
+		if !ok {
+			return ""
+		}
+		txt := strings.TrimSpace(fmt.Sprint(v))
+		if txt == "" {
+			return ""
+		}
+		path = strings.ReplaceAll(path, "{"+campo+"}", url.PathEscape(txt))
+	}
+	return path
+}
+
+// placeholders extrai os nomes entre chaves. Vive aqui e não no pacote de
+// regras porque quem valida a tabela (teste) e quem resolve (serviço) precisam
+// do MESMO extrator — dois extratores divergem calados.
+func placeholders(path string) []string {
+	var out []string
+	for {
+		i := strings.Index(path, "{")
+		if i < 0 {
+			return out
+		}
+		j := strings.Index(path[i:], "}")
+		if j < 0 {
+			return out
+		}
+		out = append(out, path[i+1:i+j])
+		path = path[i+j+1:]
+	}
 }
 
 func emails(rs []Recipient) []string {

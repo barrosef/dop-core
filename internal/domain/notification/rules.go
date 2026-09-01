@@ -75,6 +75,15 @@ type Rule struct {
 	// LinkPath é o caminho relativo do cockpit para onde o aviso leva. Relativo
 	// porque a base é da INSTALAÇÃO (Config.BaseURL), não da política — a mesma
 	// regra vale no SaaS e num self-hosted com outro domínio.
+	//
+	// Pode conter `{campo}`, substituído pelo valor do MESMO campo em Data. É
+	// como o convite endereça a linha dele em vez de despejar a pessoa numa
+	// lista: `/convites/{invite_id}`. Continua sendo dado — a linha declara o
+	// formato, ninguém escreve concatenação em Go.
+	//
+	// Todo `{campo}` PRECISA estar em Data; um teste da tabela recusa o que
+	// não estiver, porque o preço de errar é um e-mail com "{invite_id}" no
+	// meio da URL.
 	LinkPath string
 	// Delay só vale com TriggerAttentionBox. Zero usa DefaultDigestDelay.
 	Delay time.Duration
@@ -94,8 +103,8 @@ var tabela = []Rule{
 		Action:     ActionEmail,
 		Kind:       KindInvite,
 		Recipients: recipientSpec{Source: fromPayload, Field: "email"},
-		Data:       []string{"email", "role"},
-		LinkPath:   "/convites",
+		Data:       []string{"invite_id", "email", "role"},
+		LinkPath:   "/convites/{invite_id}",
 		Why: "é a única notificação cujo destinatário AINDA NÃO É USUÁRIO: ele não " +
 			"tem cockpit para olhar, não tem caixa de atenção, e o convite não " +
 			"existe para ele até chegar por fora. Sem este e-mail o convite é " +
