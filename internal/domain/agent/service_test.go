@@ -288,7 +288,7 @@ func TestConclusaoSemAchadoEhRecusada(t *testing.T) {
 	if len(c.conv.achados) != 0 {
 		t.Fatal("publicou achado vazio")
 	}
-	if !contemAviso(out.Warnings, "RECUSADA") {
+	if !contemAviso(out.Warnings, "REFUSED") {
 		t.Fatalf("a recusa não virou aviso legível: %v", out.Warnings)
 	}
 }
@@ -439,7 +439,7 @@ func TestCriacaoDeCacheDesconhecidaSaiDeclarada(t *testing.T) {
 	if out.Usage.CacheCreationKnown {
 		t.Fatal("afirmou conhecer criação de cache num provedor que não reporta")
 	}
-	if !contemAviso(out.Warnings, "AUSÊNCIA de informação") {
+	if !contemAviso(out.Warnings, "ABSENCE of information") {
 		t.Fatalf("o zero não veio explicado: %v", out.Warnings)
 	}
 }

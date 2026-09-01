@@ -757,7 +757,7 @@ func TestSaidaCortadaEhAnunciadaAoModelo(t *testing.T) {
 	if res == nil {
 		t.Fatal("o resultado não chegou ao modelo")
 	}
-	if !strings.Contains(strings.ToUpper(res.Content), "CORTAD") {
+	if !strings.Contains(strings.ToUpper(res.Content), "CUT") {
 		t.Fatalf("A SAÍDA FOI CORTADA E O MODELO NÃO FOI AVISADO: ele vai concluir a partir "+
 			"de metade do log achando que leu tudo, e a conclusão errada não terá "+
 			"explicação depois.\nresultado:\n%s", res.Content)
