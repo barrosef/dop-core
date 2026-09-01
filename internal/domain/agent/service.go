@@ -386,7 +386,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		// descobrir na primeira chamada; não declarar e não avisar faria a
 		// ficha parecer honrada. Sobra a terceira saída: não declarar e DIZER.
 		avisos = append(avisos, "a ficha desta thread concede ferramenta(s) ("+
-			nomesDe(ferramentas)+"), mas esta instalação não tem substrato de execução "+
+			namesOf(ferramentas)+"), mas esta instalação não tem substrato de execução "+
 			"ligado: o turno rodou SEM ferramentas")
 		ferramentas = nil
 	}

@@ -6,42 +6,44 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// O LAÇO DO TURNO — conversar com o modelo e INTERPRETAR o que voltou.
+// THE TURN — talking to the model and INTERPRETING what came back.
 //
-// A divisão com service.go é deliberada e sobreviveu à travessia do Python:
+// The split from service.go is deliberate and survived the crossing from Python:
 //
-//   - AQUI fica tudo o que não toca os domínios vizinhos: chamar a porta do
-//     fornecedor e transformar a resposta estruturada em FATOS do domínio (o que
-//     responder, se concluiu, qual achado);
-//   - LÁ fica o ciclo com os vizinhos — contexto, roteamento, medição, mensagem,
-//     achado, pausa por orçamento.
+//   - HERE lives everything that does not touch the neighbouring domains:
+//     calling the provider's port and turning the structured response into domain
+//     FACTS (what to reply, whether it concluded, which finding);
+//   - THERE lives the cycle with the neighbours — context, routing, measurement,
+//     message, finding, budget pause.
 //
-// A consequência prática que vale a separação: a conversa com o modelo é
-// testável sem vizinho nenhum, e o ciclo é testável sem fornecedor nenhum. As
-// duas metades falham por motivos diferentes — fornecedor fora do ar não é banco
-// fora do ar — e juntá-las faria toda falha parecer a mesma.
+// The practical consequence that earns the split: the conversation with the
+// model is testable with no neighbour at all, and the cycle is testable with no
+// provider at all. The two halves fail for different reasons — a provider being
+// down is not a database being down — and merging them would make every failure
+// look the same.
 //
-// Sobre "CONCLUIR EXIGE PUBLICAR ACHADO": a spec de conversação §1 diz que a
-// thread não morre em silêncio, e `demand.Service.ConcludeThread` já recusa
-// concluir sem achado publicado. Aqui a regra aparece uma etapa antes: se o
-// modelo marcou `concluded` mas não escreveu título nem resumo, a conclusão é
-// RECUSADA — a thread continua ativa e a resposta ganha um aviso. Aceitar a
-// conclusão vazia seria deixar a thread morrer em silêncio com um `true` de
-// enfeite, e o próximo agente refaria o trabalho.
+// On "CONCLUDING REQUIRES PUBLISHING A FINDING": the conversation spec §1 says
+// the thread does not die in silence, and `demand.Service.ConcludeThread`
+// already refuses to conclude without a published finding. Here the rule appears
+// one step earlier: if the model marked `concluded` but wrote neither a title nor
+// a summary, the conclusion is REFUSED — the thread stays active and the response
+// gains a warning. Accepting the empty conclusion would let the thread die in
+// silence behind a decorative `true`, and the next agent would redo the work.
 // ════════════════════════════════════════════════════════════════════════════
 
-// Finding é o achado tal como o modelo o produziu, antes de virar registro.
+// Finding is the finding exactly as the model produced it, before it becomes a
+// record.
 type Finding struct {
 	Title   string
 	Payload map[string]any
 }
 
-// TurnExecution é o que o turno produziu, em fatos do domínio.
+// TurnExecution is what the turn produced, in domain facts.
 //
-// `Reply` é SEMPRE texto para a thread — mesmo quando o modelo devolveu JSON
-// estruturado, porque quem lê a thread é gente. `Finding` é nulo enquanto a
-// thread não concluiu, e não um achado vazio: achado vazio publicado seria o
-// registro durável de nada.
+// `Reply` is ALWAYS text for the thread — even when the model returned
+// structured JSON, because it is a person who reads the thread. `Finding` is nil
+// while the thread has not concluded, rather than an empty finding: an empty
+// finding published would be the durable record of nothing.
 type TurnExecution struct {
 	Reply      string
 	Concluded  bool
@@ -51,121 +53,126 @@ type TurnExecution struct {
 	Warnings   []string
 }
 
-// textoDaResposta é a fala que vai para a thread.
+// replyText is the utterance that goes to the thread.
 //
-// Quando há saída estruturada, é o campo `reply`. Quando não há — o fornecedor
-// devolveu texto solto porque o schema falhou, por exemplo —, é o texto cru:
-// devolver vazio esconderia do humano a única coisa que o modelo produziu.
-func textoDaResposta(r *Reply) string {
-	if s := strings.TrimSpace(texto(r.Data["reply"])); s != "" {
+// When there is structured output, it is the `reply` field. When there is not —
+// the provider returned loose text because the schema failed, say — it is the
+// raw text: returning empty would hide from the human the only thing the model
+// produced.
+func replyText(r *Reply) string {
+	if s := strings.TrimSpace(str(r.Data["reply"])); s != "" {
 		return s
 	}
 	return strings.TrimSpace(r.Text)
 }
 
-func texto(v any) string {
+func str(v any) string {
 	s, _ := v.(string)
 	return s
 }
 
-func achadoDe(dados map[string]any) *Finding {
-	titulo := strings.TrimSpace(texto(dados["finding_title"]))
-	resumo := strings.TrimSpace(texto(dados["finding_summary"]))
-	if titulo == "" || resumo == "" {
+func findingFrom(data map[string]any) *Finding {
+	title := strings.TrimSpace(str(data["finding_title"]))
+	summary := strings.TrimSpace(str(data["finding_summary"]))
+	if title == "" || summary == "" {
 		return nil
 	}
-	// As evidências chegam como `[]any` da decodificação JSON. Item que não é
-	// string é DESCARTADO em vez de virar erro: um achado com uma evidência a
-	// menos ainda vale mais do que um turno perdido por causa de um tipo.
-	var evidencias []string
-	if lista, ok := dados["finding_evidence"].([]any); ok {
-		for _, e := range lista {
-			if s := strings.TrimSpace(texto(e)); s != "" {
-				evidencias = append(evidencias, s)
+	// The evidence arrives as `[]any` from the JSON decoding. An item that is not
+	// a string is DISCARDED rather than turned into an error: a finding with one
+	// piece of evidence fewer is still worth more than a turn lost over a type.
+	var evidence []string
+	if list, ok := data["finding_evidence"].([]any); ok {
+		for _, e := range list {
+			if s := strings.TrimSpace(str(e)); s != "" {
+				evidence = append(evidence, s)
 			}
 		}
 	}
-	if evidencias == nil {
-		evidencias = []string{}
+	if evidence == nil {
+		evidence = []string{}
 	}
 	return &Finding{
-		Title:   titulo,
-		Payload: map[string]any{"summary": resumo, "evidence": evidencias},
+		Title:   title,
+		Payload: map[string]any{"summary": summary, "evidence": evidence},
 	}
 }
 
-// executeTurn é UMA volta: manda a conversa, lê a resposta, decide se concluiu.
+// executeTurn is ONE round: send the conversation, read the response, decide
+// whether it concluded.
 //
-// Não retenta e é DELIBERADAMENTE uma volta só: quem encadeia voltas é o laço de
-// toolloop.go, que tem as portas para medir e para agir. Manter esta função sem
-// laço é o que permite ao orçamento interromper ENTRE uma volta e outra
-// (ADR-0011 §2) em vez de no meio de uma, e é o que mantém a interpretação da
-// resposta testável sem substrato e sem domínio de custo.
+// It does not retry and it is DELIBERATELY a single round: the loop in
+// toolloop.go is what chains rounds, and it has the ports to measure and to act.
+// Keeping this function loop-free is what lets the budget interrupt BETWEEN one
+// round and the next (ADR-0011 §2) rather than in the middle of one, and it is
+// what keeps the response interpretation testable without a substrate and
+// without the cost domain.
 func executeTurn(ctx context.Context, p AgentProvider, t Turn,
 	model string, effort Effort) (*TurnExecution, error) {
 
-	resposta, err := p.Send(ctx, t, model, effort)
+	response, err := p.Send(ctx, t, model, effort)
 	if err != nil {
 		return nil, err
 	}
-	dados := resposta.Data
-	if dados == nil {
-		dados = map[string]any{}
+	data := response.Data
+	if data == nil {
+		data = map[string]any{}
 	}
-	avisos := append([]string(nil), resposta.Warnings...)
+	warnings := append([]string(nil), response.Warnings...)
 
-	concluiu, _ := dados["concluded"].(bool)
-	if len(resposta.ToolCalls) > 0 {
-		// Pedir ferramenta É dizer "ainda não terminei", e o pedido vale mais
-		// que o campo: um modelo que marca `concluded` e no mesmo fôlego manda
-		// rodar o teste não concluiu nada. Sem aviso, de propósito — isto não é
-		// violação de contrato, é o campo chegando antes da hora numa resposta
-		// que o laço ainda vai continuar.
-		concluiu = false
+	concluded, _ := data["concluded"].(bool)
+	if len(response.ToolCalls) > 0 {
+		// Asking for a tool IS saying "I am not done yet", and the request
+		// outweighs the field: a model that marks `concluded` and in the same
+		// breath asks to run the tests concluded nothing. No warning, on purpose —
+		// this is not a contract violation, it is the field arriving early in a
+		// response the loop is going to continue anyway.
+		concluded = false
 	}
-	var achado *Finding
-	if concluiu {
-		achado = achadoDe(dados)
+	var finding *Finding
+	if concluded {
+		finding = findingFrom(data)
 	}
-	if concluiu && achado == nil {
-		// Concluir EXIGE achado (spec de conversação §1). Sem ele a conclusão
-		// não vale: a thread continua ativa e o agente é cobrado no próximo
-		// turno, em vez de sumir do radar com um `true` de enfeite.
-		concluiu = false
-		avisos = append(avisos,
-			"o modelo marcou conclusão sem achado (título e resumo): a conclusão "+
-				"foi RECUSADA — concluir exige publicar achado (spec §1)")
+	if concluded && finding == nil {
+		// Concluding REQUIRES a finding (conversation spec §1). Without one the
+		// conclusion does not hold: the thread stays active and the agent is asked
+		// again on the next turn, instead of disappearing off the radar behind a
+		// decorative `true`.
+		concluded = false
+		warnings = append(warnings,
+			"the model marked a conclusion with no finding (title and summary): the "+
+				"conclusion was REFUSED — concluding requires publishing a finding (spec §1)")
 	}
 
-	switch resposta.StopReason {
+	switch response.StopReason {
 	case StopToolUse:
-		// Parada NORMAL do laço: o modelo pediu ferramenta. Sem aviso — avisar
-		// a cada volta encheria o resultado de ruído e esconderia os avisos
-		// que exigem decisão.
+		// The loop's NORMAL stop: the model asked for a tool. No warning — warning
+		// on every round would fill the result with noise and hide the warnings
+		// that require a decision.
 	case StopMaxTokens:
-		// Resposta cortada não é resposta concluída. Sem este aviso, um turno
-		// truncado pareceria apenas uma resposta curta.
-		avisos = append(avisos,
-			"a resposta foi CORTADA pelo limite de tokens de saída: o conteúdo "+
-				"abaixo está incompleto")
+		// A truncated response is not a finished response. Without this warning, a
+		// cut-off turn would look like nothing more than a short answer.
+		warnings = append(warnings,
+			"the response was CUT OFF by the output token limit: the content "+
+				"below is incomplete")
 	case StopRefused:
-		avisos = append(avisos, "o provedor RECUSOU a solicitação por política própria")
+		warnings = append(warnings, "the provider REFUSED the request under its own policy")
 	}
 
-	if !resposta.Capabilities.Has(CapCacheCreationAccounting) {
-		// ADR-0012 §1: sem esta capacidade, CacheCreationTokens vem zerado e
-		// isso significa "não dá para saber", não "nada foi escrito no cache".
-		avisos = append(avisos,
-			"o provedor '"+resposta.Provider+"' não reporta criação de cache: o campo "+
-				"cache_creation_tokens vem zerado por AUSÊNCIA de informação (D1)")
+	if !response.Capabilities.Has(CapCacheCreationAccounting) {
+		// ADR-0012 §1: without this capability, CacheCreationTokens comes back
+		// zero, and that means "cannot be known", not "nothing was written to the
+		// cache".
+		warnings = append(warnings,
+			"provider '"+response.Provider+"' does not report cache creation: the "+
+				"cache_creation_tokens field comes back zero from the ABSENCE of information (D1)")
 	}
 
 	return &TurnExecution{
-		Reply:      textoDaResposta(resposta),
-		Concluded:  concluiu,
-		Finding:    achado,
+		Reply:      replyText(response),
+		Concluded:  concluded,
+		Finding:    finding,
 		Turn:       t,
-		ModelReply: resposta,
-		Warnings:   avisos,
+		ModelReply: response,
+		Warnings:   warnings,
 	}, nil
 }

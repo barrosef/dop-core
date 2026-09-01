@@ -273,9 +273,9 @@ func (l laco) medir(ctx context.Context, res *resultadoDoLaco, r *Reply) (Accoun
 func (l laco) executar(ctx context.Context, chamadas []ToolCall) ([]ToolResult, error) {
 	out := make([]ToolResult, 0, len(chamadas))
 	for _, call := range chamadas {
-		cmd, motivo := comandoDe(call, l.permitidas)
+		cmd, motivo := commandFrom(call, l.permitidas)
 		if motivo != "" {
-			out = append(out, resultadoDeErro(call, motivo))
+			out = append(out, errorResult(call, motivo))
 			continue
 		}
 		saida, err := l.sandbox.RunCommand(ctx, l.demandID, cmd)
@@ -286,11 +286,11 @@ func (l laco) executar(ctx context.Context, chamadas []ToolCall) ([]ToolResult, 
 			}
 			// Recusa SOBRE A CHAMADA (nome, argumento, permissão): o modelo
 			// consegue corrigir, então ela volta como resultado.
-			out = append(out, resultadoDeErro(call,
+			out = append(out, errorResult(call,
 				"a ferramenta recusou a chamada: "+err.Error()))
 			continue
 		}
-		out = append(out, resultadoDe(call, saida))
+		out = append(out, resultFrom(call, saida))
 	}
 	return out, nil
 }
