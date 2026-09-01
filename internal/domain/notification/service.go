@@ -13,33 +13,33 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// Config é o AJUSTE da instalação, não vocabulário do domínio.
+// Config is the INSTALLATION's tuning, not domain vocabulary.
 type Config struct {
-	// BaseURL é o endereço do cockpit desta instalação. Vazio faz o aviso sair
-	// sem link — degradação declarada, não esquecimento: um link para
-	// "/atencao" sem base é um link quebrado, e link quebrado num e-mail custa
-	// mais confiança do que a ausência dele.
+	// BaseURL is this installation's cockpit address. Empty makes the notice go
+	// out with no link — a declared degradation, not an oversight: a link to
+	// "/attention" with no base is a broken link, and a broken link in an email
+	// costs more trust than its absence.
 	BaseURL string
-	// DigestDelay sobrescreve DefaultDigestDelay. Ver lá por que ele existe e
-	// por que é palpite.
+	// DigestDelay overrides DefaultDigestDelay. See there for why it exists and
+	// why it is a guess.
 	DigestDelay time.Duration
-	// MaxAttempts limita o reenvio do que falhou. Zero usa DefaultMaxAttempts.
+	// MaxAttempts bounds the retry of what failed. Zero uses DefaultMaxAttempts.
 	MaxAttempts int
-	// DigestLimit é o teto de itens que UM e-mail carrega. Existe porque
-	// resumo de duzentos itens não é resumo — é a caixa de atenção mal
-	// impressa, e ninguém lê.
+	// DigestLimit is the ceiling of items ONE email carries. It exists because a
+	// digest of two hundred items is not a digest — it is the attention box badly
+	// printed, and nobody reads it.
 	DigestLimit int
 }
 
-// DefaultDigestLimit é quantos itens cabem num resumo antes de ele virar ruído.
+// DefaultDigestLimit is how many items fit in a digest before it becomes noise.
 const DefaultDigestLimit = 20
 
-// Service é o EXECUTOR: pega o comando que o decisor produziu, reserva a chave,
-// dispara pelo canal e registra o desfecho.
+// Service is the EXECUTOR: it takes the command the decider produced, claims the
+// key, dispatches through the channel and records the outcome.
 //
-// Ele não decide nada — a decisão inteira está na tabela (rules.go). Essa
-// separação é o que o P-29 vai cobrar: quando a reação virar dado, troca-se o
-// decisor e este arquivo não muda.
+// It decides nothing — the entire decision lives in the table (rules.go). That
+// separation is what P-29 will demand: when reaction becomes data, the decider
+// is swapped and this file does not change.
 type Service struct {
 	repo   Repository
 	mailer ports.Mailer
@@ -49,16 +49,16 @@ type Service struct {
 
 func NewService(repo Repository, mailer ports.Mailer, clock ports.Clock, cfg Config) *Service {
 	if repo == nil || mailer == nil {
-		panic("notification.NewService: repositório e mailer são obrigatórios")
+		panic("notification.NewService: repository and mailer are required")
 	}
-	// Relógio é PORTA e recusa nil, como em todo serviço desta casa: aceitar
-	// nil e cair no time.Now() desliga a abstração sem ninguém perceber e
-	// devolve ao teste a dependência do relógio de parede. E aqui isso seria
-	// pior que o normal — o atraso do resumo é medido POR ELE, e um teste que
-	// não controla o relógio não consegue provar que o item resolvido em cinco
-	// minutos não virou e-mail.
+	// The clock is a PORT and nil is refused, as in every service in this house:
+	// accepting nil and falling back to time.Now() switches the abstraction off
+	// without anyone noticing and hands the test back its wall-clock dependency.
+	// And here it would be worse than usual — the digest's delay is measured BY
+	// it, and a test that does not control the clock cannot prove that an item
+	// resolved in five minutes never became an email.
 	if clock == nil {
-		panic("notification.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("notification.NewService: clock is required — use clock.NewSystem()")
 	}
 	if cfg.DigestDelay <= 0 {
 		cfg.DigestDelay = DefaultDigestDelay
@@ -72,46 +72,47 @@ func NewService(repo Repository, mailer ports.Mailer, clock ports.Clock, cfg Con
 	return &Service{repo: repo, mailer: mailer, clock: clock, cfg: cfg}
 }
 
-// ── o gatilho transacional: consumidor da espinha de eventos ────────────────
+// ── the transactional trigger: consumer of the event spine ──────────────────
 
-// HandleEvent é o CONSUMIDOR. Roda no worker, ao lado da timeline e da caixa de
-// atenção (ADR-0025: "roda no núcleo").
+// HandleEvent is the CONSUMER. It runs in the worker, next to the timeline and
+// the attention box (ADR-0025: "it runs in the core").
 //
-// É idempotente porque precisa ser: a entrega do JetStream é ao-menos-uma-vez
-// (ADR-0019) e e-mail duplicado não tem desfazer. A idempotência não está numa
-// checagem no começo — está na RESERVA, que é atômica no banco.
+// It is idempotent because it has to be: JetStream delivery is at-least-once
+// (ADR-0019) and a duplicate email has no undo. The idempotency is not a check
+// at the top — it is the CLAIM, which is atomic in the database.
 func (s *Service) HandleEvent(ctx context.Context, e Event) error {
 	cmds := Apply(e, func(spec recipientSpec, ev Event) []Recipient {
-		return s.resolver(ctx, spec, ev)
+		return s.resolveRecipients(ctx, spec, ev)
 	})
 	for _, c := range cmds {
 		if !c.Valid() {
 			continue
 		}
-		if err := s.executar(ctx, c); err != nil {
-			// Sobe o erro: quem chama é o barramento, e a reentrega é o que dá
-			// segunda chance ao que falhou. A reserva já está em StateError, e
-			// só ela é retomável — a reentrega não vira e-mail duplicado.
+		if err := s.execute(ctx, c); err != nil {
+			// Propagate the error: the caller is the bus, and redelivery is what
+			// gives a second chance to what failed. The claim is already in
+			// StateError, and only that is resumable — redelivery does not become
+			// a duplicate email.
 			return err
 		}
 	}
 	return nil
 }
 
-// resolver traduz a origem declarada na regra em endereços de verdade. É a
-// única parte da decisão que precisa de I/O, e é por isso que ela mora aqui e
-// não na tabela: tabela que faz consulta deixa de ser dado.
-func (s *Service) resolver(ctx context.Context, spec recipientSpec, e Event) []Recipient {
+// resolveRecipients turns the origin declared in the rule into real addresses.
+// It is the only part of the decision that needs I/O, and that is why it lives
+// here and not in the table: a table that runs a query stops being data.
+func (s *Service) resolveRecipients(ctx context.Context, spec recipientSpec, e Event) []Recipient {
 	switch spec.Source {
 	case fromPayload:
 		return payloadEmail(spec, e)
 	case fromAccountMembers:
 		dest, err := s.repo.Recipients(ctx, e.AccountID)
 		if err != nil {
-			// Falha ao resolver destinatário não pode virar comando sem
-			// destinatário: seria a mesma saída de "não há ninguém para
-			// avisar", e as duas situações exigem respostas opostas.
-			logging.From(ctx).Error("falha ao resolver destinatários da conta",
+			// A failure to resolve recipients must not become a command with no
+			// recipient: that would be the same output as "there is nobody to
+			// notify", and the two situations demand opposite responses.
+			logging.From(ctx).Error("failed to resolve the account recipients",
 				logging.FieldError, err.Error())
 			return nil
 		}
@@ -120,81 +121,83 @@ func (s *Service) resolver(ctx context.Context, spec recipientSpec, e Event) []R
 	return nil
 }
 
-// ── o aviso de atenção: varredura de minuto, sem agendador ──────────────────
+// ── the attention notice: a per-minute sweep, with no scheduler ─────────────
 
-// SweepDigest é o aviso de atenção com atraso, rodando como SISTEMA.
+// SweepDigest is the delayed attention notice, running as SYSTEM.
 //
-// ── Como o atraso é implementado sem inventar agendador ─────────────────────
+// ── How the delay is implemented without inventing a scheduler ──────────────
 //
-// Não há timer, não há fila de trabalho futura e não há nada a cancelar quando
-// o item se resolve. O scheduler já roda de minuto em minuto
-// (`RunScheduledTasks`), e o atraso vira um PREDICADO DE CONSULTA: "itens
-// AINDA ABERTOS, abertos antes de agora−atraso, que ainda não viraram aviso".
+// There is no timer, no future work queue and nothing to cancel when the item
+// resolves. The scheduler already runs minute by minute (`RunScheduledTasks`),
+// and the delay becomes a QUERY PREDICATE: "items STILL OPEN, opened before
+// now−delay, that have not yet become a notice".
 //
-// Item resolvido antes do corte simplesmente nunca entra no resultado — e é
-// exatamente o comportamento que a ADR pede ("quem estava no cockpit já
-// resolveu"). Um agendador daria o mesmo resultado com uma peça a mais, um
-// estado a mais e um cancelamento a mais para errar; e o cancelamento é o
-// caminho onde esse tipo de desenho falha, porque ele é a parte que só executa
-// no caso raro.
+// An item resolved before the cutoff simply never enters the result — and that
+// is exactly the behaviour the ADR asks for ("whoever was in the cockpit has
+// already handled it"). A scheduler would give the same result with one more
+// piece, one more state and one more cancellation to get wrong; and cancellation
+// is where that kind of design fails, because it is the part that only runs in
+// the rare case.
 //
-// O preço é honesto: o aviso sai com granularidade de minuto, e um atraso de
-// 15 minutos vira algo entre 15 e 16. Para um resumo cuja finalidade é esperar
-// o trivial se resolver, isso não é erro — é a própria unidade.
-func (s *Service) SweepDigest(ctx context.Context) (contas, avisos int, err error) {
-	regra, ok := DigestRule()
+// The price is honest: the notice goes out with minute granularity, and a
+// 15-minute delay becomes something between 15 and 16. For a digest whose whole
+// purpose is to wait for the trivial to resolve, that is not an error — it is
+// the unit itself.
+func (s *Service) SweepDigest(ctx context.Context) (accounts, notices int, err error) {
+	rule, ok := DigestRule()
 	if !ok {
-		// Sem regra de resumo na tabela não há varredura. Não é erro: é a
-		// política dizendo que a caixa não gera e-mail nesta instalação.
+		// With no digest rule in the table there is no sweep. Not an error: it is
+		// the policy saying the box generates no email in this installation.
 		return 0, 0, nil
 	}
-	atraso := regra.Delay
+	delay := rule.Delay
 	if s.cfg.DigestDelay > 0 {
-		atraso = s.cfg.DigestDelay
+		delay = s.cfg.DigestDelay
 	}
-	if atraso <= 0 {
-		atraso = DefaultDigestDelay
+	if delay <= 0 {
+		delay = DefaultDigestDelay
 	}
-	corte := s.clock.Now().Add(-atraso)
+	cutoff := s.clock.Now().Add(-delay)
 
-	ids, err := s.repo.AccountsWithRipeAttention(ctx, regra.Name, regra.Action, corte, s.cfg.MaxAttempts)
+	ids, err := s.repo.AccountsWithRipeAttention(ctx, rule.Name, rule.Action, cutoff, s.cfg.MaxAttempts)
 	if err != nil {
 		return 0, 0, err
 	}
 	for _, accountID := range ids {
-		// Ator de SISTEMA com a conta da vez — o mesmo Call que o interceptor
-		// montaria numa chamada de usuário. É o que faz o filtro por conta
-		// valer também aqui, sem abrir exceção no domínio.
-		porConta := ctxutil.Into(ctx, ctxutil.Call{
+		// A SYSTEM actor with the account at hand — the same Call the interceptor
+		// would build for a user request. It is what keeps the per-account filter
+		// in force here too, with no exception carved out in the domain.
+		perAccount := ctxutil.Into(ctx, ctxutil.Call{
 			AccountID: accountID,
 			ActorID:   "scheduler",
 			ActorKind: ctxutil.ActorSystem,
 			ActorName: "notifier",
 		})
-		n, err := s.digestDaConta(porConta, regra, accountID, corte)
+		n, err := s.accountDigest(perAccount, rule, accountID, cutoff)
 		if err != nil {
-			// Erro numa conta não interrompe as outras: aviso de uma conta não
-			// pode ficar preso porque a conta anterior tem problema.
-			logging.From(ctx).Error("resumo da caixa falhou nesta conta",
+			// An error in one account does not interrupt the others: one account's
+			// notice must not be held up because the previous account has a
+			// problem.
+			logging.From(ctx).Error("the box digest failed for this account",
 				"account_id", accountID, logging.FieldError, err.Error())
 			continue
 		}
-		contas++
-		avisos += n
+		accounts++
+		notices += n
 	}
-	return contas, avisos, nil
+	return accounts, notices, nil
 }
 
-func (s *Service) digestDaConta(ctx context.Context, regra Rule, accountID string, corte time.Time) (int, error) {
+func (s *Service) accountDigest(ctx context.Context, rule Rule, accountID string, cutoff time.Time) (int, error) {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return 0, err
 	}
-	itens, err := s.repo.RipeAttention(ctx, accountID, regra.Name, regra.Action, corte,
+	items, err := s.repo.RipeAttention(ctx, accountID, rule.Name, rule.Action, cutoff,
 		s.cfg.MaxAttempts, s.cfg.DigestLimit)
 	if err != nil {
 		return 0, err
 	}
-	if len(itens) == 0 {
+	if len(items) == 0 {
 		return 0, nil
 	}
 	dest, err := s.repo.Recipients(ctx, accountID)
@@ -202,132 +205,134 @@ func (s *Service) digestDaConta(ctx context.Context, regra Rule, accountID strin
 		return 0, err
 	}
 	if len(dest) == 0 {
-		// Ninguém com endereço conhecido. NÃO reserva: reservar aqui gravaria
-		// "avisado" para itens que ninguém viu, e o dia em que um membro
-		// ganhasse e-mail ele começaria já em dívida com a própria caixa.
+		// Nobody with a known address. It does NOT claim: claiming here would
+		// record "notified" for items nobody saw, and the day a member gained an
+		// address they would start already in debt to their own box.
 		return 0, nil
 	}
 
-	// Uma reserva POR ITEM — a chave é (evento, regra, ação) e o evento é o que
-	// ABRIU o item. O agrupamento em uma mensagem vem depois; a idempotência
-	// não é agrupada, senão um item novo reabriria os antigos.
-	enderecos := emails(dest)
-	cobertos := make([]DeliveryKey, 0, len(itens))
-	pegos := make([]AttentionNotice, 0, len(itens))
-	for _, it := range itens {
-		chave := DeliveryKey{EventID: it.EventID, Rule: regra.Name, Action: regra.Action}
+	// One claim PER ITEM — the key is (event, rule, action) and the event is what
+	// OPENED the item. Grouping into one message comes later; idempotency is not
+	// grouped, otherwise a new item would reopen the old ones.
+	addresses := emails(dest)
+	covered := make([]DeliveryKey, 0, len(items))
+	taken := make([]AttentionNotice, 0, len(items))
+	for _, it := range items {
+		key := DeliveryKey{EventID: it.EventID, Rule: rule.Name, Action: rule.Action}
 		ok, err := s.repo.Claim(ctx, Claim{
-			DeliveryKey: chave, AccountID: accountID, Kind: regra.Kind,
-			Channel: string(regra.Action), Recipients: enderecos,
+			DeliveryKey: key, AccountID: accountID, Kind: rule.Kind,
+			Channel: string(rule.Action), Recipients: addresses,
 		}, s.cfg.MaxAttempts)
 		if err != nil {
 			return 0, err
 		}
 		if !ok {
-			continue // já avisado (ou esgotou tentativas)
+			continue // already notified (or attempts exhausted)
 		}
-		cobertos = append(cobertos, chave)
-		pegos = append(pegos, it)
+		covered = append(covered, key)
+		taken = append(taken, it)
 	}
-	if len(cobertos) == 0 {
+	if len(covered) == 0 {
 		return 0, nil
 	}
 
-	dados := map[string]any{
+	data := map[string]any{
 		"account_id": accountID,
-		"total":      len(pegos),
-		"items":      itensParaDados(pegos),
+		"total":      len(taken),
+		"items":      itemsToData(taken),
 	}
-	// Passa pelo MESMO resolvedor do outro gatilho, mesmo que a regra do resumo
-	// não tenha placeholder hoje: dois caminhos para montar link é como um
-	// deles fica para trás quando a tabela muda.
-	dados["link"] = s.link(resolvePath(regra.LinkPath, dados))
-	recibo, envErr := s.enviar(ctx, accountID, regra.Kind, dest, dados)
-	if _, err := s.repo.Settle(ctx, desfecho(accountID, cobertos, regra.Kind, enderecos, recibo, envErr)); err != nil {
+	// It goes through the SAME resolver as the other trigger, even though the
+	// digest rule has no placeholder today: two ways of building a link is how
+	// one of them falls behind when the table changes.
+	data["link"] = s.link(resolvePath(rule.LinkPath, data))
+	receipt, sendErr := s.send(ctx, accountID, rule.Kind, dest, data)
+	if _, err := s.repo.Settle(ctx, outcomeOf(accountID, covered, rule.Kind, addresses, receipt, sendErr)); err != nil {
 		return 0, err
 	}
-	if envErr != nil {
-		return 0, envErr
+	if sendErr != nil {
+		return 0, sendErr
 	}
-	return len(cobertos), nil
+	return len(covered), nil
 }
 
-// ── execução comum aos dois gatilhos ────────────────────────────────────────
+// ── execution shared by both triggers ───────────────────────────────────────
 
-// executar é reservar → disparar → liquidar, nessa ordem e sem atalho.
-func (s *Service) executar(ctx context.Context, c Command) error {
-	chave := DeliveryKey{EventID: c.EventID, Rule: c.Rule, Action: c.Action}
+// execute is claim, dispatch, settle — in that order and with no shortcut.
+func (s *Service) execute(ctx context.Context, c Command) error {
+	key := DeliveryKey{EventID: c.EventID, Rule: c.Rule, Action: c.Action}
 	ok, err := s.repo.Claim(ctx, Claim{
-		DeliveryKey: chave, AccountID: c.AccountID, Kind: c.Kind,
+		DeliveryKey: key, AccountID: c.AccountID, Kind: c.Kind,
 		Channel: string(c.Action), Recipients: emails(c.Recipients),
 	}, s.cfg.MaxAttempts)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		// Reentrega do mesmo evento, ou tentativas esgotadas. Silêncio aqui é
-		// correto: o registro já conta a história, e devolver erro faria o
-		// barramento reentregar para sempre uma mensagem que já foi atendida.
-		logging.From(ctx).Debug("aviso já registrado, nada a fazer",
+		// A redelivery of the same event, or attempts exhausted. Silence here is
+		// correct: the record already tells the story, and returning an error
+		// would make the bus redeliver forever a message that was already
+		// served.
+		logging.From(ctx).Debug("notice already recorded, nothing to do",
 			"rule", c.Rule, "action", string(c.Action), "kind", string(c.Kind))
 		return nil
 	}
 
-	dados := map[string]any{"account_id": c.AccountID}
+	data := map[string]any{"account_id": c.AccountID}
 	for k, v := range c.Data {
-		dados[k] = v
+		data[k] = v
 	}
-	// O link se resolve DEPOIS de `dados` estar completo: `/convites/{invite_id}`
-	// precisa do payload do evento, que só existe aqui.
-	dados["link"] = s.linkDaRegra(c.Rule, dados)
+	// The link resolves AFTER `data` is complete: `/invites/{invite_id}` needs the
+	// event's payload, which only exists here.
+	data["link"] = s.linkOfRule(c.Rule, data)
 
-	recibo, envErr := s.enviar(ctx, c.AccountID, c.Kind, c.Recipients, dados)
-	if _, err := s.repo.Settle(ctx, desfecho(c.AccountID, []DeliveryKey{chave}, c.Kind,
-		emails(c.Recipients), recibo, envErr)); err != nil {
+	receipt, sendErr := s.send(ctx, c.AccountID, c.Kind, c.Recipients, data)
+	if _, err := s.repo.Settle(ctx, outcomeOf(c.AccountID, []DeliveryKey{key}, c.Kind,
+		emails(c.Recipients), receipt, sendErr)); err != nil {
 		return err
 	}
-	return envErr
+	return sendErr
 }
 
-// enviar dispara UMA mensagem por destinatário.
+// send dispatches ONE message per recipient.
 //
-// Uma por destinatário, e não uma com todo mundo em cópia, porque cópia
-// entrega a lista de endereços da conta a cada membro — e um convite tem
-// destinatário que ainda nem faz parte dela.
+// One per recipient, and not one with everybody in copy, because copy hands the
+// account's address list to every member — and an invite has a recipient who is
+// not even part of it yet.
 //
-// O primeiro erro interrompe: se o fornecedor está fora do ar, insistir nos
-// outros nove só multiplica o tempo até a linha ficar em StateError, e a
-// retomada reenvia todos de qualquer jeito.
-func (s *Service) enviar(ctx context.Context, accountID string, kind Kind, dest []Recipient, dados map[string]any) (*ports.MailReceipt, error) {
-	var ultimo *ports.MailReceipt
+// The first error stops the loop: if the provider is down, insisting on the
+// other nine only multiplies the time until the row reaches StateError, and the
+// resume resends all of them anyway.
+func (s *Service) send(ctx context.Context, accountID string, kind Kind, dest []Recipient, data map[string]any) (*ports.MailReceipt, error) {
+	var last *ports.MailReceipt
 	for _, r := range dest {
 		rec, err := s.mailer.Send(ctx, ports.Mail{
 			AccountID: accountID,
 			Kind:      string(kind),
 			To:        r.Email,
 			ToName:    r.Name,
-			Data:      dados,
+			Data:      data,
 		})
 		if err != nil {
-			return ultimo, err
+			return last, err
 		}
-		ultimo = rec
+		last = rec
 	}
-	if ultimo == nil {
-		return nil, errs.Invalid("aviso sem destinatário")
+	if last == nil {
+		return nil, errs.Invalid("notice with no recipient")
 	}
-	return ultimo, nil
+	return last, nil
 }
 
-// desfecho monta o registro a partir do que o canal devolveu.
+// outcomeOf assembles the record from what the channel returned.
 //
-// Erro do envio vira StateError com a mensagem do adaptador — que já vem
-// REDIGIDA (garantia 4 da porta). O domínio não redige nada, porque ele não
-// sabe qual é o segredo; se soubesse, o segredo estaria no lugar errado.
-func desfecho(accountID string, chaves []DeliveryKey, kind Kind, enderecos []string,
+// A send error becomes StateError with the adapter's message — which already
+// arrives REDACTED (the port's guarantee 4). The domain redacts nothing, because
+// it does not know what the secret is; if it did, the secret would be in the
+// wrong place.
+func outcomeOf(accountID string, keys []DeliveryKey, kind Kind, addresses []string,
 	rec *ports.MailReceipt, err error) Outcome {
 	o := Outcome{
-		AccountID: accountID, Keys: chaves, Kind: kind, Recipients: enderecos,
+		AccountID: accountID, Keys: keys, Kind: kind, Recipients: addresses,
 	}
 	if err != nil {
 		o.State = StateError
@@ -355,28 +360,28 @@ func (s *Service) link(path string) string {
 	return strings.TrimRight(s.cfg.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
 }
 
-func (s *Service) linkDaRegra(nome string, dados map[string]any) string {
+func (s *Service) linkOfRule(name string, data map[string]any) string {
 	for _, r := range Rules() {
-		if r.Name == nome {
-			return s.link(resolvePath(r.LinkPath, dados))
+		if r.Name == name {
+			return s.link(resolvePath(r.LinkPath, data))
 		}
 	}
 	return ""
 }
 
-// resolvePath troca cada `{campo}` pelo valor de `dados[campo]`.
+// resolvePath swaps each `{field}` for the value of `data[field]`.
 //
-// Campo ausente ou vazio devolve caminho VAZIO — e caminho vazio apaga o link
-// (o template esconde o botão). É deliberado: mandar a pessoa para
-// `/convites/{invite_id}` é pior do que não mandar link nenhum, porque ela
-// clica, quebra, e conclui que o convite não vale. O teste da tabela impede
-// que isso chegue em produção; isto aqui é a rede embaixo.
-func resolvePath(path string, dados map[string]any) string {
+// A missing or empty field returns an EMPTY path — and an empty path erases the
+// link (the template hides the button). It is deliberate: sending the person to
+// `/invites/{invite_id}` is worse than sending no link at all, because they
+// click, it breaks, and they conclude the invite is worthless. The table test
+// keeps that out of production; this is the net underneath.
+func resolvePath(path string, data map[string]any) string {
 	if !strings.Contains(path, "{") {
 		return path
 	}
-	for _, campo := range placeholders(path) {
-		v, ok := dados[campo]
+	for _, field := range placeholders(path) {
+		v, ok := data[field]
 		if !ok {
 			return ""
 		}
@@ -384,14 +389,15 @@ func resolvePath(path string, dados map[string]any) string {
 		if txt == "" {
 			return ""
 		}
-		path = strings.ReplaceAll(path, "{"+campo+"}", url.PathEscape(txt))
+		path = strings.ReplaceAll(path, "{"+field+"}", url.PathEscape(txt))
 	}
 	return path
 }
 
-// placeholders extrai os nomes entre chaves. Vive aqui e não no pacote de
-// regras porque quem valida a tabela (teste) e quem resolve (serviço) precisam
-// do MESMO extrator — dois extratores divergem calados.
+// placeholders extracts the names between braces. It lives here and not in the
+// rules package because whoever validates the table (the test) and whoever
+// resolves it (the service) need the SAME extractor — two extractors diverge in
+// silence.
 func placeholders(path string) []string {
 	var out []string
 	for {
@@ -416,12 +422,12 @@ func emails(rs []Recipient) []string {
 	return out
 }
 
-// itensParaDados achata os itens para o template. Mapa e não struct: o que
-// atravessa a porta são DADOS do template, e um struct daqui obrigaria todo
-// adaptador a conhecer o tipo deste pacote.
-func itensParaDados(itens []AttentionNotice) []map[string]any {
-	out := make([]map[string]any, 0, len(itens))
-	for _, it := range itens {
+// itemsToData flattens the items for the template. A map and not a struct: what
+// crosses the port is template DATA, and a struct from here would force every
+// adapter to know this package's type.
+func itemsToData(items []AttentionNotice) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
 		out = append(out, map[string]any{
 			"kind": it.Kind, "title": it.Title, "summary": it.Summary,
 			"opened_at": it.OpenedAt.UTC().Format(time.RFC3339),

@@ -154,7 +154,7 @@ func TestConviteCriadoVIRAEmail(t *testing.T) {
 	// para os dados do template, e o LinkPath `/convites/{invite_id}` resolvê-lo.
 	// Se qualquer uma ceder, o e-mail sai com um botão que leva a lugar nenhum —
 	// e nada mais no sistema reclama.
-	querLink := "https://cockpit.test/convites/" + inv.ID
+	querLink := "https://cockpit.test/invites/" + inv.ID
 	if got := fmt.Sprint(espiao.enviados[0].Data["link"]); got != querLink {
 		t.Fatalf("link do e-mail: %q, esperado %q", got, querLink)
 	}

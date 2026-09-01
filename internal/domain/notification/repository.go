@@ -5,21 +5,21 @@ import (
 	"time"
 )
 
-// DeliveryKey é a chave de idempotência, composta (ADR-0025). Existe como tipo
-// para que nenhum chamador consiga montar meia chave.
+// DeliveryKey is the composite idempotency key (ADR-0025). It exists as a type
+// so that no caller can assemble half a key.
 type DeliveryKey struct {
 	EventID string
 	Rule    string
 	Action  Action
 }
 
-// Claim é a RESERVA de uma execução de ação.
+// Claim is the RESERVATION of one action execution.
 //
-// A reserva acontece ANTES do envio, e essa ordem é o desenho inteiro da
-// idempotência: reservar depois de enviar deixa uma janela em que a reentrega
-// do JetStream manda o segundo e-mail. Reservar antes fecha a janela e, no
-// pior caso, perde um aviso que fica REGISTRADO — assimetria correta, porque
-// e-mail duplicado é visível para o usuário e não tem desfazer.
+// The claim happens BEFORE the send, and that ordering is the whole design of
+// the idempotency: claiming after sending leaves a window in which JetStream's
+// redelivery sends the second email. Claiming first closes the window and, at
+// worst, loses a notice that stays RECORDED — the correct asymmetry, because a
+// duplicate email is visible to the user and has no undo.
 type Claim struct {
 	DeliveryKey
 	AccountID  string
@@ -28,11 +28,11 @@ type Claim struct {
 	Recipients []string
 }
 
-// Outcome é o desfecho de UMA mensagem, cobrindo as chaves que ela atendeu.
+// Outcome is ONE message's outcome, covering the keys it served.
 //
-// São chaves no plural porque o resumo agrupa: N itens da caixa viram um
-// e-mail. A idempotência continua por (evento, regra, ação) — uma linha por
-// item —, e o agrupamento aparece no `batch_id` que o repositório carimba.
+// Keys is plural because the digest groups: N box items become one email.
+// Idempotency stays per (event, rule, action) — one row per item — and the
+// grouping shows up in the `batch_id` the repository stamps.
 type Outcome struct {
 	AccountID  string
 	Keys       []DeliveryKey
@@ -41,49 +41,52 @@ type Outcome struct {
 	State      State
 	Provider   string
 	Reference  string
-	// Error é a mensagem de falha JÁ REDIGIDA pelo adaptador (garantia 4 da
-	// porta). O domínio não redige nada: ele não sabe qual é o segredo.
+	// Error is the failure message ALREADY REDACTED by the adapter (the port's
+	// guarantee 4). The domain redacts nothing: it does not know what the secret
+	// is.
 	Error string
 }
 
-// Repository é a PORTA de persistência do gatilho.
+// Repository is the trigger's persistence PORT.
 //
-// Não há `Create` nem `Update` soltos: as duas únicas escritas são RESERVAR e
-// LIQUIDAR, porque são as duas únicas coisas que acontecem. Uma porta com
-// escrita genérica seria um convite a gravar envio à mão, e o registro
-// deixaria de refletir o que saiu.
+// There is no loose `Create` and no loose `Update`: the only two writes are
+// CLAIM and SETTLE, because those are the only two things that happen. A port
+// with a generic write would be an invitation to record a send by hand, and the
+// record would stop reflecting what actually went out.
 type Repository interface {
-	// Claim reserva a chave. Devolve `true` quando ESTA chamada ficou com ela.
+	// Claim reserves the key. Returns `true` when THIS call took it.
 	//
-	// Devolve `false` — sem erro — quando a chave já foi atendida: é o caminho
-	// normal da reentrega, e transformá-lo em erro faria toda mensagem
-	// reentregue parecer defeito. Uma reserva em StateError é RETOMADA (e
-	// `attempts` sobe), porque falha de envio é a única situação em que
-	// reenviar é certo.
+	// Returns `false` — with no error — when the key has already been served:
+	// that is redelivery's normal path, and turning it into an error would make
+	// every redelivered message look like a defect. A claim in StateError is
+	// RESUMED (and `attempts` goes up), because a send failure is the only
+	// situation in which retrying is right.
 	Claim(ctx context.Context, c Claim, maxAttempts int) (bool, error)
 
-	// Settle grava o desfecho das chaves e emite o evento na MESMA transação.
-	// Devolve o `batch_id` carimbado, que é o que amarra as linhas à mensagem.
+	// Settle records the keys' outcome and emits the event in the SAME
+	// transaction. It returns the stamped `batch_id`, which is what ties the rows
+	// to the message.
 	Settle(ctx context.Context, o Outcome) (string, error)
 
-	// Recipients devolve quem recebe aviso da conta: membros com e-mail
-	// conhecido. Lista vazia é resposta legítima — conta cujos membros
-	// entraram por telefone ou SSO sem escopo de perfil não tem endereço.
+	// Recipients returns who receives the account's notices: members with a known
+	// address. An empty list is a legitimate answer — an account whose members
+	// signed in by phone or through SSO without profile scope has no address.
 	Recipients(ctx context.Context, accountID string) ([]Recipient, error)
 
-	// AccountsWithRipeAttention diz QUAIS contas têm item maduro esperando
-	// aviso. Existe separado de RipeAttention pelo mesmo motivo do varredor de
-	// sandboxes: o scheduler não tem conta ativa, e a saída é visitar conta por
-	// conta, cada visita com aquela conta no contexto — o isolamento não é
-	// afrouxado, só muda quem decide a ordem de visita.
+	// AccountsWithRipeAttention says WHICH accounts have a mature item waiting
+	// for a notice. It exists separately from RipeAttention for the same reason
+	// as the sandbox sweeper: the scheduler has no active account, and the way
+	// out is to visit account by account, each visit with that account in the
+	// context — isolation is not loosened, only who decides the visiting order
+	// changes.
 	AccountsWithRipeAttention(ctx context.Context, rule string, action Action, olderThan time.Time, maxAttempts int) ([]string, error)
 
-	// RipeAttention devolve os itens ABERTOS há mais que o atraso e que ainda
-	// não viraram aviso, da conta ativa.
+	// RipeAttention returns the active account's items that have been OPEN for
+	// longer than the delay and have not yet become a notice.
 	//
-	// "Ainda abertos" é a regra inteira do atraso: item resolvido antes do
-	// corte simplesmente não aparece aqui, e por isso não vira e-mail. Não há
-	// agendador, não há cancelamento — há uma consulta que só enxerga o que
-	// sobreviveu à espera.
+	// "Still open" is the entire rule of the delay: an item resolved before the
+	// cutoff simply does not appear here, and therefore never becomes an email.
+	// There is no scheduler and no cancellation — there is a query that only sees
+	// what survived the wait.
 	RipeAttention(ctx context.Context, accountID, rule string, action Action, olderThan time.Time, maxAttempts, limit int) ([]AttentionNotice, error)
 }

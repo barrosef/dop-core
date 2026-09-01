@@ -213,8 +213,8 @@ func TestPlaceholderDoLinkPrecisaEstarEmData(t *testing.T) {
 }
 
 func TestResolvePathTrocaOCampoEEscapa(t *testing.T) {
-	got := resolvePath("/convites/{invite_id}", map[string]any{"invite_id": "inv-1/2"})
-	if got != "/convites/inv-1%2F2" {
+	got := resolvePath("/invites/{invite_id}", map[string]any{"invite_id": "inv-1/2"})
+	if got != "/invites/inv-1%2F2" {
 		t.Errorf("caminho resolvido %q — o valor precisa ser escapado, ou ele inventa segmento de URL", got)
 	}
 }
@@ -227,7 +227,7 @@ func TestResolvePathSemOCampoApagaOLink(t *testing.T) {
 		"vazio":   {"invite_id": ""},
 		"branco":  {"invite_id": "   "},
 	} {
-		if got := resolvePath("/convites/{invite_id}", dados); got != "" {
+		if got := resolvePath("/invites/{invite_id}", dados); got != "" {
 			t.Errorf("%s: caminho deveria ser vazio, veio %q", nome, got)
 		}
 	}

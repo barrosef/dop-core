@@ -6,166 +6,164 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// A TABELA. É ela o decisor.
+// THE TABLE. The table is the decider.
 //
-// Mesma forma de `attention.impacto` e de `cost.routingTable`, e pelo mesmo
-// motivo: uma política precisa ser AUDITÁVEL e SUBSTITUÍVEL de uma vez só.
-// Quinze `if` espalhados por chamadores dão a mesma resposta hoje e são
-// impossíveis de recalibrar amanhã — e ninguém consegue explicar por que um
-// e-mail saiu.
+// Same shape as `attention.impact` and `cost.routingTable`, and for the same
+// reason: a policy has to be AUDITABLE and REPLACEABLE in one move. Fifteen
+// `if`s scattered across callers give the same answer today and are impossible
+// to recalibrate tomorrow — and nobody can explain why an email went out.
 //
-// Aqui a exigência é mais forte do que nos dois primos: no P-29 esta tabela
-// deixa de ser código e vira DADO. Por isso cada linha é preenchível por um
-// carregador burro — não há função, closure nem `switch` dentro de linha
-// nenhuma. O que parece rigidez (copiar campo do payload por NOME, montar o
-// link por CAMINHO) é o que torna a troca um carregador em vez de uma
-// reescrita.
+// The requirement is stronger here than in its two cousins: under P-29 this
+// table stops being code and becomes DATA. That is why every row is fillable by
+// a dumb loader — there is no function, no closure and no `switch` inside any
+// row. What looks like rigidity (copying a payload field by NAME, building the
+// link by PATH) is what makes the swap a loader instead of a rewrite.
 //
-// ANTES DE ACRESCENTAR LINHA, a pergunta é a mesma da caixa de atenção, um
-// degrau acima: "isto merece ATRAPALHAR a pessoa fora da plataforma?". A caixa
-// já filtra o que exige decisão; o e-mail filtra o que não pode esperar a
-// pessoa voltar ao cockpit.
+// BEFORE ADDING A ROW, the question is the attention box's, one notch up: "does
+// this deserve to INTERRUPT the person outside the platform?". The box already
+// filters what requires a decision; email filters what cannot wait for the
+// person to come back to the cockpit.
 // ════════════════════════════════════════════════════════════════════════════
 
-// Tipos de evento que a tabela conhece. Constante nomeada, e não literal na
-// linha, para que o compilador ajude quando um evento for renomeado.
+// Event types the table knows. A named constant, not a literal in the row, so
+// the compiler helps when an event is renamed.
 const (
 	EvInviteCreated = "dop.identity.invite.created"
 )
 
-// recipientSource é DE ONDE sai o destinatário. São duas origens porque são
-// dois mundos: quem já é usuário da plataforma (a conta sabe o e-mail) e quem
-// ainda não é (o e-mail só existe no evento).
+// recipientSource is WHERE the recipient comes from. Two origins because they
+// are two worlds: someone who is already a platform user (the account knows the
+// address) and someone who is not yet (the address only exists in the event).
 type recipientSource string
 
 const (
-	// fromPayload: o endereço vem de um campo do payload do evento. É o caso do
-	// convite, e é o único jeito possível — o convidado AINDA NÃO É USUÁRIO, e
-	// não há de onde a plataforma resolver o endereço dele.
+	// fromPayload: the address comes from a field of the event's payload. That
+	// is the invite's case, and it is the only possible way — the invitee IS NOT
+	// YET A USER, and there is nowhere for the platform to resolve their address
+	// from.
 	fromPayload recipientSource = "payload"
-	// fromAccountMembers: o endereço vem de quem tem vínculo com a conta.
+	// fromAccountMembers: the address comes from whoever has a membership in the account.
 	fromAccountMembers recipientSource = "account_members"
 )
 
-// recipientSpec é declarativa de propósito: `Field` é um NOME de campo, não uma
-// função de extração. Ver o cabeçalho.
+// recipientSpec is declarative on purpose: `Field` is a field NAME, not an
+// extraction function. See the header.
 type recipientSpec struct {
 	Source recipientSource
-	Field  string // usado só com fromPayload
+	Field  string // only used with fromPayload
 }
 
-// Rule é uma LINHA da tabela.
+// Rule is a ROW of the table.
 type Rule struct {
-	// Name é o nome ENDEREÇÁVEL da regra, e ele entra na chave de idempotência.
-	// Renomear regra em produção reabre tudo o que ela já enviou — o nome é
-	// identidade, não rótulo.
+	// Name is the rule's ADDRESSABLE name, and it goes into the idempotency key.
+	// Renaming a rule in production reopens everything it has already sent — the
+	// name is identity, not a label.
 	Name    string
 	Trigger Trigger
-	// Event só vale com TriggerEvent.
+	// Event only applies with TriggerEvent.
 	Event  string
 	Action Action
 	Kind   Kind
 
 	Recipients recipientSpec
-	// Data são as chaves do payload copiadas para os dados do template, por
-	// NOME. Não há transformação: o que o adaptador recebe é o que o evento
-	// trouxe. Transformar aqui traria vocabulário de apresentação para dentro
-	// da política.
+	// Data are the payload keys copied into the template's data, by NAME. There
+	// is no transformation: what the adapter receives is what the event brought.
+	// Transforming here would bring presentation vocabulary inside the policy.
 	Data []string
-	// LinkPath é o caminho relativo do cockpit para onde o aviso leva. Relativo
-	// porque a base é da INSTALAÇÃO (Config.BaseURL), não da política — a mesma
-	// regra vale no SaaS e num self-hosted com outro domínio.
+	// LinkPath is the cockpit path the notice leads to, relative. Relative
+	// because the base belongs to the INSTALLATION (Config.BaseURL), not to the
+	// policy — the same rule holds in the SaaS and in a self-hosted deployment on
+	// another domain.
 	//
-	// Pode conter `{campo}`, substituído pelo valor do MESMO campo em Data. É
-	// como o convite endereça a linha dele em vez de despejar a pessoa numa
-	// lista: `/convites/{invite_id}`. Continua sendo dado — a linha declara o
-	// formato, ninguém escreve concatenação em Go.
+	// It may contain `{field}`, replaced by the value of the SAME field in Data.
+	// It is how the invite addresses its own row instead of dumping the person
+	// into a list: `/invites/{invite_id}`. It stays data — the row declares the
+	// format, nobody writes concatenation in Go.
 	//
-	// Todo `{campo}` PRECISA estar em Data; um teste da tabela recusa o que
-	// não estiver, porque o preço de errar é um e-mail com "{invite_id}" no
-	// meio da URL.
+	// Every `{field}` MUST be in Data; a table test refuses one that is not,
+	// because the price of getting it wrong is an email with "{invite_id}"
+	// sitting in the middle of the URL.
 	LinkPath string
-	// Delay só vale com TriggerAttentionBox. Zero usa DefaultDigestDelay.
+	// Delay only applies with TriggerAttentionBox. Zero uses DefaultDigestDelay.
 	Delay time.Duration
-	// Why é o porquê da LINHA, não a repetição do que ela faz. Sem isto a
-	// política não é auditável: ninguém consegue discordar de
-	// "invite.created → e-mail", e qualquer um consegue discordar da razão.
+	// Why is the ROW's reason, not a restatement of what it does. Without it the
+	// policy is not auditable: nobody can disagree with "invite.created → email",
+	// and anybody can disagree with the reason.
 	Why string
 }
 
-// tabela — A TABELA. Slice e não map: a ordem é a da leitura, e duas regras
-// para o mesmo evento (que o P-29 vai permitir) precisam de ordem definida.
-var tabela = []Rule{
+// table — THE TABLE. A slice and not a map: the order is the reading order, and
+// two rules for the same event (which P-29 will allow) need a defined order.
+var table = []Rule{
 	{
-		Name:       "convite-criado",
+		Name:       "invite-created",
 		Trigger:    TriggerEvent,
 		Event:      EvInviteCreated,
 		Action:     ActionEmail,
 		Kind:       KindInvite,
 		Recipients: recipientSpec{Source: fromPayload, Field: "email"},
 		Data:       []string{"invite_id", "email", "role"},
-		LinkPath:   "/convites/{invite_id}",
-		Why: "é a única notificação cujo destinatário AINDA NÃO É USUÁRIO: ele não " +
-			"tem cockpit para olhar, não tem caixa de atenção, e o convite não " +
-			"existe para ele até chegar por fora. Sem este e-mail o convite é " +
-			"um registro que ninguém vê",
+		LinkPath:   "/invites/{invite_id}",
+		Why: "it is the only notification whose recipient IS NOT YET A USER: they " +
+			"have no cockpit to look at, no attention box, and the invite does not " +
+			"exist for them until it arrives from outside. Without this email the " +
+			"invite is a record nobody sees",
 	},
 	{
-		Name:       "resumo-da-caixa",
+		Name:       "attention-digest",
 		Trigger:    TriggerAttentionBox,
 		Action:     ActionEmail,
 		Kind:       KindAttentionDigest,
 		Recipients: recipientSpec{Source: fromAccountMembers},
-		LinkPath:   "/atencao",
+		LinkPath:   "/attention",
 		Delay:      DefaultDigestDelay,
-		Why: "o aviso liga na CAIXA e não nos eventos crus — a caixa já decide o " +
-			"que exige decisão humana, e um segundo mapa começaria igual e " +
-			"divergiria no primeiro ajuste. O atraso existe porque um e-mail por " +
-			"item torna a caixa de entrada inútil, e caixa ignorada não protege " +
-			"ninguém (risco R-1 da spec)",
+		Why: "the notice hangs off the BOX and not off raw events — the box already " +
+			"decides what requires a human decision, and a second map would start " +
+			"identical and diverge on the first adjustment. The delay exists because " +
+			"one email per item makes the inbox useless, and an ignored box protects " +
+			"nobody (risk R-1 of the spec)",
 	},
 }
 
-// Rules devolve a política. Cópia, e não a fatia: política que o chamador
-// consegue editar em memória deixa de ser política.
+// Rules returns the policy. A copy, not the slice: a policy the caller can edit
+// in memory stops being a policy.
 //
-// É AQUI que o P-29 entra. Hoje devolve o literal acima; no dia em que a reação
-// for dado, esta função lê do banco e nenhum chamador muda — nem `Apply`, nem
-// `Kinds`, nem `Subjects`, nem a suíte de contrato.
+// THIS is where P-29 lands. Today it returns the literal above; the day reaction
+// becomes data, this function reads from the database and no caller changes —
+// not `Apply`, not `Kinds`, not `Subjects`, not the contract suite.
 func Rules() []Rule {
-	out := make([]Rule, len(tabela))
-	copy(out, tabela)
+	out := make([]Rule, len(table))
+	copy(out, table)
 	return out
 }
 
-// Subjects é o que o consumidor assina, DERIVADO da tabela.
+// Subjects is what the consumer subscribes to, DERIVED from the table.
 //
-// Derivado, e não escrito à mão, porque a divergência entre os dois é
-// silenciosa nos dois sentidos: assinatura a menos faz o evento nunca chegar
-// (ninguém recebe e nada falha), assinatura a mais desperdiça entrega. É o
-// mesmo raciocínio de `attention.Subjects`, com a diferença de que lá a lista é
-// literal — aqui ela não pode ser, porque a tabela vai virar dado.
+// Derived, and not hand-written, because divergence between the two is silent in
+// both directions: one subscription too few makes the event never arrive
+// (nobody receives it and nothing fails), one too many wastes deliveries. It is
+// the same reasoning as `attention.Subjects`, except that there the list is a
+// literal — here it cannot be, because the table is going to become data.
 func Subjects() []string {
-	vistos := map[string]bool{}
-	out := make([]string, 0, len(tabela))
-	for _, r := range tabela {
-		if r.Trigger != TriggerEvent || r.Event == "" || vistos[r.Event] {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(table))
+	for _, r := range table {
+		if r.Trigger != TriggerEvent || r.Event == "" || seen[r.Event] {
 			continue
 		}
-		vistos[r.Event] = true
+		seen[r.Event] = true
 		out = append(out, r.Event)
 	}
 	return out
 }
 
-// DigestRule devolve a regra do aviso de atenção, se houver.
+// DigestRule returns the attention notice's rule, if there is one.
 //
-// A varredura precisa dela pelo NOME, e não por posição: a chave de
-// idempotência gravada carrega o nome da regra, e uma varredura que assumisse
-// "a segunda linha da tabela" gravaria chave errada no dia em que alguém
-// reordenasse o literal.
+// The sweep needs it by NAME, not by position: the stored idempotency key
+// carries the rule's name, and a sweep that assumed "the table's second row"
+// would write the wrong key the day somebody reordered the literal.
 func DigestRule() (Rule, bool) {
-	for _, r := range tabela {
+	for _, r := range table {
 		if r.Trigger == TriggerAttentionBox {
 			return r, true
 		}
@@ -173,28 +171,29 @@ func DigestRule() (Rule, bool) {
 	return Rule{}, false
 }
 
-// Apply traduz um evento em comandos.
+// Apply translates an event into commands.
 //
-// Devolve fatia — e não um comando — desde o primeiro dia: com reação
-// declarativa um evento poderá disparar N ações, e uma assinatura que devolve
-// um só forçaria a mudar todo chamador junto com a política.
+// It returns a slice — not a single command — from day one: with declarative
+// reaction one event will be able to trigger N actions, and a signature that
+// returned one would force every caller to change along with the policy.
 //
-// Devolve VAZIO para a esmagadora maioria dos eventos, que é o caso normal.
+// It returns EMPTY for the overwhelming majority of events, which is the normal
+// case.
 func Apply(e Event, resolve func(recipientSpec, Event) []Recipient) []Command {
 	if e.AccountID == "" || e.ID == "" {
-		// Evento sem conta (`user.ensured`, migração 0003) não pertence a
-		// notificação nenhuma: não há membros a avisar nem conta em nome de
-		// quem avisar.
+		// An event with no account (`user.ensured`, migration 0003) belongs to no
+		// notification: there are no members to warn and no account to warn on
+		// behalf of.
 		return nil
 	}
 	var out []Command
-	for _, r := range tabela {
+	for _, r := range table {
 		if r.Trigger != TriggerEvent || r.Event != e.Type {
 			continue
 		}
 		dest := resolve(r.Recipients, e)
 		if len(dest) == 0 {
-			// Sem destinatário não há o que disparar. Não é erro — ver
+			// With no recipient there is nothing to fire. Not an error — see
 			// Command.Valid.
 			continue
 		}
@@ -205,35 +204,35 @@ func Apply(e Event, resolve func(recipientSpec, Event) []Recipient) []Command {
 			Action:     r.Action,
 			Kind:       r.Kind,
 			Recipients: dest,
-			Data:       dadosDoEvento(r, e),
+			Data:       dataFromEvent(r, e),
 		})
 	}
 	return out
 }
 
-// dadosDoEvento copia, por NOME, o que a linha pediu. Chave ausente vira campo
-// ausente, nunca erro: o template decide o que fazer com a falta, e derrubar um
-// convite porque um campo cosmético não veio trocaria um problema de aparência
-// por um bloqueio de acesso.
-func dadosDoEvento(r Rule, e Event) map[string]any {
+// dataFromEvent copies, by NAME, what the row asked for. A missing key becomes a
+// missing field, never an error: the template decides what to do with the gap,
+// and dropping an invite because a cosmetic field did not arrive would trade a
+// cosmetic problem for an access blocker.
+func dataFromEvent(r Rule, e Event) map[string]any {
 	d := map[string]any{}
-	for _, chave := range r.Data {
-		if v, ok := e.Payload[chave]; ok {
-			d[chave] = v
+	for _, key := range r.Data {
+		if v, ok := e.Payload[key]; ok {
+			d[key] = v
 		}
 	}
 	return d
 }
 
-// PayloadEmail extrai o endereço de um campo do payload. Exportada porque quem
-// resolve destinatário é o serviço (que conhece o repositório), não a tabela.
+// payloadEmail extracts the address from a payload field. It exists because the
+// service (which knows the repository) resolves recipients, not the table.
 func payloadEmail(spec recipientSpec, e Event) []Recipient {
 	if spec.Source != fromPayload || spec.Field == "" {
 		return nil
 	}
 	v, _ := e.Payload[spec.Field].(string)
 	v = strings.TrimSpace(v)
-	if !enderecoValido(v) {
+	if !validAddress(v) {
 		return nil
 	}
 	return []Recipient{{Email: v}}

@@ -169,7 +169,7 @@ func TestConviteViraUmEmail(t *testing.T) {
 	}
 	// O link endereça O CONVITE, não a lista: quem recebe ainda não é usuário
 	// e não tem lista para olhar.
-	if m.Data["link"] != "https://cockpit.test/convites/inv-1" {
+	if m.Data["link"] != "https://cockpit.test/invites/inv-1" {
 		t.Fatalf("link do aviso: %v", m.Data["link"])
 	}
 	if len(repo.liquidados) != 1 || repo.liquidados[0].State != StateSent {
@@ -322,7 +322,7 @@ func TestItemMADUROViraEmail(t *testing.T) {
 	if m.Data["total"] != 1 {
 		t.Fatalf("total nos dados: %v", m.Data["total"])
 	}
-	if m.Data["link"] != "https://cockpit.test/atencao" {
+	if m.Data["link"] != "https://cockpit.test/attention" {
 		t.Fatalf("link: %v", m.Data["link"])
 	}
 }
