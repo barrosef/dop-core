@@ -10,23 +10,24 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Service concentra as regras de custo. Recebe apenas PORTAS.
+// Service concentrates the cost rules. It takes only PORTS.
 type Service struct {
 	repo   Repository
 	clock  ports.Clock
 	router *Router
 }
 
-// NewService exige um relógio e aceita roteador nulo.
+// NewService requires a clock and accepts a nil router.
 //
-// A assimetria é deliberada. O relógio é PORTA: aceitar nil faz o serviço cair
-// em time.Now() por dentro, nenhum teste de período fica determinístico e
-// ninguém percebe que a abstração não está provada — panic aqui é erro de
-// montagem, detectado no boot. O roteador é POLÍTICA deste pacote, com padrão
-// escrito na ADR-0011; nil apenas escolhe esse padrão, sem desligar nada.
+// The asymmetry is deliberate. The clock is a PORT: accepting nil makes the
+// service fall back to time.Now() internally, no period test stays
+// deterministic, and nobody notices the abstraction is unproven — the panic here
+// is a wiring error, caught at boot. The router is this package's POLICY, with a
+// default written in ADR-0011; nil merely selects that default, switching
+// nothing off.
 func NewService(repo Repository, clock ports.Clock, router *Router) *Service {
 	if clock == nil {
-		panic("cost.NewService: relógio obrigatório — use clock.NewSystem()")
+		panic("cost.NewService: clock is required — use clock.NewSystem()")
 	}
 	if router == nil {
 		router = NewRouter(nil)
@@ -36,33 +37,34 @@ func NewService(repo Repository, clock ports.Clock, router *Router) *Service {
 
 func (s *Service) now() time.Time { return s.clock.Now().UTC() }
 
-// RecordOutcome é o resultado de registrar consumo.
+// RecordOutcome is the result of recording consumption.
 //
-// BudgetExceeded é ESTADO, não transição: a repetição de uma chamada devolve o
-// mesmo aviso que a original, porque quem pergunta "posso seguir?" precisa da
-// resposta certa mesmo quando a escrita não aconteceu de novo.
+// BudgetExceeded is a STATE, not a transition: repeating a call returns the same
+// warning as the original, because whoever asks "may I go on?" needs the right
+// answer even when the write did not happen again.
 type RecordOutcome struct {
 	Usage          *UsageEvent
 	Duplicate      bool
 	BudgetExceeded bool
-	// Exceeded são os escopos estourados — é o que a caixa de atenção mostra
-	// para o humano decidir (aumentar o teto, cortar escopo, encerrar).
+	// Exceeded are the scopes that overran — it is what the attention box shows
+	// for the human to decide (raise the ceiling, cut scope, stop).
 	Exceeded []Budget
 }
 
-// RecordUsage registra consumo de modelo.
+// RecordUsage records model consumption.
 //
-// Duas coisas que este método NÃO faz, e as duas são a decisão:
+// Two things this method does NOT do, and both are the decision:
 //
-//   - não recusa a escrita por orçamento estourado. Medição que falha quando o
-//     orçamento acaba é medição que some justo quando mais importa, e o corte
-//     da ADR-0011 §2 é SUAVE: a demanda pausa e pergunta, nunca morre no meio
-//     nem é cortada em silêncio. Quem pausa é o consumidor de
-//     `dop.cost.budget.exceeded`; o custo só avisa;
-//   - não deduz nem inventa a chave de idempotência. Ela é obrigatória aqui —
-//     em outras escritas o interceptador (ADR-0017) protege e a UNIQUE do
-//     banco é o último anteparo, mas neste caso a duplicata não colide com
-//     nada: entraria como consumo legítimo e o orçamento viraria ficção.
+//   - it does not refuse the write because the budget is exceeded. Measurement
+//     that fails when the budget runs out is measurement that disappears exactly
+//     when it matters most, and ADR-0011 §2's cut-off is SOFT: the demand pauses
+//     and asks, it never dies mid-way and is never cut in silence. Whoever
+//     pauses is the consumer of `dop.cost.budget.exceeded`; cost only warns;
+//   - it does not deduce or invent the idempotency key. It is required here — in
+//     other writes the interceptor (ADR-0017) protects and the database's UNIQUE
+//     is the last barrier, but in this case the duplicate collides with nothing:
+//     it would enter as legitimate consumption and the budget would become
+//     fiction.
 func (s *Service) RecordUsage(ctx context.Context, u UsageEvent, idempotencyKey string) (*RecordOutcome, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -70,11 +72,11 @@ func (s *Service) RecordUsage(ctx context.Context, u UsageEvent, idempotencyKey 
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if idempotencyKey == "" {
-		return nil, errs.Invalid("registro de uso exige chave de idempotência")
+		return nil, errs.Invalid("recording usage requires an idempotency key")
 	}
 
-	// A conta vem do contexto, não do corpo: aceitar a do corpo permitiria
-	// lançar consumo na conta do vizinho.
+	// The account comes from the context, not the body: accepting the body's
+	// would allow charging consumption to somebody else's account.
 	u.AccountID = accountID
 	if u.Currency == "" {
 		u.Currency = DefaultCurrency
@@ -102,8 +104,9 @@ func (s *Service) RecordUsage(ctx context.Context, u UsageEvent, idempotencyKey 
 	return out, nil
 }
 
-// GetBudget devolve o orçamento do escopo. Escopo sem teto definido devolve
-// limite zero com o gasto real — ausência de orçamento é resposta, não erro.
+// GetBudget returns the scope's budget. A scope with no ceiling defined returns
+// a zero limit with the real spend — the absence of a budget is an answer, not
+// an error.
 func (s *Service) GetBudget(ctx context.Context, scope Scope, scopeID string) (*Budget, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -116,13 +119,13 @@ func (s *Service) GetBudget(ctx context.Context, scope Scope, scopeID string) (*
 	return s.repo.BudgetOf(ctx, accountID, scope, scopeID)
 }
 
-// SetBudget define o teto do escopo, preservando o acumulado.
+// SetBudget sets the scope's ceiling, preserving the running total.
 //
-// Rebaixar o teto abaixo do gasto corrente é permitido e é um estouro: o
-// evento sai na mesma transação da escrita, e a demanda pausa pelo mesmo
-// caminho de sempre. Impedir o rebaixamento seria pior — o operador que
-// descobre que uma demanda está queimando dinheiro precisa poder fechar a
-// torneira sem esperar o próximo turno.
+// Lowering the ceiling below the current spend is allowed and is an overrun: the
+// event goes out in the write's own transaction, and the demand pauses down the
+// usual path. Forbidding the lowering would be worse — an operator who discovers
+// a demand burning money has to be able to close the tap without waiting for the
+// next turn.
 func (s *Service) SetBudget(ctx context.Context, b Budget) (*Budget, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -133,7 +136,7 @@ func (s *Service) SetBudget(ctx context.Context, b Budget) (*Budget, error) {
 		return nil, err
 	}
 	if b.LimitMicros < 0 {
-		return nil, errs.Invalid("limite não pode ser negativo (zero = sem teto)")
+		return nil, errs.Invalid("the limit cannot be negative (zero = no ceiling)")
 	}
 	b.AccountID = accountID
 	b.Scope, b.ScopeID = scope, scopeID
@@ -149,18 +152,18 @@ func (s *Service) SetBudget(ctx context.Context, b Budget) (*Budget, error) {
 	return &st.After, nil
 }
 
-// RouteModel devolve a decisão tarefa→(modelo, effort) com a justificativa.
+// RouteModel returns the task→(model, effort) decision with its justification.
 //
-// É função PURA do tipo de trabalho, e continua sendo de propósito. demandID
-// entra no contrato (e é aceito aqui) porque a calibração de P-7 vai querer
-// correlacionar decisão e gasto por demanda — mas ele NÃO participa da
-// decisão hoje, e fingir que participa esconderia que a política ainda é a
-// tabela crua da ADR-0011.
+// It is a PURE function of the kind of work, and stays that way on purpose.
+// demandID is in the contract (and is accepted here) because P-7's calibration
+// will want to correlate decision and spend per demand — but it does NOT take
+// part in the decision today, and pretending it does would hide that the policy
+// is still ADR-0011's raw table.
 //
-// Em particular, orçamento apertado não rebaixa o modelo: rebaixar sob pressão
-// de custo atropelaria a regra fixa de que não se economiza no crítico, e o
-// mecanismo de corte da ADR-0011 §2 é pausar e perguntar, não degradar em
-// silêncio.
+// In particular, a tight budget does not downgrade the model: downgrading under
+// cost pressure would run over the fixed rule that you do not save on the
+// critic, and ADR-0011 §2's cut-off mechanism is to pause and ask, not to
+// degrade in silence.
 func (s *Service) RouteModel(ctx context.Context, taskKind TaskKind, demandID string) (*Decision, error) {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return nil, err
@@ -172,12 +175,13 @@ func (s *Service) RouteModel(ctx context.Context, taskKind TaskKind, demandID st
 	return &d, nil
 }
 
-// RoutingTable expõe a política inteira para auditoria e para a tela de
-// calibração de P-7 — quem vai recalibrar precisa ver o que está valendo.
+// RoutingTable exposes the whole policy for auditing and for P-7's calibration
+// screen — whoever is going to recalibrate needs to see what is in force.
 func (s *Service) RoutingTable() []Decision { return s.router.Table() }
 
-// Summarize agrega por escopo e período. Período vazio = mês corrente, que é a
-// janela do ciclo de cobrança e a que a tela pede em 9 de 10 aberturas.
+// Summarize aggregates by scope and period. An empty period means the current
+// month, which is the billing cycle's window and what the screen asks for in 9
+// openings out of 10.
 func (s *Service) Summarize(ctx context.Context, scope Scope, scopeID string,
 	since, until time.Time, recentLimit int) (*Summary, error) {
 
@@ -193,7 +197,7 @@ func (s *Service) Summarize(ctx context.Context, scope Scope, scopeID string,
 		since, until = CurrentMonth(s.now())
 	}
 	if !until.After(since) {
-		return nil, errs.Invalid("período inválido: o fim precisa ser posterior ao início")
+		return nil, errs.Invalid("invalid period: the end has to be after the start")
 	}
 	if recentLimit < 0 {
 		recentLimit = 0
@@ -204,24 +208,24 @@ func (s *Service) Summarize(ctx context.Context, scope Scope, scopeID string,
 	return s.repo.Summarize(ctx, accountID, scope, scopeID, since.UTC(), until.UTC(), recentLimit)
 }
 
-// maxRecent existe porque a tabela de uso é a que mais cresce na plataforma:
-// um limite ausente vira varredura de milhões de linhas na primeira tela que
-// esquecer de paginar.
+// maxRecent exists because the usage table is the platform's fastest growing:
+// a missing limit becomes a scan of millions of rows on the first screen that
+// forgets to paginate.
 const maxRecent = 200
 
-// CurrentMonth é a janela padrão de agregação, em UTC — o mês do relógio do
-// processo e o do banco precisam ser o mesmo mês.
+// CurrentMonth is the default aggregation window, in UTC — the process's clock
+// month and the database's have to be the same month.
 func CurrentMonth(now time.Time) (time.Time, time.Time) {
 	now = now.UTC()
 	since := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	return since, since.AddDate(0, 1, 0)
 }
 
-// normalizeScope resolve o escopo e recusa o que não é vocabulário.
+// normalizeScope resolves the scope and refuses what is not vocabulary.
 //
-// Escopo vazio vira 'account' com a conta ativa: é o caso comum e pedir que o
-// chamador repita o id da conta que já está no contexto só cria oportunidade
-// de ele repetir o id ERRADO.
+// An empty scope becomes 'account' with the active account: it is the common
+// case, and asking the caller to repeat the account id that is already in the
+// context only creates a chance for them to repeat the WRONG id.
 func (s *Service) normalizeScope(accountID string, scope Scope, scopeID string) (Scope, string, error) {
 	scope = Scope(strings.ToLower(strings.TrimSpace(string(scope))))
 	scopeID = strings.TrimSpace(scopeID)
@@ -229,15 +233,15 @@ func (s *Service) normalizeScope(accountID string, scope Scope, scopeID string) 
 		scope = ScopeAccount
 	}
 	if !ValidScope(scope) {
-		return "", "", errs.Invalid("escopo de orçamento desconhecido: %q", scope)
+		return "", "", errs.Invalid("unknown budget scope: %q", scope)
 	}
 	if scope == ScopeAccount {
-		// A conta do escopo é SEMPRE a ativa. Aceitar outra seria abrir
-		// leitura de orçamento alheio por parâmetro.
+		// The scope's account is ALWAYS the active one. Accepting another would
+		// open somebody else's budget to a read by parameter.
 		return scope, accountID, nil
 	}
 	if scopeID == "" {
-		return "", "", errs.Invalid("escopo de demanda exige o identificador da demanda")
+		return "", "", errs.Invalid("a demand scope requires the demand identifier")
 	}
 	return scope, scopeID, nil
 }

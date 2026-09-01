@@ -1,13 +1,14 @@
-// Package cost é o domínio da governança de gasto com LLM: quanto se gastou,
-// quanto se pode gastar e qual modelo atende cada tipo de trabalho (ADR-0011).
+// Package cost is the domain of LLM spend governance: how much was spent, how
+// much may be spent, and which model serves each kind of work (ADR-0011).
 //
-// Regra da casa: este pacote não conhece Postgres, gRPC nem SDK nenhum. Ele
-// declara o que precisa como PORTA (repository.go) e o composition root liga.
+// House rule: this package knows nothing of Postgres, gRPC or any SDK. It
+// declares what it needs as a PORT (repository.go) and the composition root
+// wires it.
 //
-// A ADR-0011 tem duas partes firmes e uma em rascunho, e o código separa as
-// três de propósito: medição e orçamento são regra (entity.go, service.go); a
-// política tarefa→modelo é palpite informado e mora sozinha em router.go, para
-// ser recalibrada em um lugar só quando a telemetria chegar (P-7).
+// ADR-0011 has two firm parts and one still in draft, and the code separates the
+// three on purpose: measurement and budget are rules (entity.go, service.go);
+// the task→model policy is an informed guess and lives alone in router.go, so it
+// can be recalibrated in one place when telemetry arrives (P-7).
 package cost
 
 import (
@@ -16,26 +17,26 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Micros é valor monetário em 10^-6 da unidade da moeda.
+// Micros is a monetary value in 10^-6 of the currency's unit.
 //
-// Dinheiro NÃO é float aqui, e a razão é aritmética, não estilo: soma de
-// milhões de linhas em ponto flutuante binário acumula erro, e orçamento que
-// erra não é orçamento. Inteiro em unidade mínima é exato por construção,
-// compara e soma sem surpresa, e é o que o contrato já fala
-// (Money.amount_micros, api/proto/dop/v1/common.proto) — converter na borda
-// criaria dois vocabulários de dinheiro no mesmo sistema.
+// Money is NOT a float here, and the reason is arithmetic, not style: summing
+// millions of rows in binary floating point accumulates error, and a budget that
+// is wrong is not a budget. An integer in the smallest unit is exact by
+// construction, compares and adds without surprise, and it is what the contract
+// already speaks (Money.amount_micros, api/proto/dop/v1/common.proto) —
+// converting at the edge would create two vocabularies of money in one system.
 //
-// Micros, e não centavos, porque um único token de saída custa fração de
-// centavo: em centavos, todo registro individual arredondaria para zero e o
-// acumulado seria sistematicamente menor que a fatura.
+// Micros, and not cents, because a single output token costs a fraction of a
+// cent: in cents, every individual record would round to zero and the total
+// would be systematically lower than the invoice.
 type Micros int64
 
-// Currency acompanha SEMPRE o valor. Micros solto convida a somar dólar com
-// real e a descobrir isso na fatura.
+// The currency ALWAYS travels with the value. A bare Micros invites adding
+// dollars to another currency and discovering it on the invoice.
 const DefaultCurrency = "USD"
 
-// Scope é a unidade de orçamento. São dois, e de propósito: a fatia por thread
-// vem da ficha do subagente (ADR-0010), não é orçamento próprio.
+// Scope is the budget's unit. There are two, on purpose: the per-thread slice
+// comes from the subagent's brief (ADR-0010), it is not a budget of its own.
 type Scope string
 
 const (
@@ -45,72 +46,72 @@ const (
 
 func ValidScope(s Scope) bool { return s == ScopeAccount || s == ScopeDemand }
 
-// UsageEvent é UM consumo de modelo: um turno, um subagente, uma chamada.
+// UsageEvent is ONE model consumption: a turn, a subagent, a call.
 //
-// Os quatro contadores de token são separados porque têm preços de ordens de
-// grandeza diferentes (ADR-0012): leitura de prefixo cacheado sai a ~0,1× do
-// input e escrita de cache a 1,25×. Guardar só um "total de tokens" jogaria
-// fora exatamente a informação que calibra o roteador (P-7) e que denuncia o
-// invalidador silencioso de cache.
+// The four token counters are separate because their prices differ by orders of
+// magnitude (ADR-0012): reading a cached prefix costs ~0.1× the input and
+// writing to cache 1.25×. Keeping only a "token total" would throw away exactly
+// the information that calibrates the router (P-7) and that exposes a silent
+// cache invalidator.
 type UsageEvent struct {
 	ID        string
 	AccountID string
-	DemandID  string // vazio = consumo da conta, sem demanda (batch, indexação)
+	DemandID  string // empty = account consumption, with no demand (batch, indexing)
 	ThreadID  string
 	Model     string
 
-	InputTokens         int64 // input NÃO cacheado
+	InputTokens         int64 // input NOT cached
 	OutputTokens        int64
-	CacheReadTokens     int64 // prefixo servido do cache — o barato
-	CacheCreationTokens int64 // prefixo gravado no cache — 1,25× o input
+	CacheReadTokens     int64 // prefix served from cache — the cheap one
+	CacheCreationTokens int64 // prefix written to cache — 1.25× the input
 
 	CostMicros Micros
 	Currency   string
 	At         time.Time
 }
 
-// PromptTokens é tudo que entrou no prompt, cacheado ou não. É o denominador
-// honesto da taxa de acerto de cache: o numerador só faz sentido contra o
-// prompt inteiro, não contra o input não cacheado.
+// PromptTokens is everything that went into the prompt, cached or not. It is the
+// honest denominator of the cache hit ratio: the numerator only makes sense
+// against the whole prompt, not against the uncached input.
 func (u UsageEvent) PromptTokens() int64 {
 	return u.InputTokens + u.CacheReadTokens + u.CacheCreationTokens
 }
 
-// SuspectCacheMiss sinaliza o alerta da ADR-0012 §1: prefixo grande entrando
-// sem NENHUMA leitura de cache. Ou o prefixo mudou (byte volátil no pacote de
-// contexto), ou o TTL de 5 min venceu — nos dois casos alguém está pagando
-// 10× pelo mesmo prefixo e ninguém percebeu.
+// SuspectCacheMiss raises the ADR-0012 §1 alert: a large prefix going in with NO
+// cache read at all. Either the prefix changed (a volatile byte in the context
+// package) or the 5-minute TTL expired — in both cases somebody is paying 10×
+// for the same prefix and nobody noticed.
 //
-// É heurística, e assumidamente: o limiar existe para não gritar no primeiro
-// turno de uma thread, que legitimamente não tem cache para ler.
+// It is a heuristic, avowedly: the floor exists so it does not shout on a
+// thread's first turn, which legitimately has no cache to read.
 func (u UsageEvent) SuspectCacheMiss() bool {
 	return u.CacheReadTokens == 0 && u.InputTokens >= cacheMissFloor
 }
 
-// cacheMissFloor: abaixo disto o prompt é pequeno demais para valer cache — o
-// mínimo cacheável da API é dessa ordem. Recalibrar com P-7.
+// cacheMissFloor: below this the prompt is too small to be worth caching — the
+// API's minimum cacheable size is of that order. Recalibrate with P-7.
 const cacheMissFloor = 2048
 
 func (u UsageEvent) Validate() error {
 	if u.AccountID == "" {
-		return errs.Invalid("uso sem conta")
+		return errs.Invalid("usage with no account")
 	}
 	if u.Model == "" {
-		// Sem modelo não há calibração possível: o registro entraria como
-		// linha de custo anônima e sairia da telemetria de P-7.
-		return errs.Invalid("uso sem modelo")
+		// With no model there is no calibration possible: the record would enter
+		// as an anonymous cost row and drop out of P-7's telemetry.
+		return errs.Invalid("usage with no model")
 	}
 	if u.InputTokens < 0 || u.OutputTokens < 0 ||
 		u.CacheReadTokens < 0 || u.CacheCreationTokens < 0 {
-		return errs.Invalid("contagem de tokens não pode ser negativa")
+		return errs.Invalid("a token count cannot be negative")
 	}
 	if u.CostMicros < 0 {
-		return errs.Invalid("custo não pode ser negativo")
+		return errs.Invalid("a cost cannot be negative")
 	}
 	return nil
 }
 
-// Budget é o teto e o acumulado de um escopo.
+// Budget is a scope's ceiling and running total.
 type Budget struct {
 	AccountID   string
 	Scope       Scope
@@ -121,18 +122,18 @@ type Budget struct {
 	UpdatedAt   time.Time
 }
 
-// Unlimited: limite zero é AUSÊNCIA de teto, não teto zero. A distinção é a
-// diferença entre "conta nova funciona" e "conta nova nasce pausada no
-// primeiro token".
+// Unlimited: a zero limit is the ABSENCE of a ceiling, not a ceiling of zero.
+// The distinction is the difference between "a new account works" and "a new
+// account is born paused on its first token".
 func (b Budget) Unlimited() bool { return b.LimitMicros <= 0 }
 
-// Exceeded é o estado corrente. Estourado NÃO significa bloqueado: o que
-// acontece com o estouro é decisão do serviço (pausa, ADR-0011 §2), e nunca
-// recusa de registro.
+// Exceeded is the current state. Exceeded does NOT mean blocked: what happens on
+// an overrun is the service's decision (a pause, ADR-0011 §2), and never a
+// refusal to record.
 func (b Budget) Exceeded() bool { return !b.Unlimited() && b.SpentMicros >= b.LimitMicros }
 
-// Remaining nunca é negativo: quem consome esse número quer saber quanto ainda
-// dá para gastar, e "menos vinte" não responde essa pergunta.
+// Remaining is never negative: whoever consumes that number wants to know how
+// much is still spendable, and "minus twenty" does not answer that question.
 func (b Budget) Remaining() Micros {
 	if b.Unlimited() {
 		return 0
@@ -143,21 +144,21 @@ func (b Budget) Remaining() Micros {
 	return b.LimitMicros - b.SpentMicros
 }
 
-// NewlyExceeded é a regra de EMISSÃO do evento de estouro, e mora aqui porque
-// o adaptador precisa dela dentro da transação — deixá-la em SQL espalharia
-// regra de negócio pelo schema.
+// NewlyExceeded is the EMISSION rule for the overrun event, and it lives here
+// because the adapter needs it inside the transaction — leaving it in SQL would
+// scatter business rules across the schema.
 //
-// O que importa é a TRANSIÇÃO, não o estado: um orçamento já estourado gera um
-// item na caixa de atenção, não um por turno até alguém olhar. Vale tanto para
-// o gasto que cruza o teto quanto para o teto que é rebaixado sob o gasto —
-// os dois são o mesmo evento visto de lados diferentes.
+// What matters is the TRANSITION, not the state: an already-exceeded budget
+// produces one item in the attention box, not one per turn until somebody looks.
+// It holds both for spend crossing the ceiling and for a ceiling lowered under
+// the spend — the two are the same event seen from different sides.
 func NewlyExceeded(before, after Budget) bool {
 	return !before.Exceeded() && after.Exceeded()
 }
 
-// BudgetState é o par antes/depois de uma escrita. Existe porque a decisão de
-// emitir depende da transição, e a transição só é visível se os dois lados
-// atravessarem a fronteira juntos.
+// BudgetState is the before/after pair of a write. It exists because the
+// decision to emit depends on the transition, and the transition is only visible
+// if both sides cross the boundary together.
 type BudgetState struct {
 	Before Budget
 	After  Budget
@@ -165,7 +166,7 @@ type BudgetState struct {
 
 func (s BudgetState) JustExceeded() bool { return NewlyExceeded(s.Before, s.After) }
 
-// Summary é a agregação por escopo e período.
+// Summary is the aggregation by scope and period.
 type Summary struct {
 	Scope    Scope
 	ScopeID  string
@@ -184,12 +185,13 @@ type Summary struct {
 	Recent []UsageEvent
 }
 
-// CacheHitRatio é a fração do prompt que veio do cache no período.
+// CacheHitRatio is the fraction of the prompt that came from cache in the
+// period.
 //
-// O denominador é o prompt INTEIRO (input + leitura + escrita de cache) e não
-// apenas o input: é a única forma de o número responder "quanto do que eu
-// mandei saiu barato". Perto de zero num fluxo de agente = prefixo instável
-// (ADR-0012 §1), que é a fatura mais cara que existe.
+// The denominator is the WHOLE prompt (input + cache read + cache write) and not
+// the input alone: it is the only way for the number to answer "how much of what
+// I sent went out cheap". Near zero in an agent flow means an unstable prefix
+// (ADR-0012 §1), which is the most expensive invoice there is.
 func (s Summary) CacheHitRatio() float64 {
 	total := s.InputTokens + s.CacheReadTokens + s.CacheCreationTokens
 	if total <= 0 {

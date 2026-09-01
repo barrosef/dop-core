@@ -6,61 +6,61 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// ModelRouter — a decisão tarefa → (modelo, effort) da ADR-0011 §3.
+// ModelRouter — the task → (model, effort) decision of ADR-0011 §3.
 //
-// ESTA É A PARTE EM RASCUNHO da ADR. A tabela abaixo é palpite informado, não
-// resultado de medição, e o código diz isso em três lugares de propósito: no
-// nome da constante de proveniência, na justificativa que sai em toda decisão,
-// e neste comentário.
+// THIS IS THE ADR'S DRAFT PART. The table below is an informed guess, not the
+// result of measurement, and the code says so in three places on purpose: in the
+// name of the provenance constant, in the justification that comes out of every
+// decision, and in this comment.
 //
-// COMO RECALIBRAR (pendência P-7 do ROADMAP):
+// HOW TO RECALIBRATE (ROADMAP item P-7):
 //
-//	1. a telemetria vem dos eventos de custo — cost_usage tem model,
-//	   input/output e os dois campos de cache por chamada, e SummarizeCost
-//	   agrega por escopo e período;
-//	2. mude LINHAS de `routingTable` e/ou o `ModelCatalog`. Nada mais. Se um
-//	   dia a decisão precisar de um `if` fora daqui, a política deixou de ser
-//	   tabela e a mudança é de desenho, não de calibração;
-//	3. atualize `RoutingProvenance` para deixar de dizer "rascunho" — a
-//	   justificativa que chega ao auditor muda junto, sem tocar em mais nada.
+//	1. the telemetry comes from the cost events — cost_usage has model,
+//	   input/output and the two cache fields per call, and SummarizeCost
+//	   aggregates by scope and period;
+//	2. change ROWS of `routingTable` and/or the `ModelCatalog`. Nothing else. If
+//	   one day the decision needs an `if` outside here, the policy has stopped
+//	   being a table and the change is one of design, not of calibration;
+//	3. update `RoutingProvenance` so it stops saying "draft" — the justification
+//	   that reaches the auditor changes with it, touching nothing else.
 //
-// Por que tabela e não heurística espalhada: uma política que nasce errada
-// precisa ser AUDITÁVEL e SUBSTITUÍVEL de uma vez só. Quinze `if` distribuídos
-// por chamadores dão a mesma resposta hoje e são impossíveis de recalibrar
-// amanhã — e ninguém consegue explicar por que um agente rodou no modelo caro.
+// Why a table and not a scattered heuristic: a policy born wrong has to be
+// AUDITABLE and REPLACEABLE in one move. Fifteen `if`s spread across callers
+// give the same answer today and are impossible to recalibrate tomorrow — and
+// nobody can explain why an agent ran on the expensive model.
 // ════════════════════════════════════════════════════════════════════════════
 
-// TaskKind é a natureza do trabalho. É o ÚNICO eixo da decisão — a ADR-0011
-// descartou explicitamente rotear por tamanho de prompt: o que importa é a
-// natureza da tarefa, não o comprimento dela.
+// TaskKind is the nature of the work. It is the decision's ONLY axis — ADR-0011
+// explicitly discarded routing by prompt size: what matters is the task's
+// nature, not its length.
 type TaskKind string
 
 const (
-	// TaskMechanical: commit, resumo de log, dossiê, i18n. Trabalho de forma,
-	// não de raciocínio.
+	// TaskMechanical: a commit, a log summary, a dossier, i18n. Work of form, not
+	// of reasoning.
 	TaskMechanical TaskKind = "mechanical"
-	// TaskInvestigation: subagente lendo logs e fazendo forense (ADR-0010).
+	// TaskInvestigation: a subagent reading logs and doing forensics (ADR-0010).
 	TaskInvestigation TaskKind = "investigation"
-	// TaskImplementation: planejar e escrever o código.
+	// TaskImplementation: planning and writing the code.
 	TaskImplementation TaskKind = "implementation"
-	// TaskCritic: o parecer da ADR-0007. É o freio do fluxo.
+	// TaskCritic: the ADR-0007 opinion. It is the flow's brake.
 	TaskCritic TaskKind = "critic"
 )
 
-// ModelClass é CLASSE, não nome de modelo. Nome de modelo muda de líder por
-// semestre (ADR-0001) e não sobrevive a uma tabela de política; a classe é o
-// que a decisão realmente significa. O nome concreto vem do catálogo.
+// ModelClass is a CLASS, not a model name. The leading model name changes every
+// six months (ADR-0001) and does not survive in a policy table; the class is what
+// the decision actually means. The concrete name comes from the catalogue.
 type ModelClass string
 
 const (
-	ClassCheap  ModelClass = "cheap"  // classe Haiku
-	ClassMedium ModelClass = "medium" // classe Sonnet
-	ClassStrong ModelClass = "strong" // classe Opus
+	ClassCheap  ModelClass = "cheap"  // the Haiku class
+	ClassMedium ModelClass = "medium" // the Sonnet class
+	ClassStrong ModelClass = "strong" // the Opus class
 )
 
-// Effort é o esforço de raciocínio. Reduz preâmbulo e tool calls DENTRO da
-// classe — é o segundo eixo, e o mais barato de ajustar: mexer no effort não
-// troca de modelo, só encurta o caminho até a resposta.
+// Effort is the reasoning effort. It reduces preamble and tool calls WITHIN the
+// class — the second axis, and the cheapest to adjust: changing effort does not
+// change model, it only shortens the path to the answer.
 type Effort string
 
 const (
@@ -71,76 +71,78 @@ const (
 	EffortMax    Effort = "max"
 )
 
-// RoutingProvenance entra em TODA justificativa. Existe para que quem lê uma
-// decisão no log de auditoria saiba de onde ela veio sem abrir o código — e
-// para que a frase "isto ainda não foi medido" seja impossível de esquecer.
-const RoutingProvenance = "ADR-0011 §3 (rascunho — calibrar com telemetria, P-7)"
+// RoutingProvenance goes into EVERY justification. It exists so that whoever
+// reads a decision in the audit log knows where it came from without opening the
+// code — and so that the sentence "this has not been measured yet" is impossible
+// to forget.
+const RoutingProvenance = "ADR-0011 §3 (draft — calibrate with telemetry, P-7)"
 
-// routingRule é uma LINHA da tabela de decisão.
+// routingRule is a ROW of the decision table.
 type routingRule struct {
 	Kind   TaskKind
 	Class  ModelClass
 	Effort Effort
-	// Why é o porquê da linha, não a repetição do que ela faz. Sem isto a
-	// decisão não é auditável: ninguém consegue discordar de "haiku/low", mas
-	// qualquer um consegue discordar de "trabalho de forma não paga raciocínio".
+	// Why is the row's reason, not a restatement of what it does. Without it the
+	// decision is not auditable: nobody can disagree with "haiku/low", but anybody
+	// can disagree with "work of form does not pay for reasoning".
 	Why string
 }
 
-// routingTable — A TABELA. Espelha a ADR-0011 §3 linha a linha.
+// routingTable — THE TABLE. It mirrors ADR-0011 §3 row by row.
 //
-// Slice e não map: a ordem é a da ADR, e ler o código lado a lado com o
-// documento tem de ser possível sem esforço. São quatro linhas; se um dia
-// forem quarenta, o problema é a política, não a estrutura de dados.
+// A slice and not a map: the order is the ADR's, and reading the code side by
+// side with the document has to be effortless. There are four rows; if one day
+// there are forty, the problem is the policy, not the data structure.
 var routingTable = []routingRule{
 	{
 		Kind: TaskMechanical, Class: ClassCheap, Effort: EffortLow,
-		Why: "trabalho de forma (commit, resumo de log, dossiê, i18n) não paga " +
-			"raciocínio longo; o spread entre classes é ~5×",
+		Why: "work of form (a commit, a log summary, a dossier, i18n) does not pay " +
+			"for long reasoning; the spread between classes is ~5×",
 	},
 	{
 		Kind: TaskInvestigation, Class: ClassMedium, Effort: EffortMedium,
-		Why: "forense de subagente lê muito e conclui pouco; a classe média " +
-			"sustenta o volume sem o preço da classe forte, e o achado é o que " +
-			"volta ao principal (ADR-0010)",
+		Why: "subagent forensics reads a lot and concludes little; the medium class " +
+			"carries the volume without the strong class's price, and the finding is " +
+			"what goes back to the principal (ADR-0010)",
 	},
 	{
 		Kind: TaskImplementation, Class: ClassStrong, Effort: EffortHigh,
-		Why: "planejar e implementar é onde o erro custa retrabalho; economizar " +
-			"aqui devolve a economia em revisão",
+		Why: "planning and implementing is where a mistake costs rework; saving " +
+			"here gives the saving back in review",
 	},
 	{
 		Kind: TaskCritic, Class: ClassStrong, Effort: EffortMax,
-		// Esta linha é a REGRA FIXA da ADR-0011/0012, não um ponto de
-		// calibração: recalibrar as outras três é esperado, rebaixar esta não.
-		Why: "não se economiza no crítico — é o freio (ADR-0007); economizar no " +
-			"freio devolve o custo em PR reprovado, o retrabalho mais caro do fluxo",
+		// This row is the FIXED RULE of ADR-0011/0012, not a calibration point:
+		// recalibrating the other three is expected, lowering this one is not.
+		Why: "you do not save on the critic — it is the brake (ADR-0007); saving on " +
+			"the brake gives the cost back as a rejected PR, the flow's most " +
+			"expensive rework",
 	},
 }
 
-// fallbackRule atende tipo de trabalho fora do vocabulário.
+// fallbackRule serves a kind of work outside the vocabulary.
 //
-// Cai para o lado CARO de propósito: um tipo desconhecido é, por definição,
-// trabalho que ninguém classificou, e errar para barato num trabalho que
-// exigia raciocínio custa retrabalho — enquanto errar para caro custa dinheiro
-// e aparece na medição, que é justamente o que existe aqui.
+// It falls to the EXPENSIVE side on purpose: an unknown kind is, by definition,
+// work nobody classified, and erring cheap on work that needed reasoning costs
+// rework — whereas erring expensive costs money and shows up in the measurement,
+// which is exactly what exists here.
 var fallbackRule = routingRule{
 	Class: ClassStrong, Effort: EffortHigh,
-	Why: "tipo de trabalho fora do vocabulário: na dúvida não se economiza, e o " +
-		"gasto aparece na medição — o inverso não aparece",
+	Why: "kind of work outside the vocabulary: when in doubt you do not save, and " +
+		"the spend shows up in the measurement — the inverse does not",
 }
 
-// ModelCatalog resolve CLASSE → nome concreto de modelo.
+// ModelCatalog resolves CLASS → concrete model name.
 //
-// Separado da tabela porque as duas coisas mudam por motivos diferentes e em
-// ritmos diferentes: a política (que classe para que trabalho) muda com
-// telemetria; o catálogo (que modelo é a classe forte hoje) muda quando o
-// fornecedor lança modelo novo. Amarrar os dois obrigaria a revisar a política
-// a cada lançamento.
+// Separate from the table because the two change for different reasons and at
+// different rates: the policy (which class for which work) changes with
+// telemetry; the catalogue (which model is the strong class today) changes when
+// the vendor ships a new one. Tying them together would force a policy review at
+// every release.
 type ModelCatalog map[ModelClass]string
 
-// DefaultCatalog é o ponto de partida. Nomes ilustrativos e substituíveis: o
-// composition root pode passar outro catálogo sem tocar na política.
+// DefaultCatalog is the starting point. Illustrative and replaceable names: the
+// composition root can pass another catalogue without touching the policy.
 func DefaultCatalog() ModelCatalog {
 	return ModelCatalog{
 		ClassCheap:  "claude-haiku",
@@ -149,11 +151,11 @@ func DefaultCatalog() ModelCatalog {
 	}
 }
 
-// Decision é a decisão devolvida — e ela CARREGA O PORQUÊ.
+// Decision is the decision returned — and it CARRIES THE REASON.
 //
-// Reason não é enfeite: sem ela ninguém audita ("por que esta demanda rodou no
-// modelo caro?") nem calibra ("esta linha da tabela está errada por quê?").
-// Uma decisão sem justificativa é um número que não se pode contestar.
+// Reason is not decoration: without it nobody audits ("why did this demand run
+// on the expensive model?") and nobody calibrates ("why is this row of the table
+// wrong?"). A decision with no justification is a number you cannot contest.
 type Decision struct {
 	TaskKind TaskKind
 	Class    ModelClass
@@ -162,17 +164,18 @@ type Decision struct {
 	Reason   string
 }
 
-// Router aplica a tabela. Sem estado, sem I/O, sem relógio: a mesma entrada dá
-// sempre a mesma saída, e é isso que torna a política testável e auditável.
+// Router applies the table. No state, no I/O, no clock: the same input always
+// gives the same output, and that is what makes the policy testable and
+// auditable.
 type Router struct {
 	catalog ModelCatalog
 	table   []routingRule
 }
 
-// NewRouter aceita catálogo nulo e cai no padrão — ao contrário do relógio,
-// que é PORTA e recusa nil. A diferença é real: relógio nulo desliga uma
-// abstração em silêncio e leva o teste de volta ao relógio de parede; catálogo
-// nulo apenas usa a política de rascunho que a ADR já escreveu.
+// NewRouter accepts a nil catalogue and falls back to the default — unlike the
+// clock, which is a PORT and refuses nil. The difference is real: a nil clock
+// switches an abstraction off in silence and takes the test back to the wall
+// clock; a nil catalogue merely uses the draft policy the ADR already wrote.
 func NewRouter(catalog ModelCatalog) *Router {
 	if len(catalog) == 0 {
 		catalog = DefaultCatalog()
@@ -180,14 +183,14 @@ func NewRouter(catalog ModelCatalog) *Router {
 	return &Router{catalog: catalog, table: routingTable}
 }
 
-// Route é a decisão. Erra apenas quando não há o que decidir: tipo VAZIO é
-// requisição incompleta, enquanto tipo desconhecido é vocabulário novo — e
-// vocabulário novo não pode parar trabalho em andamento, cai no fallback e diz
-// que caiu.
+// Route is the decision. It errors only when there is nothing to decide: an
+// EMPTY kind is an incomplete request, whereas an unknown kind is new vocabulary
+// — and new vocabulary must not stop work in progress, it falls back and says it
+// fell back.
 func (r *Router) Route(kind TaskKind) (Decision, error) {
 	k := TaskKind(strings.ToLower(strings.TrimSpace(string(kind))))
 	if k == "" {
-		return Decision{}, fmt.Errorf("tipo de trabalho não informado")
+		return Decision{}, fmt.Errorf("kind of work not provided")
 	}
 
 	rule := fallbackRule
@@ -201,8 +204,9 @@ func (r *Router) Route(kind TaskKind) (Decision, error) {
 
 	model, ok := r.catalog[rule.Class]
 	if !ok {
-		// Catálogo incompleto é erro de montagem, mas não pode virar trabalho
-		// parado: devolve a classe como nome e denuncia na justificativa.
+		// An incomplete catalogue is a wiring error, but it must not become
+		// stopped work: it returns the class as the name and says so in the
+		// justification.
 		model = string(rule.Class)
 	}
 
@@ -215,9 +219,9 @@ func (r *Router) Route(kind TaskKind) (Decision, error) {
 	}, nil
 }
 
-// Table devolve uma cópia legível da política, para auditoria e para a tela de
-// calibração de P-7. Cópia, e não a tabela: política que o chamador consegue
-// editar em memória deixa de ser política.
+// Table returns a readable copy of the policy, for auditing and for P-7's
+// calibration screen. A copy, not the table: a policy the caller can edit in
+// memory stops being a policy.
 func (r *Router) Table() []Decision {
 	out := make([]Decision, 0, len(r.table))
 	for _, rule := range r.table {
