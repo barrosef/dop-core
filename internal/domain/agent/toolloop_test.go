@@ -11,596 +11,602 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// O LAÇO DE FERRAMENTA, testado sem fornecedor e sem substrato de verdade.
+// THE TOOL LOOP, tested with no real provider and no real substrate.
 //
-// O que estes testes protegem é caro e silencioso: um laço sem teto é conta sem
-// teto; uma medição que só conta a última volta faz o orçamento enxergar uma
-// fração do gasto; uma falha de ferramenta entregue como erro do turno tira do
-// modelo a única informação que resolve o problema dele.
+// What these tests protect is expensive and silent: a loop with no cap is a bill
+// with no cap; a measurement that only counts the last round makes the budget
+// see a fraction of the spend; a tool failure delivered as a turn error takes
+// from the model the one piece of information that solves its problem.
 // ════════════════════════════════════════════════════════════════════════════
 
-// sandboxFalso é o duplo da porta estreita do substrato.
+// fakeSandbox is the double for the substrate's narrow port.
 //
-// Ele guarda TUDO o que recebeu — inclusive para a varredura de credencial, que
-// é a única forma de provar, de fora, que nada da plataforma escorre para dentro
-// do sandbox.
-type sandboxFalso struct {
-	comandos   []agent.SandboxCommand
-	demandas   []string
-	saida      agent.SandboxOutput
-	erro       error
-	chamadas   int
-	porChamada []agent.SandboxOutput
+// It keeps EVERYTHING it received — including for the credential sweep, which is
+// the only way to prove, from the outside, that nothing from the platform leaks
+// into the sandbox.
+type fakeSandbox struct {
+	commands []agent.SandboxCommand
+	demands  []string
+	output   agent.SandboxOutput
+	failure  error
+	calls    int
+	perCall  []agent.SandboxOutput
 }
 
-func (s *sandboxFalso) RunCommand(_ context.Context, demandID string,
+func (s *fakeSandbox) RunCommand(_ context.Context, demandID string,
 	cmd agent.SandboxCommand) (agent.SandboxOutput, error) {
 
-	s.chamadas++
-	s.demandas = append(s.demandas, demandID)
-	s.comandos = append(s.comandos, cmd)
-	if s.erro != nil {
-		return agent.SandboxOutput{}, s.erro
+	s.calls++
+	s.demands = append(s.demands, demandID)
+	s.commands = append(s.commands, cmd)
+	if s.failure != nil {
+		return agent.SandboxOutput{}, s.failure
 	}
-	if n := len(s.porChamada); n > 0 {
-		i := s.chamadas - 1
+	if n := len(s.perCall); n > 0 {
+		i := s.calls - 1
 		if i >= n {
 			i = n - 1
 		}
-		return s.porChamada[i], nil
+		return s.perCall[i], nil
 	}
-	return s.saida, nil
+	return s.output, nil
 }
 
-// ── auxiliares ──────────────────────────────────────────────────────────────
+// ── helpers ─────────────────────────────────────────────────────────────────
 
-func fichaComFerramenta() agent.AgentCard {
-	return agent.AgentCard{Purpose: "implementar", Tools: []string{agent.ToolRunCommand}}
+func cardWithTool() agent.AgentCard {
+	return agent.AgentCard{Purpose: "implement", Tools: []string{agent.ToolRunCommand}}
 }
 
-func respostaPedindoFerramenta(id, argumento string) *agent.Reply {
+func replyAskingForTool(id, argument string) *agent.Reply {
 	return &agent.Reply{
-		Text:  "vou olhar o repositório",
-		Model: "x-grande",
+		Text:  "I am going to look at the repository",
+		Model: "x-large",
 		Usage: agent.Usage{InputTokens: 100, OutputTokens: 20},
-		// A parada é `tool_use`, mas quem decide continuar é a PRESENÇA das
-		// chamadas — ver o laço: parada de ferramenta sem chamada nenhuma é
-		// incoerência do fornecedor e não pode travar o turno.
+		// The stop is `tool_use`, but what decides to continue is the PRESENCE
+		// of the calls — see the loop: a tool stop with no call at all is an
+		// incoherence of the provider's and must not freeze the turn.
 		StopReason:    agent.StopToolUse,
 		EffortApplied: agent.EffortHigh,
 		ToolCalls: []agent.ToolCall{{
 			ID: id, Name: agent.ToolRunCommand,
-			Input: map[string]any{"command": []any{"sh", "-c", argumento}},
+			Input: map[string]any{"command": []any{"sh", "-c", argument}},
 		}},
 	}
 }
 
-// montarComFerramentas monta o cenário com substrato ligado.
-func montarComFerramentas(t *testing.T, sb agent.Sandbox, conta agent.Accounting,
-	respostas []*agent.Reply, opts ...agent.Option) cenario {
+// setupWithTools assembles the scenario with the substrate wired.
+func setupWithTools(t *testing.T, sb agent.Sandbox, accounting agent.Accounting,
+	replies []*agent.Reply, opts ...agent.Option) scenario {
 
 	t.Helper()
-	prov := &provedorFalso{info: fichaDoProvedor(), respostas: respostas, resposta: respostas[0]}
-	cust := &custoFalso{
-		decisao: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
+	prov := &fakeProvider{info: providerSheet(), replies: replies, reply: replies[0]}
+	cost := &fakeCost{
+		decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
 			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0011 §3"},
-		conta: conta,
+		accounting: accounting,
 	}
-	conv := &conversaFalsa{thread: agent.Thread{
-		ID: "thr-1", Key: "principal", Card: fichaComFerramenta(),
+	conv := &fakeConversation{thread: agent.Thread{
+		ID: "thr-1", Key: "main", Card: cardWithTool(),
 	}}
-	todas := append([]agent.Option{agent.WithSandbox(sb)}, opts...)
-	return cenario{
-		svc:  agent.NewService(prov, conhecimentoFalso{}, cust, conv, todas...),
-		prov: prov, cust: cust, conv: conv,
+	all := append([]agent.Option{agent.WithSandbox(sb)}, opts...)
+	return scenario{
+		svc:  agent.NewService(prov, fakeKnowledge{}, cost, conv, all...),
+		prov: prov, cost: cost, conv: conv,
 	}
 }
 
-// ── o caminho feliz ─────────────────────────────────────────────────────────
+// ── the happy path ──────────────────────────────────────────────────────────
 
-// O agente pede, a ferramenta roda no sandbox, o resultado volta, o agente
-// conclui. É a ponte inteira em um teste.
-func TestLacoExecutaFerramentaEContinua(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{
-		ExitCode: 0, Stdout: "MARCA-DA-SAIDA-DO-COMANDO\n",
+// The agent asks, the tool runs in the sandbox, the result comes back, the agent
+// concludes. It is the whole bridge in one test.
+func TestLoopExecutesTheToolAndContinues(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{
+		ExitCode: 0, Stdout: "COMMAND-OUTPUT-MARKER\n",
 	}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "git status"),
-		respostaConcluindo(),
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "git status"),
+		concludingReply(),
 	})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.ToolRounds != 2 {
-		t.Fatalf("esperava 2 voltas, veio %d", out.ToolRounds)
+		t.Fatalf("expected 2 rounds, got %d", out.ToolRounds)
 	}
 	if out.LoopStop != agent.LoopFinished {
-		t.Fatalf("parada %q, esperava %q", out.LoopStop, agent.LoopFinished)
+		t.Fatalf("stop %q, expected %q", out.LoopStop, agent.LoopFinished)
 	}
-	if sb.chamadas != 1 {
-		t.Fatalf("o sandbox foi chamado %d vez(es), esperava 1", sb.chamadas)
+	if sb.calls != 1 {
+		t.Fatalf("the sandbox was called %d time(s), expected 1", sb.calls)
 	}
-	// A ferramenta rodou o comando que o MODELO pediu, e na demanda certa.
-	if got := sb.comandos[0].Command; strings.Join(got, " ") != "sh -c git status" {
-		t.Fatalf("o comando chegou torto ao substrato: %v", got)
+	// The tool ran the command the MODEL asked for, and on the right demand.
+	if got := sb.commands[0].Command; strings.Join(got, " ") != "sh -c git status" {
+		t.Fatalf("the command reached the substrate mangled: %v", got)
 	}
-	if sb.demandas[0] != "dem-1" {
-		t.Fatalf("o comando foi para a demanda %q", sb.demandas[0])
+	if sb.demands[0] != "dem-1" {
+		t.Fatalf("the command went to demand %q", sb.demands[0])
 	}
 
-	// E o RESULTADO voltou para o modelo na volta seguinte — sem isso o laço é
-	// só uma chamada extra que o agente nunca lê.
-	if len(c.prov.turnos) != 2 {
-		t.Fatalf("o provedor recebeu %d turno(s)", len(c.prov.turnos))
+	// And the RESULT went back to the model on the next round — without that
+	// the loop is just an extra call the agent never reads.
+	if len(c.prov.turns) != 2 {
+		t.Fatalf("the provider received %d turn(s)", len(c.prov.turns))
 	}
-	segundo := c.prov.turnos[1]
-	if !mensagemComResultado(segundo, "MARCA-DA-SAIDA-DO-COMANDO") {
-		t.Fatalf("a saída do comando não voltou ao modelo:\n%+v", segundo.Messages)
+	second := c.prov.turns[1]
+	if !messageWithResult(second, "COMMAND-OUTPUT-MARKER") {
+		t.Fatalf("the command's output did not go back to the model:\n%+v", second.Messages)
 	}
-	// A fala do assistente com a chamada é reenviada junto: sem ela, o
-	// resultado fica órfão e os dois fornecedores recusam com 400 (D11).
-	if !mensagemComChamada(segundo, "call-1") {
-		t.Fatalf("a chamada não foi reenviada na história:\n%+v", segundo.Messages)
+	// The assistant's utterance with the call is resent alongside: without it,
+	// the result is orphaned and both providers refuse with a 400 (D11).
+	if !messageWithCall(second, "call-1") {
+		t.Fatalf("the call was not resent in the history:\n%+v", second.Messages)
 	}
-	// Concluiu de verdade: achado publicado.
+	// It really concluded: a finding was published.
 	if !out.Concluded || out.Finding == nil {
-		t.Fatalf("o turno não concluiu depois da ferramenta: %+v", out)
+		t.Fatalf("the turn did not conclude after the tool: %+v", out)
 	}
 }
 
-// Cada volta consome, e o total do turno é a SOMA. Registrar só a última
-// subestimaria o gasto por um fator igual ao número de voltas (ADR-0011 §2).
-func TestConsumoSomaTodasAsVoltas(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"),
-		respostaConcluindo(), // 1000 de entrada, 200 de saída
+// Every round consumes, and the turn's total is the SUM. Recording only the last
+// would underestimate the spend by a factor equal to the number of rounds
+// (ADR-0011 §2).
+func TestConsumptionSumsEveryRound(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"),
+		concludingReply(), // 1000 in, 200 out
 	})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-9")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-9")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if len(c.cust.consumos) != 2 {
-		t.Fatalf("esperava 2 registros de consumo (um por volta), veio %d", len(c.cust.consumos))
+	if len(c.cost.usages) != 2 {
+		t.Fatalf("expected 2 consumption records (one per round), got %d", len(c.cost.usages))
 	}
-	// Chaves DERIVADAS e distintas por volta: uma chave só faria o domínio de
-	// custo descartar a segunda como duplicata, e o orçamento enxergaria metade.
-	if c.cust.chavesUso[0] != "turno-9:usage:1" || c.cust.chavesUso[1] != "turno-9:usage:2" {
-		t.Fatalf("chaves de consumo: %v", c.cust.chavesUso)
+	// DERIVED keys, distinct per round: a single key would make the cost domain
+	// discard the second as a duplicate, and the budget would see half.
+	if c.cost.usageKeys[0] != "turn-9:usage:1" || c.cost.usageKeys[1] != "turn-9:usage:2" {
+		t.Fatalf("consumption keys: %v", c.cost.usageKeys)
 	}
-	quero := int64(100 + 1000)
-	if out.Usage.InputTokens != quero {
-		t.Fatalf("ORÇAMENTO FICTÍCIO: entrada somada deu %d, esperava %d — registrar só a "+
-			"última volta esconde o gasto das outras", out.Usage.InputTokens, quero)
+	want := int64(100 + 1000)
+	if out.Usage.InputTokens != want {
+		t.Fatalf("FICTIONAL BUDGET: summed input came to %d, expected %d — recording only "+
+			"the last round hides the other rounds' spend", out.Usage.InputTokens, want)
 	}
 	if out.Usage.OutputTokens != 20+200 {
-		t.Fatalf("saída somada deu %d", out.Usage.OutputTokens)
+		t.Fatalf("summed output came to %d", out.Usage.OutputTokens)
 	}
-	// E o custo também é somado, com o preço do modelo de cada volta.
+	// And the cost is summed too, with each round's model price.
 	if !out.Usage.CostKnown || out.Usage.CostMicros <= 0 {
-		t.Fatalf("custo somado veio %+v", out.Usage)
+		t.Fatalf("summed cost came out %+v", out.Usage)
 	}
 }
 
-// ── o teto ──────────────────────────────────────────────────────────────────
+// ── the cap ─────────────────────────────────────────────────────────────────
 
-// Laço sem teto é conta sem teto. "Bati o teto" precisa ser distinguível de
-// "terminei" — e um laço interrompido NÃO conclui thread.
-func TestTetoDeVoltasParaOLacoEhLegivel(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	// Um agente teimoso: pede ferramenta para sempre, e ainda marca conclusão.
-	insistente := respostaPedindoFerramenta("call-x", "npm test")
-	insistente.Data = map[string]any{
-		"reply": "quase lá", "concluded": true,
-		"finding_title": "titulo", "finding_summary": "resumo",
+// A loop with no cap is a bill with no cap. "I hit the cap" needs to be
+// distinguishable from "I finished" — and an interrupted loop does NOT conclude
+// a thread.
+func TestRoundCapStopsTheLoopReadably(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	// A stubborn agent: asks for a tool forever, and marks a conclusion too.
+	insistent := replyAskingForTool("call-x", "npm test")
+	insistent.Data = map[string]any{
+		"reply": "almost there", "concluded": true,
+		"finding_title": "a title", "finding_summary": "a summary",
 	}
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{insistente}, agent.WithMaxToolRounds(3))
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{insistent}, agent.WithMaxToolRounds(3))
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-teto")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-cap")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.ToolRounds != 3 {
-		t.Fatalf("LAÇO SEM TETO: deu %d voltas contra um teto de 3", out.ToolRounds)
+		t.Fatalf("LOOP WITH NO CAP: it took %d rounds against a cap of 3", out.ToolRounds)
 	}
 	if out.LoopStop != agent.LoopMaxRounds {
-		t.Fatalf("parada %q, esperava %q — 'bati o teto' é diferente de 'terminei'",
+		t.Fatalf("stop %q, expected %q — 'I hit the cap' is different from 'I finished'",
 			out.LoopStop, agent.LoopMaxRounds)
 	}
 	if out.MaxToolRounds != 3 {
-		t.Fatalf("o teto que valeu não viajou no resultado: %d", out.MaxToolRounds)
+		t.Fatalf("the cap that applied did not travel in the result: %d", out.MaxToolRounds)
 	}
-	// A última volta pediu ferramenta e ela NÃO rodou: o teto para antes.
-	if sb.chamadas != 2 {
-		t.Fatalf("o sandbox rodou %d vez(es); com teto 3, a última volta não executa", sb.chamadas)
+	// The last round asked for a tool and it did NOT run: the cap stops before.
+	if sb.calls != 2 {
+		t.Fatalf("the sandbox ran %d time(s); with a cap of 3, the last round does not execute", sb.calls)
 	}
-	if !algumAvisoContem(out.Warnings, "teto") {
-		t.Fatalf("bater o teto não gerou aviso legível: %v", out.Warnings)
+	if !someWarningContains(out.Warnings, "cap") {
+		t.Fatalf("hitting the cap produced no readable warning: %v", out.Warnings)
 	}
-	// A thread precisa DIZER que o trabalho parou no meio.
-	if !algumaMensagemContem(c.conv.mensagens, "teto de 3 volta") {
-		t.Fatal("a thread não recebeu o aviso da parada: quem lê a conversa veria um " +
-			"trabalho interrompido com cara de conclusão")
+	// The thread has to SAY the work stopped midway.
+	if !someMessageContains(c.conv.messages, "cap of 3 tool round") {
+		t.Fatal("the thread did not get the stop warning: whoever reads the conversation " +
+			"would see interrupted work with the face of a conclusion")
 	}
-	// E a conclusão que o modelo marcou é RECUSADA: achado escrito no meio do
-	// trabalho é durável e passa a valer como verdade.
-	if out.Concluded || out.Finding != nil || len(c.conv.achados) != 0 {
-		t.Fatal("o laço parou no teto e o turno CONCLUIU assim mesmo: o achado entraria na " +
-			"memória do projeto como se o trabalho tivesse terminado")
+	// And the conclusion the model marked is REFUSED: a finding written
+	// mid-work is durable and starts counting as truth.
+	if out.Concluded || out.Finding != nil || len(c.conv.findings) != 0 {
+		t.Fatal("the loop stopped at the cap and the turn CONCLUDED anyway: the finding " +
+			"would enter the project's memory as if the work had finished")
 	}
 }
 
-// O chamador pode ABAIXAR o teto, nunca levantar: teto que o cliente levanta não
-// é teto, é sugestão.
-func TestTetoDoChamadorSoAbaixa(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{respostaPedindoFerramenta("c", "ls")}, agent.WithMaxToolRounds(4))
+// The caller may LOWER the cap, never raise it: a cap the client raises is not a
+// cap, it is a suggestion.
+func TestCallerCapOnlyLowers(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{replyAskingForTool("c", "ls")}, agent.WithMaxToolRounds(4))
 
-	req := pedido()
-	req.MaxToolRounds = 99 // tentativa de levantar
-	alto, err := c.svc.RunTurn(contexto(), req, "turno-a")
+	req := request()
+	req.MaxToolRounds = 99 // an attempt to raise it
+	high, err := c.svc.RunTurn(callCtx(), req, "turn-a")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if alto.MaxToolRounds != 4 {
-		t.Fatalf("o chamador LEVANTOU o teto para %d: um teto que o cliente levanta não é "+
-			"teto (ADR-0011 §2)", alto.MaxToolRounds)
+	if high.MaxToolRounds != 4 {
+		t.Fatalf("the caller RAISED the cap to %d: a cap the client raises is not a "+
+			"cap (ADR-0011 §2)", high.MaxToolRounds)
 	}
 
-	c2 := montarComFerramentas(t, &sandboxFalso{}, agent.Accounting{},
-		[]*agent.Reply{respostaPedindoFerramenta("c", "ls")}, agent.WithMaxToolRounds(4))
+	c2 := setupWithTools(t, &fakeSandbox{}, agent.Accounting{},
+		[]*agent.Reply{replyAskingForTool("c", "ls")}, agent.WithMaxToolRounds(4))
 	req.MaxToolRounds = 2
-	baixo, err := c2.svc.RunTurn(contexto(), req, "turno-b")
+	low, err := c2.svc.RunTurn(callCtx(), req, "turn-b")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if baixo.MaxToolRounds != 2 || baixo.ToolRounds != 2 {
-		t.Fatalf("o chamador não conseguiu ABAIXAR o teto: %+v", baixo)
+	if low.MaxToolRounds != 2 || low.ToolRounds != 2 {
+		t.Fatalf("the caller could not LOWER the cap: %+v", low)
 	}
 }
 
-// ── orçamento ───────────────────────────────────────────────────────────────
+// ── budget ──────────────────────────────────────────────────────────────────
 
-// Orçamento estourado no meio do laço PARA o laço; não mata o turno. O que já
-// rodou é entregue (ADR-0011 §2).
-func TestOrcamentoEstouradoParaOLacoSemMatarOTurno(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	estourado := agent.Accounting{
+// A budget blown mid-loop STOPS the loop; it does not kill the turn. What
+// already ran is delivered (ADR-0011 §2).
+func TestBlownBudgetStopsTheLoopWithoutKillingTheTurn(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	blown := agent.Accounting{
 		BudgetExceeded: true,
 		Exceeded: []agent.BudgetView{{
 			Scope: "demand", ScopeID: "dem-1", LimitMicros: 10, SpentMicros: 99, Currency: "USD",
 		}},
 	}
-	c := montarComFerramentas(t, sb, estourado, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "npm test"),
-		respostaConcluindo(),
+	c := setupWithTools(t, sb, blown, []*agent.Reply{
+		replyAskingForTool("call-1", "npm test"),
+		concludingReply(),
 	})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-orc")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-budget")
 	if err != nil {
-		t.Fatalf("orçamento estourado MATOU o turno: %v — a ADR-0011 §2 recusou o corte duro", err)
+		t.Fatalf("a blown budget KILLED the turn: %v — ADR-0011 §2 refused the hard cut", err)
 	}
 	if out.LoopStop != agent.LoopBudget {
-		t.Fatalf("parada %q, esperava %q", out.LoopStop, agent.LoopBudget)
+		t.Fatalf("stop %q, expected %q", out.LoopStop, agent.LoopBudget)
 	}
 	if out.ToolRounds != 1 {
-		t.Fatalf("o laço deu %d voltas depois do estouro", out.ToolRounds)
+		t.Fatalf("the loop took %d rounds after the overrun", out.ToolRounds)
 	}
-	if sb.chamadas != 0 {
-		t.Fatal("a ferramenta rodou DEPOIS do orçamento estourar: o laço para antes da " +
-			"próxima volta, e a próxima volta inclui executar o que foi pedido")
+	if sb.calls != 0 {
+		t.Fatal("the tool ran AFTER the budget blew: the loop stops before the next " +
+			"round, and the next round includes executing what was asked for")
 	}
 	if !out.Paused || out.Notice == "" {
-		t.Fatalf("o turno não saiu pausado com aviso: %+v", out)
+		t.Fatalf("the turn did not come out paused with a notice: %+v", out)
 	}
-	// O que JÁ rodou é entregue: a resposta do modelo está na thread.
+	// What ALREADY ran is delivered: the model's reply is on the thread.
 	if out.Reply == "" || len(out.MessageIDs) < 2 {
-		t.Fatalf("o turno interrompido não entregou o que já tinha: %+v", out)
+		t.Fatalf("the interrupted turn did not deliver what it already had: %+v", out)
 	}
-	// E o consumo daquela volta ficou registrado: tokens pagos não somem.
-	if len(c.cust.consumos) != 1 {
-		t.Fatalf("consumo registrado %d vez(es)", len(c.cust.consumos))
+	// And that round's consumption stayed recorded: paid tokens do not vanish.
+	if len(c.cost.usages) != 1 {
+		t.Fatalf("consumption recorded %d time(s)", len(c.cost.usages))
 	}
 }
 
-// ── falha de ferramenta × falha de infraestrutura ───────────────────────────
+// ── tool failure × infrastructure failure ───────────────────────────────────
 
-// Comando que sai com código != 0 é RESULTADO: o modelo precisa ver a falha para
-// corrigir. O turno não morre.
-func TestFalhaDaFerramentaEhResultadoENaoErroDoTurno(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{
-		ExitCode: 2, Stdout: "", Stderr: "FALHA-DO-COMANDO: teste reprovou",
+// A command exiting with a code != 0 is a RESULT: the model needs to see the
+// failure in order to fix it. The turn does not die.
+func TestToolFailureIsAResultAndNotATurnError(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{
+		ExitCode: 2, Stdout: "", Stderr: "COMMAND-FAILURE: the test failed",
 	}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "npm test"),
-		respostaConcluindo(),
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "npm test"),
+		concludingReply(),
 	})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-falha")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-failure")
 	if err != nil {
-		t.Fatalf("FALHA DE FERRAMENTA MATOU O TURNO: %v — o modelo precisa VER que o "+
-			"comando falhou para corrigir", err)
+		t.Fatalf("A TOOL FAILURE KILLED THE TURN: %v — the model needs to SEE that the "+
+			"command failed in order to fix it", err)
 	}
 	if out.LoopStop != agent.LoopFinished {
-		t.Fatalf("parada %q", out.LoopStop)
+		t.Fatalf("stop %q", out.LoopStop)
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil {
-		t.Fatal("o resultado não chegou ao modelo")
+		t.Fatal("the result did not reach the model")
 	}
 	if !res.IsError {
-		t.Fatal("o resultado de um comando que saiu com código 2 não foi marcado como ERRO: " +
-			"o modelo leria a falha como saída normal")
+		t.Fatal("the result of a command that exited with code 2 was not marked as an ERROR: " +
+			"the model would read the failure as normal output")
 	}
-	if !strings.Contains(res.Content, "FALHA-DO-COMANDO") || !strings.Contains(res.Content, "exit_code: 2") {
-		t.Fatalf("o resultado não conta ao modelo o que houve:\n%s", res.Content)
+	if !strings.Contains(res.Content, "COMMAND-FAILURE") || !strings.Contains(res.Content, "exit_code: 2") {
+		t.Fatalf("the result does not tell the model what happened:\n%s", res.Content)
 	}
 }
 
-// Sandbox caiu é outra coisa: sobe e mata o turno. Nenhuma quantidade de tokens
-// gastos pelo modelo conserta um cluster fora do ar.
-func TestFalhaDeInfraestruturaSobeEMataOTurno(t *testing.T) {
-	sb := &sandboxFalso{erro: errs.New(errs.KindUnavailable, "o cluster não respondeu")}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"),
-		respostaConcluindo(),
+// A sandbox that went down is a different thing: it goes up and kills the turn.
+// No amount of tokens spent by the model fixes a cluster that is down.
+func TestInfrastructureFailureGoesUpAndKillsTheTurn(t *testing.T) {
+	sb := &fakeSandbox{failure: errs.New(errs.KindUnavailable, "the cluster did not answer")}
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"),
+		concludingReply(),
 	})
 
-	_, err := c.svc.RunTurn(contexto(), pedido(), "turno-infra")
+	_, err := c.svc.RunTurn(callCtx(), request(), "turn-infra")
 	if err == nil {
-		t.Fatal("substrato fora do ar virou resultado de ferramenta: insistir com o modelo " +
-			"contra uma parede é queimar dinheiro")
+		t.Fatal("a substrate that is down became a tool result: insisting with the model " +
+			"against a wall is burning money")
 	}
 	if errs.KindOf(err) != errs.KindUnavailable {
-		t.Fatalf("erro do tipo %q, esperava indisponível", errs.KindOf(err))
+		t.Fatalf("error of kind %q, expected unavailable", errs.KindOf(err))
 	}
 }
 
-// Recusa SOBRE A CHAMADA (nome errado, permissão) é coisa que o modelo conserta:
-// vira resultado de erro, não erro do turno.
-func TestRecusaSobreAChamadaViraResultado(t *testing.T) {
-	sb := &sandboxFalso{erro: errs.Invalid("comando não informado")}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"),
-		respostaConcluindo(),
+// A refusal ABOUT THE CALL (wrong name, permission) is something the model
+// fixes: it becomes an error result, not a turn error.
+func TestRefusalAboutTheCallBecomesAResult(t *testing.T) {
+	sb := &fakeSandbox{failure: errs.Invalid("no command provided")}
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"),
+		concludingReply(),
 	})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-recusa")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-refusal")
 	if err != nil {
-		t.Fatalf("recusa sobre a chamada matou o turno: %v", err)
+		t.Fatalf("a refusal about the call killed the turn: %v", err)
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil || !res.IsError {
-		t.Fatalf("a recusa não voltou como resultado de erro: %+v", res)
+		t.Fatalf("the refusal did not come back as an error result: %+v", res)
 	}
 	if out.LoopStop != agent.LoopFinished {
-		t.Fatalf("parada %q", out.LoopStop)
+		t.Fatalf("stop %q", out.LoopStop)
 	}
 }
 
-// ── ferramenta não declarada e argumento ilegível (D8, D11) ─────────────────
+// ── undeclared tool and unreadable argument (D8, D11) ───────────────────────
 
-func TestFerramentaNaoConcedidaViraResultadoDeErro(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0}}
-	pedindo := respostaPedindoFerramenta("call-1", "ls")
-	pedindo.ToolCalls[0].Name = "apagar_o_banco"
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
+func TestUngrantedToolBecomesAnErrorResult(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
+	asking := replyAskingForTool("call-1", "ls")
+	asking.ToolCalls[0].Name = "drop_the_database"
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-nd"); err != nil {
-		t.Fatalf("ferramenta desconhecida matou o turno: %v", err)
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-ut"); err != nil {
+		t.Fatalf("an unknown tool killed the turn: %v", err)
 	}
-	if sb.chamadas != 0 {
-		t.Fatal("O SUBSTRATO EXECUTOU UMA FERRAMENTA QUE NÃO FOI CONCEDIDA: nenhum dos dois " +
-			"fornecedores impede o modelo de chamar o que não existe — quem impede é o laço")
+	if sb.calls != 0 {
+		t.Fatal("THE SUBSTRATE EXECUTED A TOOL THAT WAS NOT GRANTED: neither provider " +
+			"stops the model from calling what does not exist — the loop is what stops it")
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil || !res.IsError {
-		t.Fatalf("a recusa não voltou ao modelo: %+v", res)
+		t.Fatalf("the refusal did not go back to the model: %+v", res)
 	}
-	// A lista de nomes válidos vai junto: recusa sem alternativa faz o modelo
-	// tentar o mesmo nome de novo, e cada tentativa é uma volta paga.
+	// The list of valid names travels along: a refusal with no alternative
+	// makes the model try the same name again, and each attempt is a paid round.
 	if !strings.Contains(res.Content, agent.ToolRunCommand) {
-		t.Fatalf("a recusa não diz o que existe:\n%s", res.Content)
+		t.Fatalf("the refusal does not say what exists:\n%s", res.Content)
 	}
 }
 
-func TestArgumentoIlegivelViraResultadoDeErroComOTextoCru(t *testing.T) {
-	sb := &sandboxFalso{}
-	pedindo := respostaPedindoFerramenta("call-1", "ls")
-	// É o que o adaptador entrega quando o fornecedor manda algo que não
-	// decodifica (D8): Input nulo, RawInput com o que veio.
-	pedindo.ToolCalls[0].Input = nil
-	pedindo.ToolCalls[0].RawInput = `{"command": ["sh", "-c", "npm te`
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
+func TestUnreadableArgumentBecomesAnErrorResultWithTheRawText(t *testing.T) {
+	sb := &fakeSandbox{}
+	asking := replyAskingForTool("call-1", "ls")
+	// It is what the adapter delivers when the provider sends something that
+	// does not decode (D8): a nil Input, RawInput with what came.
+	asking.ToolCalls[0].Input = nil
+	asking.ToolCalls[0].RawInput = `{"command": ["sh", "-c", "npm te`
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-arg"); err != nil {
-		t.Fatalf("argumento ilegível matou o turno: %v", err)
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-arg"); err != nil {
+		t.Fatalf("an unreadable argument killed the turn: %v", err)
 	}
-	if sb.chamadas != 0 {
-		t.Fatal("o laço executou uma chamada cujos argumentos não decodificaram")
+	if sb.calls != 0 {
+		t.Fatal("the loop executed a call whose arguments did not decode")
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil || !res.IsError {
-		t.Fatalf("a recusa não voltou ao modelo: %+v", res)
+		t.Fatalf("the refusal did not go back to the model: %+v", res)
 	}
 	if !strings.Contains(res.Content, "npm te") {
-		t.Fatalf("o texto CRU não voltou ao modelo: 'seu argumento é inválido' sem dizer "+
-			"qual argumento não conserta nada:\n%s", res.Content)
+		t.Fatalf("the RAW text did not go back to the model: 'your argument is invalid' "+
+			"without saying which argument fixes nothing:\n%s", res.Content)
 	}
 }
 
-// Argumento válido no JSON mas errado no schema também é assunto do modelo.
-func TestComandoAusenteViraResultadoDeErro(t *testing.T) {
-	sb := &sandboxFalso{}
-	pedindo := respostaPedindoFerramenta("call-1", "ls")
-	pedindo.ToolCalls[0].Input = map[string]any{"comando": "git status"} // campo errado
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
+// An argument valid as JSON but wrong against the schema is also the model's
+// business.
+func TestMissingCommandBecomesAnErrorResult(t *testing.T) {
+	sb := &fakeSandbox{}
+	asking := replyAskingForTool("call-1", "ls")
+	asking.ToolCalls[0].Input = map[string]any{"cmd": "git status"} // the wrong field
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-cmd"); err != nil {
-		t.Fatalf("argumento fora do schema matou o turno: %v", err)
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-cmd"); err != nil {
+		t.Fatalf("an argument outside the schema killed the turn: %v", err)
 	}
-	if sb.chamadas != 0 {
-		t.Fatal("o laço executou uma chamada sem comando")
+	if sb.calls != 0 {
+		t.Fatal("the loop executed a call with no command")
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil || !strings.Contains(res.Content, "command") {
-		t.Fatalf("a recusa não diz qual campo falta: %+v", res)
+		t.Fatalf("the refusal does not say which field is missing: %+v", res)
 	}
 }
 
-// ── a garantia mais cara: nada da plataforma entra no sandbox ───────────────
+// ── the most expensive guarantee: nothing from the platform enters the sandbox
 
-// O sandbox roda código de agente, que lê conteúdo não confiável (spec do
-// substrato §6). A credencial do provedor de modelo mora no cofre e é usada no
-// mesmo processo (ADR-0023) — e não pode escorrer para dentro do sandbox por
-// nenhuma fresta do laço.
+// The sandbox runs agent code, which reads untrusted content (substrate spec
+// §6). The model provider's credential lives in the vault and is used in the
+// same process (ADR-0023) — and it must not leak into the sandbox through any
+// crack in the loop.
 //
-// A prova estrutural é a porta: `SandboxCommand` não tem campo de ambiente nem
-// de credencial (nem `ports.ExecRequest` tem). Este teste é a prova de
-// COMPORTAMENTO: nada do que atravessa o laço — nem o prefixo do prompt, que
-// contém a ficha da thread, nem o texto do usuário — chega ao substrato.
-func TestNadaDoQuePassaPeloLacoCarregaCredencial(t *testing.T) {
-	const chave = "sk-SENTINELA-DE-CREDENCIAL-NAO-PODE-CHEGAR-AO-SANDBOX"
+// The structural proof is the port: `SandboxCommand` has no environment field
+// and no credential field (nor does `ports.ExecRequest`). This test is the
+// BEHAVIOURAL proof: nothing that crosses the loop — not the prompt's prefix,
+// which contains the thread's card, nor the user's text — reaches the substrate.
+func TestNothingCrossingTheLoopCarriesACredential(t *testing.T) {
+	const key = "sk-CREDENTIAL-SENTINEL-MUST-NOT-REACH-THE-SANDBOX"
 
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	// Um modelo hostil: tenta arrastar a chave para dentro por três caminhos —
-	// no comando, num campo extra do argumento, e no id da chamada.
-	pedindo := respostaPedindoFerramenta("call-"+chave, "echo oi")
-	pedindo.ToolCalls[0].Input["credencial"] = chave
-	pedindo.Text = "vou usar " + chave
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	// A hostile model: it tries to drag the key inside along three paths — in
+	// the command, in an extra argument field, and in the call's id.
+	asking := replyAskingForTool("call-"+key, "echo hi")
+	asking.ToolCalls[0].Input["credential"] = key
+	asking.Text = "I am going to use " + key
 
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
-	// E o provedor carrega a chave na ficha dele, que é o pior caso: uma ficha
-	// que vazasse para o comando entregaria a chave de todas as contas.
-	c.prov.info.Prices = map[string]agent.Price{chave: {Currency: "USD"}}
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
+	// And the provider carries the key in its own data sheet, which is the
+	// worst case: a sheet leaking into the command would hand over the key of
+	// every account.
+	c.prov.info.Prices = map[string]agent.Price{key: {Currency: "USD"}}
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-cred"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-cred"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if sb.chamadas != 1 {
-		t.Fatalf("o sandbox foi chamado %d vez(es)", sb.chamadas)
+	if sb.calls != 1 {
+		t.Fatalf("the sandbox was called %d time(s)", sb.calls)
 	}
-	// A varredura é sobre o comando INTEIRO, serializado: é a única forma de
-	// não depender de lembrar quais campos existem hoje.
-	bruto, err := json.Marshal(sb.comandos[0])
+	// The sweep is over the WHOLE command, serialized: it is the only way not
+	// to depend on remembering which fields exist today.
+	raw, err := json.Marshal(sb.commands[0])
 	if err != nil {
-		t.Fatalf("serialização do comando: %v", err)
+		t.Fatalf("serializing the command: %v", err)
 	}
-	if strings.Contains(string(bruto), chave) {
-		t.Fatalf("A CREDENCIAL ATRAVESSOU O LAÇO E CHEGOU AO SUBSTRATO: %s", bruto)
+	if strings.Contains(string(raw), key) {
+		t.Fatalf("THE CREDENTIAL CROSSED THE LOOP AND REACHED THE SUBSTRATE: %s", raw)
 	}
-	// E a demanda também não pode carregar nada além do id.
-	if strings.Contains(sb.demandas[0], chave) {
-		t.Fatal("a credencial foi parar no identificador da demanda")
+	// And the demand must not carry anything beyond the id either.
+	if strings.Contains(sb.demands[0], key) {
+		t.Fatal("the credential ended up in the demand's identifier")
 	}
 }
 
-// ── instalação sem substrato ────────────────────────────────────────────────
+// ── an installation with no substrate ───────────────────────────────────────
 
-// Ficha que concede ferramenta numa instalação sem substrato: o turno roda, as
-// ferramentas NÃO são declaradas, e o aviso diz por quê. As três alternativas
-// piores são declarar (o agente planeja em cima do que não existe), silenciar (a
-// ficha parece honrada) e recusar (uma linha de ficha para o trabalho inteiro).
-func TestFichaComFerramentaSemSubstratoAvisaENaoDeclara(t *testing.T) {
-	prov := &provedorFalso{info: fichaDoProvedor(), resposta: respostaConcluindo()}
-	cust := &custoFalso{decisao: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong}}
-	conv := &conversaFalsa{thread: agent.Thread{ID: "thr-1", Key: "principal", Card: fichaComFerramenta()}}
-	svc := agent.NewService(prov, conhecimentoFalso{}, cust, conv) // SEM WithSandbox
+// A card granting a tool in an installation with no substrate: the turn runs,
+// the tools are NOT declared, and the warning says why. The three worse
+// alternatives are declaring (the agent plans on top of what does not exist),
+// staying silent (the card looks honoured) and refusing (one line of a card
+// stopping the whole job).
+func TestCardWithToolAndNoSubstrateWarnsAndDoesNotDeclare(t *testing.T) {
+	prov := &fakeProvider{info: providerSheet(), reply: concludingReply()}
+	cost := &fakeCost{decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong}}
+	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main", Card: cardWithTool()}}
+	svc := agent.NewService(prov, fakeKnowledge{}, cost, conv) // NO WithSandbox
 
-	out, err := svc.RunTurn(contexto(), pedido(), "turno-sem-sb")
+	out, err := svc.RunTurn(callCtx(), request(), "turn-no-sb")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if len(prov.turnoPedido.Tools) != 0 {
-		t.Fatalf("as ferramentas foram DECLARADAS sem substrato para executá-las: %+v",
-			prov.turnoPedido.Tools)
+	if len(prov.askedTurn.Tools) != 0 {
+		t.Fatalf("the tools were DECLARED with no substrate to execute them: %+v",
+			prov.askedTurn.Tools)
 	}
-	if !algumAvisoContem(out.Warnings, "substrato de execução") {
-		t.Fatalf("a ficha prometeu ação, nada foi ligado, e ninguém avisou: %v", out.Warnings)
+	if !someWarningContains(out.Warnings, "execution substrate") {
+		t.Fatalf("the card promised action, nothing was wired, and nobody warned: %v", out.Warnings)
 	}
 }
 
-// Modelo que pede ferramenta numa instalação sem substrato: o laço para e DIZ.
-func TestPedidoDeFerramentaSemSubstratoParaOLacoComAviso(t *testing.T) {
-	prov := &provedorFalso{
-		info: fichaDoProvedor(), resposta: respostaPedindoFerramenta("call-1", "ls"),
+// A model asking for a tool in an installation with no substrate: the loop stops
+// and SAYS so.
+func TestToolRequestWithNoSubstrateStopsTheLoopWithAWarning(t *testing.T) {
+	prov := &fakeProvider{
+		info: providerSheet(), reply: replyAskingForTool("call-1", "ls"),
 	}
-	cust := &custoFalso{decisao: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong}}
-	conv := &conversaFalsa{thread: agent.Thread{ID: "thr-1", Key: "principal"}}
-	svc := agent.NewService(prov, conhecimentoFalso{}, cust, conv)
+	cost := &fakeCost{decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong}}
+	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main"}}
+	svc := agent.NewService(prov, fakeKnowledge{}, cost, conv)
 
-	out, err := svc.RunTurn(contexto(), pedido(), "turno-sem-sb2")
+	out, err := svc.RunTurn(callCtx(), request(), "turn-no-sb2")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.LoopStop != agent.LoopNoSandbox {
-		t.Fatalf("parada %q, esperava %q", out.LoopStop, agent.LoopNoSandbox)
+		t.Fatalf("stop %q, expected %q", out.LoopStop, agent.LoopNoSandbox)
 	}
 	if out.ToolRounds != 1 {
-		t.Fatalf("o laço deu %d voltas sem ter o que executar", out.ToolRounds)
+		t.Fatalf("the loop took %d rounds with nothing to execute", out.ToolRounds)
 	}
 }
 
-// ── o catálogo ──────────────────────────────────────────────────────────────
+// ── the catalog ─────────────────────────────────────────────────────────────
 
-func TestCatalogoDeFerramentas(t *testing.T) {
-	t.Run("sem_concessao_nao_ha_ferramenta", func(t *testing.T) {
-		specs, desconhecidas := agent.ToolCatalog(nil)
-		if len(specs) != 0 || len(desconhecidas) != 0 {
-			t.Fatalf("ficha sem ferramenta declarou %d: agente sem concessão não age", len(specs))
+func TestToolCatalog(t *testing.T) {
+	t.Run("no_grant_means_no_tool", func(t *testing.T) {
+		specs, unknown := agent.ToolCatalog(nil)
+		if len(specs) != 0 || len(unknown) != 0 {
+			t.Fatalf("a card with no tool declared %d: an agent with no grant does not act", len(specs))
 		}
 	})
 
-	t.Run("nome_inexistente_volta_separado", func(t *testing.T) {
-		specs, desconhecidas := agent.ToolCatalog(
-			[]string{"apagar_o_banco", agent.ToolRunCommand, "  "})
+	t.Run("a_nonexistent_name_comes_back_separately", func(t *testing.T) {
+		specs, unknown := agent.ToolCatalog(
+			[]string{"drop_the_database", agent.ToolRunCommand, "  "})
 		if len(specs) != 1 || specs[0].Name != agent.ToolRunCommand {
-			t.Fatalf("as concedidas válidas não saíram: %+v", specs)
+			t.Fatalf("the valid grants did not come out: %+v", specs)
 		}
-		if len(desconhecidas) != 1 || desconhecidas[0] != "apagar_o_banco" {
-			t.Fatalf("o nome inexistente não voltou separado: %v — silenciá-lo faria o "+
-				"agente parecer capaz de algo que ninguém instalou", desconhecidas)
+		if len(unknown) != 1 || unknown[0] != "drop_the_database" {
+			t.Fatalf("the nonexistent name did not come back separately: %v — silencing it "+
+				"would make the agent look capable of something nobody installed", unknown)
 		}
 	})
 
-	t.Run("ordem_alfabetica_e_sem_repeticao", func(t *testing.T) {
-		// A ordem é a do catálogo, não a da ficha: a ordem em que alguém
-		// digitou duas ferramentas não é escolha de ninguém, mas mudaria os
-		// bytes do prefixo e a entrada de cache junto (ADR-0012 §1).
+	t.Run("alphabetical_order_and_no_repetition", func(t *testing.T) {
+		// The order is the catalog's, not the card's: the order in which
+		// somebody typed two tools is nobody's choice, but it would change the
+		// prefix's bytes and the cache entry with it (ADR-0012 §1).
 		a, _ := agent.ToolCatalog([]string{agent.ToolRunCommand, agent.ToolRunCommand})
 		if len(a) != 1 {
-			t.Fatalf("nome repetido virou duas declarações: %+v", a)
+			t.Fatalf("a repeated name became two declarations: %+v", a)
 		}
 	})
 
-	t.Run("o_schema_nao_e_compartilhado", func(t *testing.T) {
-		// Duas chamadas precisam devolver mapas DIFERENTES: um mapa
-		// compartilhado deixaria o primeiro adaptador que o alterasse mudar o
-		// contrato de todos os turnos de todas as contas.
+	t.Run("the_schema_is_not_shared", func(t *testing.T) {
+		// Two calls have to return DIFFERENT maps: a shared map would let the
+		// first adapter that altered it change the contract of every turn of
+		// every account.
 		a, _ := agent.ToolCatalog([]string{agent.ToolRunCommand})
 		b, _ := agent.ToolCatalog([]string{agent.ToolRunCommand})
-		a[0].InputSchema["envenenado"] = true
-		if _, ok := b[0].InputSchema["envenenado"]; ok {
-			t.Fatal("o schema da ferramenta é COMPARTILHADO entre chamadas")
+		a[0].InputSchema["poisoned"] = true
+		if _, ok := b[0].InputSchema["poisoned"]; ok {
+			t.Fatal("the tool's schema is SHARED between calls")
 		}
 	})
 }
 
-// ── auxiliares de leitura ───────────────────────────────────────────────────
+// ── reading helpers ─────────────────────────────────────────────────────────
 
-func mensagemComResultado(t agent.Turn, trecho string) bool {
+func messageWithResult(t agent.Turn, fragment string) bool {
 	for _, m := range t.Messages {
 		for _, r := range m.ToolResults {
-			if strings.Contains(r.Content, trecho) {
+			if strings.Contains(r.Content, fragment) {
 				return true
 			}
 		}
@@ -608,7 +614,7 @@ func mensagemComResultado(t agent.Turn, trecho string) bool {
 	return false
 }
 
-func mensagemComChamada(t agent.Turn, id string) bool {
+func messageWithCall(t agent.Turn, id string) bool {
 	for _, m := range t.Messages {
 		if m.Role != agent.RoleAssistant {
 			continue
@@ -622,7 +628,7 @@ func mensagemComChamada(t agent.Turn, id string) bool {
 	return false
 }
 
-func resultadoNaHistoria(t agent.Turn, callID string) *agent.ToolResult {
+func resultInHistory(t agent.Turn, callID string) *agent.ToolResult {
 	for _, m := range t.Messages {
 		for i, r := range m.ToolResults {
 			if r.CallID == callID {
@@ -633,235 +639,239 @@ func resultadoNaHistoria(t agent.Turn, callID string) *agent.ToolResult {
 	return nil
 }
 
-func algumAvisoContem(avisos []string, trecho string) bool {
-	for _, a := range avisos {
-		if strings.Contains(a, trecho) {
+func someWarningContains(warnings []string, fragment string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, fragment) {
 			return true
 		}
 	}
 	return false
 }
 
-func algumaMensagemContem(msgs []mensagemGravada, trecho string) bool {
+func someMessageContains(msgs []recordedMessage, fragment string) bool {
 	for _, m := range msgs {
-		if strings.Contains(m.texto, trecho) {
+		if strings.Contains(m.text, fragment) {
 			return true
 		}
 	}
 	return false
 }
 
-// Só "terminei" admite conclusão de thread.
+// Only "I finished" admits concluding a thread.
 //
-// A regra vive aqui, na forma pura, porque no ciclo do turno ela é a SEGUNDA
-// tranca de uma porta que `executeTurn` já trancou (ver service.go): toda parada
-// que não é `finished` acontece com chamada de ferramenta pendente, e chamada
-// pendente já zera `concluded`. A redundância é deliberada — as duas regras são
-// sobre coisas diferentes —, e testá-la aqui é o que impede que ela apodreça sem
-// ninguém notar.
-func TestSoOFimDoLacoAdmiteConclusao(t *testing.T) {
+// The rule lives here, in its pure form, because in the turn's cycle it is the
+// SECOND lock on a door `executeTurn` already locked (see service.go): every
+// stop that is not `finished` happens with a pending tool call, and a pending
+// call already zeroes `concluded`. The redundancy is deliberate — the two rules
+// are about different things — and testing it here is what stops it from rotting
+// without anyone noticing.
+func TestOnlyTheLoopsEndAdmitsAConclusion(t *testing.T) {
 	if !agent.LoopFinished.Concluded() {
-		t.Fatal("o laço terminou sozinho e a conclusão foi recusada")
+		t.Fatal("the loop finished on its own and the conclusion was refused")
 	}
-	for _, parada := range []agent.LoopStop{
+	for _, stop := range []agent.LoopStop{
 		agent.LoopMaxRounds, agent.LoopBudget, agent.LoopNoSandbox,
 	} {
-		if parada.Concluded() {
-			t.Fatalf("a parada %q admitiu conclusão: um achado escrito no meio do trabalho "+
-				"é durável e passa a valer como verdade na memória do projeto", parada)
+		if stop.Concluded() {
+			t.Fatalf("stop %q admitted a conclusion: a finding written mid-work is durable "+
+				"and starts counting as truth in the project's memory", stop)
 		}
 	}
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// AS CINCO SONDAS — o que a suíte NÃO pegava depois de todas as quebras
-// esperadas terem reprovado.
+// THE FIVE PROBES — what the suite did NOT catch after every expected break had
+// failed as it should.
 //
-// Cada teste abaixo nasceu de uma quebra deliberada que PASSOU LIMPO. É o mesmo
-// método que descobriu, na entrega anterior, que apagar o breakpoint de cache da
-// Anthropic não reprovava nada e multiplicava a conta por dez: quebrar o óbvio
-// prova que a suíte funciona; quebrar o não-óbvio é o que descobre o que ela não
-// vê. Nenhuma das cinco falha com erro — todas falham com fatura, com uma
-// conclusão errada, ou com um comando que ninguém pediu.
+// Each test below was born from a deliberate break that PASSED CLEAN. It is the
+// same method that discovered, in the previous delivery, that erasing
+// Anthropic's cache breakpoint failed nothing and multiplied the bill by ten:
+// breaking the obvious proves the suite works; breaking the non-obvious is what
+// discovers what it does not see. None of the five fails with an error — all
+// five fail with an invoice, with a wrong conclusion, or with a command nobody
+// asked for.
 // ════════════════════════════════════════════════════════════════════════════
 
-// SONDA 1 — a mais cara. O prefixo estável precisa ser BYTE A BYTE o mesmo em
-// todas as voltas do laço.
+// PROBE 1 — the most expensive one. The stable prefix has to be BYTE FOR BYTE
+// the same on every round of the loop.
 //
-// A quebra que passou limpo: acrescentar um byte ao prefixo a cada volta. Nada
-// erra. O laço continua funcionando, o agente continua respondendo, os testes
-// continuam verdes — e cada volta passa a pagar o prefixo INTEIRO como entrada
-// nova, a 10× o preço da leitura de cache (ADR-0012 §1). Num turno de oito
-// voltas com um pacote de contexto grande, é a diferença entre centavos e
-// dólares por turno, multiplicada por toda thread de toda conta.
-func TestPrefixoEstavelNaoMudaEntreAsVoltas(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"),
-		respostaPedindoFerramenta("call-2", "cat go.mod"),
-		respostaConcluindo(),
+// The break that passed clean: adding one byte to the prefix on every round.
+// Nothing goes wrong. The loop keeps working, the agent keeps answering, the
+// tests stay green — and every round starts paying for the WHOLE prefix as new
+// input, at 10× the price of a cache read (ADR-0012 §1). In an eight-round turn
+// with a large context package, it is the difference between cents and dollars
+// per turn, multiplied by every thread of every account.
+func TestStablePrefixDoesNotChangeBetweenRounds(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"),
+		replyAskingForTool("call-2", "cat go.mod"),
+		concludingReply(),
 	})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-cache"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-cache"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if len(c.prov.turnos) != 3 {
-		t.Fatalf("esperava 3 voltas, veio %d", len(c.prov.turnos))
+	if len(c.prov.turns) != 3 {
+		t.Fatalf("expected 3 rounds, got %d", len(c.prov.turns))
 	}
-	base := c.prov.turnos[0]
-	for i, turno := range c.prov.turnos[1:] {
-		if turno.StablePrefix != base.StablePrefix {
-			t.Fatalf("O PREFIXO ESTÁVEL MUDOU NA VOLTA %d: nada falha por isso, e cada volta "+
-				"passa a pagar o prefixo inteiro como entrada nova (~10× a leitura de cache, "+
-				"ADR-0012 §1). É o defeito que só a fatura conta.\nvolta 1: %q\nvolta %d: %q",
-				i+2, base.StablePrefix, i+2, turno.StablePrefix)
+	base := c.prov.turns[0]
+	for i, turn := range c.prov.turns[1:] {
+		if turn.StablePrefix != base.StablePrefix {
+			t.Fatalf("THE STABLE PREFIX CHANGED ON ROUND %d: nothing fails because of it, "+
+				"and every round starts paying for the whole prefix as new input (~10× a "+
+				"cache read, ADR-0012 §1). It is the defect only the invoice reports.\n"+
+				"round 1: %q\nround %d: %q",
+				i+2, base.StablePrefix, i+2, turn.StablePrefix)
 		}
-		if turno.Fingerprint() != base.Fingerprint() {
-			t.Fatalf("a impressão digital do prefixo mudou na volta %d", i+2)
+		if turn.Fingerprint() != base.Fingerprint() {
+			t.Fatalf("the prefix's fingerprint changed on round %d", i+2)
 		}
-		// A DECLARAÇÃO de ferramenta também é prefixo nos dois fornecedores
-		// (garantia 15). Uma lista que muda de conteúdo ou de ordem entre
-		// voltas invalida o cache pela mesma porta.
-		if len(turno.Tools) != len(base.Tools) {
-			t.Fatalf("a declaração de ferramentas mudou na volta %d: %+v", i+2, turno.Tools)
+		// The tool DECLARATION is prefix in both providers too (guarantee 15).
+		// A list that changes content or order between rounds invalidates the
+		// cache through the same door.
+		if len(turn.Tools) != len(base.Tools) {
+			t.Fatalf("the tool declaration changed on round %d: %+v", i+2, turn.Tools)
 		}
-		for j := range turno.Tools {
-			if turno.Tools[j].Name != base.Tools[j].Name {
-				t.Fatalf("a ORDEM das ferramentas mudou na volta %d: %+v", i+2, turno.Tools)
+		for j := range turn.Tools {
+			if turn.Tools[j].Name != base.Tools[j].Name {
+				t.Fatalf("the tools' ORDER changed on round %d: %+v", i+2, turn.Tools)
 			}
 		}
 	}
 }
 
-// SONDA 2 — saída cortada que não se anuncia.
+// PROBE 2 — a cut output that does not announce itself.
 //
-// A quebra que passou limpo: apagar o aviso de corte do resultado que volta ao
-// modelo. O comando continua rodando, o resultado continua chegando, o teto
-// continua sendo respeitado — e o agente conclui a partir de metade de um log
-// achando que leu o log inteiro. É a mesma classe do truncamento de contexto
-// (ADR-0012), que o runtime já anuncia em dois lugares: a conclusão sai errada e
-// ninguém consegue explicar por quê depois.
-func TestSaidaCortadaEhAnunciadaAoModelo(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{
-		ExitCode: 0, Stdout: "primeiras linhas do log", Truncated: true,
+// The break that passed clean: erasing the cut warning from the result that goes
+// back to the model. The command keeps running, the result keeps arriving, the
+// cap keeps being respected — and the agent concludes from half a log thinking
+// it read the whole log. It is the same class as the context truncation
+// (ADR-0012), which the runtime already announces in two places: the conclusion
+// comes out wrong and nobody can explain why afterwards.
+func TestCutOutputIsAnnouncedToTheModel(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{
+		ExitCode: 0, Stdout: "the log's first lines", Truncated: true,
 	}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "cat /var/log/enorme"),
-		respostaConcluindo(),
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "cat /var/log/huge"),
+		concludingReply(),
 	})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-corte"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-cut"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	res := resultadoNaHistoria(c.prov.turnos[1], "call-1")
+	res := resultInHistory(c.prov.turns[1], "call-1")
 	if res == nil {
-		t.Fatal("o resultado não chegou ao modelo")
+		t.Fatal("the result did not reach the model")
 	}
 	if !strings.Contains(strings.ToUpper(res.Content), "CUT") {
-		t.Fatalf("A SAÍDA FOI CORTADA E O MODELO NÃO FOI AVISADO: ele vai concluir a partir "+
-			"de metade do log achando que leu tudo, e a conclusão errada não terá "+
-			"explicação depois.\nresultado:\n%s", res.Content)
+		t.Fatalf("THE OUTPUT WAS CUT AND THE MODEL WAS NOT WARNED: it is going to conclude "+
+			"from half the log thinking it read everything, and the wrong conclusion will "+
+			"have no explanation afterwards.\nresult:\n%s", res.Content)
 	}
 }
 
-// SONDA 3 — o prazo que o MODELO pede não pode ser ilimitado.
+// PROBE 3 — the deadline the MODEL asks for must not be unlimited.
 //
-// A quebra que passou limpo: remover o teto de `timeout_seconds`. O schema aceita
-// o campo, o modelo pode escrever 86400, e um único comando pendurado passa a
-// segurar o turno por um dia. Não é erro: é uma thread que nunca responde e um
-// sandbox que nunca suspende por ociosidade porque o comando ainda está "vivo".
-func TestPrazoPedidoPeloModeloEhLimitado(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0}}
-	pedindo := respostaPedindoFerramenta("call-1", "sleep infinity")
-	pedindo.ToolCalls[0].Input["timeout_seconds"] = float64(86400) // um dia
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
+// The break that passed clean: removing the `timeout_seconds` cap. The schema
+// accepts the field, the model may write 86400, and a single hung command starts
+// holding the turn for a day. It is not an error: it is a thread that never
+// answers and a sandbox that never suspends for idleness because the command is
+// still "alive".
+func TestDeadlineAskedForByTheModelIsCapped(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
+	asking := replyAskingForTool("call-1", "sleep infinity")
+	asking.ToolCalls[0].Input["timeout_seconds"] = float64(86400) // a day
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-prazo"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-deadline"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if got := sb.comandos[0].TimeoutSeconds; got > agent.MaxToolTimeoutSeconds {
-		t.Fatalf("O MODELO ESCOLHEU UM PRAZO DE %ds, ACIMA DO TETO DE %ds: um comando "+
-			"pendurado passa a segurar o turno indefinidamente, e a thread nunca responde",
+	if got := sb.commands[0].TimeoutSeconds; got > agent.MaxToolTimeoutSeconds {
+		t.Fatalf("THE MODEL CHOSE A DEADLINE OF %ds, ABOVE THE CAP OF %ds: a hung command "+
+			"starts holding the turn indefinitely, and the thread never answers",
 			got, agent.MaxToolTimeoutSeconds)
 	}
-	// E o padrão continua valendo quando ele não pede nada.
-	sb2 := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0}}
-	c2 := montarComFerramentas(t, sb2, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"), respostaConcluindo(),
+	// And the default still applies when it asks for nothing.
+	sb2 := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
+	c2 := setupWithTools(t, sb2, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"), concludingReply(),
 	})
-	if _, err := c2.svc.RunTurn(contexto(), pedido(), "turno-prazo2"); err != nil {
+	if _, err := c2.svc.RunTurn(callCtx(), request(), "turn-deadline2"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if sb2.comandos[0].TimeoutSeconds != agent.DefaultToolTimeoutSeconds {
-		t.Fatalf("sem pedido do modelo, o prazo veio %ds", sb2.comandos[0].TimeoutSeconds)
+	if sb2.commands[0].TimeoutSeconds != agent.DefaultToolTimeoutSeconds {
+		t.Fatalf("with no request from the model, the deadline came out as %ds", sb2.commands[0].TimeoutSeconds)
 	}
 }
 
-// SONDA 4 — a ordem dos resultados é a das chamadas (D10).
+// PROBE 4 — the results' order is the calls' order (D10).
 //
-// A quebra que passou limpo: inverter os resultados antes de devolvê-los. Os dois
-// fornecedores aceitam — o vínculo é por id, não por posição —, e nada falha. O
-// que muda é a LEITURA do modelo: "rodei o teste e depois li o log" vira "li o
-// log e depois rodei o teste", e ele passa a raciocinar sobre uma sequência de
-// eventos que não aconteceu.
-func TestResultadosVoltamNaOrdemDasChamadas(t *testing.T) {
-	sb := &sandboxFalso{porChamada: []agent.SandboxOutput{
-		{ExitCode: 0, Stdout: "SAIDA-DA-PRIMEIRA"},
-		{ExitCode: 0, Stdout: "SAIDA-DA-SEGUNDA"},
+// The break that passed clean: reversing the results before returning them. Both
+// providers accept it — the link is by id, not by position — and nothing fails.
+// What changes is the model's READING: "I ran the test and then read the log"
+// becomes "I read the log and then ran the test", and it starts reasoning about a
+// sequence of events that did not happen.
+func TestResultsComeBackInTheCallsOrder(t *testing.T) {
+	sb := &fakeSandbox{perCall: []agent.SandboxOutput{
+		{ExitCode: 0, Stdout: "FIRST-OUTPUT"},
+		{ExitCode: 0, Stdout: "SECOND-OUTPUT"},
 	}}
-	// Duas chamadas na MESMA volta — é o paralelismo que os dois fornecedores
-	// fazem por padrão (D10).
-	pedindo := respostaPedindoFerramenta("call-1", "primeiro")
-	pedindo.ToolCalls = append(pedindo.ToolCalls, agent.ToolCall{
+	// Two calls in the SAME round — it is the parallelism both providers do by
+	// default (D10).
+	asking := replyAskingForTool("call-1", "first")
+	asking.ToolCalls = append(asking.ToolCalls, agent.ToolCall{
 		ID: "call-2", Name: agent.ToolRunCommand,
-		Input: map[string]any{"command": []any{"sh", "-c", "segundo"}},
+		Input: map[string]any{"command": []any{"sh", "-c", "second"}},
 	})
-	c := montarComFerramentas(t, sb, agent.Accounting{},
-		[]*agent.Reply{pedindo, respostaConcluindo()})
+	c := setupWithTools(t, sb, agent.Accounting{},
+		[]*agent.Reply{asking, concludingReply()})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-ordem"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-order"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	var resultados []agent.ToolResult
-	for _, m := range c.prov.turnos[1].Messages {
+	var results []agent.ToolResult
+	for _, m := range c.prov.turns[1].Messages {
 		if m.Role == agent.RoleToolResult {
-			resultados = append(resultados, m.ToolResults...)
+			results = append(results, m.ToolResults...)
 		}
 	}
-	if len(resultados) != 2 {
-		t.Fatalf("esperava 2 resultados, vieram %d", len(resultados))
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
 	}
-	if resultados[0].CallID != "call-1" || resultados[1].CallID != "call-2" {
-		t.Fatalf("OS RESULTADOS VOLTARAM FORA DA ORDEM DAS CHAMADAS (%q, %q): os fornecedores "+
-			"aceitam, porque o vínculo é por id — quem lê errado é o MODELO, que passa a "+
-			"raciocinar sobre uma sequência de eventos que não aconteceu (D10)",
-			resultados[0].CallID, resultados[1].CallID)
+	if results[0].CallID != "call-1" || results[1].CallID != "call-2" {
+		t.Fatalf("THE RESULTS CAME BACK OUT OF THE CALLS' ORDER (%q, %q): the providers "+
+			"accept it, because the link is by id — the one who reads it wrong is the "+
+			"MODEL, which starts reasoning about a sequence of events that did not "+
+			"happen (D10)",
+			results[0].CallID, results[1].CallID)
 	}
-	if !strings.Contains(resultados[0].Content, "SAIDA-DA-PRIMEIRA") {
-		t.Fatalf("o resultado da primeira chamada não é o da primeira execução:\n%s",
-			resultados[0].Content)
+	if !strings.Contains(results[0].Content, "FIRST-OUTPUT") {
+		t.Fatalf("the first call's result is not the first execution's:\n%s",
+			results[0].Content)
 	}
 }
 
-// SONDA 5 — o teto de saída do DOMÍNIO precisa chegar ao substrato.
+// PROBE 5 — the DOMAIN's output cap has to reach the substrate.
 //
-// A quebra que passou limpo: mandar zero em `MaxOutputBytes`. A porta trata zero
-// como "use o meu padrão", então nada falha e nada estoura — o que muda é que o
-// teto passa a ser o da PORTA (64 KiB) em vez do do domínio (32 KiB), e cada
-// resultado de ferramenta entra no contexto do próximo turno com o dobro do
-// tamanho. É política de custo (ADR-0011) decidida por omissão, na camada errada.
-func TestTetoDeSaidaDoDominioChegaAoSubstrato(t *testing.T) {
-	sb := &sandboxFalso{saida: agent.SandboxOutput{ExitCode: 0}}
-	c := montarComFerramentas(t, sb, agent.Accounting{}, []*agent.Reply{
-		respostaPedindoFerramenta("call-1", "ls"), respostaConcluindo(),
+// The break that passed clean: sending zero in `MaxOutputBytes`. The port treats
+// zero as "use my default", so nothing fails and nothing blows up — what changes
+// is that the cap becomes the PORT's (64 KiB) instead of the domain's (32 KiB),
+// and every tool result enters the next turn's context at twice the size. It is
+// cost policy (ADR-0011) decided by omission, in the wrong layer.
+func TestDomainOutputCapReachesTheSubstrate(t *testing.T) {
+	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
+	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
+		replyAskingForTool("call-1", "ls"), concludingReply(),
 	})
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-teto-saida"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-output-cap"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if got := sb.comandos[0].MaxOutputBytes; got != agent.DefaultToolOutputBytes {
-		t.Fatalf("o teto de saída chegou ao substrato como %d, esperava %d: zero faz a porta "+
-			"usar o padrão DELA, e a política de custo passa a ser decidida por omissão na "+
-			"camada errada (ADR-0011)", got, agent.DefaultToolOutputBytes)
+	if got := sb.commands[0].MaxOutputBytes; got != agent.DefaultToolOutputBytes {
+		t.Fatalf("the output cap reached the substrate as %d, expected %d: zero makes the "+
+			"port use ITS default, and the cost policy starts being decided by omission in "+
+			"the wrong layer (ADR-0011)", got, agent.DefaultToolOutputBytes)
 	}
 }

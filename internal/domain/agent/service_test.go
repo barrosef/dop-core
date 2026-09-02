@@ -11,48 +11,48 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// ── duplos das quatro portas ────────────────────────────────────────────────
+// ── doubles for the four ports ──────────────────────────────────────────────
 
-type provedorFalso struct {
-	info     agent.ProviderInfo
-	resposta *agent.Reply
-	erro     error
-	// respostas é a FILA de respostas, uma por volta do laço. Quando ela
-	// acaba, a última se repete — é o que permite exercitar um agente que
-	// insiste em pedir ferramenta e bater o teto. Vazia, `resposta` vale para
-	// todas as voltas, que é o comportamento de antes do laço.
-	respostas []*agent.Reply
+type fakeProvider struct {
+	info    agent.ProviderInfo
+	reply   *agent.Reply
+	failure error
+	// replies is the QUEUE of responses, one per loop round. When it runs out,
+	// the last one repeats — that is what allows exercising an agent that keeps
+	// asking for a tool and hits the cap. Empty, `reply` applies to every round,
+	// which is the behaviour from before the loop.
+	replies []*agent.Reply
 
-	modeloPedido string
-	effortPedido agent.Effort
-	turnoPedido  agent.Turn
-	// turnos guarda TODOS os turnos enviados, e é o que permite perguntar se o
-	// resultado da ferramenta voltou para o modelo na volta seguinte.
-	turnos []agent.Turn
+	askedModel  string
+	askedEffort agent.Effort
+	askedTurn   agent.Turn
+	// turns keeps ALL the turns sent, and it is what allows asking whether the
+	// tool's result went back to the model on the next round.
+	turns []agent.Turn
 }
 
-func (p *provedorFalso) Info() agent.ProviderInfo { return p.info }
+func (p *fakeProvider) Info() agent.ProviderInfo { return p.info }
 
-func (p *provedorFalso) Render(t agent.Turn, model string, e agent.Effort) ([]byte, []string, error) {
+func (p *fakeProvider) Render(t agent.Turn, model string, e agent.Effort) ([]byte, []string, error) {
 	b, err := json.Marshal(map[string]any{"model": model, "prefix": t.StablePrefix})
 	return b, nil, err
 }
 
-func (p *provedorFalso) Send(_ context.Context, t agent.Turn, model string, e agent.Effort) (*agent.Reply, error) {
-	p.modeloPedido, p.effortPedido, p.turnoPedido = model, e, t
-	p.turnos = append(p.turnos, t)
-	if p.erro != nil {
-		return nil, p.erro
+func (p *fakeProvider) Send(_ context.Context, t agent.Turn, model string, e agent.Effort) (*agent.Reply, error) {
+	p.askedModel, p.askedEffort, p.askedTurn = model, e, t
+	p.turns = append(p.turns, t)
+	if p.failure != nil {
+		return nil, p.failure
 	}
-	atual := p.resposta
-	if n := len(p.respostas); n > 0 {
-		i := len(p.turnos) - 1
+	current := p.reply
+	if n := len(p.replies); n > 0 {
+		i := len(p.turns) - 1
 		if i >= n {
-			i = n - 1 // a última se repete: agente que insiste
+			i = n - 1 // the last one repeats: an agent that insists
 		}
-		atual = p.respostas[i]
+		current = p.replies[i]
 	}
-	r := *atual
+	r := *current
 	if r.Capabilities == nil {
 		r.Capabilities = p.info.Capabilities
 	}
@@ -62,434 +62,440 @@ func (p *provedorFalso) Send(_ context.Context, t agent.Turn, model string, e ag
 	return &r, nil
 }
 
-func (p *provedorFalso) For(context.Context, string) (agent.AgentProvider, error) { return p, nil }
+func (p *fakeProvider) For(context.Context, string) (agent.AgentProvider, error) { return p, nil }
 
-type conhecimentoFalso struct{ pkg agent.ContextPackage }
+type fakeKnowledge struct{ pkg agent.ContextPackage }
 
-func (c conhecimentoFalso) ContextPackage(context.Context, string) (agent.ContextPackage, error) {
+func (c fakeKnowledge) ContextPackage(context.Context, string) (agent.ContextPackage, error) {
 	return c.pkg, nil
 }
 
-type custoFalso struct {
-	decisao   agent.Decision
-	conta     agent.Accounting
-	consumos  []agent.Consumption
-	chavesUso []string
+type fakeCost struct {
+	decision   agent.Decision
+	accounting agent.Accounting
+	usages     []agent.Consumption
+	usageKeys  []string
 }
 
-func (c *custoFalso) Route(context.Context, string, string) (agent.Decision, error) {
-	return c.decisao, nil
+func (c *fakeCost) Route(context.Context, string, string) (agent.Decision, error) {
+	return c.decision, nil
 }
 
-func (c *custoFalso) RecordUsage(_ context.Context, u agent.Consumption, k string) (agent.Accounting, error) {
-	c.consumos = append(c.consumos, u)
-	c.chavesUso = append(c.chavesUso, k)
-	return c.conta, nil
+func (c *fakeCost) RecordUsage(_ context.Context, u agent.Consumption, k string) (agent.Accounting, error) {
+	c.usages = append(c.usages, u)
+	c.usageKeys = append(c.usageKeys, k)
+	return c.accounting, nil
 }
 
-// mensagemGravada guarda o que o log de eventos guardaria — em especial QUEM
-// falou, que é o que o ciclo do turno decide.
-type mensagemGravada struct {
-	texto     string
-	chave     string
-	autorTipo ctxutil.ActorKind
-	autorID   string
-	autorNome string
+// recordedMessage keeps what the event log would keep — in particular WHO spoke,
+// which is what the turn's cycle decides.
+type recordedMessage struct {
+	text      string
+	key       string
+	actorKind ctxutil.ActorKind
+	actorID   string
+	actorName string
 }
 
-type conversaFalsa struct {
-	thread    agent.Thread
-	mensagens []mensagemGravada
-	achados   []mensagemGravada
+type fakeConversation struct {
+	thread   agent.Thread
+	messages []recordedMessage
+	findings []recordedMessage
 }
 
-func (c *conversaFalsa) Thread(context.Context, string, string) (agent.Thread, error) {
+func (c *fakeConversation) Thread(context.Context, string, string) (agent.Thread, error) {
 	return c.thread, nil
 }
 
-func (c *conversaFalsa) PostMessage(ctx context.Context, _, text, idemKey string) (string, error) {
+func (c *fakeConversation) PostMessage(ctx context.Context, _, text, idemKey string) (string, error) {
 	call, _ := ctxutil.From(ctx)
-	c.mensagens = append(c.mensagens, mensagemGravada{
-		texto: text, chave: idemKey,
-		autorTipo: call.ActorKind, autorID: call.ActorID, autorNome: call.ActorName,
+	c.messages = append(c.messages, recordedMessage{
+		text: text, key: idemKey,
+		actorKind: call.ActorKind, actorID: call.ActorID, actorName: call.ActorName,
 	})
 	return "msg-" + idemKey, nil
 }
 
-func (c *conversaFalsa) PublishFinding(ctx context.Context, _, _, title string,
+func (c *fakeConversation) PublishFinding(ctx context.Context, _, _, title string,
 	payload map[string]any, idemKey string) (agent.FindingRef, error) {
 	call, _ := ctxutil.From(ctx)
-	c.achados = append(c.achados, mensagemGravada{
-		texto: title, chave: idemKey, autorTipo: call.ActorKind, autorID: call.ActorID,
+	c.findings = append(c.findings, recordedMessage{
+		text: title, key: idemKey, actorKind: call.ActorKind, actorID: call.ActorID,
 	})
 	_ = payload
-	return agent.FindingRef{ID: "ach-1", Title: title}, nil
+	return agent.FindingRef{ID: "fnd-1", Title: title}, nil
 }
 
-// ── montagem ────────────────────────────────────────────────────────────────
+// ── assembly ────────────────────────────────────────────────────────────────
 
-func contexto() context.Context {
+func callCtx() context.Context {
 	return ctxutil.Into(context.Background(), ctxutil.Call{
 		RequestID: "req-1", AccountID: "acct-1",
 		ActorID: "usr-ana", ActorKind: ctxutil.ActorUser, ActorName: "Ana",
 	})
 }
 
-func fichaDoProvedor() agent.ProviderInfo {
+func providerSheet() agent.ProviderInfo {
 	return agent.ProviderInfo{
-		Name: "fornecedor-x",
+		Name: "provider-x",
 		Catalog: map[agent.ModelClass]string{
-			agent.ClassCheap:  "x-pequeno",
-			agent.ClassMedium: "x-medio",
-			agent.ClassStrong: "x-grande",
+			agent.ClassCheap:  "x-small",
+			agent.ClassMedium: "x-medium",
+			agent.ClassStrong: "x-large",
 		},
 		Capabilities: agent.Capabilities{agent.CapCacheCreationAccounting},
 		Prices: map[string]agent.Price{
-			"x-grande": {Currency: "USD", InputPer1k: 5_000, OutputPer1k: 25_000,
+			"x-large": {Currency: "USD", InputPer1k: 5_000, OutputPer1k: 25_000,
 				CacheReadPer1k: 500, CacheCreationPer1k: 6_250},
 		},
 	}
 }
 
-func respostaConcluindo() *agent.Reply {
+func concludingReply() *agent.Reply {
 	return &agent.Reply{
-		Text:  `{"reply":"pronto"}`,
-		Model: "x-grande",
+		Text:  `{"reply":"done"}`,
+		Model: "x-large",
 		Usage: agent.Usage{InputTokens: 1000, OutputTokens: 200,
 			CacheReadTokens: 400, CacheCreationTokens: 100},
 		StopReason:    agent.StopCompleted,
 		EffortApplied: agent.EffortHigh,
 		Data: map[string]any{
-			"reply": "pronto", "concluded": true,
-			"finding_title": "o bug estava no cache", "finding_summary": "resumo concreto",
-			"finding_evidence": []any{"log da linha 42"},
+			"reply": "done", "concluded": true,
+			"finding_title": "the bug was in the cache", "finding_summary": "a concrete summary",
+			"finding_evidence": []any{"the log on line 42"},
 		},
 	}
 }
 
-type cenario struct {
+type scenario struct {
 	svc  *agent.Service
-	prov *provedorFalso
-	cust *custoFalso
-	conv *conversaFalsa
+	prov *fakeProvider
+	cost *fakeCost
+	conv *fakeConversation
 }
 
-func montar(t *testing.T, pkg agent.ContextPackage, resposta *agent.Reply,
-	card agent.AgentCard, conta agent.Accounting) cenario {
+func setup(t *testing.T, pkg agent.ContextPackage, reply *agent.Reply,
+	card agent.AgentCard, accounting agent.Accounting) scenario {
 	t.Helper()
-	prov := &provedorFalso{info: fichaDoProvedor(), resposta: resposta}
-	cust := &custoFalso{
-		decisao: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
-			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0011 §3: porque sim"},
-		conta: conta,
+	prov := &fakeProvider{info: providerSheet(), reply: reply}
+	cost := &fakeCost{
+		decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
+			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0011 §3: because so"},
+		accounting: accounting,
 	}
-	conv := &conversaFalsa{thread: agent.Thread{ID: "thr-1", Key: "principal", Card: card}}
-	return cenario{
-		svc:  agent.NewService(prov, conhecimentoFalso{pkg}, cust, conv),
-		prov: prov, cust: cust, conv: conv,
+	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main", Card: card}}
+	return scenario{
+		svc:  agent.NewService(prov, fakeKnowledge{pkg}, cost, conv),
+		prov: prov, cost: cost, conv: conv,
 	}
 }
 
-func pedido() agent.TurnRequest {
+func request() agent.TurnRequest {
 	return agent.TurnRequest{
 		DemandID: "dem-1", ThreadID: "thr-1",
-		Text: "por que o build quebrou?", TaskKind: "implementation",
+		Text: "why did the build break?", TaskKind: "implementation",
 	}
 }
 
-// ── testes ──────────────────────────────────────────────────────────────────
+// ── tests ───────────────────────────────────────────────────────────────────
 
-// A autoria é a razão de a plataforma existir: distinguir o que o humano fez do
-// que o agente fez. Se este teste cair, o log de eventos — que é a verdade da
-// demanda (ADR-0006) — passa a mentir sobre quem fez o quê.
-func TestAutoriaDaRespostaEhDoAgente(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
+// Authorship is the reason the platform exists: telling what the human did from
+// what the agent did. If this test falls, the event log — which is the demand's
+// truth (ADR-0006) — starts lying about who did what.
+func TestReplyAuthorshipBelongsToTheAgent(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-1"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-1"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if len(c.conv.mensagens) != 2 {
-		t.Fatalf("esperava 2 mensagens (pergunta e resposta), veio %d", len(c.conv.mensagens))
+	if len(c.conv.messages) != 2 {
+		t.Fatalf("expected 2 messages (question and reply), got %d", len(c.conv.messages))
 	}
 
-	pergunta, resposta := c.conv.mensagens[0], c.conv.mensagens[1]
-	if pergunta.autorTipo != ctxutil.ActorUser || pergunta.autorID != "usr-ana" {
-		t.Fatalf("a PERGUNTA deixou de ser do humano: %+v", pergunta)
+	question, reply := c.conv.messages[0], c.conv.messages[1]
+	if question.actorKind != ctxutil.ActorUser || question.actorID != "usr-ana" {
+		t.Fatalf("the QUESTION stopped being the human's: %+v", question)
 	}
-	if resposta.autorTipo != ctxutil.ActorAgent {
-		t.Fatalf("a RESPOSTA foi gravada como %q: fala de agente registrada como fala de "+
-			"humano faz o log de eventos mentir sobre quem fez o quê", resposta.autorTipo)
+	if reply.actorKind != ctxutil.ActorAgent {
+		t.Fatalf("the REPLY was recorded as %q: an agent's utterance recorded as a "+
+			"human's makes the event log lie about who did what", reply.actorKind)
 	}
-	if resposta.autorID != "thr-1" || resposta.autorNome != "principal" {
-		t.Fatalf("o ator do agente é a THREAD (dop.v1.ActorRef): veio id=%q nome=%q",
-			resposta.autorID, resposta.autorNome)
+	if reply.actorID != "thr-1" || reply.actorName != "main" {
+		t.Fatalf("the agent's actor is the THREAD (dop.v1.ActorRef): got id=%q name=%q",
+			reply.actorID, reply.actorName)
 	}
-	// E o achado também: ele é durável, vai para a memória do projeto, e sair
-	// assinado pelo humano faria a auditoria apontar para a pessoa errada.
-	if len(c.conv.achados) != 1 || c.conv.achados[0].autorTipo != ctxutil.ActorAgent {
-		t.Fatalf("o ACHADO não saiu assinado pelo agente: %+v", c.conv.achados)
+	// And the finding too: it is durable, it goes to the project's memory, and
+	// going out signed by the human would make the audit point at the wrong
+	// person.
+	if len(c.conv.findings) != 1 || c.conv.findings[0].actorKind != ctxutil.ActorAgent {
+		t.Fatalf("the FINDING did not go out signed by the agent: %+v", c.conv.findings)
 	}
 }
 
-// As escritas derivam TODAS da mesma chave: é o que faz reenviar a requisição
-// repetir zero efeitos.
+// The writes ALL derive from the same key: it is what makes resending the
+// request repeat zero effects.
 //
-// A do consumo carrega a VOLTA do laço no fim (`:usage:1`), e não é detalhe: com
-// ferramentas um turno consome uma vez por volta, e uma chave só faria o domínio
-// de custo descartar da segunda em diante como duplicata — o orçamento passaria
-// a enxergar uma fração do gasto real.
-func TestChavesDeIdempotenciaSaoDerivadas(t *testing.T) {
-	c := montar(t, agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1}},
-		respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
+// The consumption's carries the loop's ROUND at the end (`:usage:1`), and it is
+// no detail: with tools a turn consumes once per round, and a single key would
+// make the cost domain discard everything from the second onwards as a duplicate
+// — the budget would start seeing a fraction of the real spend.
+func TestIdempotencyKeysAreDerived(t *testing.T) {
+	c := setup(t, agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1}},
+		concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
-	if _, err := c.svc.RunTurn(contexto(), pedido(), "turno-42"); err != nil {
+	if _, err := c.svc.RunTurn(callCtx(), request(), "turn-42"); err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	esperadas := []string{"turno-42:msg-in", "turno-42:notice", "turno-42:msg-out"}
-	for i, quero := range esperadas {
-		if c.conv.mensagens[i].chave != quero {
-			t.Fatalf("mensagem %d com chave %q, esperava %q", i, c.conv.mensagens[i].chave, quero)
+	expected := []string{"turn-42:msg-in", "turn-42:notice", "turn-42:msg-out"}
+	for i, want := range expected {
+		if c.conv.messages[i].key != want {
+			t.Fatalf("message %d with key %q, expected %q", i, c.conv.messages[i].key, want)
 		}
 	}
-	if c.cust.chavesUso[0] != "turno-42:usage:1" {
-		t.Fatalf("consumo com chave %q", c.cust.chavesUso[0])
+	if c.cost.usageKeys[0] != "turn-42:usage:1" {
+		t.Fatalf("consumption with key %q", c.cost.usageKeys[0])
 	}
-	if c.conv.achados[0].chave != "turno-42:finding" {
-		t.Fatalf("achado com chave %q", c.conv.achados[0].chave)
+	if c.conv.findings[0].key != "turn-42:finding" {
+		t.Fatalf("finding with key %q", c.conv.findings[0].key)
 	}
 }
 
-func TestChaveDeIdempotenciaEhObrigatoria(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
-	_, err := c.svc.RunTurn(contexto(), pedido(), "  ")
+func TestIdempotencyKeyIsMandatory(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
+	_, err := c.svc.RunTurn(callCtx(), request(), "  ")
 	if err == nil {
-		t.Fatal("turno sem chave deveria ser recusado: gerar uma aqui transformaria um " +
-			"retry de rede em consumo em dobro")
+		t.Fatal("a turn with no key should be refused: generating one here would turn a " +
+			"network retry into double consumption")
 	}
 	if errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("erro do tipo %q, esperava argumento inválido", errs.KindOf(err))
+		t.Fatalf("error of kind %q, expected invalid argument", errs.KindOf(err))
 	}
 }
 
-// Concluir EXIGE achado (spec §1): sem título e resumo, a conclusão é recusada e
-// a thread continua ativa, com aviso.
-func TestConclusaoSemAchadoEhRecusada(t *testing.T) {
-	r := respostaConcluindo()
-	r.Data = map[string]any{"reply": "acho que terminei", "concluded": true}
-	c := montar(t, agent.ContextPackage{}, r, agent.AgentCard{}, agent.Accounting{})
+// Concluding REQUIRES a finding (spec §1): with no title and summary, the
+// conclusion is refused and the thread stays active, with a warning.
+func TestConclusionWithNoFindingIsRefused(t *testing.T) {
+	r := concludingReply()
+	r.Data = map[string]any{"reply": "I think I am done", "concluded": true}
+	c := setup(t, agent.ContextPackage{}, r, agent.AgentCard{}, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.Concluded {
-		t.Fatal("conclusão vazia foi aceita: a thread morreria em silêncio com um `true` de enfeite")
+		t.Fatal("an empty conclusion was accepted: the thread would die in silence with a decorative `true`")
 	}
-	if len(c.conv.achados) != 0 {
-		t.Fatal("publicou achado vazio")
+	if len(c.conv.findings) != 0 {
+		t.Fatal("published an empty finding")
 	}
-	if !contemAviso(out.Warnings, "REFUSED") {
-		t.Fatalf("a recusa não virou aviso legível: %v", out.Warnings)
+	if !hasWarning(out.Warnings, "REFUSED") {
+		t.Fatalf("the refusal did not become a readable warning: %v", out.Warnings)
 	}
 }
 
-// Orçamento estourado PAUSA e não mata: o turno que já rodou é entregue inteiro.
-func TestOrcamentoEstouradoPausaSemPerderOTurno(t *testing.T) {
-	conta := agent.Accounting{BudgetExceeded: true, Exceeded: []agent.BudgetView{
+// A blown budget PAUSES and does not kill: the turn that already ran is
+// delivered whole.
+func TestBlownBudgetPausesWithoutLosingTheTurn(t *testing.T) {
+	accounting := agent.Accounting{BudgetExceeded: true, Exceeded: []agent.BudgetView{
 		{Scope: "demand", ScopeID: "dem-1", LimitMicros: 1000, SpentMicros: 4200, Currency: "USD"},
 	}}
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, conta)
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, accounting)
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
-		t.Fatal("estouro de orçamento virou ERRO: a ADR-0011 §2 recusou o corte duro")
+		t.Fatal("a blown budget became an ERROR: ADR-0011 §2 refused the hard cut")
 	}
 	if !out.Paused {
-		t.Fatal("o estouro não pausou")
+		t.Fatal("the overrun did not pause")
 	}
 	if out.Reply == "" || out.Finding == nil {
-		t.Fatal("o turno já pago foi jogado fora: a resposta e o achado precisam sair inteiros")
+		t.Fatal("the already-paid turn was thrown away: the reply and the finding have to come out whole")
 	}
 	if !strings.Contains(out.Notice, "4200") || !strings.Contains(out.Notice, "dem-1") {
-		t.Fatalf("o aviso não diz o que a caixa de atenção precisa mostrar: %q", out.Notice)
+		t.Fatalf("the notice does not say what the attention box needs to show: %q", out.Notice)
 	}
 }
 
-// O truncamento aparece na CONVERSA, não só no resultado.
-func TestTruncamentoViraMensagemNaThread(t *testing.T) {
+// The truncation shows up in the CONVERSATION, not only in the result.
+func TestTruncationBecomesAMessageOnTheThread(t *testing.T) {
 	pkg := agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 2, Memories: 3}}
-	c := montar(t, pkg, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
+	c := setup(t, pkg, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if !out.ContextTruncated {
-		t.Fatal("o pacote veio truncado e o resultado não disse")
+		t.Fatal("the package came truncated and the result did not say so")
 	}
-	if len(c.conv.mensagens) != 3 || !strings.Contains(c.conv.mensagens[1].texto, "truncated") {
-		t.Fatalf("o aviso de truncamento não entrou na thread: %+v", c.conv.mensagens)
+	if len(c.conv.messages) != 3 || !strings.Contains(c.conv.messages[1].text, "truncated") {
+		t.Fatalf("the truncation warning did not enter the thread: %+v", c.conv.messages)
 	}
-	// E o agente também precisa saber, ANTES de afirmar coisas sobre o que não leu.
-	if !strings.Contains(c.prov.turnoPedido.StablePrefix, "TRUNCATED") {
-		t.Fatal("o prefixo não avisou o agente de que o contexto veio parcial")
+	// And the agent needs to know too, BEFORE asserting things about what it
+	// did not read.
+	if !strings.Contains(c.prov.askedTurn.StablePrefix, "TRUNCATED") {
+		t.Fatal("the prefix did not warn the agent that the context came partial")
 	}
 }
 
-// A CLASSE chega inteira e vira nome pelo catálogo do fornecedor ATIVO — é a
-// tradução que aposentou o `catalog.py` do BFF (ADR-0023).
-func TestClasseViraNomePeloCatalogoDoFornecedor(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
+// The CLASS arrives whole and becomes a name through the ACTIVE provider's
+// catalog — it is the translation that retired the BFF's `catalog.py`
+// (ADR-0023).
+func TestClassBecomesANameThroughTheProviderCatalog(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	// O roteador devolveu "claude-opus" (catálogo DELE) com classe `strong`; o
-	// fornecedor ativo chama a classe forte de outra coisa.
-	if c.prov.modeloPedido != "x-grande" {
-		t.Fatalf("mandou %q ao fornecedor, esperava o nome do catálogo dele (x-grande)",
-			c.prov.modeloPedido)
+	// The router returned "claude-opus" (ITS catalog) with class `strong`; the
+	// active provider calls the strong class something else.
+	if c.prov.askedModel != "x-large" {
+		t.Fatalf("sent %q to the provider, expected the name from its catalog (x-large)",
+			c.prov.askedModel)
 	}
 	if out.Routing.Class != agent.ClassStrong || out.Routing.Reason == "" {
-		t.Fatalf("a decisão perdeu classe ou justificativa: %+v", out.Routing)
+		t.Fatalf("the decision lost its class or its justification: %+v", out.Routing)
 	}
 }
 
-// A ficha da thread vence o roteador, e o nome dela passa INTACTO.
-func TestFichaDaThreadVenceORoteador(t *testing.T) {
-	card := agent.AgentCard{Purpose: "forense", Model: "modelo-congelado-da-thread", Effort: "max"}
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), card, agent.Accounting{})
+// The thread's card beats the router, and its name passes through INTACT.
+func TestThreadCardBeatsTheRouter(t *testing.T) {
+	card := agent.AgentCard{Purpose: "forensics", Model: "frozen-thread-model", Effort: "max"}
+	c := setup(t, agent.ContextPackage{}, concludingReply(), card, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	if c.prov.modeloPedido != "modelo-congelado-da-thread" {
-		t.Fatalf("o modelo da ficha não passou intacto: %q", c.prov.modeloPedido)
+	if c.prov.askedModel != "frozen-thread-model" {
+		t.Fatalf("the card's model did not pass through intact: %q", c.prov.askedModel)
 	}
-	if c.prov.effortPedido != agent.EffortMax {
-		t.Fatalf("o effort da ficha não venceu: %q", c.prov.effortPedido)
+	if c.prov.askedEffort != agent.EffortMax {
+		t.Fatalf("the card's effort did not win: %q", c.prov.askedEffort)
 	}
 	if !out.Routing.FromAgentCard {
-		t.Fatal("o resultado não registrou que a ficha venceu")
+		t.Fatal("the result did not record that the card won")
 	}
 }
 
-// Preço desconhecido NÃO vira zero em silêncio.
-func TestPrecoDesconhecidoSaiComoAusencia(t *testing.T) {
-	r := respostaConcluindo()
-	r.Model = "modelo-sem-tabela"
-	c := montar(t, agent.ContextPackage{}, r, agent.AgentCard{}, agent.Accounting{})
+// An unknown price does NOT silently become zero.
+func TestUnknownPriceComesOutAsAbsence(t *testing.T) {
+	r := concludingReply()
+	r.Model = "model-with-no-table"
+	c := setup(t, agent.ContextPackage{}, r, agent.AgentCard{}, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.Usage.CostKnown {
-		t.Fatal("afirmou conhecer o preço de um modelo fora da tabela")
+		t.Fatal("claimed to know the price of a model outside the table")
 	}
 	if out.Usage.CostMicros != 0 || out.Usage.Currency != "" {
-		t.Fatalf("inventou custo: %+v", out.Usage)
+		t.Fatalf("invented a cost: %+v", out.Usage)
 	}
-	if !contemAviso(out.Warnings, "AUSÊNCIA de tabela") {
-		t.Fatalf("o custo zerado não veio explicado: %v", out.Warnings)
+	if !hasWarning(out.Warnings, "LACK of a table") {
+		t.Fatalf("the zeroed cost came with no explanation: %v", out.Warnings)
 	}
-	// E o consumo em TOKENS foi registrado assim mesmo: medição que some
-	// quando o preço falta é medição que some justo quando importa.
-	if c.cust.consumos[0].InputTokens != 1000 {
-		t.Fatalf("o consumo em tokens não foi registrado: %+v", c.cust.consumos[0])
+	// And the consumption in TOKENS was recorded anyway: a measurement that
+	// vanishes when the price is missing is a measurement that vanishes exactly
+	// when it matters.
+	if c.cost.usages[0].InputTokens != 1000 {
+		t.Fatalf("the consumption in tokens was not recorded: %+v", c.cost.usages[0])
 	}
 }
 
-// O custo é aritmética INTEIRA, por 1.000 tokens, e vai para o registro.
-func TestCustoEmMicrosInteiros(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
+// The cost is INTEGER arithmetic, per 1,000 tokens, and it reaches the record.
+func TestCostInIntegerMicros(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
-	out, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
-	// 1000*5000 + 200*25000 + 400*500 + 100*6250 = 10.825.000 → /1000 = 10.825
-	const esperado = agent.Micros(10_825)
-	if out.Usage.CostMicros != esperado {
-		t.Fatalf("custo %d, esperava %d", out.Usage.CostMicros, esperado)
+	// 1000*5000 + 200*25000 + 400*500 + 100*6250 = 10,825,000 → /1000 = 10,825
+	const expected = agent.Micros(10_825)
+	if out.Usage.CostMicros != expected {
+		t.Fatalf("cost %d, expected %d", out.Usage.CostMicros, expected)
 	}
-	if c.cust.consumos[0].CostMicros != esperado || c.cust.consumos[0].Currency != "USD" {
-		t.Fatalf("o custo não chegou ao registro: %+v", c.cust.consumos[0])
+	if c.cost.usages[0].CostMicros != expected || c.cost.usages[0].Currency != "USD" {
+		t.Fatalf("the cost did not reach the record: %+v", c.cost.usages[0])
 	}
 }
 
-// Quando o provedor não reporta criação de cache, o zero sai DECLARADO como
-// ausência — e não como afirmação de que nada foi escrito (D1).
-func TestCriacaoDeCacheDesconhecidaSaiDeclarada(t *testing.T) {
-	prov := &provedorFalso{info: agent.ProviderInfo{
-		Name:         "sem-contabilidade",
-		Catalog:      map[agent.ModelClass]string{agent.ClassStrong: "y-grande"},
+// When the provider does not report cache creation, the zero comes out DECLARED
+// as an absence — and not as an assertion that nothing was written (D1).
+func TestUnknownCacheCreationComesOutDeclared(t *testing.T) {
+	prov := &fakeProvider{info: agent.ProviderInfo{
+		Name:         "no-accounting",
+		Catalog:      map[agent.ModelClass]string{agent.ClassStrong: "y-large"},
 		Capabilities: agent.Capabilities{},
-	}, resposta: respostaConcluindo()}
-	cust := &custoFalso{decisao: agent.Decision{Class: agent.ClassStrong, Effort: agent.EffortHigh}}
-	conv := &conversaFalsa{thread: agent.Thread{ID: "thr-1", Key: "principal"}}
-	svc := agent.NewService(prov, conhecimentoFalso{}, cust, conv)
+	}, reply: concludingReply()}
+	cost := &fakeCost{decision: agent.Decision{Class: agent.ClassStrong, Effort: agent.EffortHigh}}
+	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main"}}
+	svc := agent.NewService(prov, fakeKnowledge{}, cost, conv)
 
-	out, err := svc.RunTurn(contexto(), pedido(), "turno-1")
+	out, err := svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if out.Usage.CacheCreationKnown {
-		t.Fatal("afirmou conhecer criação de cache num provedor que não reporta")
+		t.Fatal("claimed to know cache creation on a provider that does not report it")
 	}
-	if !contemAviso(out.Warnings, "ABSENCE of information") {
-		t.Fatalf("o zero não veio explicado: %v", out.Warnings)
+	if !hasWarning(out.Warnings, "ABSENCE of information") {
+		t.Fatalf("the zero came with no explanation: %v", out.Warnings)
 	}
 }
 
-// Indisponibilidade do fornecedor sobe INTACTA, com o Kind traduzido — nunca
-// como erro interno nosso.
-func TestIndisponibilidadeDoFornecedorNaoViraErroNosso(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, nil, agent.AgentCard{}, agent.Accounting{})
-	c.prov.erro = agent.Unavailability("fornecedor-x", agent.ReasonRejectedCredential, "cru")
+// The provider's unavailability goes up INTACT, with the Kind translated —
+// never as an internal error of ours.
+func TestProviderUnavailabilityDoesNotBecomeOurError(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, nil, agent.AgentCard{}, agent.Accounting{})
+	c.prov.failure = agent.Unavailability("provider-x", agent.ReasonRejectedCredential, "raw")
 
-	_, err := c.svc.RunTurn(contexto(), pedido(), "turno-1")
+	_, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err == nil {
-		t.Fatal("esperava erro")
+		t.Fatal("expected an error")
 	}
 	if k := errs.KindOf(err); k != errs.KindUnauthorized {
-		t.Fatalf("Kind %q, esperava não autenticado — o classificador não está registrado", k)
+		t.Fatalf("Kind %q, expected unauthenticated — the classifier is not registered", k)
 	}
-	if strings.Contains(err.Error(), "cru") {
-		t.Fatalf("o detalhe cru do fornecedor vazou para a mensagem: %v", err)
+	if strings.Contains(err.Error(), "raw") {
+		t.Fatalf("the provider's raw detail leaked into the message: %v", err)
 	}
-	// A pergunta do humano JÁ está na thread: se o fornecedor cai, a conversa
-	// mostra o que foi perguntado em vez de um buraco.
-	if len(c.conv.mensagens) != 1 {
-		t.Fatalf("a pergunta não entrou antes da chamada ao modelo: %+v", c.conv.mensagens)
+	// The human's question is ALREADY on the thread: if the provider goes down,
+	// the conversation shows what was asked instead of a hole.
+	if len(c.conv.messages) != 1 {
+		t.Fatalf("the question did not enter before the model call: %+v", c.conv.messages)
 	}
 }
 
-func TestRunTurnRecusaRequisicaoIncompleta(t *testing.T) {
-	c := montar(t, agent.ContextPackage{}, respostaConcluindo(), agent.AgentCard{}, agent.Accounting{})
-	casos := map[string]agent.TurnRequest{
-		"sem_texto":            {DemandID: "d", ThreadID: "t", TaskKind: "implementation"},
-		"sem_tipo_de_trabalho": {DemandID: "d", ThreadID: "t", Text: "oi"},
-		"sem_thread":           {DemandID: "d", Text: "oi", TaskKind: "implementation"},
+func TestRunTurnRefusesAnIncompleteRequest(t *testing.T) {
+	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
+	cases := map[string]agent.TurnRequest{
+		"no_text":      {DemandID: "d", ThreadID: "t", TaskKind: "implementation"},
+		"no_task_kind": {DemandID: "d", ThreadID: "t", Text: "hi"},
+		"no_thread":    {DemandID: "d", Text: "hi", TaskKind: "implementation"},
 	}
-	for nome, req := range casos {
-		t.Run(nome, func(t *testing.T) {
-			if _, err := c.svc.RunTurn(contexto(), req, "turno-1"); err == nil {
-				t.Fatal("esperava recusa")
+	for name, req := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := c.svc.RunTurn(callCtx(), req, "turn-1"); err == nil {
+				t.Fatal("expected a refusal")
 			}
 		})
 	}
-	// E sem conta ativa não há turno: isolamento multi-tenant é constraint.
-	if _, err := c.svc.RunTurn(context.Background(), pedido(), "turno-1"); err == nil {
-		t.Fatal("turno sem conta ativa deveria ser recusado")
+	// And with no active account there is no turn: multi-tenant isolation is a
+	// constraint.
+	if _, err := c.svc.RunTurn(context.Background(), request(), "turn-1"); err == nil {
+		t.Fatal("a turn with no active account should be refused")
 	}
 }
 
-func contemAviso(avisos []string, trecho string) bool {
-	for _, a := range avisos {
-		if strings.Contains(a, trecho) {
+func hasWarning(warnings []string, fragment string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, fragment) {
 			return true
 		}
 	}

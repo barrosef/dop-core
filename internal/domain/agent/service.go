@@ -11,120 +11,124 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// O CICLO DO TURNO, e as decisões que não são óbvias.
+// THE TURN'S CYCLE, and the decisions that are not obvious.
 //
-// 0. O PROVEDOR PRIMEIRO. Credencial ausente é descoberta na primeira linha, não
-//    depois de montar contexto e gastar duas leituras. O erro que chega ao
-//    usuário fala de configuração, que é o que é.
+// 0. THE PROVIDER FIRST. A missing credential is discovered on the first line,
+//    not after assembling context and spending two reads. The error that reaches
+//    the user talks about configuration, which is what it is.
 //
-// 1. CONTEXTO E THREAD. O pacote já vem cortado por orçamento de tokens
-//    (ADR-0009 §3) e informa o DESCARTE — que não some: entra no prefixo (o
-//    agente precisa saber que lê contexto parcial) e vira mensagem na thread (o
-//    humano precisa saber por que a resposta ficou como ficou).
+// 1. CONTEXT AND THREAD. The package already arrives cut by token budget
+//    (ADR-0009 §3) and reports what was DROPPED — which does not vanish: it
+//    enters the prefix (the agent needs to know it is reading partial context)
+//    and becomes a message on the thread (the human needs to know why the reply
+//    came out the way it did).
 //
-//    A versão do BFF fazia estas duas leituras em PARALELO, e com razão: eram
-//    duas idas de rede, e somar as latências transformava a agregação num custo.
-//    Aqui são duas chamadas em processo, e a concorrência compraria microssegundos
-//    ao preço de uma goroutine, um canal e duas ordens possíveis de erro. Ficou
-//    sequencial de propósito — é uma das seis idas e voltas de gRPC que a
-//    ADR-0023 foi buscar.
+//    The BFF's version did these two reads in PARALLEL, and rightly so: they
+//    were two network round trips, and summing the latencies turned aggregation
+//    into a cost. Here they are two in-process calls, and concurrency would buy
+//    microseconds at the price of a goroutine, a channel and two possible error
+//    orderings. It is sequential on purpose — it is one of the six gRPC round
+//    trips ADR-0023 went after.
 //
-// 2. O ROTEAMENTO É DO DOMÍNIO DE CUSTO, e a justificativa dele viaja inteira
-//    (ADR-0011 §3). O que o runtime faz é a metade que a política não pode fazer:
-//    traduzir a CLASSE para o nome concreto do fornecedor ATIVO — a mesma
-//    separação política × catálogo de `cost/router.go`. Quando a ficha da thread
-//    declara modelo (ADR-0010 §2), ela vence: ficha é o contrato congelado
-//    daquela thread, e trocar o modelo dela no meio invalidaria o prefixo
-//    cacheado de todos os turnos anteriores, porque cache é por modelo.
+// 2. ROUTING BELONGS TO THE COST DOMAIN, and its justification travels whole
+//    (ADR-0011 §3). What the runtime does is the half the policy cannot do:
+//    translate the CLASS into the ACTIVE provider's concrete name — the same
+//    policy × catalog separation as `cost/router.go`. When the thread's card
+//    declares a model (ADR-0010 §2), it wins: the card is that thread's frozen
+//    contract, and changing its model midway would invalidate every previous
+//    turn's cached prefix, because cache is per model.
 //
-// 3. PREFIXO ESTÁVEL PRIMEIRO, VOLÁTIL DEPOIS. Ver prompt.go.
+// 3. STABLE PREFIX FIRST, VOLATILE AFTER. See prompt.go.
 //
-// 3b. FERRAMENTAS SÃO DA FICHA (ADR-0010 §2), E O LAÇO É DAQUI. A ficha concede
-//    nomes; o catálogo do runtime (tools.go) resolve o que existe; o laço
-//    (toolloop.go) executa. Três coisas podem dar errado antes da primeira
-//    chamada, e as três VIRAM AVISO em vez de silêncio ou de erro: nome
-//    concedido que não existe, ficha que concede ferramenta numa instalação sem
-//    substrato, e modelo que pede ferramenta quando nenhuma foi declarada.
+// 3b. TOOLS COME FROM THE CARD (ADR-0010 §2), AND THE LOOP BELONGS HERE. The
+//    card grants names; the runtime's catalog (tools.go) resolves what exists;
+//    the loop (toolloop.go) executes. Three things can go wrong before the first
+//    call, and all three BECOME WARNINGS instead of silence or an error: a
+//    granted name that does not exist, a card granting tools in an installation
+//    with no substrate, and a model asking for a tool when none was declared.
 //
-// 4. A MEDIÇÃO É IDEMPOTENTE, E A CHAVE É DERIVADA DO TURNO. Uma duplicata de
-//    registro de consumo não colide com nada: entraria como gasto legítimo e o
-//    orçamento viraria ficção. Todas as escritas deste ciclo derivam da MESMA
-//    chave (`:msg-in`, `:notice`, `:usage:<n>`, `:msg-out`, `:loop-notice`,
-//    `:finding`), de modo que repetir a mesma requisição repete ZERO efeitos.
+// 4. MEASUREMENT IS IDEMPOTENT, AND THE KEY IS DERIVED FROM THE TURN. A
+//    duplicate consumption record collides with nothing: it would enter as
+//    legitimate spend and the budget would become fiction. Every write in this
+//    cycle derives from the SAME key (`:msg-in`, `:notice`, `:usage:<n>`,
+//    `:msg-out`, `:loop-notice`, `:finding`), so that repeating the same request
+//    repeats ZERO effects.
 //
-//    O `<n>` do consumo é a VOLTA do laço, e é o que muda com ferramentas: um
-//    turno consome uma vez por volta, e uma chave só faria o domínio de custo
-//    descartar da segunda em diante como duplicata — o orçamento enxergaria um
-//    oitavo do gasto real num turno de oito voltas. Ver chaveDeUso.
+//    The consumption's `<n>` is the loop's ROUND, and it is what changed with
+//    tools: a turn consumes once per round, and a single key would make the cost
+//    domain discard everything from the second onwards as a duplicate — the
+//    budget would see an eighth of the real spend in an eight-round turn. See
+//    usageKeyFor.
 //
-//    Diferença deliberada em relação à versão do BFF: lá, sem chave do cliente,
-//    o runtime GERAVA uma — cada chamada virava um turno novo. Aqui a chave é
-//    OBRIGATÓRIA. Do lado do núcleo, gerar seria transformar um retry de rede em
-//    consumo em dobro e mensagem duplicada na thread, exatamente o que
-//    `cost.Service.RecordUsage` recusa fazer ao exigir a chave. Quem sabe se está
-//    retentando é o cliente, e agora ele precisa dizer.
+//    A deliberate difference from the BFF's version: there, with no key from the
+//    client, the runtime GENERATED one — every call became a new turn. Here the
+//    key is MANDATORY. On the core's side, generating it would turn a network
+//    retry into double consumption and a duplicated message on the thread,
+//    exactly what `cost.Service.RecordUsage` refuses to do by requiring the key.
+//    Whoever knows they are retrying is the client, and now they have to say so.
 //
-// 5. TODA MENSAGEM É EVENTO (ADR-0006), e é assim que o cockpit fica sabendo: o
-//    WatchDemand que já existe entrega os eventos sozinho. NÃO há um segundo
-//    caminho de streaming aqui, de propósito — seria uma segunda fonte da verdade
-//    para a mesma timeline.
+// 5. EVERY MESSAGE IS AN EVENT (ADR-0006), and that is how the cockpit finds
+//    out: the WatchDemand that already exists delivers the events on its own.
+//    There is NO second streaming path here, on purpose — it would be a second
+//    source of truth for the same timeline.
 //
-// 6. A AUTORIA DA RESPOSTA É DO AGENTE. A pergunta é do humano que a escreveu; a
-//    resposta é do agente que a produziu. O núcleo deriva autoria do
-//    `ctxutil.Call`, então o ciclo TROCA o ator antes de publicar a resposta e o
-//    achado. Gravar fala de agente como fala de humano faria o log de eventos —
-//    que é a verdade da demanda (ADR-0006) — mentir sobre quem fez o quê, numa
-//    plataforma cuja premissa inteira é distinguir os dois.
+// 6. THE REPLY'S AUTHORSHIP BELONGS TO THE AGENT. The question belongs to the
+//    human who wrote it; the reply belongs to the agent that produced it. The
+//    core derives authorship from `ctxutil.Call`, so the cycle SWAPS the actor
+//    before publishing the reply and the finding. Recording an agent's utterance
+//    as a human's would make the event log — which is the demand's truth
+//    (ADR-0006) — lie about who did what, on a platform whose entire premise is
+//    telling the two apart.
 //
-// 7. CONCLUIR EXIGE PUBLICAR ACHADO (spec §1), E EXIGE TER TERMINADO. A recusa
-//    da conclusão vazia acontece em turn.go; a recusa da conclusão de um laço
-//    que parou no teto ou no orçamento acontece aqui. Achado é durável — vai
-//    para a memória do projeto e para o contexto dos irmãos —, e publicar um
-//    escrito no meio do trabalho é pior que não publicar nenhum.
+// 7. CONCLUDING REQUIRES PUBLISHING A FINDING (spec §1), AND REQUIRES HAVING
+//    FINISHED. Refusing the empty conclusion happens in turn.go; refusing the
+//    conclusion of a loop that stopped at the cap or on budget happens here. A
+//    finding is durable — it goes to the project's memory and to its siblings'
+//    context — and publishing one written mid-work is worse than publishing none.
 //
-// 8. ORÇAMENTO ESTOURADO PAUSA, NÃO MATA (ADR-0011 §2), E AGORA EM DOIS NÍVEIS.
-//    Entre turnos, como sempre: o turno que já rodou é entregue inteiro e o
-//    PRÓXIMO não sai. E DENTRO do turno, que é novo: estourar no meio do laço
-//    para o laço na volta seguinte, com o que já rodou entregue. Abortar em
-//    qualquer um dos dois seria o corte duro que a ADR recusou, e ainda por cima
-//    jogaria fora tokens já pagos.
+// 8. A BLOWN BUDGET PAUSES, IT DOES NOT KILL (ADR-0011 §2), AND NOW ON TWO
+//    LEVELS. Between turns, as always: the turn that already ran is delivered
+//    whole and the NEXT one does not go out. And INSIDE the turn, which is new:
+//    blowing mid-loop stops the loop on the next round, with what already ran
+//    delivered. Aborting in either case would be the hard cut the ADR refused,
+//    and on top of that it would throw away tokens already paid for.
 // ════════════════════════════════════════════════════════════════════════════
 
-// Service executa turnos de agente. Recebe apenas PORTAS.
+// Service executes agent turns. It takes only PORTS.
 type Service struct {
 	providers Providers
 	knowledge Knowledge
 	routing   Routing
 	conv      Conversation
-	// sandbox é a ÚNICA porta opcional daqui. Nula = o agente conversa e não
-	// age; ver Option e a porta Sandbox.
+	// sandbox is the ONLY optional port here. Nil = the agent converses and
+	// does not act; see Option and the Sandbox port.
 	sandbox Sandbox
-	// maxToolRounds é o teto de voltas de ferramenta por turno (ADR-0011).
+	// maxToolRounds is the tool-round cap per turn (ADR-0011).
 	maxToolRounds int
 }
 
-// Option ajusta o serviço na montagem.
+// Option adjusts the service at assembly time.
 //
-// Por que opção variádica e não parâmetro do construtor, contrariando o estilo
-// dos outros serviços da casa: os quatro parâmetros obrigatórios são usados em
-// TODO turno, e por isso nulo neles é erro de montagem que merece panic. Estes
-// dois não são — uma instalação sem substrato de execução roda turnos, e o teto
-// tem um default do domínio que é a resposta certa na maioria das instalações.
-// Além disso, a fiação existente continua compilando: acrescentar capacidade não
-// pode custar uma mudança em quem não a usa.
+// Why a variadic option and not a constructor parameter, going against the
+// house's other services' style: the four mandatory parameters are used on EVERY
+// turn, and that is why nil in them is an assembly error deserving a panic.
+// These two are not — an installation with no execution substrate runs turns,
+// and the cap has a domain default that is the right answer in most
+// installations. On top of that, the existing wiring keeps compiling: adding a
+// capability must not cost a change to whoever does not use it.
 type Option func(*Service)
 
-// WithSandbox liga o substrato de execução — é o que transforma "plataforma que
-// MODELA trabalho de agente" em "plataforma que EXECUTA trabalho de agente".
+// WithSandbox wires the execution substrate — it is what turns a "platform that
+// MODELS agent work" into a "platform that EXECUTES agent work".
 func WithSandbox(s Sandbox) Option {
 	return func(svc *Service) { svc.sandbox = s }
 }
 
-// WithMaxToolRounds ajusta o teto de voltas de ferramenta por turno.
+// WithMaxToolRounds adjusts the tool-round cap per turn.
 //
-// Valor <= 0 é IGNORADO e o default vale. Aceitar zero como "sem teto" seria
-// dar a quem esqueceu de configurar exatamente o comportamento que a ADR-0011
-// proíbe — e o esquecimento é o caso mais provável.
+// A value <= 0 is IGNORED and the default applies. Accepting zero as "no cap"
+// would give whoever forgot to configure it exactly the behaviour ADR-0011
+// forbids — and forgetting is the likeliest case.
 func WithMaxToolRounds(n int) Option {
 	return func(svc *Service) {
 		if n > 0 {
@@ -133,30 +137,30 @@ func WithMaxToolRounds(n int) Option {
 	}
 }
 
-// NewService recusa dependência nula.
+// NewService refuses a nil dependency.
 //
-// Panic é deliberado, e pela mesma razão de `identity.NewService`: isto é erro de
-// MONTAGEM, e erro de montagem tem que aparecer no boot, não às três da manhã no
-// primeiro turno que alguém tentar rodar. Aceitar nil e cair num fallback por
-// dentro é o que transforma porta em enfeite.
+// The panic is deliberate, and for `identity.NewService`'s same reason: this is
+// an ASSEMBLY error, and an assembly error has to show up at boot, not at three
+// in the morning on the first turn somebody tries to run. Accepting nil and
+// falling back internally is what turns a port into decoration.
 //
-// Repare no que NÃO está na lista: `ports.Clock`. Este serviço não carimba
-// instante nenhum — quem grava mensagem, consumo e achado é o domínio dono de
-// cada um, e cada um tem o próprio relógio. Mais que isso: o prefixo do prompt
-// precisa ser livre de relógio (ADR-0012 §1, camada 2 de prompt.go), e um relógio
-// disponível no serviço seria um convite permanente a carimbar o prefixo.
+// Note what is NOT on the list: `ports.Clock`. This service stamps no instant —
+// whoever records a message, a consumption and a finding is the domain that owns
+// each, and each has its own clock. More than that: the prompt's prefix has to
+// be clock-free (ADR-0012 §1, prompt.go's layer 2), and a clock available on the
+// service would be a permanent invitation to stamp the prefix.
 func NewService(providers Providers, knowledge Knowledge, routing Routing, conv Conversation,
 	opts ...Option) *Service {
 
 	switch {
 	case providers == nil:
-		panic("agent.NewService: fábrica de provedores obrigatória — sem ela não há com quem conversar")
+		panic("agent.NewService: a provider factory is mandatory — without it there is nobody to talk to")
 	case knowledge == nil:
-		panic("agent.NewService: porta de conhecimento obrigatória — agente sem contexto é agente cego")
+		panic("agent.NewService: the knowledge port is mandatory — an agent with no context is a blind agent")
 	case routing == nil:
-		panic("agent.NewService: porta de custo obrigatória — turno sem medição é orçamento fictício")
+		panic("agent.NewService: the cost port is mandatory — a turn with no measurement is a fictional budget")
 	case conv == nil:
-		panic("agent.NewService: porta de demanda obrigatória — resposta que não vira mensagem some")
+		panic("agent.NewService: the demand port is mandatory — a reply that does not become a message vanishes")
 	}
 	s := &Service{
 		providers: providers, knowledge: knowledge, routing: routing, conv: conv,
@@ -168,34 +172,44 @@ func NewService(providers Providers, knowledge Knowledge, routing Routing, conv 
 	return s
 }
 
-// TurnRequest é um turno a executar numa thread.
+// Translation keys for the refusals a person reads.
+const (
+	KeyTurnNeedsThread   = "agent.turn.demand_and_thread_required"
+	KeyTurnNeedsText     = "agent.turn.text_required"
+	KeyTurnNeedsTaskKind = "agent.turn.task_kind_required"
+	KeyTurnNeedsIdemKey  = "agent.turn.idempotency_key_required"
+)
+
+// TurnRequest is a turn to execute on a thread.
 type TurnRequest struct {
 	DemandID string
 	ThreadID string
 	Text     string
-	// TaskKind é vocabulário ABERTO: o roteador trata o desconhecido caindo no
-	// caro e DIZ que caiu (ADR-0011 §3). Vazio é que não passa — sem tipo de
-	// trabalho não há decisão a auditar.
+	// TaskKind is an OPEN vocabulary: the router handles the unknown by falling
+	// back to the expensive option and SAYING that it did (ADR-0011 §3). Empty
+	// is what does not pass — with no kind of work there is no decision to
+	// audit.
 	TaskKind string
-	// ResourceID é o recurso de categoria `agent` (ADR-0013) que atende este
-	// turno. Vazio = o provedor padrão da conta.
+	// ResourceID is the `agent`-category resource (ADR-0013) serving this turn.
+	// Empty = the account's default provider.
 	ResourceID string
-	// OperatorNote é a intervenção do OPERADOR, vinda da caixa de atenção.
-	// Entra pelo canal de autoridade do fornecedor, nunca como texto de
-	// usuário (ver D3).
+	// OperatorNote is the OPERATOR's intervention, coming from the attention
+	// box. It enters through the provider's authority channel, never as user
+	// text (see D3).
 	OperatorNote    string
 	MaxOutputTokens int
-	// MaxToolRounds permite ao chamador ABAIXAR o teto de voltas deste turno.
-	// Zero usa o do serviço; valor MAIOR que o do serviço é ignorado.
+	// MaxToolRounds lets the caller LOWER this turn's round cap. Zero uses the
+	// service's; a value HIGHER than the service's is ignored.
 	//
-	// Só para baixo, e é a decisão que importa aqui: um teto que o cliente pode
-	// levantar não é teto, é sugestão — e a ADR-0011 §2 não pede sugestão. Quem
-	// quiser gastar mais muda a política da instalação, onde a mudança é
-	// visível, e não num campo de requisição que ninguém audita.
+	// Downwards only, and it is the decision that matters here: a cap the
+	// client can raise is not a cap, it is a suggestion — and ADR-0011 §2 does
+	// not ask for a suggestion. Whoever wants to spend more changes the
+	// installation's policy, where the change is visible, and not a request
+	// field nobody audits.
 	MaxToolRounds int
 }
 
-// RoutingView é a decisão que valeu, com a justificativa INTEIRA.
+// RoutingView is the decision that applied, with the WHOLE justification.
 type RoutingView struct {
 	TaskKind      string
 	Class         ModelClass
@@ -203,101 +217,103 @@ type RoutingView struct {
 	Effort        Effort
 	EffortApplied Effort
 	Reason        string
-	// FromAgentCard é verdadeiro quando a ficha da thread venceu o roteador.
+	// FromAgentCard is true when the thread's card beat the router.
 	FromAgentCard bool
 }
 
-// TurnUsage são as quatro parcelas disjuntas, o custo e — o que mais importa —
-// se cada número é CONHECIDO.
+// TurnUsage is the four disjoint parts, the cost and — what matters most —
+// whether each number is KNOWN.
 type TurnUsage struct {
 	Usage
 	CostMicros Micros
 	Currency   string
-	// CacheCreationKnown falso significa que o provedor não reporta criação de
-	// cache (D1). Zero afirmaria que nada foi escrito, que é outra coisa.
+	// CacheCreationKnown false means the provider does not report cache
+	// creation (D1). Zero would assert nothing was written, which is a
+	// different thing.
 	CacheCreationKnown bool
-	// CostKnown falso significa que não há tabela de preço para este modelo. O
-	// custo NÃO vira zero de consolo: um orçamento alimentado com zeros é a
-	// ficção que a ADR-0011 §2 existe para impedir.
+	// CostKnown false means there is no price table for this model. The cost
+	// does NOT become a consolation zero: a budget fed with zeros is the
+	// fiction ADR-0011 §2 exists to prevent.
 	CostKnown bool
 }
 
-// TurnOutcome é o resultado do turno.
+// TurnOutcome is the turn's result.
 type TurnOutcome struct {
 	DemandID string
 	ThreadID string
 	Provider string
 	Routing  RoutingView
 	Reply    string
-	// MessageIDs são as mensagens publicadas na thread, na ordem em que
-	// entraram.
+	// MessageIDs are the messages published on the thread, in the order they
+	// entered.
 	MessageIDs       []string
 	Concluded        bool
 	Finding          *FindingRef
 	Usage            TurnUsage
 	ContextTruncated bool
-	// ── o laço de ferramenta ───────────────────────────────────────────────
-	// ToolRounds é quantas VOLTAS o turno deu — quantas vezes o modelo foi
-	// chamado. Uma volta é o turno sem ferramenta nenhuma, que continua sendo
-	// o caso comum.
+	// ── the tool loop ──────────────────────────────────────────────────────
+	// ToolRounds is how many ROUNDS the turn took — how many times the model
+	// was called. One round is the turn with no tool at all, which is still the
+	// common case.
 	ToolRounds int
-	// ToolCalls é quantas ferramentas foram PEDIDAS no turno inteiro.
+	// ToolCalls is how many tools were REQUESTED across the whole turn.
 	ToolCalls int
-	// LoopStop é por que o laço parou. `finished` é a única que significa "a
-	// resposta acima está completa" — ver LoopStop.
+	// LoopStop is why the loop stopped. `finished` is the only one that means
+	// "the reply above is complete" — see LoopStop.
 	LoopStop LoopStop
-	// MaxToolRounds é o teto que valeu. Viaja junto porque "bati o teto" só é
-	// acionável para quem sabe qual era o teto.
+	// MaxToolRounds is the cap that applied. It travels along because "I hit
+	// the cap" is only actionable for whoever knows what the cap was.
 	MaxToolRounds int
-	// Paused: o orçamento estourou e a demanda vira item de decisão (ADR-0011 §2).
+	// Paused: the budget blew and the demand becomes a decision item
+	// (ADR-0011 §2).
 	Paused   bool
 	Notice   string
 	Budgets  []BudgetView
 	Warnings []string
 }
 
-// chaves deriva as chaves de idempotência das cinco escritas deste turno.
+// idemKeys derives the idempotency keys of this turn's five writes.
 //
-// Derivadas e não sorteadas: é o que faz reenviar a mesma requisição repetir ZERO
-// efeitos — a mensagem não duplica, o consumo não conta duas vezes e o achado não
-// é publicado de novo.
-func chaves(turnKey string) map[string]string {
+// Derived and not drawn at random: it is what makes resending the same request
+// repeat ZERO effects — the message does not duplicate, the consumption does not
+// count twice and the finding is not published again.
+func idemKeys(turnKey string) map[string]string {
 	m := make(map[string]string, 6)
-	for _, alvo := range []string{"msg-in", "notice", "loop-notice", "msg-out", "finding"} {
-		m[alvo] = turnKey + ":" + alvo
+	for _, target := range []string{"msg-in", "notice", "loop-notice", "msg-out", "finding"} {
+		m[target] = turnKey + ":" + target
 	}
 	return m
 }
 
-// chaveDeUso deriva a chave de idempotência da medição de UMA volta.
+// usageKeyFor derives the idempotency key of ONE round's measurement.
 //
-// A chave é `<turno>:usage:<n>` e não `<turno>:usage` porque com ferramentas um
-// turno consome VÁRIAS vezes, e uma chave só faria o domínio de custo descartar
-// da segunda volta em diante como duplicata — o orçamento passaria a enxergar
-// um oitavo do gasto real num turno de oito voltas.
+// The key is `<turn>:usage:<n>` and not `<turn>:usage` because with tools a turn
+// consumes SEVERAL times, and a single key would make the cost domain discard
+// everything from the second round onwards as a duplicate — the budget would
+// start seeing an eighth of the real spend in an eight-round turn.
 //
-// A repetição da mesma requisição continua repetindo zero efeitos: as voltas
-// recebem as mesmas chaves na mesma ordem. Uma repetição que precise de MAIS
-// voltas que a original grava linhas novas só para as voltas novas — e é o
-// certo, porque aqueles tokens foram gastos de verdade.
-func chaveDeUso(turnKey string) func(int) string {
-	return func(rodada int) string {
-		return turnKey + ":usage:" + strconv.Itoa(rodada)
+// Repeating the same request still repeats zero effects: the rounds get the same
+// keys in the same order. A repetition needing MORE rounds than the original
+// writes new lines only for the new rounds — and that is right, because those
+// tokens were really spent.
+func usageKeyFor(turnKey string) func(int) string {
+	return func(round int) string {
+		return turnKey + ":usage:" + strconv.Itoa(round)
 	}
 }
 
-// comoAgente devolve o contexto com a autoria trocada para o AGENTE.
+// asAgent returns the context with authorship swapped to the AGENT.
 //
-// A conta, o request-id e tudo mais seguem intactos: o que muda é QUEM fala. O
-// ator é a thread — é o que `dop.v1.ActorRef` já documenta para agente ("id =
-// thread_id do agente") — e o nome é a chave da thread, que é como o humano a vê
-// no cockpit.
+// The account, the request id and everything else stay intact: what changes is
+// WHO speaks. The actor is the thread — which is what `dop.v1.ActorRef` already
+// documents for an agent ("id = the agent's thread_id") — and the name is the
+// thread's key, which is how the human sees it in the cockpit.
 //
-// Esta função é a linha mais importante deste arquivo do ponto de vista do
-// produto. Sem ela, a resposta do agente entraria no log de eventos assinada por
-// quem apertou o botão, e a plataforma perderia a única distinção que ela existe
-// para manter.
-func comoAgente(ctx context.Context, t Thread) context.Context {
+// This function is the most important line of this file from the product's point
+// of view. Without it, the agent's reply would enter the event log signed by
+// whoever pressed the button, and the platform would lose the one distinction it
+// exists to maintain.
+func asAgent(ctx context.Context, t Thread) context.Context {
 	call, _ := ctxutil.From(ctx)
 	call.ActorKind = ctxutil.ActorAgent
 	call.ActorID = t.ID
@@ -305,37 +321,40 @@ func comoAgente(ctx context.Context, t Thread) context.Context {
 	return ctxutil.Into(ctx, call)
 }
 
-// RunTurn executa UM turno numa thread. Ver o ciclo no cabeçalho deste arquivo.
+// RunTurn executes ONE turn on a thread. See the cycle in this file's header.
 func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey string) (*TurnOutcome, error) {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(req.DemandID) == "" || strings.TrimSpace(req.ThreadID) == "" {
-		return nil, errs.Invalid("turno exige demanda e thread")
+		return nil, errs.Invalid("a turn requires a demand and a thread").
+			WithCode(KeyTurnNeedsThread, nil)
 	}
 	if strings.TrimSpace(req.Text) == "" {
-		return nil, errs.Invalid("turno sem texto")
+		return nil, errs.Invalid("a turn with no text").WithCode(KeyTurnNeedsText, nil)
 	}
 	if strings.TrimSpace(req.TaskKind) == "" {
-		return nil, errs.Invalid("turno sem tipo de trabalho: sem ele não há roteamento a auditar")
+		return nil, errs.Invalid("a turn with no kind of work: without it there is no routing to audit").
+			WithCode(KeyTurnNeedsTaskKind, nil)
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if idempotencyKey == "" {
-		// Ver a decisão 4 no cabeçalho: gerar aqui transformaria um retry de
-		// rede em consumo em dobro e mensagem duplicada.
-		return nil, errs.Invalid("turno exige chave de idempotência: as cinco escritas derivam dela")
+		// See decision 4 in the header: generating one here would turn a
+		// network retry into double consumption and a duplicated message.
+		return nil, errs.Invalid("a turn requires an idempotency key: the five writes derive from it").
+			WithCode(KeyTurnNeedsIdemKey, nil)
 	}
-	ks := chaves(idempotencyKey)
+	ks := idemKeys(idempotencyKey)
 
-	// 0. Provedor ANTES de qualquer outra coisa: credencial ausente falha aqui,
-	// barato, e com mensagem que fala de configuração.
+	// 0. The provider BEFORE anything else: a missing credential fails here,
+	// cheaply, and with a message that talks about configuration.
 	provider, err := s.providers.For(ctx, req.ResourceID)
 	if err != nil {
 		return nil, err
 	}
 	info := provider.Info()
 
-	// 1. Thread (ficha e chave) e pacote de contexto.
+	// 1. Thread (card and key) and context package.
 	thread, err := s.conv.Thread(ctx, req.DemandID, req.ThreadID)
 	if err != nil {
 		return nil, err
@@ -345,159 +364,165 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		return nil, err
 	}
 
-	// 2. Roteamento.
-	decisao, err := s.routing.Route(ctx, req.TaskKind, req.DemandID)
+	// 2. Routing.
+	decision, err := s.routing.Route(ctx, req.TaskKind, req.DemandID)
 	if err != nil {
 		return nil, err
 	}
-	modelo, esforco, daFicha := modeloEEffort(info, decisao, thread.Card)
+	model, effort, fromCard := modelAndEffort(info, decision, thread.Card)
 
-	// A pergunta entra na thread ANTES da chamada ao modelo: se o fornecedor
-	// cair, a conversa mostra o que foi perguntado em vez de um buraco.
+	// The question enters the thread BEFORE the model call: if the provider
+	// goes down, the conversation shows what was asked instead of a hole.
 	var ids []string
-	entrada, err := s.conv.PostMessage(ctx, thread.ID, req.Text, ks["msg-in"])
+	inbound, err := s.conv.PostMessage(ctx, thread.ID, req.Text, ks["msg-in"])
 	if err != nil {
 		return nil, err
 	}
-	ids = append(ids, entrada)
+	ids = append(ids, inbound)
 
-	aviso := TruncationNotice(pkg)
-	if aviso != "" {
-		// O truncamento não some: quem lê a thread precisa saber que a resposta
-		// abaixo foi produzida sem parte do contexto.
-		nota, err := s.conv.PostMessage(ctx, thread.ID, aviso, ks["notice"])
+	notice := TruncationNotice(pkg)
+	if notice != "" {
+		// The truncation does not vanish: whoever reads the thread needs to
+		// know the reply below was produced without part of the context.
+		note, err := s.conv.PostMessage(ctx, thread.ID, notice, ks["notice"])
 		if err != nil {
 			return nil, err
 		}
-		ids = append(ids, nota)
+		ids = append(ids, note)
 	}
 
-	// 3. Ferramentas concedidas a ESTA thread (ADR-0010 §2). Nome concedido que
-	// não existe no catálogo não para o turno: vira aviso, e a ficha do prompt
-	// lista só o que de fato existe (ver ficha()).
-	ferramentas, desconhecidas := ToolCatalog(thread.Card.Tools)
-	var avisos []string
-	if av := avisoDeFerramentasDesconhecidas(desconhecidas); av != "" {
-		avisos = append(avisos, av)
+	// 3. The tools granted to THIS thread (ADR-0010 §2). A granted name that
+	// does not exist in the catalog does not stop the turn: it becomes a
+	// warning, and the prompt's brief lists only what actually exists (see
+	// brief()).
+	tools, unknown := ToolCatalog(thread.Card.Tools)
+	var warnings []string
+	if w := unknownToolsWarning(unknown); w != "" {
+		warnings = append(warnings, w)
 	}
-	if len(ferramentas) > 0 && s.sandbox == nil {
-		// A ficha promete ação e a instalação não tem substrato. Declarar as
-		// ferramentas assim mesmo faria o agente planejar em cima delas e
-		// descobrir na primeira chamada; não declarar e não avisar faria a
-		// ficha parecer honrada. Sobra a terceira saída: não declarar e DIZER.
-		avisos = append(avisos, "a ficha desta thread concede ferramenta(s) ("+
-			namesOf(ferramentas)+"), mas esta instalação não tem substrato de execução "+
-			"ligado: o turno rodou SEM ferramentas")
-		ferramentas = nil
+	if len(tools) > 0 && s.sandbox == nil {
+		// The card promises action and the installation has no substrate.
+		// Declaring the tools anyway would make the agent plan on top of them
+		// and find out on the first call; not declaring and not warning would
+		// make the card look honoured. That leaves the third way: do not
+		// declare, and SAY so.
+		warnings = append(warnings, "this thread's card grants tool(s) ("+
+			namesOf(tools)+"), but this installation has no execution substrate "+
+			"wired: the turn ran WITHOUT tools")
+		tools = nil
 	}
 
-	// 4. Prefixo estável primeiro, volátil depois (ADR-0012 §1).
-	turno := BuildTurn(pkg, thread.Key, thread.Card, req.Text, req.OperatorNote,
-		req.MaxOutputTokens, ferramentas)
+	// 4. Stable prefix first, volatile after (ADR-0012 §1).
+	turn := BuildTurn(pkg, thread.Key, thread.Card, req.Text, req.OperatorNote,
+		req.MaxOutputTokens, tools)
 
-	// 5. O laço: manda, executa ferramenta, mede CADA volta, decide se continua.
-	// A medição vem antes de publicar a resposta pelo mesmo motivo de sempre: se
-	// o processo morrer no meio, é melhor ter registrado tokens já pagos do que
-	// ter publicado uma resposta de graça.
+	// 5. The loop: send, execute the tool, measure EVERY round, decide whether
+	// to continue. The measurement comes before publishing the reply for the
+	// usual reason: if the process dies midway, it is better to have recorded
+	// tokens already paid for than to have published a reply for free.
 	//
-	// O laço roda com o `ctx` ORIGINAL, e não com o do agente (`comoAgente`).
-	// A troca de ator existe para a AUTORIA do que é publicado — quem falou —,
-	// e usá-la aqui trocaria também a AUTORIZAÇÃO: o comando passaria a ser
-	// executado em nome de uma thread, que não é membro de conta nenhuma. Quem
-	// autoriza rodar comando no sandbox é a pessoa que apertou o botão, e é a
-	// permissão dela que o domínio de execução confere.
-	teto := s.tetoDeVoltas(req.MaxToolRounds)
-	laco := laco{
+	// The loop runs with the ORIGINAL `ctx`, not the agent's (`asAgent`). The
+	// actor swap exists for the AUTHORSHIP of what is published — who spoke —
+	// and using it here would also swap the AUTHORIZATION: the command would
+	// start being executed on behalf of a thread, which is a member of no
+	// account. Whoever authorizes running a command in the sandbox is the
+	// person who pressed the button, and it is their permission the execution
+	// domain checks.
+	roundCap := s.roundCap(req.MaxToolRounds)
+	l := loop{
 		provider: provider, sandbox: s.sandbox, routing: s.routing, info: info,
 		demandID: req.DemandID, threadID: thread.ID,
-		modelo: modelo, esforco: esforco, maxVoltas: teto,
-		chaveUso: chaveDeUso(idempotencyKey), permitidas: ferramentas,
+		model: model, effort: effort, maxRounds: roundCap,
+		usageKey: usageKeyFor(idempotencyKey), allowed: tools,
 	}
-	res, err := laco.rodar(ctx, turno)
+	res, err := l.run(ctx, turn)
 	if err != nil {
 		return nil, err
 	}
-	execucao := res.exec
-	resposta := execucao.ModelReply
-	avisos = append(avisos, res.avisos...)
-	conta := res.conta
+	execution := res.exec
+	reply := execution.ModelReply
+	warnings = append(warnings, res.warnings...)
+	accounting := res.accounting
 
-	modeloEfetivo := resposta.Model
-	if modeloEfetivo == "" {
-		modeloEfetivo = modelo
+	effectiveModel := reply.Model
+	if effectiveModel == "" {
+		effectiveModel = model
 	}
-	if !res.precoConhecido {
-		avisos = append(avisos, fmt.Sprintf(
-			"sem tabela de preço para %q em %q: o consumo foi registrado em tokens, "+
-				"e o CUSTO ficou zerado por AUSÊNCIA de tabela — não por ser de graça",
-			modeloEfetivo, info.Name))
+	if !res.priceKnown {
+		warnings = append(warnings, fmt.Sprintf(
+			"no price table for %q on %q: the consumption was recorded in tokens, "+
+				"and the COST was left at zero for LACK of a table — not because it was free",
+			effectiveModel, info.Name))
 	}
 
-	// 6 e 7. A resposta na thread, assinada pelo AGENTE.
-	comoAgenteCtx := comoAgente(ctx, thread)
-	saida, err := s.conv.PostMessage(comoAgenteCtx, thread.ID, execucao.Reply, ks["msg-out"])
+	// 6 and 7. The reply on the thread, signed by the AGENT.
+	agentCtx := asAgent(ctx, thread)
+	outbound, err := s.conv.PostMessage(agentCtx, thread.ID, execution.Reply, ks["msg-out"])
 	if err != nil {
 		return nil, err
 	}
-	ids = append(ids, saida)
+	ids = append(ids, outbound)
 
-	// A parada do laço que NÃO foi "terminei" vira mensagem na thread, pela
-	// mesma razão do aviso de truncamento: quem lê a conversa precisa saber que
-	// a resposta acima é um trabalho interrompido, e não uma conclusão. Vai com
-	// a autoria do CHAMADOR e não do agente — é afirmação da plataforma sobre o
-	// agente, e assiná-la como ele seria pôr na boca dele algo que ele não disse.
-	if nota := LoopNotice(res.parada, res.rodadas, teto); nota != "" {
-		id, err := s.conv.PostMessage(ctx, thread.ID, nota, ks["loop-notice"])
+	// A loop stop that was NOT "I finished" becomes a message on the thread,
+	// for the truncation warning's same reason: whoever reads the conversation
+	// needs to know the reply above is interrupted work, and not a conclusion.
+	// It goes with the CALLER's authorship and not the agent's — it is the
+	// platform's statement about the agent, and signing it as the agent would
+	// put in its mouth something it did not say.
+	if note := LoopNotice(res.stop, res.rounds, roundCap); note != "" {
+		id, err := s.conv.PostMessage(ctx, thread.ID, note, ks["loop-notice"])
 		if err != nil {
 			return nil, err
 		}
 		ids = append(ids, id)
 	}
 
-	// 8. Concluir exige publicar achado (spec §1) — e o achado também é do
-	// agente, pelo mesmo motivo da mensagem.
+	// 8. Concluding requires publishing a finding (spec §1) — and the finding
+	// also belongs to the agent, for the message's same reason.
 	//
-	// `res.parada.Concluded()` é a segunda condição: um laço que bateu o teto ou
-	// parou por orçamento NÃO conclui, mesmo que a última fala do modelo diga
-	// que sim. Achado escrito antes de o trabalho terminar é pior que achado
-	// nenhum — ele é durável, entra na memória do projeto e no contexto dos
-	// irmãos, e passa a valer como verdade.
+	// `res.stop.Concluded()` is the second condition: a loop that hit the cap or
+	// stopped on budget does NOT conclude, even if the model's last utterance
+	// says it does. A finding written before the work finished is worse than no
+	// finding at all — it is durable, it enters the project's memory and its
+	// siblings' context, and it starts counting as truth.
 	//
-	// SEGUNDA TRANCA, e vale registrar por quê: hoje ela é redundante. Toda
-	// parada que não é `finished` acontece com chamadas de ferramenta pendentes,
-	// e `executeTurn` já zera `concluded` na presença de chamadas (turn.go) — de
-	// modo que nenhum teste consegue exercitar ESTA linha isoladamente. Ela fica
-	// porque as duas regras são independentes e moram em lugares diferentes: "quem
-	// pede ferramenta não terminou" é sobre a RESPOSTA, "laço interrompido não
-	// conclui" é sobre o LAÇO. No dia em que a primeira mudar, é esta que impede
-	// um achado escrito no meio do trabalho de entrar na memória do projeto. A
-	// regra em si é testável, e está testada, na forma pura: LoopStop.Concluded.
-	concluiu := execucao.Concluded && res.parada.Concluded()
-	if execucao.Concluded && !res.parada.Concluded() {
-		avisos = append(avisos,
-			"o modelo marcou conclusão numa volta em que o laço PAROU por "+
-				string(res.parada)+": a conclusão foi RECUSADA e nenhum achado foi publicado")
+	// A SECOND LOCK, and it is worth recording why: today it is redundant. Every
+	// stop that is not `finished` happens with pending tool calls, and
+	// `executeTurn` already zeroes `concluded` in the presence of calls
+	// (turn.go) — so that no test can exercise THIS line in isolation. It stays
+	// because the two rules are independent and live in different places:
+	// "whoever asks for a tool did not finish" is about the RESPONSE, "an
+	// interrupted loop does not conclude" is about the LOOP. On the day the
+	// first changes, this is what stops a finding written mid-work from entering
+	// the project's memory. The rule itself is testable, and is tested, in its
+	// pure form: LoopStop.Concluded.
+	concluded := execution.Concluded && res.stop.Concluded()
+	if execution.Concluded && !res.stop.Concluded() {
+		warnings = append(warnings,
+			"the model marked a conclusion on a round where the loop STOPPED because of "+
+				string(res.stop)+": the conclusion was REFUSED and no finding was published")
 	}
-	var achadoRef *FindingRef
-	if concluiu && execucao.Finding != nil {
+	var findingRef *FindingRef
+	if concluded && execution.Finding != nil {
 		payload := map[string]any{}
-		for k, v := range execucao.Finding.Payload {
+		for k, v := range execution.Finding.Payload {
 			payload[k] = v
 		}
-		// A PROVENIÊNCIA entra no achado: quem auditar precisa saber com que
-		// modelo e sob que política ele foi produzido, e o achado é durável —
-		// vai para a memória do projeto e para o contexto dos irmãos.
+		// PROVENANCE enters the finding: whoever audits it needs to know with
+		// which model and under which policy it was produced, and the finding is
+		// durable — it goes to the project's memory and to its siblings'
+		// context.
 		payload["provider"] = info.Name
-		payload["model"] = modeloEfetivo
-		payload["effort"] = string(resposta.EffortApplied)
-		payload["routing_reason"] = decisao.Reason
+		payload["model"] = effectiveModel
+		payload["effort"] = string(reply.EffortApplied)
+		payload["routing_reason"] = decision.Reason
 
-		ref, err := s.conv.PublishFinding(comoAgenteCtx, req.DemandID, thread.ID,
-			execucao.Finding.Title, payload, ks["finding"])
+		ref, err := s.conv.PublishFinding(agentCtx, req.DemandID, thread.ID,
+			execution.Finding.Title, payload, ks["finding"])
 		if err != nil {
 			return nil, err
 		}
-		achadoRef = &ref
+		findingRef = &ref
 	}
 
 	return &TurnOutcome{
@@ -505,106 +530,107 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		ThreadID: thread.ID,
 		Provider: info.Name,
 		Routing: RoutingView{
-			TaskKind:      decisao.TaskKind,
-			Class:         decisao.Class,
-			Model:         modeloEfetivo,
-			Effort:        esforco,
-			EffortApplied: resposta.EffortApplied,
-			Reason:        decisao.Reason,
-			FromAgentCard: daFicha,
+			TaskKind:      decision.TaskKind,
+			Class:         decision.Class,
+			Model:         effectiveModel,
+			Effort:        effort,
+			EffortApplied: reply.EffortApplied,
+			Reason:        decision.Reason,
+			FromAgentCard: fromCard,
 		},
-		Reply:      execucao.Reply,
+		Reply:      execution.Reply,
 		MessageIDs: ids,
-		Concluded:  concluiu,
-		Finding:    achadoRef,
+		Concluded:  concluded,
+		Finding:    findingRef,
 		Usage: TurnUsage{
-			// A soma de TODAS as voltas, não a última: registrar só a última
-			// subestimaria o gasto de um turno de N voltas por um fator N, e
-			// orçamento que erra não é orçamento (ADR-0011 §2).
-			Usage:              res.usoTotal,
-			CostMicros:         res.custoTotal,
-			Currency:           res.moeda,
+			// The sum of ALL the rounds, not the last: recording only the last
+			// would underestimate an N-round turn's spend by a factor of N, and
+			// a budget that is wrong is not a budget (ADR-0011 §2).
+			Usage:              res.totalUsage,
+			CostMicros:         res.totalCost,
+			Currency:           res.currency,
 			CacheCreationKnown: info.Supports(CapCacheCreationAccounting),
-			CostKnown:          res.precoConhecido,
+			CostKnown:          res.priceKnown,
 		},
-		ContextTruncated: aviso != "",
-		ToolRounds:       res.rodadas,
-		ToolCalls:        res.chamadas,
-		LoopStop:         res.parada,
-		MaxToolRounds:    teto,
-		Paused:           conta.BudgetExceeded,
-		Notice:           avisoDeOrcamento(conta),
-		Budgets:          conta.Exceeded,
-		Warnings:         avisos,
+		ContextTruncated: notice != "",
+		ToolRounds:       res.rounds,
+		ToolCalls:        res.calls,
+		LoopStop:         res.stop,
+		MaxToolRounds:    roundCap,
+		Paused:           accounting.BudgetExceeded,
+		Notice:           budgetNotice(accounting),
+		Budgets:          accounting.Exceeded,
+		Warnings:         warnings,
 	}, nil
 }
 
-// tetoDeVoltas resolve o teto DESTE turno: o do serviço, que o chamador pode
-// ABAIXAR mas nunca levantar. Ver TurnRequest.MaxToolRounds.
-func (s *Service) tetoDeVoltas(pedido int) int {
-	teto := s.maxToolRounds
-	if teto <= 0 {
-		// Serviço montado por um caminho que não passou pelo construtor (um
-		// zero value, um duplo de teste): o default do domínio vale mesmo
-		// assim. "Sem teto" não é um estado que este serviço pode ter.
-		teto = DefaultMaxToolRounds
+// roundCap resolves THIS turn's cap: the service's, which the caller may LOWER
+// but never raise. See TurnRequest.MaxToolRounds.
+func (s *Service) roundCap(requested int) int {
+	limit := s.maxToolRounds
+	if limit <= 0 {
+		// A service assembled through a path that did not go through the
+		// constructor (a zero value, a test double): the domain's default
+		// applies anyway. "No cap" is not a state this service can have.
+		limit = DefaultMaxToolRounds
 	}
-	if pedido > 0 && pedido < teto {
-		teto = pedido
+	if requested > 0 && requested < limit {
+		limit = requested
 	}
-	return teto
+	return limit
 }
 
-// modeloEEffort resolve (modelo concreto, effort, a ficha venceu?).
+// modelAndEffort resolves (concrete model, effort, did the card win?).
 //
-// A regra, em três degraus:
+// The rule, in three steps:
 //
-//  1. FICHA DA THREAD primeiro (ADR-0010 §2). O nome dela passa INTACTO: é um
-//     nome do cardápio das integrações de agente, não uma classe, e traduzi-lo
-//     seria desfazer a escolha congelada da thread;
-//  2. senão, CLASSE → catálogo DESTE fornecedor. É a metade que a política não
-//     pode fazer, porque a classe forte muda de nome a cada fornecedor;
-//  3. senão, o nome que o roteador devolveu, INTACTO. Acontece quando a decisão
-//     não trouxe classe — e adivinhar a classe de um nome desconhecido trocaria
-//     em silêncio o modelo que a política escolheu, que é o defeito que o
-//     falecido `catalog.py` carregava por desenho.
-func modeloEEffort(info ProviderInfo, d Decision, card AgentCard) (string, Effort, bool) {
-	daFicha := strings.TrimSpace(card.Model) != ""
+//  1. THE THREAD'S CARD first (ADR-0010 §2). Its name passes through INTACT: it
+//     is a name from the agent integrations' menu, not a class, and translating
+//     it would undo the thread's frozen choice;
+//  2. otherwise, CLASS → THIS provider's catalog. It is the half the policy
+//     cannot do, because the strong class changes name with every provider;
+//  3. otherwise, the name the router returned, INTACT. That happens when the
+//     decision brought no class — and guessing an unknown name's class would
+//     silently swap the model the policy chose, which is the defect the late
+//     `catalog.py` carried by design.
+func modelAndEffort(info ProviderInfo, d Decision, card AgentCard) (string, Effort, bool) {
+	fromCard := strings.TrimSpace(card.Model) != ""
 
-	modelo := strings.TrimSpace(card.Model)
+	model := strings.TrimSpace(card.Model)
 	switch {
-	case daFicha:
+	case fromCard:
 	case d.Class == ClassCheap || d.Class == ClassMedium || d.Class == ClassStrong:
-		modelo = info.ResolveModel(d.Class)
+		model = info.ResolveModel(d.Class)
 	default:
-		modelo = d.Model
+		model = d.Model
 	}
 
-	// O effort da ficha vence o do roteador quando ela declara um válido. Valor
-	// fora do vocabulário cai no alto (ver NormalizeEffort), nunca no baixo.
-	esforco := d.Effort
+	// The card's effort beats the router's when it declares a valid one. A
+	// value outside the vocabulary falls back to high (see NormalizeEffort),
+	// never to low.
+	effort := d.Effort
 	if e := Effort(strings.ToLower(strings.TrimSpace(card.Effort))); ValidEffort(e) {
-		esforco = e
+		effort = e
 	}
-	return modelo, NormalizeEffort(esforco), daFicha
+	return model, NormalizeEffort(effort), fromCard
 }
 
-// avisoDeOrcamento redige o item que a caixa de atenção mostra.
+// budgetNotice drafts the item the attention box shows.
 //
-// A frase é montada aqui, e não no domínio de custo, porque ela é sobre O TURNO:
-// o que aconteceu, o que continua valendo e o que o humano precisa decidir. O
-// domínio de custo responde com fatos (que escopos estouraram); traduzir fato em
-// decisão é trabalho de quem conhece o fluxo.
-func avisoDeOrcamento(a Accounting) string {
+// The sentence is assembled here, and not in the cost domain, because it is
+// about THE TURN: what happened, what still holds and what the human needs to
+// decide. The cost domain answers with facts (which scopes blew); translating a
+// fact into a decision is the job of whoever knows the flow.
+func budgetNotice(a Accounting) string {
 	if !a.BudgetExceeded {
 		return ""
 	}
-	escopos := make([]string, 0, len(a.Exceeded))
+	scopes := make([]string, 0, len(a.Exceeded))
 	for _, b := range a.Exceeded {
-		escopos = append(escopos, fmt.Sprintf("%s %s (%d de %d micros %s)",
+		scopes = append(scopes, fmt.Sprintf("%s %s (%d of %d micros %s)",
 			b.Scope, b.ScopeID, b.SpentMicros, b.LimitMicros, b.Currency))
 	}
-	return "Orçamento estourado em " + strings.Join(escopos, "; ") +
-		". Este turno foi entregue inteiro; o próximo não sai até alguém decidir " +
-		"(aumentar o teto, cortar escopo ou encerrar) — ADR-0011 §2."
+	return "Budget blown on " + strings.Join(scopes, "; ") +
+		". This turn was delivered whole; the next one does not go out until somebody decides " +
+		"(raise the ceiling, cut scope or close) — ADR-0011 §2."
 }
