@@ -1,12 +1,13 @@
-// Adaptador de SandboxLauncher sobre o Docker do host.
+// A SandboxLauncher adapter over the host's Docker.
 //
-// É ele que faz o desenvolvimento da plataforma existir sem cluster (spec do
-// substrato §2) — e, pela ADR-0001, é a PROVA de que a porta está certa: com um
-// adaptador só, ela sairia no formato do Kubernetes e ninguém notaria.
+// It is what makes developing the platform possible with no cluster (substrate
+// spec §2) — and, by ADR-0001, it is the PROOF that the port is right: with a
+// single adapter, the port would come out in Kubernetes's shape and nobody would
+// notice.
 //
-// Fala a Engine API pelo socket unix, com net/http — sem SDK. Não é
-// preciosismo: o SDK do Docker arrasta a árvore de dependências do daemon
-// inteiro para dentro de um binário que só precisa de sete chamadas HTTP.
+// It speaks the Engine API over the unix socket, with net/http — no SDK. It is
+// not preciousness: Docker's SDK drags the whole daemon's dependency tree into a
+// binary that only needs seven HTTP calls.
 package sandbox
 
 import (
@@ -28,13 +29,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// DefaultDockerSocket é onde o daemon escuta em Linux.
+// DefaultDockerSocket is where the daemon listens on Linux.
 const DefaultDockerSocket = "/var/run/docker.sock"
 
 type Docker struct {
 	client *http.Client
-	// stream tem Timeout zero: um follow de log dura o tempo do cliente, e um
-	// timeout no cliente HTTP mataria o tail no meio sem erro nenhum útil.
+	// stream has a zero Timeout: a log follow lasts as long as the client does,
+	// and a timeout on the HTTP client would kill the tail midway with no useful
+	// error at all.
 	stream  *http.Client
 	apiVer  string
 	timeout time.Duration
@@ -42,9 +44,9 @@ type Docker struct {
 
 type DockerConfig struct {
 	Socket string
-	// APIVersion fixa a versão negociada. Sem ela o daemon usa a mais recente
-	// que conhece — e uma atualização do host mudaria o formato de resposta
-	// debaixo de nós.
+	// APIVersion pins the negotiated version. Without it the daemon uses the
+	// most recent one it knows — and a host upgrade would change the response's
+	// format under us.
 	APIVersion string
 	Timeout    time.Duration
 }
@@ -78,12 +80,12 @@ func NewDocker(cfg DockerConfig) *Docker {
 
 var _ ports.SandboxLauncher = (*Docker)(nil)
 
-// ── nomes ────────────────────────────────────────────────────────────────────
+// ── names ────────────────────────────────────────────────────────────────────
 //
-// O namespace da demanda vira PREFIXO de nome no Docker, porque o Docker não
-// tem namespace. É a mesma identificação hierárquica da spec, expressa no que
-// este substrato oferece — e por isso as labels vão junto: nome é para achar,
-// label é para consultar.
+// The demand's namespace becomes a name PREFIX in Docker, because Docker has no
+// namespaces. It is the spec's same hierarchical identification, expressed in
+// what this substrate offers — and that is why the labels travel along: the name
+// is for finding, the label is for querying.
 
 func (d *Docker) containerName(h ports.SandboxHandle) string { return h.Namespace + "-sandbox" }
 func (d *Docker) volumeName(h ports.SandboxHandle) string    { return h.Namespace + "-workspace" }
@@ -95,7 +97,7 @@ func (d *Docker) do(ctx context.Context, method, path string, body any) (int, []
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, errs.Wrap(errs.KindInternal, err, "pedido ilegível para o Docker")
+			return 0, nil, errs.Wrap(errs.KindInternal, err, "request unreadable for Docker")
 		}
 		rdr = strings.NewReader(string(raw))
 	}
@@ -106,19 +108,19 @@ func (d *Docker) do(ctx context.Context, method, path string, body any) (int, []
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao falar com o Docker")
+		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "failed to talk to Docker")
 	}
 	defer resp.Body.Close()
 	out, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return resp.StatusCode, nil, errs.Wrap(errs.KindInternal, err, "resposta truncada do Docker")
+		return resp.StatusCode, nil, errs.Wrap(errs.KindInternal, err, "truncated response from Docker")
 	}
 	return resp.StatusCode, out, nil
 }
 
-// fail transforma o corpo de erro do Docker em erro de domínio com a mensagem
-// que o daemon deu. Engolir essa mensagem é o que transforma "no such image"
-// em "erro interno" e queima uma hora de investigação.
+// fail turns Docker's error body into a domain error with the message the
+// daemon gave. Swallowing that message is what turns "no such image" into
+// "internal error" and burns an hour of investigation.
 func fail(code int, body []byte, what string) error {
 	var e struct {
 		Message string `json:"message"`
@@ -134,33 +136,33 @@ func fail(code int, body []byte, what string) error {
 	case http.StatusConflict:
 		return errs.New(errs.KindAlreadyExists, "%s: %s", what, msg)
 	}
-	return errs.Internal("o Docker recusou %s (HTTP %d): %s", what, code, msg)
+	return errs.Internal("Docker refused %s (HTTP %d): %s", what, code, msg)
 }
 
 // ── tiers ────────────────────────────────────────────────────────────────────
 
-// SupportedTiers pergunta ao daemon quais runtimes ele tem registrados.
+// SupportedTiers asks the daemon which runtimes it has registered.
 //
-// É o mesmo raciocínio do adaptador k8s com RuntimeClass, do outro lado da
-// porta: o nível de isolamento é um FATO do host, verificável, e não uma
-// suposição da configuração. Host sem runsc e sem kata oferece exatamente
-// `namespace` — e dizer isso em voz alta é o que permite ao domínio recusar em
-// vez de degradar.
+// It is the same reasoning as the k8s adapter's with RuntimeClass, on the other
+// side of the port: the isolation level is a FACT of the host, verifiable, and
+// not an assumption of the configuration. A host with no runsc and no kata
+// offers exactly `namespace` — and saying so out loud is what lets the domain
+// refuse instead of degrading.
 func (d *Docker) SupportedTiers(ctx context.Context) ([]ports.IsolationTier, error) {
 	code, body, err := d.do(ctx, http.MethodGet, "/info", nil)
 	if err != nil {
 		return nil, err
 	}
 	if code >= 300 {
-		return nil, fail(code, body, "consulta ao daemon")
+		return nil, fail(code, body, "querying the daemon")
 	}
 	var info struct {
 		Runtimes map[string]any `json:"Runtimes"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from Docker")
 	}
-	tiers := map[ports.IsolationTier]bool{ports.TierNamespace: true} // runc sempre há
+	tiers := map[ports.IsolationTier]bool{ports.TierNamespace: true} // runc is always there
 	for name := range info.Runtimes {
 		switch {
 		case strings.Contains(name, "kata"), strings.Contains(name, "firecracker"):
@@ -178,14 +180,14 @@ func (d *Docker) SupportedTiers(ctx context.Context) ([]ports.IsolationTier, err
 	return out, nil
 }
 
-// runtimeFor devolve o runtime do Docker que entrega o tier pedido.
+// runtimeFor returns the Docker runtime that delivers the requested tier.
 func (d *Docker) runtimeFor(ctx context.Context, tier ports.IsolationTier) (string, error) {
 	code, body, err := d.do(ctx, http.MethodGet, "/info", nil)
 	if err != nil {
 		return "", err
 	}
 	if code >= 300 {
-		return "", fail(code, body, "consulta ao daemon")
+		return "", fail(code, body, "querying the daemon")
 	}
 	var info struct {
 		Runtimes       map[string]any `json:"Runtimes"`
@@ -224,26 +226,26 @@ func (d *Docker) runtimeFor(ctx context.Context, tier ports.IsolationTier) (stri
 			return r, nil
 		}
 	}
-	// Garantia 1 da porta: recusa com mensagem, nunca um nível a menos.
+	// The port's guarantee 1: a refusal with a message, never one level less.
 	return "", errs.Precondition(
-		"o Docker deste host não tem runtime para isolamento %q — instale e "+
-			"registre o runtime correspondente ou peça outro nível", tier)
+		"this host's Docker has no runtime for %q isolation — install and register "+
+			"the corresponding runtime or ask for another level", tier)
 }
 
-// ── ciclo de vida ────────────────────────────────────────────────────────────
+// ── lifecycle ────────────────────────────────────────────────────────────────
 
 func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	if err := validateSpec(spec); err != nil {
 		return nil, err
 	}
-	// O runtime é resolvido ANTES de criar volume ou contêiner: tier recusado
-	// não pode deixar rastro (garantia 2).
+	// The runtime is resolved BEFORE creating a volume or a container: a refused
+	// tier must leave no trace (guarantee 2).
 	runtime, err := d.runtimeFor(ctx, spec.Tier)
 	if err != nil {
 		return nil, err
 	}
 
-	// Relançar a mesma spec devolve o que já existe (garantia 4).
+	// Relaunching the same spec returns what already exists (guarantee 4).
 	if st, err := d.Describe(ctx, spec.SandboxHandle); err == nil {
 		return st, nil
 	} else if errs.KindOf(err) != errs.KindNotFound {
@@ -273,18 +275,18 @@ func (d *Docker) ensureVolume(ctx context.Context, spec ports.SandboxSpec) error
 	if err != nil {
 		return err
 	}
-	// O Docker devolve 201 tanto na criação quanto quando o volume já existe.
+	// Docker returns 201 both on creation and when the volume already exists.
 	if code >= 300 {
-		return fail(code, body, "criação do workspace")
+		return fail(code, body, "creating the workspace")
 	}
 	return nil
 }
 
-// ensureImage puxa a imagem se ela não estiver no host.
+// ensureImage pulls the image if it is not on the host.
 //
-// Sem isso, o primeiro Launch numa máquina limpa falha com "no such image" —
-// e a suíte de contrato dependeria de alguém ter rodado docker pull antes,
-// que é a definição de teste que passa por acidente.
+// Without this, the first Launch on a clean machine fails with "no such image" —
+// and the contract suite would depend on somebody having run docker pull first,
+// which is the definition of a test that passes by accident.
 func (d *Docker) ensureImage(ctx context.Context, image string) error {
 	code, _, err := d.do(ctx, http.MethodGet, "/images/"+url.PathEscape(image)+"/json", nil)
 	if err != nil {
@@ -293,7 +295,7 @@ func (d *Docker) ensureImage(ctx context.Context, image string) error {
 	if code == http.StatusOK {
 		return nil
 	}
-	// O pull pode demorar bem mais que uma chamada normal.
+	// The pull may take far longer than a normal call.
 	pullCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(pullCtx, http.MethodPost,
@@ -303,12 +305,12 @@ func (d *Docker) ensureImage(ctx context.Context, image string) error {
 	}
 	resp, err := d.stream.Do(req)
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao baixar a imagem %s", image)
+		return errs.Wrap(errs.KindUnavailable, err, "failed to pull image %s", image)
 	}
 	defer resp.Body.Close()
-	out, _ := io.ReadAll(resp.Body) // o corpo é o progresso; precisa ser drenado
+	out, _ := io.ReadAll(resp.Body) // the body is the progress; it has to be drained
 	if resp.StatusCode >= 300 {
-		return fail(resp.StatusCode, out, "download da imagem "+image)
+		return fail(resp.StatusCode, out, "downloading image "+image)
 	}
 	return nil
 }
@@ -318,30 +320,31 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 	for k, v := range spec.Env {
 		env = append(env, k+"="+v)
 	}
-	sort.Strings(env) // criação reprodutível
+	sort.Strings(env) // reproducible creation
 
 	body := map[string]any{
 		"Image":  spec.Image,
 		"Env":    env,
 		"Labels": labelsFor(spec),
-		// O diretório de trabalho do CONTÊINER é o workspace, e é daqui que
-		// sai a garantia 14 da porta: o `pods/exec` do k8s não aceita
-		// diretório de trabalho, então em vez de emular no adaptador os dois
-		// fixam o do contêiner e deixam o exec herdá-lo. Um comando de
-		// ferramenta começa no mesmo lugar nos dois substratos.
+		// The CONTAINER's working directory is the workspace, and this is where
+		// the port's guarantee 14 comes from: k8s's `pods/exec` does not accept
+		// a working directory, so instead of emulating it in the adapter both
+		// pin the container's and let the exec inherit it. A tool's command
+		// starts in the same place on both substrates.
 		"WorkingDir": ports.SandboxWorkspacePath,
-		// Tty falso mantém stdout e stderr SEPARADOS no stream de log. Com tty
-		// os dois se fundem e LogLine.Stream passaria a mentir.
+		// A false Tty keeps stdout and stderr SEPARATE in the log stream. With a
+		// tty the two merge and LogLine.Stream would start lying.
 		"Tty": false,
 		"HostConfig": map[string]any{
 			"Runtime": runtime,
 			"Binds":   []string{d.volumeName(spec.SandboxHandle) + ":" + ports.SandboxWorkspacePath},
-			// Defesa em camadas (spec §6). O agente lê conteúdo não confiável e
-			// porta credencial: capacidade nenhuma, e nada de reescalar.
+			// Defence in layers (spec §6). The agent reads untrusted content and
+			// carries a credential: no capabilities at all, and no
+			// re-escalation.
 			"CapDrop":     []string{"ALL"},
 			"SecurityOpt": []string{"no-new-privileges:true"},
-			// Reinício automático esconderia um sandbox que morre em laço: o
-			// domínio precisa VER o estado, não um contêiner ressuscitando.
+			// An automatic restart would hide a sandbox dying in a loop: the
+			// domain needs to SEE the state, not a container resurrecting.
 			"RestartPolicy": map[string]any{"Name": "no"},
 		},
 	}
@@ -355,10 +358,10 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 		return err
 	}
 	if code == http.StatusConflict {
-		return nil // já existe: o Launch é idempotente
+		return nil // it already exists: Launch is idempotent
 	}
 	if code >= 300 {
-		return fail(code, resp, "criação do sandbox")
+		return fail(code, resp, "creating the sandbox")
 	}
 	return nil
 }
@@ -369,32 +372,32 @@ func (d *Docker) startContainer(ctx context.Context, h ports.SandboxHandle) erro
 	if err != nil {
 		return err
 	}
-	// 304 = já estava rodando. É sucesso, não erro.
+	// 304 = it was already running. That is a success, not an error.
 	if code >= 300 && code != http.StatusNotModified {
-		return fail(code, body, "início do sandbox")
+		return fail(code, body, "starting the sandbox")
 	}
 	return nil
 }
 
-// Suspend para a execução e PRESERVA o volume do workspace.
+// Suspend stops execution and PRESERVES the workspace volume.
 //
-// Aqui mora a divergência mais instrutiva entre os dois adaptadores: o k8s
-// apaga o pod e só o PVC sobrevive; o Docker para o contêiner e a camada
-// gravável dele fica de pé. Os dois cumprem a garantia 5 — o que está sob
-// /workspace sobrevive —, e apenas ela. Se a porta prometesse "o sandbox
-// inteiro sobrevive", este adaptador cumpriria e o outro não, e a suíte de
-// contrato existiria só para dar aval a uma mentira.
+// Here lives the most instructive divergence between the two adapters: k8s
+// deletes the pod and only the PVC survives; Docker stops the container and its
+// writable layer stays standing. Both deliver guarantee 5 — what is under
+// /workspace survives — and only that. If the port promised "the whole sandbox
+// survives", this adapter would deliver and the other would not, and the
+// contract suite would exist only to rubber-stamp a lie.
 func (d *Docker) Suspend(ctx context.Context, h ports.SandboxHandle) error {
 	if _, err := d.Describe(ctx, h); err != nil {
-		return err // inexistente devolve NotFound (garantia 9)
+		return err // a nonexistent one returns NotFound (guarantee 9)
 	}
 	code, body, err := d.do(ctx, http.MethodPost, "/containers/"+d.containerName(h)+"/stop?t=10", nil)
 	if err != nil {
 		return err
 	}
-	// 304 = já parado; 404 = contêiner já removido, mas o workspace está lá.
+	// 304 = already stopped; 404 = the container is gone, but the workspace is there.
 	if code >= 300 && code != http.StatusNotModified && code != http.StatusNotFound {
-		return fail(code, body, "suspensão do sandbox")
+		return fail(code, body, "suspending the sandbox")
 	}
 	return nil
 }
@@ -408,10 +411,10 @@ func (d *Docker) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 		return nil, err
 	}
 	if st.Phase == ports.PhaseActive {
-		return st, nil // idempotente (garantia 7)
+		return st, nil // idempotent (guarantee 7)
 	}
-	// O contêiner pode ter sido removido com o volume intacto; nesse caso
-	// recriar é o caminho de volta ao workspace existente.
+	// The container may have been removed with the volume intact; in that case
+	// recreating is the way back to the existing workspace.
 	if code, _, err := d.do(ctx, http.MethodGet, "/containers/"+d.containerName(spec.SandboxHandle)+"/json", nil); err != nil {
 		return nil, err
 	} else if code == http.StatusNotFound {
@@ -429,8 +432,8 @@ func (d *Docker) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	return d.Describe(ctx, spec.SandboxHandle)
 }
 
-// Destroy leva execução E workspace. É irreversível por construção: depois do
-// volume removido não há o que retomar.
+// Destroy takes execution AND workspace. It is irreversible by construction:
+// once the volume is removed there is nothing to resume.
 func (d *Docker) Destroy(ctx context.Context, h ports.SandboxHandle) error {
 	code, body, err := d.do(ctx, http.MethodDelete,
 		"/containers/"+d.containerName(h)+"?force=1&v=0", nil)
@@ -438,16 +441,16 @@ func (d *Docker) Destroy(ctx context.Context, h ports.SandboxHandle) error {
 		return err
 	}
 	if code >= 300 && code != http.StatusNotFound {
-		return fail(code, body, "remoção do sandbox")
+		return fail(code, body, "removing the sandbox")
 	}
 	code, body, err = d.do(ctx, http.MethodDelete, "/volumes/"+d.volumeName(h)+"?force=1", nil)
 	if err != nil {
 		return err
 	}
 	if code >= 300 && code != http.StatusNotFound {
-		return fail(code, body, "remoção do workspace")
+		return fail(code, body, "removing the workspace")
 	}
-	return nil // ausência é o resultado desejado (garantia 8)
+	return nil // absence is the desired result (guarantee 8)
 }
 
 func (d *Docker) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.SandboxStatus, error) {
@@ -456,11 +459,12 @@ func (d *Docker) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sa
 		return nil, err
 	}
 	if code == http.StatusNotFound {
-		// Sem contêiner, mas com workspace: suspenso. Sem os dois: não existe.
-		// O tier vem da label do VOLUME, que sobrevive à suspensão — do mesmo
-		// jeito que o adaptador k8s o lê da label do namespace. Sem isso,
-		// retomar um sandbox suspenso não teria como reconferir o isolamento
-		// declarado, e a degradação silenciosa entraria pela porta dos fundos.
+		// No container but a workspace: suspended. Neither: it does not exist.
+		// The tier comes from the VOLUME's label, which survives the suspension
+		// — the same way the k8s adapter reads it from the namespace's label.
+		// Without that, resuming a suspended sandbox would have no way to
+		// re-check the declared isolation, and silent degradation would come in
+		// through the back door.
 		tier, ok, err := d.volumeTier(ctx, h)
 		if err != nil {
 			return nil, err
@@ -471,7 +475,7 @@ func (d *Docker) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sa
 		return nil, errs.NotFound("sandbox %s", h.ID)
 	}
 	if code >= 300 {
-		return nil, fail(code, body, "leitura do sandbox")
+		return nil, fail(code, body, "reading the sandbox")
 	}
 
 	var insp struct {
@@ -485,7 +489,7 @@ func (d *Docker) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sa
 		} `json:"Config"`
 	}
 	if err := json.Unmarshal(body, &insp); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from Docker")
 	}
 
 	st := &ports.SandboxStatus{
@@ -512,55 +516,56 @@ func (d *Docker) volumeTier(ctx context.Context, h ports.SandboxHandle) (ports.I
 		return "", false, nil
 	}
 	if code >= 300 {
-		return "", false, fail(code, body, "leitura do workspace")
+		return "", false, fail(code, body, "reading the workspace")
 	}
 	var vol struct {
 		Labels map[string]string `json:"Labels"`
 	}
 	if err := json.Unmarshal(body, &vol); err != nil {
-		return "", false, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker")
+		return "", false, errs.Wrap(errs.KindInternal, err, "unreadable response from Docker")
 	}
 	return ports.IsolationTier(vol.Labels[labelTier]), true, nil
 }
 
 // ── exec ─────────────────────────────────────────────────────────────────────
 
-// Exec roda um comando dentro do contêiner do sandbox (garantias 13 a 18).
+// Exec runs a command inside the sandbox's container (guarantees 13 to 18).
 //
-// São TRÊS chamadas, e a terceira é a que muita implementação esquece:
-// `/exec/create` monta o processo, `/exec/start` devolve o stream com a saída, e
-// `/exec/{id}/json` é o ÚNICO lugar onde o código de saída aparece. Ler só o
-// stream entregaria a saída de um comando que falhou com um código de saída
-// zero inventado — que é exatamente a confusão que a garantia 15 existe para
-// impedir.
+// There are THREE calls, and the third is the one many implementations forget:
+// `/exec/create` builds the process, `/exec/start` returns the stream with the
+// output, and `/exec/{id}/json` is the ONLY place the exit code appears. Reading
+// only the stream would deliver the output of a failed command with an invented
+// zero exit code — which is exactly the confusion guarantee 15 exists to
+// prevent.
 func (d *Docker) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
 	if len(req.Command) == 0 {
-		return nil, errs.Invalid("exec sem comando")
+		return nil, errs.Invalid("exec with no command")
 	}
-	// Fase ANTES de tentar: o Docker responde 409 para contêiner parado, e 409
-	// é "já existe" no tradutor de erro deste adaptador. Perguntar primeiro dá
-	// a mesma resposta do k8s — NotFound para inexistente, Precondition para
-	// suspenso (garantia 18) — em vez de deixar cada substrato escolher a sua.
+	// The phase BEFORE trying: Docker answers 409 for a stopped container, and
+	// 409 is "already exists" in this adapter's error translator. Asking first
+	// gives k8s's same answer — NotFound for a nonexistent one, Precondition for
+	// a suspended one (guarantee 18) — instead of letting each substrate pick
+	// its own.
 	st, err := d.Describe(ctx, h)
 	if err != nil {
 		return nil, err
 	}
 	if st.Phase != ports.PhaseActive {
 		return nil, errs.Precondition(
-			"o sandbox %s está em %q e não executa comando; retome-o antes", h.ID, st.Phase)
+			"sandbox %s is in %q and does not run commands; resume it first", h.ID, st.Phase)
 	}
 
-	prazo, teto := execLimites(req)
-	runCtx, cancel := context.WithTimeout(ctx, prazo)
+	deadline, limit := execLimits(req)
+	runCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
 	code, body, err := d.do(runCtx, http.MethodPost, "/containers/"+d.containerName(h)+"/exec",
 		map[string]any{
 			"AttachStdout": true,
 			"AttachStderr": true,
-			// Stdin fechado: exec desta porta é comando, não sessão. E Tty
-			// falso é o que MANTÉM stdout e stderr separados no stream
-			// (garantia 16) — com tty os dois se fundem.
+			// Stdin closed: this port's exec is a command, not a session. And a
+			// false Tty is what KEEPS stdout and stderr separate in the stream
+			// (guarantee 16) — with a tty the two merge.
 			"AttachStdin": false,
 			"Tty":         false,
 			"Cmd":         req.Command,
@@ -570,84 +575,85 @@ func (d *Docker) Exec(ctx context.Context, h ports.SandboxHandle, req ports.Exec
 	}
 	if code == http.StatusConflict {
 		return nil, errs.Precondition(
-			"o sandbox %s não está em execução; retome-o antes de rodar comandos", h.ID)
+			"sandbox %s is not running; resume it before running commands", h.ID)
 	}
 	if code >= 300 {
-		return nil, fail(code, body, "preparação do comando no sandbox")
+		return nil, fail(code, body, "preparing the command in the sandbox")
 	}
-	var criado struct {
+	var created struct {
 		ID string `json:"Id"`
 	}
-	if err := json.Unmarshal(body, &criado); err != nil || criado.ID == "" {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Docker ao criar o exec")
+	if err := json.Unmarshal(body, &created); err != nil || created.ID == "" {
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from Docker when creating the exec")
 	}
 
-	inicio, err := json.Marshal(map[string]any{"Detach": false, "Tty": false})
+	start, err := json.Marshal(map[string]any{"Detach": false, "Tty": false})
 	if err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "pedido ilegível para o Docker")
+		return nil, errs.Wrap(errs.KindInternal, err, "request unreadable for Docker")
 	}
 	httpReq, err := http.NewRequestWithContext(runCtx, http.MethodPost,
-		"http://docker/"+d.apiVer+"/exec/"+criado.ID+"/start", strings.NewReader(string(inicio)))
+		"http://docker/"+d.apiVer+"/exec/"+created.ID+"/start", strings.NewReader(string(start)))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	// `stream` e não `client`: o prazo desta chamada é o do comando, e o
-	// Timeout do cliente comum (30s) cortaria todo comando mais longo que isso
-	// sem nada que explicasse.
+	// `stream` and not `client`: this call's deadline is the command's, and the
+	// ordinary client's Timeout (30s) would cut every command longer than that
+	// with nothing to explain it.
 	resp, err := d.stream.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execution interrupted by the caller")
 		}
 		if runCtx.Err() != nil {
-			// Prazo estourado antes de qualquer byte: ainda é RESULTADO.
-			return d.execResultado(ctx, criado.ID, "", "", false, true)
+			// The deadline blew before any byte: it is still a RESULT.
+			return d.execOutcome(ctx, created.ID, "", "", false, true)
 		}
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao iniciar o comando no sandbox")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to start the command in the sandbox")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		out, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusConflict {
 			return nil, errs.Precondition(
-				"o sandbox %s não está em execução; retome-o antes de rodar comandos", h.ID)
+				"sandbox %s is not running; resume it before running commands", h.ID)
 		}
-		return nil, fail(resp.StatusCode, out, "execução do comando no sandbox")
+		return nil, fail(resp.StatusCode, out, "running the command in the sandbox")
 	}
 
-	saida, erroPadrao := &bufferComTeto{max: teto}, &bufferComTeto{max: teto}
-	lerErr := demuxBruto(resp.Body, saida, erroPadrao)
+	stdout, stderr := &cappedBuffer{max: limit}, &cappedBuffer{max: limit}
+	readErr := demuxRaw(resp.Body, stdout, stderr)
 
 	if ctx.Err() != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execution interrupted by the caller")
 	}
-	expirou := runCtx.Err() != nil
-	if lerErr != nil && !expirou {
-		return nil, errs.Wrap(errs.KindUnavailable, lerErr, "fluxo do comando interrompido")
+	timedOut := runCtx.Err() != nil
+	if readErr != nil && !timedOut {
+		return nil, errs.Wrap(errs.KindUnavailable, readErr, "the command's stream was interrupted")
 	}
-	return d.execResultado(ctx, criado.ID,
-		saida.String(), erroPadrao.String(), saida.cortou || erroPadrao.cortou, expirou)
+	return d.execOutcome(ctx, created.ID,
+		stdout.String(), stderr.String(), stdout.truncated || stderr.truncated, timedOut)
 }
 
-// execResultado consulta o código de saída e monta o resultado.
+// execOutcome queries the exit code and assembles the result.
 //
-// O contexto vem SEM o prazo do comando de propósito: quando o comando estourou
-// o prazo, o contexto dele já está morto, e usá-lo aqui perderia justamente a
-// informação de que o processo continua rodando lá dentro.
-func (d *Docker) execResultado(ctx context.Context, execID, saida, erro string,
-	cortou, expirou bool) (*ports.ExecResult, error) {
+// The context comes WITHOUT the command's deadline on purpose: when the command
+// blew its deadline, its context is already dead, and using it here would lose
+// exactly the information that the process is still running in there.
+func (d *Docker) execOutcome(ctx context.Context, execID, stdout, stderr string,
+	truncated, timedOut bool) (*ports.ExecResult, error) {
 
 	res := &ports.ExecResult{
-		ExitCode: -1, Stdout: saida, Stderr: erro, Truncated: cortou, TimedOut: expirou,
+		ExitCode: -1, Stdout: stdout, Stderr: stderr, Truncated: truncated, TimedOut: timedOut,
 	}
 	insp, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	code, body, err := d.do(insp, http.MethodGet, "/exec/"+execID+"/json", nil)
 	if err != nil || code >= 300 {
-		// Sem o código de saída, -1 é a resposta honesta: zero afirmaria
-		// sucesso, e afirmar sucesso sem saber é a pior das três saídas.
+		// Without the exit code, -1 is the honest answer: zero would assert
+		// success, and asserting success without knowing is the worst of the
+		// three outcomes.
 		return res, nil
 	}
 	var out struct {
@@ -661,20 +667,20 @@ func (d *Docker) execResultado(ctx context.Context, execID, saida, erro string,
 		res.ExitCode = *out.ExitCode
 	}
 	if out.Running {
-		// O processo ficou de pé: é prazo estourado, mesmo que o stream tenha
-		// acabado antes. Dizer o contrário daria a um comando pendurado a cara
-		// de um comando que terminou sem saída.
+		// The process stayed up: it is a blown deadline, even if the stream
+		// ended earlier. Saying otherwise would give a hung command the face of
+		// a command that finished with no output.
 		res.TimedOut = true
 	}
 	return res, nil
 }
 
-// demuxBruto desmonta os quadros do Docker direto para dois buffers.
+// demuxRaw unpacks Docker's frames straight into two buffers.
 //
-// Separado de `demux` porque as duas leituras querem coisas diferentes: o Tail
-// quer LINHAS carimbadas, o exec quer os BYTES exatos de cada fluxo. Reaproveitar
-// o de linhas aqui reconstruiria a saída com quebras que o comando não emitiu.
-func demuxBruto(r io.Reader, saida, erro *bufferComTeto) error {
+// Separate from `demux` because the two reads want different things: Tail wants
+// timestamped LINES, exec wants each stream's exact BYTES. Reusing the line one
+// here would rebuild the output with breaks the command did not emit.
+func demuxRaw(r io.Reader, stdout, stderr *cappedBuffer) error {
 	header := make([]byte, 8)
 	for {
 		if _, err := io.ReadFull(r, header); err != nil {
@@ -687,14 +693,14 @@ func demuxBruto(r io.Reader, saida, erro *bufferComTeto) error {
 		if size == 0 {
 			continue
 		}
-		alvo := saida
+		target := stdout
 		if header[0] == 2 {
-			alvo = erro
+			target = stderr
 		}
-		// Lê SEMPRE o quadro inteiro, mesmo depois de bater o teto: parar de
-		// ler deixaria o daemon escrevendo num cano cheio e o processo lá
-		// dentro travado. O teto corta o que é GUARDADO, não o que é lido.
-		if _, err := io.CopyN(alvo, r, int64(size)); err != nil {
+		// It ALWAYS reads the whole frame, even after hitting the cap: stopping
+		// the read would leave the daemon writing into a full pipe and the
+		// process in there stuck. The cap cuts what is KEPT, not what is read.
+		if _, err := io.CopyN(target, r, int64(size)); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				return nil
 			}
@@ -705,18 +711,19 @@ func demuxBruto(r io.Reader, saida, erro *bufferComTeto) error {
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
-// Tail segue o log do sandbox e morre junto com o chamador.
+// Tail follows the sandbox's log and dies along with the caller.
 //
-// O stream do Docker é MULTIPLEXADO quando não há tty: cada quadro traz um
-// cabeçalho de 8 bytes com o fluxo e o tamanho. Ler isso como texto puro
-// entregaria o cabeçalho binário grudado na primeira linha de cada quadro — um
-// bug que passa despercebido até alguém procurar por um prefixo exato no log.
+// Docker's stream is MULTIPLEXED when there is no tty: each frame carries an
+// 8-byte header with the stream and the size. Reading that as plain text would
+// deliver the binary header glued to each frame's first line — a bug that goes
+// unnoticed until somebody searches for an exact prefix in the log.
 func (d *Docker) Tail(ctx context.Context, h ports.SandboxHandle, q ports.LogQuery, emit func(ports.LogLine) error) error {
 	if q.Service != "" && q.Service != "sandbox" {
-		// Um sandbox do Docker é UM processo; o compose interno da demanda roda
-		// dentro dele e não é visível daqui. Nome desconhecido é NotFound, a
-		// mesma resposta que o k8s dá para contêiner que não existe no pod.
-		return errs.NotFound("processo %q no sandbox %s", q.Service, h.ID)
+		// A Docker sandbox is ONE process; the demand's internal compose runs
+		// inside it and is not visible from here. An unknown name is NotFound,
+		// the same answer k8s gives for a container that does not exist in the
+		// pod.
+		return errs.NotFound("process %q in sandbox %s", q.Service, h.ID)
 	}
 	if _, err := d.Describe(ctx, h); err != nil {
 		return err
@@ -736,18 +743,18 @@ func (d *Docker) Tail(ctx context.Context, h ports.SandboxHandle, q ports.LogQue
 		if ctxEnded(ctx) {
 			return nil
 		}
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao seguir os logs")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to follow the logs")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		out, _ := io.ReadAll(resp.Body)
-		return fail(resp.StatusCode, out, "leitura dos logs")
+		return fail(resp.StatusCode, out, "reading the logs")
 	}
 
 	return demux(ctx, resp.Body, "sandbox", emit)
 }
 
-// demux desmonta os quadros do Docker e entrega linha a linha.
+// demux unpacks Docker's frames and delivers them line by line.
 func demux(ctx context.Context, r io.Reader, service string, emit func(ports.LogLine) error) error {
 	header := make([]byte, 8)
 	for {
@@ -772,14 +779,14 @@ func demux(ctx context.Context, r io.Reader, service string, emit func(ports.Log
 		for _, raw := range strings.Split(strings.TrimRight(string(payload), "\n"), "\n") {
 			at, text := splitTimestamp(raw)
 			if err := emit(ports.LogLine{Service: service, Stream: stream, Text: text, At: at}); err != nil {
-				return err // erro do emit sobe: é como se sabe que o cliente sumiu
+				return err // an emit error goes up: it is how we learn the client is gone
 			}
 		}
 	}
 }
 
-// streamEnd distingue "acabou" de "quebrou". Fim de stream e cancelamento do
-// cliente são encerramento normal; o resto é falha de verdade.
+// streamEnd tells "it ended" from "it broke". End of stream and the client's
+// cancellation are a normal close; the rest is a real failure.
 func streamEnd(ctx context.Context, err error) error {
 	if err == nil || ctxEnded(ctx) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil
@@ -787,7 +794,7 @@ func streamEnd(ctx context.Context, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
-	return errs.Wrap(errs.KindUnavailable, err, "fluxo de logs interrompido")
+	return errs.Wrap(errs.KindUnavailable, err, "log stream interrupted")
 }
 
 func ctxEnded(ctx context.Context) bool {
@@ -807,17 +814,18 @@ func boolToInt(b bool) int {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Comum aos DOIS adaptadores deste pacote.
+// Shared by BOTH adapters in this package.
 //
-// Vive aqui, e não num terceiro arquivo, porque é pouco e porque duplicá-lo
-// entre k8s.go e docker.go seria abrir a porta para os dois divergirem
-// justamente nas convenções que precisam ser idênticas: as labels que
-// identificam de quem é o sandbox, e a validação do que a porta exige.
+// It lives here, and not in a third file, because there is little of it and
+// because duplicating it between k8s.go and docker.go would open the door to the
+// two diverging on exactly the conventions that have to be identical: the labels
+// that identify whose sandbox it is, and the validation of what the port
+// requires.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// Identificação hierárquica é LABEL, não nome (spec do substrato §1): o nome
-// carrega só o que precisa ser curto e único; conta, demanda e tier ficam
-// consultáveis sem parsear string.
+// Hierarchical identification is a LABEL, not a name (substrate spec §1): the
+// name carries only what has to be short and unique; the account, the demand and
+// the tier stay queryable without parsing a string.
 const (
 	labelManagedBy = "app.kubernetes.io/managed-by"
 	labelAccount   = "dop.dev/account"
@@ -836,10 +844,10 @@ func labelsFor(spec ports.SandboxSpec) map[string]string {
 	}
 }
 
-// labelValue reduz um id ao alfabeto que k8s aceita em label (63 caracteres,
-// alfanumérico com - _ . no meio). O Docker aceitaria qualquer coisa; usar a
-// regra mais estrita nos dois é o que mantém a mesma consulta funcionando dos
-// dois lados.
+// labelValue reduces an id to the alphabet k8s accepts in a label (63
+// characters, alphanumeric with - _ . in the middle). Docker would accept
+// anything; using the stricter rule on both is what keeps the same query working
+// on either side.
 func labelValue(s string) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
@@ -857,28 +865,28 @@ func labelValue(s string) string {
 	return out
 }
 
-// validateSpec recusa o que a porta não admite. O launcher NUNCA inventa
-// identidade nem nível de isolamento: id, namespace, imagem e tier vêm do
-// domínio ou a chamada é inválida.
+// validateSpec refuses what the port does not admit. The launcher NEVER invents
+// an identity or an isolation level: the id, the namespace, the image and the
+// tier come from the domain or the call is invalid.
 func validateSpec(spec ports.SandboxSpec) error {
 	if strings.TrimSpace(spec.ID) == "" || strings.TrimSpace(spec.Namespace) == "" {
-		return errs.Invalid("sandbox sem identificação: id e namespace são obrigatórios")
+		return errs.Invalid("sandbox with no identification: id and namespace are mandatory")
 	}
 	if strings.TrimSpace(spec.Image) == "" {
-		return errs.Invalid("sandbox sem imagem")
+		return errs.Invalid("sandbox with no image")
 	}
 	if !ports.ValidIsolationTier(spec.Tier) {
 		return errs.Invalid(
-			"nível de isolamento não declarado — o substrato não escolhe por você")
+			"isolation level not declared — the substrate does not choose for you")
 	}
 	return nil
 }
 
-// endpointsFromPorts converte portas publicadas em endpoints.
+// endpointsFromPorts converts published ports into endpoints.
 //
-// Sem porta publicada, lista VAZIA — nunca um endpoint inventado. É garantia da
-// porta: um adaptador que fabrique endpoint faz o cockpit oferecer link que
-// não abre.
+// With no published port, an EMPTY list — never an invented endpoint. It is the
+// port's guarantee: an adapter that fabricates an endpoint makes the cockpit
+// offer a link that does not open.
 func endpointsFromPorts(exposed map[string]any, running bool) []ports.SandboxEndpoint {
 	if len(exposed) == 0 {
 		return nil
@@ -903,63 +911,66 @@ func endpointsFromPorts(exposed map[string]any, running bool) []ports.SandboxEnd
 		if _, err := fmt.Sscanf(num, "%d", &p); err != nil || p <= 0 {
 			continue
 		}
-		// O Docker não nomeia porta. O nome vem do número — e é por isso que a
-		// suíte de contrato NÃO promete nome de endpoint: no k8s ele vem do
-		// `name` da porta do contêiner, aqui não existe de onde tirá-lo.
+		// Docker does not name ports. The name comes from the number — and that
+		// is why the contract suite does NOT promise an endpoint name: in k8s it
+		// comes from the container port's `name`, here there is nowhere to take
+		// it from.
 		out = append(out, ports.SandboxEndpoint{Name: fmt.Sprintf("port-%d", p), Port: p, State: state})
 	}
 	return out
 }
 
-// execLimites resolve prazo e teto de saída a partir da requisição.
+// execLimits resolves the deadline and the output cap from the request.
 //
-// Os defaults são da PORTA e não de cada adaptador: um default por adaptador
-// faria o mesmo comando ter prazos diferentes conforme onde o sandbox subiu, e
-// a suíte de contrato — que mede os dois com a mesma régua — não teria como
-// afirmar nada sobre nenhum dos dois.
-func execLimites(req ports.ExecRequest) (time.Duration, int) {
-	prazo := time.Duration(req.TimeoutSeconds) * time.Second
+// The defaults are the PORT's and not each adapter's: a default per adapter
+// would make the same command have different deadlines depending on where the
+// sandbox came up, and the contract suite — which measures both with the same
+// ruler — would have no way to assert anything about either.
+func execLimits(req ports.ExecRequest) (time.Duration, int) {
+	deadline := time.Duration(req.TimeoutSeconds) * time.Second
 	if req.TimeoutSeconds <= 0 {
-		prazo = ports.DefaultExecTimeout
+		deadline = ports.DefaultExecTimeout
 	}
-	teto := req.MaxOutputBytes
-	if teto <= 0 {
-		teto = ports.DefaultExecMaxOutputBytes
+	limit := req.MaxOutputBytes
+	if limit <= 0 {
+		limit = ports.DefaultExecMaxOutputBytes
 	}
-	return prazo, teto
+	return deadline, limit
 }
 
-// bufferComTeto acumula até `max` bytes e ANOTA que cortou.
+// cappedBuffer accumulates up to `max` bytes and RECORDS that it cut.
 //
-// Ele nunca devolve erro em Write: quem escreve nele é um laço de leitura de
-// stream, e interromper a leitura por causa do teto deixaria o processo do outro
-// lado travado num cano cheio. O teto limita o que é GUARDADO — a leitura segue
-// até o fim, e é isso que permite colher o código de saída depois.
-type bufferComTeto struct {
-	max    int
-	buf    []byte
-	cortou bool
+// It never returns an error from Write: what writes into it is a stream-reading
+// loop, and interrupting the read because of the cap would leave the process on
+// the other side stuck in a full pipe. The cap limits what is KEPT — the read
+// goes on to the end, and that is what allows collecting the exit code
+// afterwards.
+type cappedBuffer struct {
+	max       int
+	buf       []byte
+	truncated bool
 }
 
-func (b *bufferComTeto) Write(p []byte) (int, error) {
-	if espaco := b.max - len(b.buf); espaco > 0 {
-		if len(p) <= espaco {
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if space := b.max - len(b.buf); space > 0 {
+		if len(p) <= space {
 			b.buf = append(b.buf, p...)
 		} else {
-			b.buf = append(b.buf, p[:espaco]...)
-			b.cortou = true
+			b.buf = append(b.buf, p[:space]...)
+			b.truncated = true
 		}
 	} else if len(p) > 0 {
-		b.cortou = true
+		b.truncated = true
 	}
 	return len(p), nil
 }
 
-func (b *bufferComTeto) String() string { return string(b.buf) }
+func (b *cappedBuffer) String() string { return string(b.buf) }
 
-// splitTimestamp separa o carimbo RFC3339 que os dois substratos prefixam
-// quando se pede timestamps. Linha sem carimbo devolve instante zero — e é o
-// DOMÍNIO que decide o que fazer com isso, não o adaptador chutando time.Now().
+// splitTimestamp splits off the RFC3339 stamp both substrates prefix when
+// timestamps are requested. A line with no stamp returns the zero instant — and
+// it is the DOMAIN that decides what to do with that, not the adapter guessing
+// time.Now().
 func splitTimestamp(raw string) (time.Time, string) {
 	sp := strings.IndexByte(raw, ' ')
 	if sp <= 0 {

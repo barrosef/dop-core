@@ -1,31 +1,33 @@
-// Cliente WebSocket MÍNIMO, para o `pods/exec` do Kubernetes.
+// A MINIMAL WebSocket client, for Kubernetes's `pods/exec`.
 //
-// ── Por que escrito à mão ───────────────────────────────────────────────────
+// ── Why written by hand ─────────────────────────────────────────────────────
 //
-// Pela mesma regra que já vale nos outros adaptadores deste repositório: nada de
-// SDK, e o go.mod é deliberadamente enxuto. Aqui a conta é ainda mais favorável
-// que de costume — do RFC 6455 este arquivo precisa de uma fração: o aperto de
-// mão, a leitura de quadros do servidor (que nunca vêm mascarados), o pong e o
-// fechamento. Não há envio de dados: o exec desta porta é COMANDO, não sessão,
-// e `stdin` vai desligado. Uma biblioteca de WebSocket completa traria
-// compressão, extensões e um modelo de concorrência que este uso não tem.
+// By the same rule that already holds in this repository's other adapters: no
+// SDK, and the go.mod is deliberately lean. Here the arithmetic is even more
+// favourable than usual — of RFC 6455 this file needs a fraction: the handshake,
+// reading the server's frames (which never come masked), the pong and the close.
+// There is no data sending: this port's exec is a COMMAND, not a session, and
+// `stdin` goes off. A complete WebSocket library would bring compression,
+// extensions and a concurrency model this use does not have.
 //
-// ── Por que WebSocket e não SPDY ────────────────────────────────────────────
+// ── Why WebSocket and not SPDY ──────────────────────────────────────────────
 //
-// O `pods/exec` aceita os dois. O SPDY do Kubernetes é um protocolo próprio,
-// morto fora dali, e exigiria implementar multiplexação de streams inteira. O
-// WebSocket com o subprotocolo `v4.channel.k8s.io` entrega a mesma coisa com um
-// byte de canal na frente de cada mensagem: 1 = stdout, 2 = stderr, 3 = status
-// final (um `metav1.Status` em JSON, e é ALI que vem o código de saída).
+// `pods/exec` accepts both. Kubernetes's SPDY is a protocol of its own, dead
+// outside there, and it would require implementing whole stream multiplexing.
+// WebSocket with the `v4.channel.k8s.io` subprotocol delivers the same thing
+// with a channel byte in front of each message: 1 = stdout, 2 = stderr, 3 = the
+// final status (a `metav1.Status` in JSON, and it is THERE that the exit code
+// comes).
 //
-// ── A pegadinha do `kubectl proxy` ──────────────────────────────────────────
+// ── The `kubectl proxy` catch ───────────────────────────────────────────────
 //
-// O `kubectl proxy` recusa por padrão os caminhos de exec e attach — o default
-// de `--reject-paths` inclui `^/api/.*/pods/.*/exec`. Fora do cluster, a suíte
-// de contrato precisa de `kubectl proxy --port=8001 --reject-paths='^$'`, e sem
-// isso o aperto de mão volta 403 antes de qualquer WebSocket existir. Está
-// anotado aqui e no cabeçalho de test/contract/sandbox_k8s_test.go porque é o
-// tipo de detalhe que custa uma tarde quando não está escrito em lugar nenhum.
+// `kubectl proxy` refuses the exec and attach paths by default — the
+// `--reject-paths` default includes `^/api/.*/pods/.*/exec`. Outside the
+// cluster, the contract suite needs `kubectl proxy --port=8001
+// --reject-paths='^$'`, and without it the handshake comes back 403 before any
+// WebSocket exists. It is recorded here and in test/contract/sandbox_k8s_test.go's
+// header because it is the kind of detail that costs an afternoon when it is
+// written down nowhere.
 package sandbox
 
 import (
@@ -46,10 +48,10 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// wsGUID é a constante do RFC 6455 usada na confirmação do aperto de mão.
+// wsGUID is RFC 6455's constant used in the handshake's confirmation.
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-// Opcodes que este cliente conhece. O resto é ignorado.
+// The opcodes this client knows. The rest is ignored.
 const (
 	wsOpContinuation = 0x0
 	wsOpText         = 0x1
@@ -59,27 +61,27 @@ const (
 	wsOpPong         = 0xA
 )
 
-// wsConn é uma conexão WebSocket já negociada.
+// wsConn is an already negotiated WebSocket connection.
 //
-// Não é segura para uso concorrente e não precisa ser: cada exec abre a sua,
-// lê até o fim e fecha.
+// It is not safe for concurrent use and does not need to be: each exec opens its
+// own, reads to the end and closes it.
 type wsConn struct {
 	conn net.Conn
 	br   *bufio.Reader
 }
 
-// wsDial faz o aperto de mão e devolve a conexão pronta para ler.
+// wsDial performs the handshake and returns the connection ready to read.
 //
-// O contexto governa a conexão INTEIRA, e não só o aperto de mão: a goroutine
-// abaixo fecha o socket quando ele termina. É assim que o prazo do comando e o
-// cancelamento do chamador chegam a uma leitura que, de outro modo, ficaria
-// pendurada esperando bytes de um processo que não vai falar mais.
+// The context governs the WHOLE connection, and not only the handshake: the
+// goroutine below closes the socket when it ends. That is how the command's
+// deadline and the caller's cancellation reach a read that would otherwise hang
+// waiting for bytes from a process that will not speak again.
 func wsDial(ctx context.Context, rawURL string, header http.Header,
-	subprotocolo string, tlsCfg *tls.Config) (*wsConn, *http.Response, error) {
+	subprotocol string, tlsCfg *tls.Config) (*wsConn, *http.Response, error) {
 
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, nil, errs.Wrap(errs.KindInternal, err, "endereço inválido para exec")
+		return nil, nil, errs.Wrap(errs.KindInternal, err, "invalid address for exec")
 	}
 
 	host := u.Host
@@ -98,39 +100,40 @@ func wsDial(ctx context.Context, rawURL string, header http.Header,
 		conn, err = d.DialContext(ctx, "tcp", host)
 	}
 	if err != nil {
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao abrir conexão de exec")
+		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "failed to open the exec connection")
 	}
 
-	// O fechamento por contexto é o que faz o prazo valer para a LEITURA, não
-	// só para a conexão. Sem isso, um comando que pendura sem escrever nada
-	// deixaria a goroutine do chamador presa até o fim do processo.
-	fim := make(chan struct{})
+	// Closing on the context is what makes the deadline apply to the READ, and
+	// not only to the connection. Without it, a command that hangs without
+	// writing anything would leave the caller's goroutine stuck until the
+	// process ended.
+	done := make(chan struct{})
 	go func() {
 		select {
 		case <-ctx.Done():
 			_ = conn.Close()
-		case <-fim:
+		case <-done:
 		}
 	}()
 
-	chave := make([]byte, 16)
-	if _, err := rand.Read(chave); err != nil {
-		close(fim)
+	key := make([]byte, 16)
+	if _, err := rand.Read(key); err != nil {
+		close(done)
 		_ = conn.Close()
-		return nil, nil, errs.Wrap(errs.KindInternal, err, "falha ao sortear a chave do WebSocket")
+		return nil, nil, errs.Wrap(errs.KindInternal, err, "failed to draw the WebSocket key")
 	}
-	chaveB64 := base64.StdEncoding.EncodeToString(chave)
+	keyB64 := base64.StdEncoding.EncodeToString(key)
 
 	var req strings.Builder
-	caminho := u.RequestURI()
-	req.WriteString("GET " + caminho + " HTTP/1.1\r\n")
+	path := u.RequestURI()
+	req.WriteString("GET " + path + " HTTP/1.1\r\n")
 	req.WriteString("Host: " + u.Host + "\r\n")
 	req.WriteString("Upgrade: websocket\r\n")
 	req.WriteString("Connection: Upgrade\r\n")
 	req.WriteString("Sec-WebSocket-Version: 13\r\n")
-	req.WriteString("Sec-WebSocket-Key: " + chaveB64 + "\r\n")
-	if subprotocolo != "" {
-		req.WriteString("Sec-WebSocket-Protocol: " + subprotocolo + "\r\n")
+	req.WriteString("Sec-WebSocket-Key: " + keyB64 + "\r\n")
+	if subprotocol != "" {
+		req.WriteString("Sec-WebSocket-Protocol: " + subprotocol + "\r\n")
 	}
 	for k, vs := range header {
 		for _, v := range vs {
@@ -140,63 +143,64 @@ func wsDial(ctx context.Context, rawURL string, header http.Header,
 	req.WriteString("\r\n")
 
 	if _, err := io.WriteString(conn, req.String()); err != nil {
-		close(fim)
+		close(done)
 		_ = conn.Close()
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao enviar o aperto de mão de exec")
+		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "failed to send the exec handshake")
 	}
 
 	br := bufio.NewReader(conn)
 	base, _ := http.NewRequest(http.MethodGet, rawURL, nil)
 	resp, err := http.ReadResponse(br, base)
 	if err != nil {
-		close(fim)
+		close(done)
 		_ = conn.Close()
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "resposta ilegível no aperto de mão de exec")
+		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "unreadable response in the exec handshake")
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
-		// O corpo do erro é do apiserver e diz o que faltou (permissão,
-		// namespace, pod). Ele sobe para quem chamou traduzir — ver Exec.
-		close(fim)
+		// The error body is the apiserver's and says what was missing
+		// (permission, namespace, pod). It goes up for the caller to
+		// translate — see Exec.
+		close(done)
 		defer conn.Close()
-		corpo, _ := io.ReadAll(io.LimitReader(br, 8<<10))
-		resp.Body = io.NopCloser(strings.NewReader(string(corpo)))
+		body, _ := io.ReadAll(io.LimitReader(br, 8<<10))
+		resp.Body = io.NopCloser(strings.NewReader(string(body)))
 		return nil, resp, nil
 	}
-	// A confirmação existe para provar que quem respondeu FALA WebSocket, e não
-	// para provar identidade — isso é do TLS. Sem a checagem, um proxy que
-	// respondesse 101 por engano faria a leitura de quadros interpretar HTML
-	// como binário e produzir uma saída de comando inventada.
-	soma := sha1.Sum([]byte(chaveB64 + wsGUID))
-	if resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(soma[:]) {
-		close(fim)
+	// The confirmation exists to prove that whoever answered SPEAKS WebSocket,
+	// and not to prove identity — that is TLS's job. Without the check, a proxy
+	// answering 101 by mistake would make the frame reading interpret HTML as
+	// binary and produce an invented command output.
+	sum := sha1.Sum([]byte(keyB64 + wsGUID))
+	if resp.Header.Get("Sec-WebSocket-Accept") != base64.StdEncoding.EncodeToString(sum[:]) {
+		close(done)
 		_ = conn.Close()
 		return nil, nil, errs.New(errs.KindUnavailable,
-			"o servidor aceitou o upgrade sem confirmar o WebSocket: quem respondeu não fala o protocolo")
+			"the server accepted the upgrade without confirming the WebSocket: whoever answered does not speak the protocol")
 	}
 
-	// Sucesso: `fim` fica ABERTO de propósito. A goroutine acima é a dona do
-	// prazo desta conexão e precisa continuar viva até o contexto terminar —
-	// que é o que ela faz. Ela não vaza porque todo chamador de exec cria o
-	// contexto com prazo e o cancela no fim.
+	// On success, `done` is left OPEN on purpose. The goroutine above owns this
+	// connection's deadline and has to stay alive until the context ends — which
+	// is what it does. It does not leak because every exec caller creates the
+	// context with a deadline and cancels it at the end.
 	return &wsConn{conn: conn, br: br}, resp, nil
 }
 
-// Close fecha educadamente e derruba a conexão.
+// Close closes politely and drops the connection.
 //
-// O quadro de fechamento é cortesia com o apiserver, que assim não registra a
-// conexão como abortada; a queda do socket é o que realmente encerra. Erro
-// nenhum aqui interessa: já não há o que salvar.
+// The close frame is a courtesy to the apiserver, which then does not record the
+// connection as aborted; dropping the socket is what really ends it. No error
+// here matters: there is nothing left to save.
 func (w *wsConn) Close() {
 	_ = w.writeFrame(wsOpClose, []byte{0x03, 0xE8}) // 1000 = normal
 	_ = w.conn.Close()
 }
 
-// ReadMessage devolve a PRÓXIMA mensagem completa, já remontada a partir dos
-// quadros. Ping é respondido aqui dentro e não sobe: quem chama quer dados.
+// ReadMessage returns the NEXT complete message, already reassembled from the
+// frames. A ping is answered in here and does not go up: the caller wants data.
 func (w *wsConn) ReadMessage() ([]byte, error) {
 	var msg []byte
 	for {
-		op, payload, fim, err := w.readFrame()
+		op, payload, final, err := w.readFrame()
 		if err != nil {
 			return nil, err
 		}
@@ -212,95 +216,96 @@ func (w *wsConn) ReadMessage() ([]byte, error) {
 			return nil, io.EOF
 		case wsOpText, wsOpBinary, wsOpContinuation:
 			msg = append(msg, payload...)
-			if fim {
+			if final {
 				return msg, nil
 			}
 		default:
-			// Opcode que este cliente não conhece: ignorar é mais seguro que
-			// interpretar. O k8s não usa nenhum além dos acima.
+			// An opcode this client does not know: ignoring is safer than
+			// interpreting. k8s uses none beyond the ones above.
 			continue
 		}
 	}
 }
 
-func (w *wsConn) readFrame() (op byte, payload []byte, fim bool, err error) {
-	cab := make([]byte, 2)
-	if _, err = io.ReadFull(w.br, cab); err != nil {
+func (w *wsConn) readFrame() (op byte, payload []byte, final bool, err error) {
+	head := make([]byte, 2)
+	if _, err = io.ReadFull(w.br, head); err != nil {
 		return 0, nil, false, err
 	}
-	fim = cab[0]&0x80 != 0
-	op = cab[0] & 0x0f
-	mascarado := cab[1]&0x80 != 0
-	tam := int64(cab[1] & 0x7f)
-	switch tam {
+	final = head[0]&0x80 != 0
+	op = head[0] & 0x0f
+	masked := head[1]&0x80 != 0
+	size := int64(head[1] & 0x7f)
+	switch size {
 	case 126:
 		b := make([]byte, 2)
 		if _, err = io.ReadFull(w.br, b); err != nil {
 			return 0, nil, false, err
 		}
-		tam = int64(binary.BigEndian.Uint16(b))
+		size = int64(binary.BigEndian.Uint16(b))
 	case 127:
 		b := make([]byte, 8)
 		if _, err = io.ReadFull(w.br, b); err != nil {
 			return 0, nil, false, err
 		}
-		tam = int64(binary.BigEndian.Uint64(b))
+		size = int64(binary.BigEndian.Uint64(b))
 	}
-	// Teto de quadro. Um servidor hostil (ou um proxy confuso) anunciando um
-	// quadro de gigabytes não pode virar uma alocação de gigabytes aqui.
-	const maxQuadro = 32 << 20
-	if tam < 0 || tam > maxQuadro {
+	// A frame cap. A hostile server (or a confused proxy) announcing a frame of
+	// gigabytes must not become an allocation of gigabytes here.
+	const maxFrame = 32 << 20
+	if size < 0 || size > maxFrame {
 		return 0, nil, false, errs.New(errs.KindUnavailable,
-			"quadro de WebSocket grande demais (%d bytes)", tam)
+			"WebSocket frame too large (%d bytes)", size)
 	}
-	var mascara [4]byte
-	if mascarado {
-		if _, err = io.ReadFull(w.br, mascara[:]); err != nil {
+	var mask [4]byte
+	if masked {
+		if _, err = io.ReadFull(w.br, mask[:]); err != nil {
 			return 0, nil, false, err
 		}
 	}
-	payload = make([]byte, tam)
+	payload = make([]byte, size)
 	if _, err = io.ReadFull(w.br, payload); err != nil {
 		return 0, nil, false, err
 	}
-	if mascarado {
-		// O servidor não deveria mascarar; desmascarar mesmo assim é barato e
-		// evita entregar lixo se algum intermediário resolver fazê-lo.
+	if masked {
+		// The server should not mask; unmasking anyway is cheap and avoids
+		// delivering rubbish if some intermediary decides to do it.
 		for i := range payload {
-			payload[i] ^= mascara[i%4]
+			payload[i] ^= mask[i%4]
 		}
 	}
-	return op, payload, fim, nil
+	return op, payload, final, nil
 }
 
-// writeFrame envia um quadro do CLIENTE, e portanto MASCARADO — o RFC 6455 exige,
-// e servidor que segue o RFC derruba a conexão de quem não mascara.
+// writeFrame sends a CLIENT frame, and therefore a MASKED one — RFC 6455
+// requires it, and a server that follows the RFC drops the connection of anyone
+// who does not mask.
 func (w *wsConn) writeFrame(op byte, payload []byte) error {
 	_ = w.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	defer func() { _ = w.conn.SetWriteDeadline(time.Time{}) }()
 
-	cab := []byte{0x80 | op}
+	head := []byte{0x80 | op}
 	n := len(payload)
 	switch {
 	case n < 126:
-		cab = append(cab, byte(0x80|n))
+		head = append(head, byte(0x80|n))
 	case n < 1<<16:
-		cab = append(cab, 0x80|126, 0, 0)
-		binary.BigEndian.PutUint16(cab[2:], uint16(n))
+		head = append(head, 0x80|126, 0, 0)
+		binary.BigEndian.PutUint16(head[2:], uint16(n))
 	default:
-		cab = append(cab, 0x80|127, 0, 0, 0, 0, 0, 0, 0, 0)
-		binary.BigEndian.PutUint64(cab[2:], uint64(n))
+		head = append(head, 0x80|127, 0, 0, 0, 0, 0, 0, 0, 0)
+		binary.BigEndian.PutUint64(head[2:], uint64(n))
 	}
-	var mascara [4]byte
-	if _, err := rand.Read(mascara[:]); err != nil {
+	var mask [4]byte
+	if _, err := rand.Read(mask[:]); err != nil {
 		return err
 	}
-	cab = append(cab, mascara[:]...)
-	corpo := make([]byte, n)
+	head = append(head, mask[:]...)
+	body := make([]byte, n)
 	for i := range payload {
-		corpo[i] = payload[i] ^ mascara[i%4]
+		body[i] = payload[i] ^ mask[i%4]
 	}
-	if _, err := w.conn.Write(append(cab, corpo...)); err != nil {
+	if _, err := w.conn.Write(append(head, body...)); err != nil {
 		return err
 	}
 	return nil

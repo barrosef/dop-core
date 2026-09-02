@@ -1,14 +1,15 @@
-// Adaptador de SandboxLauncher sobre o Kubernetes.
+// A SandboxLauncher adapter over Kubernetes.
 //
-// É a superfície de orquestração do produto nos DOIS modos — SaaS no cluster do
-// DOP e infra do cliente — mudando kubeconfig e limites, não implementação
-// (spec do substrato §2). Um namespace por demanda, um PVC com o workspace, um
-// pod com o agente.
+// It is the product's orchestration surface in BOTH modes — SaaS on DOP's
+// cluster and the client's infrastructure — changing the kubeconfig and the
+// limits, not the implementation (substrate spec §2). One namespace per demand,
+// one PVC with the workspace, one pod with the agent.
 //
-// Fala pela API do cluster, com a CA da service account, do mesmo jeito e pelo
-// mesmo motivo que o adaptador de SecretStore: objeto lido por volume montado é
-// eventualmente consistente, e aqui a leitura logo depois da escrita é o caso
-// normal — provisionar e descrever acontecem na mesma requisição do usuário.
+// It speaks through the cluster's API, with the service account's CA, in the
+// same way and for the same reason as the SecretStore adapter: an object read
+// through a mounted volume is eventually consistent, and here reading right
+// after writing is the normal case — provisioning and describing happen in the
+// same user request.
 package sandbox
 
 import (
@@ -31,12 +32,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// serviceAccountCA é onde o kubelet monta a CA do cluster em todo pod.
+// k8sServiceAccountCA is where the kubelet mounts the cluster's CA in every pod.
 const k8sServiceAccountCA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
-// Nomes fixos dentro do namespace da demanda. Fixos de propósito: o namespace
-// já isola, então o objeto não precisa de sufixo — e nome previsível é o que
-// permite descrever um sandbox sabendo só o handle.
+// Fixed names inside the demand's namespace. Fixed on purpose: the namespace
+// already isolates, so the object needs no suffix — and a predictable name is
+// what allows describing a sandbox knowing only the handle.
 const (
 	podName       = "sandbox"
 	pvcName       = "workspace"
@@ -46,15 +47,16 @@ const (
 type K8s struct {
 	client *http.Client
 	stream *http.Client
-	// tls é a MESMA configuração do transporte HTTP, guardada porque o exec
-	// não passa por `http.Client`: ele disca o socket na mão para poder falar
-	// WebSocket (ver websocket.go). Sem guardá-la, o exec confiaria só nas CAs
-	// públicas e falharia contra o certificado da CA do próprio cluster.
+	// tls is the SAME configuration as the HTTP transport's, kept because the
+	// exec does not go through `http.Client`: it dials the socket by hand in
+	// order to speak WebSocket (see websocket.go). Without keeping it, the exec
+	// would trust only the public CAs and would fail against the certificate of
+	// the cluster's own CA.
 	tls       *tls.Config
 	apiServer string
 	token     string
-	// workspaceSize é o tamanho do PVC do workspace. Não está na porta: é
-	// limite de implantação, e o Docker não tem o que fazer com ele.
+	// workspaceSize is the size of the workspace's PVC. It is not on the port:
+	// it is a deployment limit, and Docker has nothing to do with it.
 	workspaceSize string
 	storageClass  string
 }
@@ -83,7 +85,7 @@ func NewK8s(cfg K8sConfig) *K8s {
 	}
 	return &K8s{
 		client: c,
-		// Timeout zero: seguir log dura o tempo do cliente.
+		// Zero Timeout: following a log lasts as long as the client does.
 		stream:        &http.Client{Transport: k8sTransport()},
 		tls:           k8sTLS(),
 		apiServer:     strings.TrimRight(cfg.APIServer, "/"),
@@ -95,18 +97,18 @@ func NewK8s(cfg K8sConfig) *K8s {
 
 var _ ports.SandboxLauncher = (*K8s)(nil)
 
-// k8sTransport confia na CA do cluster ALÉM das públicas — mesma armadilha do
-// adaptador de SecretStore: o certificado do apiserver é assinado pela CA do
-// próprio cluster, que não está em bundle nenhum, e o pod sobe verde para
-// quebrar só na primeira chamada de verdade.
+// k8sTransport trusts the cluster's CA BESIDES the public ones — the same trap
+// as the SecretStore adapter's: the apiserver's certificate is signed by the
+// cluster's own CA, which is in no bundle, and the pod comes up green only to
+// break on the first real call.
 func k8sTransport() *http.Transport {
 	return &http.Transport{TLSClientConfig: k8sTLS()}
 }
 
-// k8sTLS existe separada porque DOIS caminhos precisam dela: o `http.Client` das
-// chamadas normais e o socket discado na mão do exec. Duplicar a montagem seria
-// a garantia de que um dos dois deixaria de confiar na CA do cluster no primeiro
-// ajuste, e a falha apareceria só na primeira chamada de verdade.
+// k8sTLS exists separately because TWO paths need it: the `http.Client` of the
+// ordinary calls and the hand-dialled socket of the exec. Duplicating the setup
+// would guarantee that one of the two stopped trusting the cluster's CA on the
+// first adjustment, and the failure would only appear on the first real call.
 func k8sTLS() *tls.Config {
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
@@ -123,7 +125,7 @@ func (k *K8s) do(ctx context.Context, method, path string, body any) (int, []byt
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, errs.Wrap(errs.KindInternal, err, "pedido ilegível para o Kubernetes")
+			return 0, nil, errs.Wrap(errs.KindInternal, err, "request unreadable for Kubernetes")
 		}
 		rdr = strings.NewReader(string(raw))
 	}
@@ -137,19 +139,19 @@ func (k *K8s) do(ctx context.Context, method, path string, body any) (int, []byt
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := k.client.Do(req)
 	if err != nil {
-		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao falar com a API do Kubernetes")
+		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "failed to talk to the Kubernetes API")
 	}
 	defer resp.Body.Close()
 	out, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return resp.StatusCode, nil, errs.Wrap(errs.KindInternal, err, "resposta truncada do Kubernetes")
+		return resp.StatusCode, nil, errs.Wrap(errs.KindInternal, err, "truncated response from Kubernetes")
 	}
 	return resp.StatusCode, out, nil
 }
 
-// k8sFail preserva a mensagem do apiserver. É ela que diz "forbidden: cannot
-// create resource pods" — a informação que separa cinco minutos de conserto de
-// uma tarde de adivinhação.
+// k8sFail preserves the apiserver's message. It is what says "forbidden: cannot
+// create resource pods" — the information that separates a five-minute fix from
+// an afternoon of guessing.
 func k8sFail(code int, body []byte, what string) error {
 	var st struct {
 		Message string `json:"message"`
@@ -165,34 +167,34 @@ func k8sFail(code int, body []byte, what string) error {
 	case http.StatusConflict:
 		return errs.New(errs.KindAlreadyExists, "%s: %s", what, msg)
 	case http.StatusForbidden, http.StatusUnauthorized:
-		return errs.Permission("o Kubernetes negou %s: %s", what, msg)
+		return errs.Permission("Kubernetes denied %s: %s", what, msg)
 	}
-	return errs.Internal("o Kubernetes recusou %s (HTTP %d): %s", what, code, msg)
+	return errs.Internal("Kubernetes refused %s (HTTP %d): %s", what, code, msg)
 }
 
 // ── tiers ────────────────────────────────────────────────────────────────────
 
-// runtimeClasses lê o que o cluster oferece. É o R-4 da spec em uma chamada:
-// RuntimeClass de Kata falta na maioria das distribuições, e a única resposta
-// aceitável para isso é recusa com mensagem.
+// runtimeClasses reads what the cluster offers. It is the spec's R-4 in one
+// call: a Kata RuntimeClass is missing in most distributions, and the only
+// acceptable answer to that is a refusal with a message.
 func (k *K8s) runtimeClasses(ctx context.Context) ([]string, error) {
 	code, body, err := k.do(ctx, http.MethodGet, "/apis/node.k8s.io/v1/runtimeclasses", nil)
 	if err != nil {
 		return nil, err
 	}
 	if code == http.StatusForbidden || code == http.StatusUnauthorized {
-		// Não dá para responder "só namespace" aqui: seria afirmar que o
-		// cluster não tem Kata quando na verdade não sabemos olhar. Falta de
-		// permissão é problema de instalação e precisa aparecer como tal.
+		// We cannot answer "namespace only" here: that would assert the cluster
+		// has no Kata when in truth we cannot look. Missing permission is an
+		// installation problem and has to show up as one.
 		return nil, errs.Permission(
-			"sem permissão para listar runtimeclasses.node.k8s.io — sem ela o " +
-				"substrato não consegue provar qual isolamento oferece")
+			"no permission to list runtimeclasses.node.k8s.io — without it the " +
+				"substrate cannot prove which isolation it offers")
 	}
 	if code == http.StatusNotFound {
-		return nil, nil // cluster sem a API de RuntimeClass: só isolamento por namespace
+		return nil, nil // a cluster with no RuntimeClass API: namespace isolation only
 	}
 	if code >= 300 {
-		return nil, k8sFail(code, body, "listagem de runtimeclasses")
+		return nil, k8sFail(code, body, "listing runtimeclasses")
 	}
 	var list struct {
 		Items []struct {
@@ -202,7 +204,7 @@ func (k *K8s) runtimeClasses(ctx context.Context) ([]string, error) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(body, &list); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Kubernetes")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from Kubernetes")
 	}
 	out := make([]string, 0, len(list.Items))
 	for _, it := range list.Items {
@@ -217,8 +219,8 @@ func (k *K8s) SupportedTiers(ctx context.Context) ([]ports.IsolationTier, error)
 	if err != nil {
 		return nil, err
 	}
-	// securityContext estrito não depende de RuntimeClass nenhuma: todo cluster
-	// entrega isolamento por namespace.
+	// A strict securityContext depends on no RuntimeClass at all: every cluster
+	// delivers namespace isolation.
 	tiers := []ports.IsolationTier{ports.TierNamespace}
 	if matchClass(classes, "kata", "firecracker") != "" {
 		tiers = append(tiers, ports.TierHardware)
@@ -241,12 +243,12 @@ func matchClass(classes []string, want ...string) string {
 	return ""
 }
 
-// runtimeClassFor devolve a RuntimeClass que ENTREGA o tier pedido, ou recusa.
-// Nunca devolve "a mais parecida": é a linha entre isolamento declarado e
-// isolamento presumido.
+// runtimeClassFor returns the RuntimeClass that DELIVERS the requested tier, or
+// refuses. It never returns "the closest one": that is the line between declared
+// isolation and presumed isolation.
 func (k *K8s) runtimeClassFor(ctx context.Context, tier ports.IsolationTier) (string, error) {
 	if tier == ports.TierNamespace {
-		return "", nil // sem RuntimeClass; o securityContext faz o trabalho
+		return "", nil // no RuntimeClass; the securityContext does the work
 	}
 	classes, err := k.runtimeClasses(ctx)
 	if err != nil {
@@ -261,26 +263,26 @@ func (k *K8s) runtimeClassFor(ctx context.Context, tier ports.IsolationTier) (st
 	}
 	if found == "" {
 		return "", errs.Precondition(
-			"este cluster não tem RuntimeClass para isolamento %q — instale o "+
-				"runtime correspondente ou peça outro nível (spec do substrato, R-4)", tier)
+			"this cluster has no RuntimeClass for %q isolation — install the "+
+				"corresponding runtime or ask for another level (substrate spec, R-4)", tier)
 	}
 	return found, nil
 }
 
-// ── ciclo de vida ────────────────────────────────────────────────────────────
+// ── lifecycle ────────────────────────────────────────────────────────────────
 
 func (k *K8s) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	if err := validateSpec(spec); err != nil {
 		return nil, err
 	}
-	// Resolvido ANTES de criar namespace: tier recusado não deixa rastro.
+	// Resolved BEFORE creating the namespace: a refused tier leaves no trace.
 	runtimeClass, err := k.runtimeClassFor(ctx, spec.Tier)
 	if err != nil {
 		return nil, err
 	}
 
 	if st, err := k.Describe(ctx, spec.SandboxHandle); err == nil {
-		return st, nil // relançar devolve o que existe (garantia 4)
+		return st, nil // relaunching returns what exists (guarantee 4)
 	} else if errs.KindOf(err) != errs.KindNotFound {
 		return nil, err
 	}
@@ -307,13 +309,13 @@ func (k *K8s) ensureNamespace(ctx context.Context, spec ports.SandboxSpec) error
 		return err
 	}
 	if code >= 300 && code != http.StatusConflict {
-		return k8sFail(code, body, "criação do namespace da demanda")
+		return k8sFail(code, body, "creating the demand's namespace")
 	}
 	return nil
 }
 
-// ensureWorkspace cria o PVC. É ELE que sobrevive à suspensão — o pod é
-// descartável, o workspace não.
+// ensureWorkspace creates the PVC. It is THE PVC that survives the suspension —
+// the pod is disposable, the workspace is not.
 func (k *K8s) ensureWorkspace(ctx context.Context, spec ports.SandboxSpec) error {
 	claim := map[string]any{
 		"accessModes": []string{"ReadWriteOnce"},
@@ -332,7 +334,7 @@ func (k *K8s) ensureWorkspace(ctx context.Context, spec ports.SandboxSpec) error
 		return err
 	}
 	if code >= 300 && code != http.StatusConflict {
-		return k8sFail(code, body, "criação do workspace")
+		return k8sFail(code, body, "creating the workspace")
 	}
 	return nil
 }
@@ -352,16 +354,16 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		"name":  containerName,
 		"image": spec.Image,
 		"env":   env,
-		// O `pods/exec` NÃO aceita diretório de trabalho — só o comando. Fixar
-		// o do contêiner é o que faz o exec herdá-lo e o que torna a garantia
-		// 14 da porta a mesma nos dois substratos: comando de ferramenta
-		// começa no workspace, aqui e no Docker.
+		// `pods/exec` does NOT accept a working directory — only the command.
+		// Pinning the container's is what makes the exec inherit it and what
+		// makes the port's guarantee 14 the same on both substrates: a tool's
+		// command starts in the workspace, here and in Docker.
 		"workingDir": ports.SandboxWorkspacePath,
 		"volumeMounts": []map[string]any{
 			{"name": pvcName, "mountPath": ports.SandboxWorkspacePath},
 		},
-		// Defesa em camadas (spec §6): o agente lê conteúdo não confiável e
-		// porta credencial. Sem capacidade, sem reescalar privilégio.
+		// Defence in layers (spec §6): the agent reads untrusted content and
+		// carries a credential. No capabilities, no privilege escalation.
 		"securityContext": map[string]any{
 			"allowPrivilegeEscalation": false,
 			"capabilities":             map[string]any{"drop": []string{"ALL"}},
@@ -372,18 +374,18 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 	}
 
 	podSpec := map[string]any{
-		// Never: um sandbox que morre em laço precisa APARECER como parado. Com
-		// reinício automático o domínio veria "ativo" para sempre e o dev
-		// ficaria olhando um terminal que reinicia sozinho.
+		// Never: a sandbox dying in a loop has to SHOW UP as stopped. With an
+		// automatic restart the domain would see "active" forever and the
+		// developer would be staring at a terminal restarting on its own.
 		"restartPolicy": "Never",
 		"containers":    []any{container},
 		"volumes": []map[string]any{
 			{"name": pvcName, "persistentVolumeClaim": map[string]string{"claimName": pvcName}},
 		},
-		// Usuário arbitrário NÃO-root desde a primeira imagem: OKD e OpenShift
-		// recusam root por SCC, e isso é requisito de imagem, não de
-		// implantação (spec §2). fsGroup é o que deixa o workspace gravável
-		// para esse usuário.
+		// An arbitrary NON-root user from the very first image: OKD and
+		// OpenShift refuse root through SCC, and that is an image requirement,
+		// not a deployment one (spec §2). fsGroup is what makes the workspace
+		// writable for that user.
 		"securityContext": map[string]any{
 			"runAsNonRoot":   true,
 			"runAsUser":      1000,
@@ -406,17 +408,17 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		return err
 	}
 	if code >= 300 && code != http.StatusConflict {
-		return k8sFail(code, body, "criação do pod do sandbox")
+		return k8sFail(code, body, "creating the sandbox's pod")
 	}
 	return nil
 }
 
-// Suspend APAGA o pod e deixa o PVC.
+// Suspend DELETES the pod and leaves the PVC.
 //
-// É a divergência que a suíte de contrato tornou explícita: aqui a suspensão
-// leva tudo o que não estava no PVC — inclusive o log do pod —, enquanto o
-// adaptador do Docker apenas para o contêiner e conserva a camada gravável.
-// Por isso a porta promete APENAS o que está sob SandboxWorkspacePath.
+// It is the divergence the contract suite made explicit: here the suspension
+// takes everything that was not in the PVC — the pod's log included — while the
+// Docker adapter merely stops the container and keeps the writable layer. That
+// is why the port promises ONLY what is under SandboxWorkspacePath.
 func (k *K8s) Suspend(ctx context.Context, h ports.SandboxHandle) error {
 	if _, err := k.Describe(ctx, h); err != nil {
 		return err
@@ -427,12 +429,12 @@ func (k *K8s) Suspend(ctx context.Context, h ports.SandboxHandle) error {
 		return err
 	}
 	if code >= 300 && code != http.StatusNotFound {
-		return k8sFail(code, body, "suspensão do sandbox")
+		return k8sFail(code, body, "suspending the sandbox")
 	}
 	return nil
 }
 
-// Resume recria o pod SOBRE o PVC existente.
+// Resume recreates the pod ON TOP OF the existing PVC.
 func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	if err := validateSpec(spec); err != nil {
 		return nil, err
@@ -448,8 +450,8 @@ func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	if err != nil {
 		return nil, err
 	}
-	// Um pod parado (Succeeded/Failed) não "reinicia": some e volta. Apagar
-	// antes é o que torna Resume idempotente de verdade.
+	// A stopped pod (Succeeded/Failed) does not "restart": it goes away and
+	// comes back. Deleting it first is what makes Resume genuinely idempotent.
 	if err := k.deletePodAndWait(ctx, spec.Namespace); err != nil {
 		return nil, err
 	}
@@ -459,9 +461,10 @@ func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	return k.Describe(ctx, spec.SandboxHandle)
 }
 
-// deletePodAndWait espera o pod sumir de verdade. Sem a espera, o POST logo
-// depois bate em 409 com o pod ainda terminando e o Resume falharia de vez em
-// quando — o pior tipo de defeito, o que só aparece na máquina dos outros.
+// deletePodAndWait waits for the pod to really go away. Without the wait, the
+// POST right after hits a 409 with the pod still terminating and Resume would
+// fail every now and then — the worst kind of defect, the one that only shows up
+// on other people's machines.
 func (k *K8s) deletePodAndWait(ctx context.Context, ns string) error {
 	code, body, err := k.do(ctx, http.MethodDelete,
 		"/api/v1/namespaces/"+ns+"/pods/"+podName+"?gracePeriodSeconds=0", nil)
@@ -469,7 +472,7 @@ func (k *K8s) deletePodAndWait(ctx context.Context, ns string) error {
 		return err
 	}
 	if code >= 300 && code != http.StatusNotFound {
-		return k8sFail(code, body, "remoção do pod anterior")
+		return k8sFail(code, body, "removing the previous pod")
 	}
 	for i := 0; i < 60; i++ {
 		code, _, err := k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+ns+"/pods/"+podName, nil)
@@ -485,19 +488,20 @@ func (k *K8s) deletePodAndWait(ctx context.Context, ns string) error {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	return errs.New(errs.KindUnavailable, "o pod anterior do sandbox não terminou a tempo")
+	return errs.New(errs.KindUnavailable, "the sandbox's previous pod did not terminate in time")
 }
 
-// Destroy apaga o NAMESPACE inteiro: pod, PVC e tudo o que a demanda tenha
-// criado dentro dele. É o que torna a destruição irreversível de verdade —
-// apagar objeto por objeto deixaria para trás o que ninguém previu.
+// Destroy deletes the WHOLE NAMESPACE: pod, PVC and everything the demand may
+// have created inside it. It is what makes the destruction genuinely
+// irreversible — deleting object by object would leave behind whatever nobody
+// anticipated.
 func (k *K8s) Destroy(ctx context.Context, h ports.SandboxHandle) error {
 	code, body, err := k.do(ctx, http.MethodDelete, "/api/v1/namespaces/"+h.Namespace, nil)
 	if err != nil {
 		return err
 	}
 	if code >= 300 && code != http.StatusNotFound && code != http.StatusConflict {
-		return k8sFail(code, body, "destruição do sandbox")
+		return k8sFail(code, body, "destroying the sandbox")
 	}
 	return nil
 }
@@ -513,8 +517,8 @@ func (k *K8s) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sandb
 		return nil, err
 	}
 	if code == http.StatusNotFound {
-		// Sem pod, com PVC: suspenso. Sem os dois: o namespace existe mas não é
-		// um sandbox nosso — para a porta, não existe.
+		// No pod, but a PVC: suspended. Neither: the namespace exists but it is
+		// not a sandbox of ours — for the port, it does not exist.
 		ok, err := k.workspaceExists(ctx, h)
 		if err != nil {
 			return nil, err
@@ -525,7 +529,7 @@ func (k *K8s) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sandb
 		return nil, errs.NotFound("sandbox %s", h.ID)
 	}
 	if code >= 300 {
-		return nil, k8sFail(code, body, "leitura do sandbox")
+		return nil, k8sFail(code, body, "reading the sandbox")
 	}
 
 	var pod struct {
@@ -546,7 +550,7 @@ func (k *K8s) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sandb
 		} `json:"status"`
 	}
 	if err := json.Unmarshal(body, &pod); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível do Kubernetes")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from Kubernetes")
 	}
 
 	tier := ports.IsolationTier(pod.Metadata.Labels[labelTier])
@@ -559,7 +563,7 @@ func (k *K8s) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sandb
 		st.Phase = ports.PhaseActive
 	case "Pending":
 		st.Phase = ports.PhaseProvisioning
-	default: // Succeeded, Failed, Unknown — a execução acabou, o PVC continua
+	default: // Succeeded, Failed, Unknown — the execution ended, the PVC remains
 		st.Phase = ports.PhaseSuspended
 	}
 	if pod.Metadata.DeletionTimestamp != nil {
@@ -585,10 +589,10 @@ func (k *K8s) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.Sandb
 	return st, nil
 }
 
-// namespaceTier lê o tier da LABEL do namespace, que sobrevive à suspensão.
-// Namespace ausente — ou já em Terminating — é sandbox inexistente: um
-// namespace que está sumindo não volta, e tratá-lo como vivo faria Destroy
-// parecer não ter funcionado.
+// namespaceTier reads the tier from the namespace's LABEL, which survives the
+// suspension. An absent namespace — or one already Terminating — is a
+// nonexistent sandbox: a namespace on its way out does not come back, and
+// treating it as alive would make Destroy look like it did not work.
 func (k *K8s) namespaceTier(ctx context.Context, h ports.SandboxHandle) (ports.IsolationTier, error) {
 	code, body, err := k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+h.Namespace, nil)
 	if err != nil {
@@ -598,7 +602,7 @@ func (k *K8s) namespaceTier(ctx context.Context, h ports.SandboxHandle) (ports.I
 		return "", errs.NotFound("sandbox %s", h.ID)
 	}
 	if code >= 300 {
-		return "", k8sFail(code, body, "leitura do namespace da demanda")
+		return "", k8sFail(code, body, "reading the demand's namespace")
 	}
 	var ns struct {
 		Metadata struct {
@@ -607,7 +611,7 @@ func (k *K8s) namespaceTier(ctx context.Context, h ports.SandboxHandle) (ports.I
 		} `json:"metadata"`
 	}
 	if err := json.Unmarshal(body, &ns); err != nil {
-		return "", errs.Wrap(errs.KindInternal, err, "resposta ilegível do Kubernetes")
+		return "", errs.Wrap(errs.KindInternal, err, "unreadable response from Kubernetes")
 	}
 	if ns.Metadata.DeletionTimestamp != nil {
 		return "", errs.NotFound("sandbox %s", h.ID)
@@ -625,38 +629,39 @@ func (k *K8s) workspaceExists(ctx context.Context, h ports.SandboxHandle) (bool,
 		return false, nil
 	}
 	if code >= 300 {
-		return false, k8sFail(code, body, "leitura do workspace")
+		return false, k8sFail(code, body, "reading the workspace")
 	}
 	return true, nil
 }
 
 // ── exec ─────────────────────────────────────────────────────────────────────
 
-// wsProtocoloExec é o subprotocolo de canais do Kubernetes.
+// wsExecProtocol is Kubernetes's channel subprotocol.
 //
-// `v4` e não `v5`: o v5 acrescenta só o fechamento de stdin, e este exec não tem
-// stdin. Pedir a versão maior sem precisar dela seria trocar compatibilidade com
-// cluster antigo por nada.
-const wsProtocoloExec = "v4.channel.k8s.io"
+// `v4` and not `v5`: v5 adds only the closing of stdin, and this exec has no
+// stdin. Asking for the higher version without needing it would trade
+// compatibility with an older cluster for nothing.
+const wsExecProtocol = "v4.channel.k8s.io"
 
-// Os canais do subprotocolo. O 0 (stdin) e o 4 (resize) não são usados aqui —
-// é justamente o que separa "rodar um comando" de "abrir uma sessão".
+// The subprotocol's channels. 0 (stdin) and 4 (resize) are not used here — which
+// is exactly what separates "run a command" from "open a session".
 const (
-	canalStdout = 1
-	canalStderr = 2
-	canalStatus = 3
+	channelStdout = 1
+	channelStderr = 2
+	channelStatus = 3
 )
 
-// Exec roda um comando dentro do contêiner do sandbox (garantias 13 a 18).
+// Exec runs a command inside the sandbox's container (guarantees 13 to 18).
 //
-// O código de saída é o ponto delicado deste adaptador. Ele NÃO vem por HTTP e
-// NÃO vem no fim do stdout: vem no canal 3, como um `metav1.Status` em JSON, e
-// só ali. Um exec que leia stdout/stderr e feche a conexão funciona
-// perfeitamente e devolve o código de saída errado (zero) para todo comando que
-// falhou — que é exatamente a confusão que a garantia 15 existe para impedir.
+// The exit code is this adapter's delicate point. It does NOT come over HTTP and
+// it does NOT come at the end of stdout: it comes on channel 3, as a
+// `metav1.Status` in JSON, and only there. An exec that reads stdout/stderr and
+// closes the connection works perfectly and returns the wrong exit code (zero)
+// for every failed command — which is exactly the confusion guarantee 15 exists
+// to prevent.
 func (k *K8s) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
 	if len(req.Command) == 0 {
-		return nil, errs.Invalid("exec sem comando")
+		return nil, errs.Invalid("exec with no command")
 	}
 	st, err := k.Describe(ctx, h)
 	if err != nil {
@@ -664,112 +669,114 @@ func (k *K8s) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecReq
 	}
 	if st.Phase != ports.PhaseActive {
 		return nil, errs.Precondition(
-			"o sandbox %s está em %q e não executa comando; retome-o antes", h.ID, st.Phase)
+			"sandbox %s is in %q and does not run commands; resume it first", h.ID, st.Phase)
 	}
 
-	prazo, teto := execLimites(req)
-	runCtx, cancel := context.WithTimeout(ctx, prazo)
+	deadline, limit := execLimits(req)
+	runCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
 	v := url.Values{}
 	v.Set("container", containerName)
 	v.Set("stdout", "true")
 	v.Set("stderr", "true")
-	// stdin DESLIGADO: ver o cabeçalho de websocket.go. Comando, não sessão.
+	// stdin OFF: see websocket.go's header. A command, not a session.
 	v.Set("stdin", "false")
 	v.Set("tty", "false")
 	for _, arg := range req.Command {
 		v.Add("command", arg)
 	}
-	endereco := k.apiServer + "/api/v1/namespaces/" + h.Namespace + "/pods/" + podName +
+	address := k.apiServer + "/api/v1/namespaces/" + h.Namespace + "/pods/" + podName +
 		"/exec?" + v.Encode()
 
-	cab := http.Header{}
+	header := http.Header{}
 	if k.token != "" {
-		cab.Set("Authorization", "Bearer "+k.token)
+		header.Set("Authorization", "Bearer "+k.token)
 	}
-	ws, resp, err := wsDial(runCtx, endereco, cab, wsProtocoloExec, k.tls)
+	ws, resp, err := wsDial(runCtx, address, header, wsExecProtocol, k.tls)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+			return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execution interrupted by the caller")
 		}
 		if runCtx.Err() != nil {
-			// Nem o aperto de mão coube no prazo. Continua sendo RESULTADO:
-			// quem pediu um prazo curto precisa ver "não coube", não um erro
-			// de infraestrutura que manda investigar o cluster.
+			// Not even the handshake fitted in the deadline. It is still a
+			// RESULT: whoever asked for a short deadline needs to see "it did
+			// not fit", not an infrastructure error sending them to investigate
+			// the cluster.
 			return &ports.ExecResult{ExitCode: -1, TimedOut: true}, nil
 		}
 		return nil, err
 	}
 	if ws == nil {
-		corpo, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusForbidden &&
-			strings.Contains(strings.ToLower(string(corpo)), "reject") {
-			// O `kubectl proxy` recusa `/pods/*/exec` por padrão. A mensagem
-			// crua dele não diz o que fazer; esta diz.
+			strings.Contains(strings.ToLower(string(body)), "reject") {
+			// `kubectl proxy` refuses `/pods/*/exec` by default. Its raw message
+			// does not say what to do; this one does.
 			return nil, errs.Permission(
-				"o proxy à frente da API recusou o caminho de exec — rode " +
-					"`kubectl proxy --port=8001 --reject-paths='^$'` ou aponte " +
-					"K8S_API_SERVER direto para o apiserver")
+				"the proxy in front of the API refused the exec path — run " +
+					"`kubectl proxy --port=8001 --reject-paths='^$'` or point " +
+					"K8S_API_SERVER straight at the apiserver")
 		}
-		return nil, k8sFail(resp.StatusCode, corpo, "execução do comando no sandbox")
+		return nil, k8sFail(resp.StatusCode, body, "running the command in the sandbox")
 	}
 	defer ws.Close()
 
-	saida, erroPadrao := &bufferComTeto{max: teto}, &bufferComTeto{max: teto}
+	stdout, stderr := &cappedBuffer{max: limit}, &cappedBuffer{max: limit}
 	var status []byte
 	for {
 		msg, err := ws.ReadMessage()
 		if err != nil {
-			break // EOF, fechamento ou socket derrubado pelo prazo
+			break // EOF, a close, or a socket dropped by the deadline
 		}
 		if len(msg) == 0 {
-			// O k8s abre cada canal com uma mensagem só com o byte do canal.
+			// k8s opens each channel with a message carrying only the channel
+			// byte.
 			continue
 		}
-		dados := msg[1:]
+		data := msg[1:]
 		switch msg[0] {
-		case canalStdout:
-			_, _ = saida.Write(dados)
-		case canalStderr:
-			_, _ = erroPadrao.Write(dados)
-		case canalStatus:
-			status = append(status, dados...)
+		case channelStdout:
+			_, _ = stdout.Write(data)
+		case channelStderr:
+			_, _ = stderr.Write(data)
+		case channelStatus:
+			status = append(status, data...)
 		}
 	}
 
 	if ctx.Err() != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execução interrompida pelo chamador")
+		return nil, errs.Wrap(errs.KindUnavailable, ctx.Err(), "execution interrupted by the caller")
 	}
 	res := &ports.ExecResult{
 		ExitCode:  -1,
-		Stdout:    saida.String(),
-		Stderr:    erroPadrao.String(),
-		Truncated: saida.cortou || erroPadrao.cortou,
+		Stdout:    stdout.String(),
+		Stderr:    stderr.String(),
+		Truncated: stdout.truncated || stderr.truncated,
 		TimedOut:  runCtx.Err() != nil,
 	}
 	if res.TimedOut {
-		// Sem status no canal 3, não houve término: o processo continua lá
-		// dentro. -1 e TimedOut dizem isso; zero afirmaria sucesso.
+		// With no status on channel 3, there was no termination: the process is
+		// still in there. -1 and TimedOut say that; zero would assert success.
 		return res, nil
 	}
-	aplicarStatusDeExec(res, status)
+	applyExecStatus(res, status)
 	return res, nil
 }
 
-// aplicarStatusDeExec lê o `metav1.Status` do canal 3.
+// applyExecStatus reads the `metav1.Status` from channel 3.
 //
-// Três casos, e os três são RESULTADO, nunca erro da porta:
+// Three cases, and all three are a RESULT, never an error of the port:
 //
-//   - Success → código 0;
-//   - Failure com causa ExitCode → o código que o processo devolveu;
-//   - Failure sem causa de código (o clássico "executable file not found") → -1,
-//     e a mensagem do substrato entra no stderr. Ela precisa chegar ao MODELO,
-//     que é quem consegue corrigir o comando; engoli-la deixaria o agente com
-//     uma saída vazia e nenhuma pista.
-func aplicarStatusDeExec(res *ports.ExecResult, bruto []byte) {
-	if len(bruto) == 0 {
+//   - Success → code 0;
+//   - Failure with an ExitCode cause → the code the process returned;
+//   - Failure with no code cause (the classic "executable file not found") → -1,
+//     and the substrate's message goes into stderr. It has to reach the MODEL,
+//     which is who can fix the command; swallowing it would leave the agent with
+//     an empty output and no clue.
+func applyExecStatus(res *ports.ExecResult, raw []byte) {
+	if len(raw) == 0 {
 		return
 	}
 	var st struct {
@@ -783,7 +790,7 @@ func aplicarStatusDeExec(res *ports.ExecResult, bruto []byte) {
 			} `json:"causes"`
 		} `json:"details"`
 	}
-	if err := json.Unmarshal(bruto, &st); err != nil {
+	if err := json.Unmarshal(raw, &st); err != nil {
 		return
 	}
 	if st.Status == "Success" {
@@ -808,12 +815,12 @@ func aplicarStatusDeExec(res *ports.ExecResult, bruto []byte) {
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
-// Tail segue o log do pod e morre junto com o chamador.
+// Tail follows the pod's log and dies along with the caller.
 //
-// O k8s entrega texto puro, uma linha por linha, com carimbo RFC3339 quando se
-// pede. Não há multiplexação: stdout e stderr chegam FUNDIDOS. É a razão de a
-// porta não prometer nada sobre LogLine.Stream — o Docker separa, este não, e
-// prometer o que só um cumpre é a abstração vazando.
+// k8s delivers plain text, line by line, with an RFC3339 stamp when asked. There
+// is no multiplexing: stdout and stderr arrive MERGED. It is the reason the port
+// promises nothing about LogLine.Stream — Docker separates them, this one does
+// not, and promising what only one delivers is the abstraction leaking.
 func (k *K8s) Tail(ctx context.Context, h ports.SandboxHandle, q ports.LogQuery, emit func(ports.LogLine) error) error {
 	if _, err := k.Describe(ctx, h); err != nil {
 		return err
@@ -821,7 +828,7 @@ func (k *K8s) Tail(ctx context.Context, h ports.SandboxHandle, q ports.LogQuery,
 	container := containerName
 	if q.Service != "" {
 		if q.Service != containerName {
-			return errs.NotFound("processo %q no sandbox %s", q.Service, h.ID)
+			return errs.NotFound("process %q in sandbox %s", q.Service, h.ID)
 		}
 		container = q.Service
 	}
@@ -849,12 +856,12 @@ func (k *K8s) Tail(ctx context.Context, h ports.SandboxHandle, q ports.LogQuery,
 		if ctxEnded(ctx) {
 			return nil
 		}
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao seguir os logs")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to follow the logs")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		out, _ := io.ReadAll(resp.Body)
-		return k8sFail(resp.StatusCode, out, "leitura dos logs")
+		return k8sFail(resp.StatusCode, out, "reading the logs")
 	}
 
 	sc := bufio.NewScanner(resp.Body)
