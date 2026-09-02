@@ -14,46 +14,47 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// EventBusSuite verifica as nove garantias documentadas na porta.
+// EventBusSuite verifies the nine guarantees documented on the port.
 //
-// A garantia 1 é a razão de esta suíte existir: o formato de fio é o ENVELOPE, e
-// um adaptador que reserialize ports.Event manda Payload []byte em base64. O
-// consumidor não reconhece, descarta tudo e NÃO RECLAMA — o sistema fica mudo e
-// verde ao mesmo tempo. Só um teste que compara os BYTES pega isso.
+// Guarantee 1 is the reason this suite exists: the wire format is the ENVELOPE,
+// and an adapter that re-serializes ports.Event sends Payload []byte in base64.
+// The consumer does not recognize it, discards everything and DOES NOT COMPLAIN
+// — the system goes mute and green at the same time. Only a test that compares
+// the BYTES catches that.
 //
-// Todo assunto e todo ID de evento são únicos por subtestе: contra um broker de
-// verdade a suíte compartilha stream com as execuções anteriores, e o JetStream
-// desduplica por ID.
+// Every subject and every event ID is unique per subtest: against a real broker
+// the suite shares the stream with earlier runs, and JetStream deduplicates by
+// ID.
 func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.EventBus) {
 	t.Run(name, func(t *testing.T) {
-		t.Run("1_payload_chega_byte_a_byte_e_campos_vem_do_envelope", func(t *testing.T) {
+		t.Run("1_payload_arrives_byte_for_byte_and_fields_come_from_the_envelope", func(t *testing.T) {
 			bus := newBus(t)
-			assunto := assuntoUnico("intacto")
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
+			subject := uniqueSubject("intacto")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
 
-			dados := envelopeJSON(eventoUnico(), assunto, `{"quantidade":42,"texto":"acentuação"}`)
-			publicar(t, bus, assunto, dados)
+			data := envelopeJSON(uniqueEventID(), subject, `{"quantity":42,"text":"acentuação"}` // non-ASCII on purpose)
+			publish(t, bus, subject, data)
 
-			c.esperar(t, 1, "o evento publicado nunca chegou")
-			got := c.eventos()[0]
+			c.waitFor(t, 1, "the published event never arrived")
+			got := c.events()[0]
 
-			if !bytes.Equal(got.Payload, dados) {
-				t.Fatalf("os bytes do envelope não sobreviveram ao transporte.\n"+
+			if !bytes.Equal(got.Payload, data) {
+				t.Fatalf("the envelope's bytes did not survive the transport.\n"+
 					"publicado: %s\nrecebido:  %s\n"+
-					"(payload em base64 do outro lado = alguém reserializou ports.Event)",
-					dados, got.Payload)
+					"(a base64 payload on the other side = somebody re-serialized ports.Event)",
+					data, got.Payload)
 			}
 			var publicado, recebido eventbus.Envelope
-			_ = json.Unmarshal(dados, &publicado)
+			_ = json.Unmarshal(data, &publicado)
 			if err := json.Unmarshal(got.Payload, &recebido); err != nil {
-				t.Fatalf("o payload entregue não é o envelope JSON: %v", err)
+				t.Fatalf("the delivered payload is not the JSON envelope: %v", err)
 			}
 			if string(recebido.Payload) != string(publicado.Payload) {
-				t.Fatalf("o dado de negócio dentro do envelope mudou: %s != %s",
+				t.Fatalf("the business data inside the envelope changed: %s != %s",
 					recebido.Payload, publicado.Payload)
 			}
-			// Os campos do evento entregue vêm do envelope, não do struct publicado.
+			// The delivered event's fields come from the envelope, not from the published struct.
 			if got.ID != publicado.ID || got.AccountID != publicado.AccountID ||
 				got.Aggregate != publicado.Aggregate || got.AggregateID != publicado.AggregateID ||
 				got.Type != publicado.Type {
@@ -64,137 +65,138 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			}
 		})
 
-		t.Run("2_publish_sem_payload_preserva_identificacao", func(t *testing.T) {
+		t.Run("2_publish_with_no_payload_preserves_the_identification", func(t *testing.T) {
 			bus := newBus(t)
 			ctx := context.Background()
-			assunto := assuntoUnico("sem-payload")
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
+			subject := uniqueSubject("no-payload")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
 
 			e := ports.Event{
-				ID: eventoUnico(), AccountID: "acct-1", Aggregate: "conta",
-				AggregateID: "ag-1", Type: assunto, OccurredAt: agoraJSON(),
+				ID: uniqueEventID(), AccountID: "acct-1", Aggregate: "account",
+				AggregateID: "ag-1", Type: subject, OccurredAt: nowJSON(),
 			}
 			if err := bus.Publish(ctx, e); err != nil {
 				t.Fatalf("Publish: %v", err)
 			}
 
-			c.esperar(t, 1, "evento sem payload nunca chegou")
-			got := c.eventos()[0]
-			// É aqui que json.Marshal(ports.Event) se denuncia: os nomes de
-			// campo do struct não batem com os do envelope e tudo chega vazio.
+			c.waitFor(t, 1, "an event with no payload never arrived")
+			got := c.events()[0]
+			// This is where json.Marshal(ports.Event) gives itself away: the
+			// struct's field names do not match the envelope's and everything
+			// arrives empty.
 			if got.ID != e.ID || got.AccountID != e.AccountID ||
 				got.Aggregate != e.Aggregate || got.AggregateID != e.AggregateID || got.Type != e.Type {
-				t.Fatalf("identificação perdida no caminho:\nrecebido: %+v\npublicado: %+v", got, e)
+				t.Fatalf("identification lost along the way:\nreceived: %+v\npublished: %+v", got, e)
 			}
 			var env eventbus.Envelope
 			if err := json.Unmarshal(got.Payload, &env); err != nil {
-				t.Fatalf("o fallback deveria montar um envelope JSON, veio: %s", got.Payload)
+				t.Fatalf("the fallback should build a JSON envelope, got: %s", got.Payload)
 			}
 		})
 
-		t.Run("3_filtra_por_assunto", func(t *testing.T) {
+		t.Run("3_filters_by_subject", func(t *testing.T) {
 			bus := newBus(t)
-			base := assuntoUnico("filtro")
+			base := uniqueSubject("filtro")
 			alvo := base + ".alvo"
 			outro := base + ".outro"
-			c := novoColetor()
-			assinar(t, bus, base+".alvo.>", c.handler)
+			c := newCollector()
+			subscribe(t, bus, base+".alvo.>", c.handler)
 
-			publicar(t, bus, outro+".um", envelopeJSON(eventoUnico(), outro+".um", `{}`))
-			publicar(t, bus, alvo+".um", envelopeJSON(eventoUnico(), alvo+".um", `{}`))
+			publish(t, bus, outro+".um", envelopeJSON(uniqueEventID(), outro+".um", `{}`))
+			publish(t, bus, alvo+".um", envelopeJSON(uniqueEventID(), alvo+".um", `{}`))
 
-			c.esperar(t, 1, "o evento do assunto assinado nunca chegou")
-			// Margem para o intruso aparecer, se o filtro estiver furado.
+			c.waitFor(t, 1, "the event of the subscribed subject never arrived")
+			// Room for the intruder to show up, if the filter has a hole.
 			time.Sleep(500 * time.Millisecond)
-			for _, e := range c.eventos() {
+			for _, e := range c.events() {
 				if e.Type != alvo+".um" {
-					t.Fatalf("chegou evento de assunto não assinado: %q", e.Type)
+					t.Fatalf("an event of an unsubscribed subject arrived: %q", e.Type)
 				}
 			}
 		})
 
-		t.Run("4_entrega_o_que_foi_publicado_antes_da_assinatura", func(t *testing.T) {
+		t.Run("4_delivers_what_was_published_before_the_subscription", func(t *testing.T) {
 			bus := newBus(t)
-			assunto := assuntoUnico("retido")
-			id := eventoUnico()
+			subject := uniqueSubject("retido")
+			id := uniqueEventID()
 
-			// Publica ANTES de existir assinante: é a ordem real quando o relay
-			// sobe antes do worker de projeção.
-			publicar(t, bus, assunto, envelopeJSON(id, assunto, `{}`))
+			// It publishes BEFORE a subscriber exists: it is the real order when
+			// the relay comes up before the projection worker.
+			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
 
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
-			c.esperar(t, 1, "o evento publicado antes da assinatura se perdeu — "+
-				"a espinha de eventos dependeria da ordem de boot")
-			if got := c.eventos()[0].ID; got != id {
-				t.Fatalf("chegou outro evento: %q != %q", got, id)
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
+			c.waitFor(t, 1, "o evento publicado antes da assinatura se perdeu — "+
+				"a espinha de events dependeria da ordem de boot")
+			if got := c.events()[0].ID; got != id {
+				t.Fatalf("another event arrived: %q != %q", got, id)
 			}
 		})
 
-		t.Run("5_erro_no_handler_provoca_reentrega", func(t *testing.T) {
+		t.Run("5_a_handler_error_causes_a_redelivery", func(t *testing.T) {
 			bus := newBus(t)
-			assunto := assuntoUnico("reentrega")
+			subject := uniqueSubject("reentrega")
 			var tentativas atomic.Int64
-			assinar(t, bus, assunto, func(_ context.Context, e ports.Event) error {
+			subscribe(t, bus, subject, func(_ context.Context, e ports.Event) error {
 				if tentativas.Add(1) == 1 {
 					return fmt.Errorf("falha proposital na primeira entrega")
 				}
 				return nil
 			})
 
-			publicar(t, bus, assunto, envelopeJSON(eventoUnico(), assunto, `{}`))
-			esperarAte(t, 30*time.Second, func() bool { return tentativas.Load() >= 2 },
-				"o handler falhou e o evento NÃO foi reentregue — entrega ao-menos-uma-vez quebrada")
+			publish(t, bus, subject, envelopeJSON(uniqueEventID(), subject, `{}`))
+			waitUntil(t, 30*time.Second, func() bool { return tentativas.Load() >= 2 },
+				"the handler failed and the event was NOT redelivered — at-least-once delivery broken")
 		})
 
-		t.Run("6_sucesso_nao_provoca_reentrega_imediata", func(t *testing.T) {
+		t.Run("6_success_does_not_cause_an_immediate_redelivery", func(t *testing.T) {
 			bus := newBus(t)
-			assunto := assuntoUnico("ack")
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
+			subject := uniqueSubject("ack")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
 
-			publicar(t, bus, assunto, envelopeJSON(eventoUnico(), assunto, `{}`))
-			c.esperar(t, 1, "o evento nunca chegou")
-			// Janela curta: pega o adaptador que reentrega em laço quente.
-			// Reentrega tardia (AckWait do JetStream) está fora do alcance de um
-			// teste rápido, e a porta permite duplicata de qualquer forma.
+			publish(t, bus, subject, envelopeJSON(uniqueEventID(), subject, `{}`))
+			c.waitFor(t, 1, "the event never arrived")
+			// A short window: it catches the adapter that redelivers in a hot
+			// loop. A late redelivery (JetStream's AckWait) is out of a fast
+			// test's reach, and the port allows duplicates anyway.
 			time.Sleep(1 * time.Second)
-			if n := len(c.eventos()); n > 1 {
-				t.Fatalf("entrega bem-sucedida foi repetida %d vezes em 1s — o ack não está acontecendo", n)
+			if n := len(c.events()); n > 1 {
+				t.Fatalf("a successful delivery was repeated %d times in 1s — the ack is not happening", n)
 			}
 		})
 
-		t.Run("7_mensagem_ilegivel_nao_trava_a_fila", func(t *testing.T) {
+		t.Run("7_an_unreadable_message_does_not_block_the_queue", func(t *testing.T) {
 			bus := newBus(t)
-			assunto := assuntoUnico("veneno")
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
+			subject := uniqueSubject("veneno")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
 
-			// Bytes que não são JSON: nenhum número de retentativas conserta.
-			publicar(t, bus, assunto, []byte("{isto não é json"))
-			bom := eventoUnico()
-			publicar(t, bus, assunto, envelopeJSON(bom, assunto, `{}`))
+			// Bytes that are not JSON: no number of retries fixes that.
+			publish(t, bus, subject, []byte("{this is not json"))
+			good := uniqueEventID()
+			publish(t, bus, subject, envelopeJSON(good, subject, `{}`))
 
-			c.esperar(t, 1, "a mensagem ilegível travou a fila: o evento seguinte não chegou")
-			if got := c.eventos()[0].ID; got != bom {
+			c.waitFor(t, 1, "the unreadable message blocked the queue: the next event did not arrive")
+			if got := c.events()[0].ID; got != good {
 				t.Fatalf("o handler recebeu algo inesperado: %q", got)
 			}
 		})
 
-		t.Run("8_publish_concorrente", func(t *testing.T) {
+		t.Run("8_concurrent_publish", func(t *testing.T) {
 			bus := newBus(t)
 			ctx := context.Background()
-			assunto := assuntoUnico("concorrente")
-			c := novoColetor()
-			assinar(t, bus, assunto, c.handler)
+			subject := uniqueSubject("concorrente")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
 
 			const total = 50
 			ids := make(map[string]bool, total)
 			var mu sync.Mutex
 			var wg sync.WaitGroup
 			for i := 0; i < total; i++ {
-				id := eventoUnico()
+				id := uniqueEventID()
 				mu.Lock()
 				ids[id] = true
 				mu.Unlock()
@@ -202,7 +204,7 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 				go func(id string) {
 					defer wg.Done()
 					if err := bus.Publish(ctx, ports.Event{
-						ID: id, Type: assunto, Payload: envelopeJSON(id, assunto, `{}`),
+						ID: id, Type: subject, Payload: envelopeJSON(id, subject, `{}`),
 					}); err != nil {
 						t.Errorf("Publish concorrente: %v", err)
 					}
@@ -210,24 +212,24 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			}
 			wg.Wait()
 
-			esperarAte(t, 30*time.Second, func() bool { return len(c.distintos()) >= total },
-				fmt.Sprintf("dos %d eventos publicados em paralelo, chegaram %d", total, len(c.distintos())))
-			// Duplicata é permitida (ao-menos-uma-vez); perda não é.
+			waitUntil(t, 30*time.Second, func() bool { return len(c.distinct()) >= total },
+				fmt.Sprintf("of the %d events published in parallel, %d arrived", total, len(c.distinct())))
+			// A duplicate is allowed (at-least-once); a loss is not.
 			for id := range ids {
-				if !c.distintos()[id] {
-					t.Fatalf("evento %s se perdeu", id)
+				if !c.distinct()[id] {
+					t.Fatalf("event %s was lost", id)
 				}
 			}
 		})
 
-		t.Run("9_evento_sem_tipo_e_recusado", func(t *testing.T) {
+		t.Run("9_an_event_with_no_type_is_refused", func(t *testing.T) {
 			bus := newBus(t)
-			if err := bus.Publish(context.Background(), ports.Event{ID: eventoUnico()}); err == nil {
-				t.Fatal("evento sem Type não tem assunto para onde ir e deveria ser recusado")
+			if err := bus.Publish(context.Background(), ports.Event{ID: uniqueEventID()}); err == nil {
+				t.Fatal("an event with no Type has no subject to go to and should be refused")
 			}
 		})
 
-		t.Run("10_close_encerra_sem_erro", func(t *testing.T) {
+		t.Run("10_close_finishes_with_no_error", func(t *testing.T) {
 			bus := newBus(t)
 			if err := bus.Close(); err != nil {
 				t.Fatalf("Close: %v", err)
@@ -236,30 +238,30 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 	})
 }
 
-// ── auxiliares da suíte ──────────────────────────────────────────────────────
+// ── the suite's helpers ──────────────────────────────────────────────────────
 
 var eventoSeq atomic.Int64
 
-// assuntoUnico devolve um assunto sob "dop." (o stream do JetStream só aceita
-// dop.>), único por execução: o stream é persistente e sobrevive ao teste.
-func assuntoUnico(rotulo string) string {
-	return fmt.Sprintf("dop.contrato.%s.%d-%d", rotulo, time.Now().UnixNano(), eventoSeq.Add(1))
+// uniqueSubject returns a subject under "dop." (JetStream's stream only accepts
+// dop.>), unique per run: the stream is persistent and survives the test.
+func uniqueSubject(label string) string {
+	return fmt.Sprintf("dop.contrato.%s.%d-%d", label, time.Now().UnixNano(), eventoSeq.Add(1))
 }
 
-// eventoUnico devolve um ID novo — o JetStream desduplica por ID dentro de uma
-// janela, então reaproveitar ID faria o segundo evento sumir "sozinho".
-func eventoUnico() string {
+// uniqueEventID returns a fresh ID — JetStream deduplicates by ID within a
+// window, so reusing an ID would make the second event vanish "on its own".
+func uniqueEventID() string {
 	return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), eventoSeq.Add(1))
 }
 
-// agoraJSON trunca para milissegundos: o instante precisa sobreviver ao
-// RFC3339 do JSON sem perder igualdade na volta.
-func agoraJSON() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+// nowJSON truncates to milliseconds: the instant has to survive JSON's RFC3339
+// without losing equality on the way back.
+func nowJSON() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
-func envelopeJSON(id, assunto, payload string) []byte {
+func envelopeJSON(id, subject, payload string) []byte {
 	b, err := json.Marshal(eventbus.Envelope{
 		ID: id, AccountID: "acct-contrato", Aggregate: "contrato", AggregateID: "ag-" + id,
-		Type: assunto, Payload: json.RawMessage(payload), OccurredAt: agoraJSON(),
+		Type: subject, Payload: json.RawMessage(payload), OccurredAt: nowJSON(),
 	})
 	if err != nil {
 		panic(err)
@@ -267,72 +269,72 @@ func envelopeJSON(id, assunto, payload string) []byte {
 	return b
 }
 
-func assinar(t *testing.T, bus ports.EventBus, assunto string, h ports.Handler) {
+func subscribe(t *testing.T, bus ports.EventBus, subject string, h ports.Handler) {
 	t.Helper()
 	durable := fmt.Sprintf("contrato-%d-%d", time.Now().UnixNano(), eventoSeq.Add(1))
-	if err := bus.Subscribe(context.Background(), "", durable, []string{assunto}, h); err != nil {
-		t.Fatalf("Subscribe(%s): %v", assunto, err)
+	if err := bus.Subscribe(context.Background(), "", durable, []string{subject}, h); err != nil {
+		t.Fatalf("Subscribe(%s): %v", subject, err)
 	}
 }
 
-func publicar(t *testing.T, bus ports.EventBus, assunto string, dados []byte) {
+func publish(t *testing.T, bus ports.EventBus, subject string, data []byte) {
 	t.Helper()
 	var env eventbus.Envelope
-	_ = json.Unmarshal(dados, &env)
+	_ = json.Unmarshal(data, &env)
 	id := env.ID
 	if id == "" {
-		id = eventoUnico()
+		id = uniqueEventID()
 	}
-	if err := bus.Publish(context.Background(), ports.Event{ID: id, Type: assunto, Payload: dados}); err != nil {
-		t.Fatalf("Publish(%s): %v", assunto, err)
+	if err := bus.Publish(context.Background(), ports.Event{ID: id, Type: subject, Payload: data}); err != nil {
+		t.Fatalf("Publish(%s): %v", subject, err)
 	}
 }
 
-type coletor struct {
+type collector struct {
 	mu   sync.Mutex
 	vist []ports.Event
 }
 
-func novoColetor() *coletor { return &coletor{} }
+func newCollector() *collector { return &collector{} }
 
-func (c *coletor) handler(_ context.Context, e ports.Event) error {
+func (c *collector) handler(_ context.Context, e ports.Event) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.vist = append(c.vist, e)
 	return nil
 }
 
-func (c *coletor) eventos() []ports.Event {
+func (c *collector) events() []ports.Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]ports.Event(nil), c.vist...)
 }
 
-func (c *coletor) distintos() map[string]bool {
+func (c *collector) distinct() map[string]bool {
 	out := map[string]bool{}
-	for _, e := range c.eventos() {
+	for _, e := range c.events() {
 		out[e.ID] = true
 	}
 	return out
 }
 
-func (c *coletor) esperar(t *testing.T, n int, msg string) {
+func (c *collector) waitFor(t *testing.T, n int, msg string) {
 	t.Helper()
-	esperarAte(t, 30*time.Second, func() bool { return len(c.eventos()) >= n }, msg)
+	waitUntil(t, 30*time.Second, func() bool { return len(c.events()) >= n }, msg)
 }
 
-// esperarAte substitui sleep fixo: a entrega é assíncrona nos dois adaptadores,
-// e prazo generoso com verificação frequente é rápido quando passa e claro
-// quando falha.
-func esperarAte(t *testing.T, prazo time.Duration, ok func() bool, msg string) {
+// waitUntil replaces a fixed sleep: the delivery is asynchronous in both
+// adapters, and a generous deadline with frequent checks is fast when it passes
+// and clear when it fails.
+func waitUntil(t *testing.T, deadline time.Duration, ok func() bool, msg string) {
 	t.Helper()
-	limite := time.Now().Add(prazo)
+	limit := time.Now().Add(deadline)
 	for {
 		if ok() {
 			return
 		}
-		if time.Now().After(limite) {
-			t.Fatalf("%s (prazo de %s esgotado)", msg, prazo)
+		if time.Now().After(limit) {
+			t.Fatalf("%s (the %s deadline ran out)", msg, deadline)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

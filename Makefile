@@ -21,11 +21,11 @@ test-integration: ## espinha de eventos contra o ambiente local
 test-contract-integration: ## suítes de contrato contra os adaptadores REAIS
 	@echo "exige: kubectl port-forward svc/nats 4222, svc/firebase 9199 e"
 	@echo "       svc/secretmanager 8085:9090 (gRPC do emulador do Secret Manager)"
-	@echo "excluídos 8_metadados (o emulador pendura com application/json) e"
-	@echo "13_uso_concorrente (~16 operações simultâneas DERRUBAM o emulador)."
+	@echo "excluídos 8_metadata (o emulador pendura com application/json) e"
+	@echo "13_concurrent_use (~16 operações simultâneas DERRUBAM o emulador)."
 	@echo "Defeitos do emulador, não do adaptador — o fs passa nos 13."
 	go test ./test/contract/ -tags=integration -v -count=1 \
-	  -skip 'TestObjectStoreContractGCS/gcs-emulado/(8_metadados|13_uso_concorrente)' 
+	  -skip 'TestObjectStoreContractGCS/gcs-emulated/(8_metadata|13_concurrent_use)' 
 
 lint:
 	go vet ./...

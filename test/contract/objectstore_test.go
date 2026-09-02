@@ -8,15 +8,15 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// O adaptador de sistema de arquivos roda sempre — é ele que faz o self-hosted
-// existir sem GCS. O do GCS roda contra o emulador, sob a tag `integration`.
+// The filesystem adapter always runs — it is what makes self-hosted exist with
+// no GCS. The GCS one runs against the emulator, under the `integration` tag.
 func TestObjectStoreContract(t *testing.T) {
 	contract.ObjectStoreSuite(t, "fs", func(t *testing.T) (ports.ObjectStore, []string) {
-		// t.TempDir some ao fim do teste: nada vaza entre execuções.
+		// t.TempDir disappears at the end of the test: nothing leaks between runs.
 		fs, err := objectstore.NewFS(t.TempDir())
 		if err != nil {
-			t.Fatalf("não foi possível criar o objectstore de arquivos: %v", err)
+			t.Fatalf("could not create the file object store: %v", err)
 		}
-		return fs, []string{"balde-a", "balde-b"}
+		return fs, []string{"bucket-a", "bucket-b"}
 	})
 }

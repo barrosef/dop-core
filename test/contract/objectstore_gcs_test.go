@@ -1,12 +1,12 @@
 //go:build integration
 
-// A MESMA suíte de contrato, agora contra o Storage emulado do Firebase.
+// The SAME contract suite, now against Firebase's emulated Storage.
 //
 //	go test ./test/contract/ -tags=integration -v
 //
-// O adaptador de arquivos e o de GCS têm implementações sem nada em comum;
-// é só passando os dois pela mesma suíte que "trocar de adaptador não muda o
-// comportamento" deixa de ser promessa e vira fato verificado.
+// The file adapter and the GCS one have implementations with nothing in common;
+// it is only by putting both through the same suite that "changing adapter does
+// not change the behaviour" stops being a promise and becomes a verified fact.
 package contract_test
 
 import (
@@ -18,25 +18,25 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// DOIS DEFEITOS CONHECIDOS DO EMULADOR — subtestes 8 e 13.
+// TWO KNOWN EMULATOR DEFECTS — subtests 8 and 13.
 //
-// Com uploadType=media e Content-Type EXATAMENTE "application/json", o emulador
-// de Storage do Firebase nunca responde: a conexão fica pendurada até o timeout
-// do cliente. Reproduzível fora do teste, com curl e o mesmo corpo:
+// With uploadType=media and a Content-Type of EXACTLY "application/json",
+// Firebase's Storage emulator never answers: the connection hangs until the
+// client's timeout. Reproducible outside the test, with curl and the same body:
 //
-//	application/json          → pendura (sem resposta)
+//	application/json          → hangs (no response)
 //	application/json; charset=utf-8 → 400
 //	text/plain, text/json, application/xml, application/octet-stream → 200
 //
-// O GCS de verdade aceita e guarda normalmente. É diferença do emulador, não do
-// adaptador — provado pelo `fs`, que passa nos 13 subtestes.
+// Real GCS accepts and stores it normally. It is a difference of the emulator,
+// not of the adapter — proven by `fs`, which passes all 13 subtests.
 //
-// Consequência prática: guardar JSON no object store PENDURA no ambiente local.
-// Enquanto o emulador não corrigir, quem gravar JSON deve usar um tipo que ele
-// aceite. Documentado em dop-infra/docs/ambiente-local.md; o alvo
-// `test-contract-integration` do Makefile exclui este subteste, com o motivo à
-// vista — em vez de deixá-lo vermelho para sempre e todo mundo aprender a
-// ignorar a suíte.
+// A practical consequence: storing JSON in the object store HANGS in the local
+// environment. Until the emulator fixes it, whoever writes JSON should use a
+// type it accepts. Documented in dop-infra/docs/ambiente-local.md; the Makefile's
+// `test-contract-integration` target excludes this subtest, with the reason in
+// plain sight — instead of leaving it red forever and everyone learning to
+// ignore the suite.
 func TestObjectStoreContractGCS(t *testing.T) {
 	host := os.Getenv("STORAGE_EMULATOR_HOST")
 	if host == "" {
@@ -46,9 +46,10 @@ func TestObjectStoreContractGCS(t *testing.T) {
 	if bucket == "" {
 		bucket = "dop-local.firebasestorage.app"
 	}
-	contract.ObjectStoreSuite(t, "gcs-emulado", func(t *testing.T) (ports.ObjectStore, []string) {
-		// Um balde só: o emulador não provisiona um segundo, e inventar um
-		// faria o caso de isolamento falhar por motivo errado.
+	contract.ObjectStoreSuite(t, "gcs-emulated", func(t *testing.T) (ports.ObjectStore, []string) {
+		// A single bucket: the emulator does not provision a second, and
+		// inventing one would make the isolation case fail for the wrong
+		// reason.
 		return objectstore.NewGCS(objectstore.GCSConfig{Endpoint: host}), []string{bucket}
 	})
 }
