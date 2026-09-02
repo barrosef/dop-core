@@ -11,119 +11,119 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// OS DUPLOS DOS FORNECEDORES DE AGENTE.
+// THE AGENT PROVIDERS' TEST DOUBLES.
 //
-// Eles ficam do outro lado do FIO: um `httptest.Server` que fala o protocolo do
-// fornecedor. O adaptador sob teste é o REAL — o `net/http` dele, os cabeçalhos
-// dele, a decodificação dele. Um mock do adaptador passaria mesmo com o adaptador
-// errado; um duplo do fornecedor não.
+// They sit on the other side of the WIRE: an `httptest.Server` speaking the
+// provider's protocol. The adapter under test is the REAL one — its `net/http`,
+// its headers, its decoding. A mock of the adapter would pass even with the
+// adapter wrong; a double of the provider would not.
 //
-// O QUE ESTES DUPLOS PROVAM: que os dois adaptadores concordam com a MESMA
-// leitura da documentação de cada fornecedor. O QUE ELES NÃO PROVAM: que a
-// leitura estava certa. As duas apostas deste código — o texto exato do 400
-// quando o modelo não aceita mensagem de sistema no meio, e o formato da
-// contabilidade de cache de cada fornecedor — estão marcadas como tal nos
-// comentários, porque é onde quem for conferir contra a documentação vai olhar.
-// Não há caminho automatizado contra a API real, e de propósito: um teste que
-// gasta tokens por execução é um teste que alguém desliga.
+// WHAT THESE DOUBLES PROVE: that both adapters agree with the SAME reading of
+// each provider's documentation. WHAT THEY DO NOT PROVE: that the reading was
+// right. This code's two bets — the exact text of the 400 when the model does
+// not accept a system message in the middle, and each provider's cache
+// accounting shape — are marked as such in the comments, because that is where
+// whoever checks against the documentation will look. There is no automated
+// path against the real API, and that is deliberate: a test that spends tokens
+// per run is a test somebody turns off.
 //
-// A tradução de `RespostaProgramada` para o formato do fornecedor é o coração do
-// duplo: a suíte fala em parcelas DISJUNTAS e cada duplo escreve no dialeto dele
-// — inclusive o dialeto INCLUSIVO da OpenAI, que é a armadilha do D2.
+// Translating `ScriptedResponse` into the provider's shape is the double's
+// heart: the suite speaks in DISJOINT parts and each double writes it in its own
+// dialect — including OpenAI's INCLUSIVE dialect, which is D2's trap.
 // ════════════════════════════════════════════════════════════════════════════
 
-// fakeAgente é o estado compartilhado pelos dois duplos.
-type fakeAgente struct {
-	mu             sync.Mutex
-	srv            *httptest.Server
-	token          string
-	resposta       RespostaProgramada
-	ultimoCorpo    []byte
-	chamadas       int
-	modeloSemCanal string
+// fakeAgent is the state shared by both doubles.
+type fakeAgent struct {
+	mu                  sync.Mutex
+	srv                 *httptest.Server
+	token               string
+	response            ScriptedResponse
+	lastBody            []byte
+	calls               int
+	modelWithoutChannel string
 }
 
-func (f *fakeAgente) URL() string { return f.srv.URL }
+func (f *fakeAgent) URL() string { return f.srv.URL }
 
-func (f *fakeAgente) Programar(t *testing.T, r RespostaProgramada) {
+func (f *fakeAgent) Script(t *testing.T, r ScriptedResponse) {
 	t.Helper()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.resposta = r
+	f.response = r
 }
 
-func (f *fakeAgente) UltimoCorpo() []byte {
+func (f *fakeAgent) LastBody() []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]byte(nil), f.ultimoCorpo...)
+	return append([]byte(nil), f.lastBody...)
 }
 
-func (f *fakeAgente) Chamadas() int {
+func (f *fakeAgent) Calls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.chamadas
+	return f.calls
 }
 
-// registrar guarda o que chegou e devolve a resposta programada.
-func (f *fakeAgente) registrar(corpo []byte) RespostaProgramada {
+// record keeps what arrived and returns the scripted response.
+func (f *fakeAgent) record(body []byte) ScriptedResponse {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.chamadas++
-	f.ultimoCorpo = corpo
-	return f.resposta
+	f.calls++
+	f.lastBody = body
+	return f.response
 }
 
-// escrever emite o corpo cru de um erro programado, se houver.
-func erroProgramado(w http.ResponseWriter, r RespostaProgramada) bool {
+// scriptedError emits the raw body of a scripted error, if there is one.
+func scriptedError(w http.ResponseWriter, r ScriptedResponse) bool {
 	if r.Status < 400 {
 		return false
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.Status)
-	_, _ = io.WriteString(w, r.Corpo)
+	_, _ = io.WriteString(w, r.Body)
 	return true
 }
 
-// ── duplo da Anthropic ──────────────────────────────────────────────────────
+// ── Anthropic's double ──────────────────────────────────────────────────────
 
-// NewAnthropicFake sobe o duplo da API da Anthropic.
+// NewAnthropicFake brings up the double of Anthropic's API.
 //
-// `modeloSemCanal` é o modelo que recusa `role:"system"` no meio de `messages` —
-// é o que exercita o RECUO do D3, que é a única parte do adaptador que só aparece
-// depois de um erro do fornecedor.
-func NewAnthropicFake(t *testing.T, token, modeloSemCanal string) *fakeAgente {
+// `modelWithoutChannel` is the model that refuses `role:"system"` in the middle
+// of `messages` — it is what exercises D3's FALLBACK, the one part of the
+// adapter that only shows up after a provider error.
+func NewAnthropicFake(t *testing.T, token, modelWithoutChannel string) *fakeAgent {
 	t.Helper()
-	f := &fakeAgente{token: token, modeloSemCanal: modeloSemCanal}
+	f := &fakeAgent{token: token, modelWithoutChannel: modelWithoutChannel}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
-		corpo, _ := io.ReadAll(r.Body)
-		prog := f.registrar(corpo)
+		body, _ := io.ReadAll(r.Body)
+		scripted := f.record(body)
 
-		// A credencial vai em `x-api-key` neste fornecedor. Chave errada é 401,
-		// e o corpo ECOA o que chegou — que é o comportamento real e é
-		// justamente onde uma credencial vaza para o log.
+		// The credential goes in `x-api-key` at this provider. A wrong key is a
+		// 401, and the body ECHOES what arrived — which is the real behaviour
+		// and is exactly where a credential leaks into the log.
 		if r.Header.Get("x-api-key") != f.token {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = io.WriteString(w, `{"error":{"message":"invalid x-api-key: `+
 				r.Header.Get("x-api-key")+`"}}`)
 			return
 		}
-		if erroProgramado(w, prog) {
+		if scriptedError(w, scripted) {
 			return
 		}
 
-		var pedido struct {
+		var request struct {
 			Model    string `json:"model"`
 			Messages []struct {
 				Role string `json:"role"`
 			} `json:"messages"`
 		}
-		_ = json.Unmarshal(corpo, &pedido)
-		if f.modeloSemCanal != "" && pedido.Model == f.modeloSemCanal {
-			for _, m := range pedido.Messages {
+		_ = json.Unmarshal(body, &request)
+		if f.modelWithoutChannel != "" && request.Model == f.modelWithoutChannel {
+			for _, m := range request.Messages {
+				// The 400 Anthropic returns on the models with no operator
+				// channel. The text is a bet — see the header.
 				if m.Role == "system" {
-					// O 400 que a Anthropic devolve nos modelos sem canal de
-					// operador. O texto é aposta — ver o cabeçalho.
 					w.WriteHeader(http.StatusBadRequest)
 					_, _ = io.WriteString(w, `{"type":"error","error":{"type":`+
 						`"invalid_request_error","message":"messages: Unexpected role `+
@@ -133,42 +133,44 @@ func NewAnthropicFake(t *testing.T, token, modeloSemCanal string) *fakeAgente {
 			}
 		}
 
-		// ── D8, o dialeto DESTE fornecedor ─────────────────────────────────
-		// A chamada é um bloco DENTRO de `content`, ao lado do texto, e
-		// `input` é OBJETO. O duplo do outro fornecedor escreve a mesma
-		// `RespostaProgramada` com os argumentos em STRING — é essa diferença
-		// que permite à garantia 17 perguntar se o adaptador normalizou.
-		conteudo := []any{map[string]any{"type": "text", "text": prog.Texto}}
-		for _, c := range prog.Ferramentas {
-			bloco := map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name}
-			if prog.ArgumentoIlegivel {
-				// Aqui o caso degenerado é `input` que não é objeto. Não há
-				// como mandar "string que não é JSON" — `input` já vem
-				// decodificado —, então o duplo manda uma string onde o
-				// adaptador espera um objeto. Do ponto de vista da porta é o
-				// MESMO fato: o fornecedor mandou algo que não vira mapa.
-				bloco["input"] = "isto-nao-e-um-objeto"
+		// ── D8, THIS provider's dialect ────────────────────────────────────
+		// The call is a block INSIDE `content`, next to the text, and `input`
+		// is an OBJECT. The other provider's double writes the same
+		// `ScriptedResponse` with the arguments as a STRING — it is that
+		// difference that lets guarantee 17 ask whether the adapter
+		// normalized.
+		content := []any{map[string]any{"type": "text", "text": scripted.Text}}
+		for _, c := range scripted.Tools {
+			block := map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name}
+			if scripted.UnreadableArgument {
+				// Here the degenerate case is an `input` that is not an object.
+				// There is no way to send "a string that is not JSON" — `input`
+				// already arrives decoded — so the double sends a string where
+				// the adapter expects an object. From the port's point of view
+				// it is the SAME fact: the provider sent something that does
+				// not become a map.
+				block["input"] = "this-is-not-an-object"
 			} else {
-				entrada := c.Input
-				if entrada == nil {
-					entrada = map[string]any{}
+				in := c.Input
+				if in == nil {
+					in = map[string]any{}
 				}
-				bloco["input"] = entrada
+				block["input"] = in
 			}
-			conteudo = append(conteudo, bloco)
+			content = append(content, block)
 		}
 
-		// As parcelas são DISJUNTAS neste fornecedor, e o duplo as escreve como
-		// tal: `input_tokens` EXCLUI o que veio do cache.
+		// The parts are DISJOINT at this provider, and the double writes them
+		// as such: `input_tokens` EXCLUDES what came from the cache.
 		resp := map[string]any{
-			"model":       pedido.Model,
-			"stop_reason": prog.ParadaNativa,
-			"content":     conteudo,
+			"model":       request.Model,
+			"stop_reason": scripted.NativeStop,
+			"content":     content,
 			"usage": map[string]any{
-				"input_tokens":                prog.Uso.InputTokens,
-				"output_tokens":               prog.Uso.OutputTokens,
-				"cache_read_input_tokens":     prog.Uso.CacheReadTokens,
-				"cache_creation_input_tokens": prog.Uso.CacheCreationTokens,
+				"input_tokens":                scripted.Usage.InputTokens,
+				"output_tokens":               scripted.Usage.OutputTokens,
+				"cache_read_input_tokens":     scripted.Usage.CacheReadTokens,
+				"cache_creation_input_tokens": scripted.Usage.CacheCreationTokens,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -179,79 +181,80 @@ func NewAnthropicFake(t *testing.T, token, modeloSemCanal string) *fakeAgente {
 	return f
 }
 
-// ── duplo da OpenAI ─────────────────────────────────────────────────────────
+// ── OpenAI's double ─────────────────────────────────────────────────────────
 
-// NewOpenAIFake sobe o duplo da API da OpenAI.
-func NewOpenAIFake(t *testing.T, token string) *fakeAgente {
+// NewOpenAIFake brings up the double of OpenAI's API.
+func NewOpenAIFake(t *testing.T, token string) *fakeAgent {
 	t.Helper()
-	f := &fakeAgente{token: token}
+	f := &fakeAgent{token: token}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		corpo, _ := io.ReadAll(r.Body)
-		prog := f.registrar(corpo)
+		body, _ := io.ReadAll(r.Body)
+		scripted := f.record(body)
 
-		autorizacao := r.Header.Get("Authorization")
-		if !strings.HasPrefix(autorizacao, "Bearer ") ||
-			strings.TrimPrefix(autorizacao, "Bearer ") != f.token {
+		authorization := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authorization, "Bearer ") ||
+			strings.TrimPrefix(authorization, "Bearer ") != f.token {
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = io.WriteString(w, `{"error":{"message":"incorrect api key: `+autorizacao+`"}}`)
+			_, _ = io.WriteString(w, `{"error":{"message":"incorrect api key: `+authorization+`"}}`)
 			return
 		}
-		if erroProgramado(w, prog) {
+		if scriptedError(w, scripted) {
 			return
 		}
 
-		var pedido struct {
+		var request struct {
 			Model string `json:"model"`
 		}
-		_ = json.Unmarshal(corpo, &pedido)
+		_ = json.Unmarshal(body, &request)
 
-		// ── A ARMADILHA DO D2, escrita de propósito ─────────────────────────
-		// Neste fornecedor `prompt_tokens` INCLUI os cacheados, e
-		// `cached_tokens` é subconjunto dele. O duplo reescreve as parcelas
-		// disjuntas da suíte nesse formato inclusivo — é o que permite à
-		// garantia 6 perguntar se o adaptador subtraiu.
+		// ── D2'S TRAP, written on purpose ──────────────────────────────────
+		// At this provider `prompt_tokens` INCLUDES the cached ones, and
+		// `cached_tokens` is a subset of it. The double rewrites the suite's
+		// disjoint parts into that inclusive shape — it is what lets guarantee
+		// 6 ask whether the adapter subtracted.
 		//
-		// E a criação de cache simplesmente NÃO EXISTE aqui: não há campo onde
-		// escrevê-la. É a divergência D1, e o duplo a torna concreta em vez de
-		// só documentada.
-		prompt := prog.Uso.InputTokens + prog.Uso.CacheReadTokens
+		// And cache creation simply DOES NOT EXIST here: there is no field to
+		// write it in. That is divergence D1, and the double makes it concrete
+		// instead of merely documented.
+		prompt := scripted.Usage.InputTokens + scripted.Usage.CacheReadTokens
 
-		// ── D8, o dialeto DESTE fornecedor ─────────────────────────────────
-		// A chamada vem em `tool_calls`, FORA de `content`, e os argumentos são
-		// uma STRING que ainda precisa de parse. É a armadilha do D8 escrita de
-		// propósito: um adaptador que não decodifique entrega `Input` nulo, e a
-		// garantia 17 vê a diferença.
-		mensagem := map[string]any{"content": prog.Texto}
-		if len(prog.Ferramentas) > 0 {
-			chamadas := make([]any, 0, len(prog.Ferramentas))
-			for _, c := range prog.Ferramentas {
+		// ── D8, THIS provider's dialect ────────────────────────────────────
+		// The call comes in `tool_calls`, OUTSIDE `content`, and the arguments
+		// are a STRING that still needs parsing. It is D8's trap written on
+		// purpose: an adapter that does not decode delivers a null `Input`, and
+		// guarantee 17 sees the difference.
+		message := map[string]any{"content": scripted.Text}
+		if len(scripted.Tools) > 0 {
+			calls := make([]any, 0, len(scripted.Tools))
+			for _, c := range scripted.Tools {
 				args := "{}"
-				if prog.ArgumentoIlegivel {
-					// O caso real: o modelo emitiu uma string que não fecha.
-					args = `{"alvo": "corta`
+				if scripted.UnreadableArgument {
+					// The real case: the model emitted a string that does not
+					// close.
+					args = `{"target": "cut`
 				} else if c.Input != nil {
 					b, _ := json.Marshal(c.Input)
 					args = string(b)
 				}
-				chamadas = append(chamadas, map[string]any{
+				calls = append(calls, map[string]any{
 					"id": c.ID, "type": "function",
 					"function": map[string]any{"name": c.Name, "arguments": args},
 				})
 			}
-			mensagem["tool_calls"] = chamadas
+			message["tool_calls"] = calls
 		}
 
 		resp := map[string]any{
-			"model": pedido.Model,
+			"model": request.Model,
 			"choices": []any{map[string]any{
-				"message":       mensagem,
-				"finish_reason": prog.ParadaNativa,
+				"message":       message,
+				"finish_reason": scripted.NativeStop,
 			}},
 			"usage": map[string]any{
 				"prompt_tokens":         prompt,
-				"completion_tokens":     prog.Uso.OutputTokens,
-				"prompt_tokens_details": map[string]any{"cached_tokens": prog.Uso.CacheReadTokens},
+				"completion_tokens":     scripted.Usage.OutputTokens,
+				"prompt_tokens_details": map[string]any{"cached_tokens": scripted.Usage.CacheReadTokens},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")

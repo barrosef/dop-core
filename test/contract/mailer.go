@@ -341,9 +341,9 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 		// ── 6/7. error translation ──────────────────────────────────────────
 		t.Run("7_errors_translated_by_nature", func(t *testing.T) {
 			casos := []struct {
-				failure    Failure
-				want errs.Kind
-				why   string
+				failure Failure
+				want    errs.Kind
+				why     string
 			}{
 				{FailureCredential, errs.KindUnauthorized,
 					"a refused credential is not an unavailability: it sends the team hunting the network when the problem is a password"},

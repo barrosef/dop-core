@@ -1,23 +1,23 @@
 package contract_test
 
-// A suíte de contrato do AgentProvider contra os DOIS duplos locais.
+// The AgentProvider contract suite against BOTH local doubles.
 //
 //	go test ./test/contract/ -run AgentProvider -v
 //
-// Roda sempre, sem infra e sem chave de API — e é a única forma de a suíte
-// existir de verdade: nem a esteira nem o laptop de quem mexe no adaptador têm
-// credencial de Anthropic ou OpenAI, e uma suíte que só roda com credencial de
-// produção é uma suíte que não roda. Ver o cabeçalho dos duplos para o limite do
-// que eles provam.
+// It always runs, with no infrastructure and no API key — and it is the only way
+// for the suite to really exist: neither CI nor the laptop of whoever touches
+// the adapter has an Anthropic or OpenAI credential, and a suite that only runs
+// with a production credential is a suite that does not run. See the doubles'
+// header for the limit of what they prove.
 //
-// NÃO existe aqui um caminho que chame os fornecedores de VERDADE, e isso é
-// escolha, não pendência: uma suíte que gasta tokens ao rodar acaba não rodando,
-// e um teste que cobra por execução é um teste que alguém desliga. O que os
-// duplos não conseguem provar — o texto exato do 400 sem canal de operador e o
-// formato da contabilidade de cache de cada fornecedor — está anotado como
-// APOSTA no adaptador e nos duplos, no lugar onde quem for conferir vai olhar.
-// A execução com `-tags=integration` roda esta mesma suíte: os arquivos sem tag
-// compilam nos dois modos, e é de propósito que o resultado seja o mesmo.
+// There is NO path here that calls the providers for REAL, and that is a choice,
+// not a pending item: a suite that spends tokens when it runs ends up not
+// running, and a test that charges per run is a test somebody turns off. What
+// the doubles cannot prove — the exact text of the 400 with no operator channel
+// and each provider's cache accounting shape — is recorded as a BET in the
+// adapter and in the doubles, in the place where whoever checks will look.
+// Running with `-tags=integration` runs this same suite: the files with no tag
+// compile in both modes, and the result being the same is deliberate.
 
 import (
 	"net/http/httptest"
@@ -28,15 +28,15 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// chaveFalsa é a SENTINELA da garantia 10. Precisa ser uma sequência improvável
-// e reconhecível: a suíte varre toda saída atrás dela.
-const chaveFalsa = "sk-SENTINELA-NAO-PODE-APARECER-EM-LUGAR-NENHUM-0001"
+// fakeKey is guarantee 10's SENTINEL. It has to be an unlikely, recognizable
+// sequence: the suite sweeps every output looking for it.
+const fakeKey = "sk-SENTINEL-MUST-NOT-APPEAR-ANYWHERE-0001"
 
-// enderecoMorto devolve uma URL que ninguém atende — é o caso da razão
-// UNREACHABLE. Um servidor criado e fechado dá a garantia de que a porta está
-// livre; um número escolhido à mão daria um teste que falha na máquina de quem
-// tiver algo escutando lá.
-func enderecoMorto(t *testing.T) string {
+// deadAddress returns a URL nobody answers — it is the UNREACHABLE reason's
+// case. A server created and then closed guarantees the port is free; a
+// hand-picked number would give a test that fails on the machine of anyone with
+// something listening there.
+func deadAddress(t *testing.T) string {
 	t.Helper()
 	s := httptest.NewServer(nil)
 	url := s.URL
@@ -45,27 +45,27 @@ func enderecoMorto(t *testing.T) string {
 }
 
 func TestAgentProviderContractAnthropic(t *testing.T) {
-	// O Sonnet 5 é o modelo que recusa `role:"system"` no meio de `messages`
-	// (D3) — é ele que exercita o recuo.
-	const semCanal = "claude-sonnet-5"
-	f := contract.NewAnthropicFake(t, chaveFalsa, semCanal)
+	// Sonnet 5 is the model that refuses `role:"system"` in the middle of
+	// `messages` (D3) — it is the one that exercises the fallback.
+	const withoutChannel = "claude-sonnet-5"
+	f := contract.NewAnthropicFake(t, fakeKey, withoutChannel)
 
 	contract.AgentProviderSuite(t, "anthropic", func(t *testing.T) contract.AgentProviderEnv {
-		novo := func(base, chave string) agent.AgentProvider {
+		build := func(base, key string) agent.AgentProvider {
 			return agentprovider.NewAnthropic(agentprovider.AnthropicConfig{
 				APIBase: base + "/v1",
-				APIKey:  chave,
+				APIKey:  key,
 			})
 		}
 		return contract.AgentProviderEnv{
-			Conectar:       func(t *testing.T) agent.AgentProvider { return novo(f.URL(), chaveFalsa) },
-			SemCredencial:  func(t *testing.T) agent.AgentProvider { return novo(f.URL(), "") },
-			Inalcancavel:   func(t *testing.T) agent.AgentProvider { return novo(enderecoMorto(t), chaveFalsa) },
-			TokenSentinela: chaveFalsa,
-			Programar:      f.Programar,
-			UltimoCorpo:    f.UltimoCorpo,
-			Chamadas:       f.Chamadas,
-			Paradas: map[string]agent.StopReason{
+			Connect:           func(t *testing.T) agent.AgentProvider { return build(f.URL(), fakeKey) },
+			WithoutCredential: func(t *testing.T) agent.AgentProvider { return build(f.URL(), "") },
+			Unreachable:       func(t *testing.T) agent.AgentProvider { return build(deadAddress(t), fakeKey) },
+			SentinelToken:     fakeKey,
+			Script:            f.Script,
+			LastBody:          f.LastBody,
+			Calls:             f.Calls,
+			Stops: map[string]agent.StopReason{
 				"end_turn":                      agent.StopCompleted,
 				"stop_sequence":                 agent.StopCompleted,
 				"max_tokens":                    agent.StopMaxTokens,
@@ -74,73 +74,75 @@ func TestAgentProviderContractAnthropic(t *testing.T) {
 				"tool_use":                      agent.StopToolUse,
 				"pause_turn":                    agent.StopToolUse,
 			},
-			// Os cinco níveis existem aqui: nada é rebaixado (D4).
-			EffortAplicado: map[agent.Effort]agent.Effort{
+			// All five levels exist here: nothing is downgraded (D4).
+			EffortApplied: map[agent.Effort]agent.Effort{
 				agent.EffortLow:    agent.EffortLow,
 				agent.EffortMedium: agent.EffortMedium,
 				agent.EffortHigh:   agent.EffortHigh,
 				agent.EffortXHigh:  agent.EffortXHigh,
 				agent.EffortMax:    agent.EffortMax,
 			},
-			ModeloSemCanalDeOperador: semCanal,
-			ModeloComPreco:           "claude-opus-5",
-			// Cache EXPLÍCITO: o breakpoint é um marcador no corpo, e a suíte
-			// confere que ele existe e que fica no FIM do prefixo (D1).
-			MarcadorDeCache: "cache_control",
-			// D7: o schema vai NO TOPO do objeto da ferramenta, sem casca.
-			MarcadorDeFerramenta: "input_schema",
+			ModelWithoutOperatorChannel: withoutChannel,
+			ModelWithPrice:              "claude-opus-5",
+			// EXPLICIT cache: the breakpoint is a marker in the body, and the
+			// suite checks that it exists and that it sits at the END of the
+			// prefix (D1).
+			CacheMarker: "cache_control",
+			// D7: the schema goes at the TOP of the tool's object, with no
+			// wrapper.
+			ToolMarker: "input_schema",
 		}
 	})
 }
 
 func TestAgentProviderContractOpenAI(t *testing.T) {
-	f := contract.NewOpenAIFake(t, chaveFalsa)
+	f := contract.NewOpenAIFake(t, fakeKey)
 
 	contract.AgentProviderSuite(t, "openai", func(t *testing.T) contract.AgentProviderEnv {
-		novo := func(base, chave string) agent.AgentProvider {
+		build := func(base, key string) agent.AgentProvider {
 			return agentprovider.NewOpenAI(agentprovider.OpenAIConfig{
 				APIBase: base + "/v1",
-				APIKey:  chave,
+				APIKey:  key,
 			})
 		}
 		return contract.AgentProviderEnv{
-			Conectar:       func(t *testing.T) agent.AgentProvider { return novo(f.URL(), chaveFalsa) },
-			SemCredencial:  func(t *testing.T) agent.AgentProvider { return novo(f.URL(), "") },
-			Inalcancavel:   func(t *testing.T) agent.AgentProvider { return novo(enderecoMorto(t), chaveFalsa) },
-			TokenSentinela: chaveFalsa,
-			Programar:      f.Programar,
-			UltimoCorpo:    f.UltimoCorpo,
-			Chamadas:       f.Chamadas,
-			Paradas: map[string]agent.StopReason{
+			Connect:           func(t *testing.T) agent.AgentProvider { return build(f.URL(), fakeKey) },
+			WithoutCredential: func(t *testing.T) agent.AgentProvider { return build(f.URL(), "") },
+			Unreachable:       func(t *testing.T) agent.AgentProvider { return build(deadAddress(t), fakeKey) },
+			SentinelToken:     fakeKey,
+			Script:            f.Script,
+			LastBody:          f.LastBody,
+			Calls:             f.Calls,
+			Stops: map[string]agent.StopReason{
 				"stop":           agent.StopCompleted,
 				"length":         agent.StopMaxTokens,
 				"tool_calls":     agent.StopToolUse,
 				"content_filter": agent.StopRefused,
 			},
-			// Só três níveis: `xhigh` e `max` são REBAIXADOS para `high`, e a
-			// suíte exige o aviso junto (D4).
-			EffortAplicado: map[agent.Effort]agent.Effort{
+			// Only three levels: `xhigh` and `max` are DOWNGRADED to `high`, and
+			// the suite requires the warning alongside (D4).
+			EffortApplied: map[agent.Effort]agent.Effort{
 				agent.EffortLow:    agent.EffortLow,
 				agent.EffortMedium: agent.EffortMedium,
 				agent.EffortHigh:   agent.EffortHigh,
 				agent.EffortXHigh:  agent.EffortHigh,
 				agent.EffortMax:    agent.EffortHigh,
 			},
-			// Sem modelo sem canal de operador: `role:"developer"` é aceito em
-			// qualquer posição neste fornecedor.
-			ModeloSemCanalDeOperador: "",
-			// Sem tabela de preço, e de propósito: preço inventado alimentaria
-			// o orçamento da ADR-0011 com ficção convincente. O subteste 11
-			// INVERTE aqui e exige que `PriceFor` diga que não sabe.
-			ModeloComPreco: "",
-			// Cache AUTOMÁTICO: não há breakpoint para marcar (D1). Vazio aqui
-			// e `CapExplicitPrefixCache` ausente na ficha são a MESMA afirmação,
-			// e a suíte exige que as duas concordem.
-			MarcadorDeCache: "",
-			// D7: aqui a ferramenta vem embrulhada em `function`, e o schema
-			// chama `parameters`. Mesmo fato, outro nome — é o que a porta
-			// normaliza.
-			MarcadorDeFerramenta: "parameters",
+			// No model without an operator channel: `role:"developer"` is
+			// accepted in any position at this provider.
+			ModelWithoutOperatorChannel: "",
+			// No price table, and on purpose: an invented price would feed
+			// ADR-0011's budget with convincing fiction. Subtest 11 INVERTS
+			// here and requires `PriceFor` to say it does not know.
+			ModelWithPrice: "",
+			// AUTOMATIC cache: there is no breakpoint to mark (D1). Empty here
+			// and `CapExplicitPrefixCache` absent from Info are the SAME
+			// statement, and the suite requires the two to agree.
+			CacheMarker: "",
+			// D7: here the tool comes wrapped in `function`, and the schema is
+			// called `parameters`. Same fact, another name — it is what the port
+			// normalizes.
+			ToolMarker: "parameters",
 		}
 	})
 }

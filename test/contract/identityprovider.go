@@ -103,7 +103,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			// These the suite builds on its own: no issuer needs to cooperate for
 			// junk to be refused.
 			lixo := map[string]string{
-				"emptyEnv":                    "",
+				"emptyEnv":                 "",
 				"so_espaco":                "   ",
 				"so_o_prefixo_bearer":      "Bearer ",
 				"not_a_jwt":                "this-is-not-a-token",

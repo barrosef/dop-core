@@ -54,9 +54,9 @@ const testMinRefresh = 300 * time.Millisecond
 // everything: the current one, the rotation's and the intruder's.
 var (
 	chavesUmaVez sync.Once
-	keyA       *rsa.PrivateKey // corrente
-	keyB       *rsa.PrivateKey // after the rotation
-	intruderKey *rsa.PrivateKey // never published by the issuer
+	keyA         *rsa.PrivateKey // corrente
+	keyB         *rsa.PrivateKey // after the rotation
+	intruderKey  *rsa.PrivateKey // never published by the issuer
 )
 
 func chavesDeTeste(t *testing.T) {
@@ -182,7 +182,7 @@ func claimsBase(s contract.TokenSpec, iss, aud string) map[string]any {
 type oidcIssuer struct {
 	srv     *httptest.Server
 	mu      sync.Mutex
-	key   *rsa.PrivateKey
+	key     *rsa.PrivateKey
 	kid     string
 	buscas  int
 	fechado bool

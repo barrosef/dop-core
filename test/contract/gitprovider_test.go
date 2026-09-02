@@ -66,18 +66,18 @@ func TestGitProviderContractGitHub(t *testing.T) {
 			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider {
 				return newConn(t, testActor, "a-token-that-does-not-work")
 			},
-			Actor:              testActor,
-			SentinelToken:    fakeToken,
-			Repo:              contract.GHRepoOK,
-			InvisibleRepo:     contract.GHRepoInvisible,
-			RepoWithNativeQueue: contract.GHRepoWithQueue,
-			RepoWithoutNativeQueue: contract.GHRepoWithoutQueue,
-			RepoWithUnreadableQueue:  contract.GHRepoQueueForbidden,
-			Pair:               func(t *testing.T) (string, string) { return branches("") },
-			ConflictingPair:    func(t *testing.T) (string, string) { return branches(contract.MarkConflict) },
-			BlockedPair:      func(t *testing.T) (string, string) { return branches(contract.MarkBlocked) },
-			PairWithNoCommits:     func(t *testing.T) (string, string) { return branches(contract.MarkNoCommits) },
-			Wait:            10 * time.Second,
+			Actor:                   testActor,
+			SentinelToken:           fakeToken,
+			Repo:                    contract.GHRepoOK,
+			InvisibleRepo:           contract.GHRepoInvisible,
+			RepoWithNativeQueue:     contract.GHRepoWithQueue,
+			RepoWithoutNativeQueue:  contract.GHRepoWithoutQueue,
+			RepoWithUnreadableQueue: contract.GHRepoQueueForbidden,
+			Pair:                    func(t *testing.T) (string, string) { return branches("") },
+			ConflictingPair:         func(t *testing.T) (string, string) { return branches(contract.MarkConflict) },
+			BlockedPair:             func(t *testing.T) (string, string) { return branches(contract.MarkBlocked) },
+			PairWithNoCommits:       func(t *testing.T) (string, string) { return branches(contract.MarkNoCommits) },
+			Wait:                    10 * time.Second,
 		}
 	})
 }
@@ -101,18 +101,18 @@ func TestGitProviderContractGitLab(t *testing.T) {
 			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider {
 				return newConn(testActor, "a-token-that-does-not-work")
 			},
-			Actor:              testActor,
-			SentinelToken:    fakeToken,
-			Repo:              contract.GLProjOK,
-			InvisibleRepo:     contract.GLProjInvisible,
-			RepoWithNativeQueue: contract.GLProjWithTrain,
-			RepoWithoutNativeQueue: contract.GLProjWithoutTrain,
-			RepoWithUnreadableQueue:  contract.GLProjBadScope,
-			Pair:               func(t *testing.T) (string, string) { return branches("") },
-			ConflictingPair:    func(t *testing.T) (string, string) { return branches(contract.MarkConflict) },
-			BlockedPair:      func(t *testing.T) (string, string) { return branches(contract.MarkBlocked) },
-			PairWithNoCommits:     func(t *testing.T) (string, string) { return branches(contract.MarkNoCommits) },
-			Wait:            10 * time.Second,
+			Actor:                   testActor,
+			SentinelToken:           fakeToken,
+			Repo:                    contract.GLProjOK,
+			InvisibleRepo:           contract.GLProjInvisible,
+			RepoWithNativeQueue:     contract.GLProjWithTrain,
+			RepoWithoutNativeQueue:  contract.GLProjWithoutTrain,
+			RepoWithUnreadableQueue: contract.GLProjBadScope,
+			Pair:                    func(t *testing.T) (string, string) { return branches("") },
+			ConflictingPair:         func(t *testing.T) (string, string) { return branches(contract.MarkConflict) },
+			BlockedPair:             func(t *testing.T) (string, string) { return branches(contract.MarkBlocked) },
+			PairWithNoCommits:       func(t *testing.T) (string, string) { return branches(contract.MarkNoCommits) },
+			Wait:                    10 * time.Second,
 		}
 	})
 }

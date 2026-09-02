@@ -13,930 +13,946 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// A suíte de contrato da porta agent.AgentProvider.
+// The contract suite of the agent.AgentProvider port.
 //
-// Disciplina da ADR-0001: uma porta com um adaptador só é palpite. Anthropic e
-// OpenAI não têm UMA linha em comum — cache explícito contra automático,
-// contagem disjunta contra inclusiva, cinco níveis de effort contra três,
-// `role:"system"` contra `role:"developer"` — e é só passando os dois por esta
-// mesma régua que "trocar de fornecedor é fiação" deixa de ser promessa.
+// ADR-0001's discipline: a port with a single adapter is a guess. Anthropic and
+// OpenAI do not have ONE line in common — explicit cache against automatic,
+// disjoint accounting against inclusive, five effort levels against three,
+// `role:"system"` against `role:"developer"` — and it is only by running both
+// past this same ruler that "switching provider is wiring" stops being a
+// promise.
 //
-// A API do fornecedor NUNCA é chamada de verdade aqui: o duplo está do outro
-// lado do FIO (httptest), e o adaptador sob teste é o REAL, com o seu próprio
-// `net/http`, os seus cabeçalhos e a sua decodificação. É a diferença entre
-// testar o adaptador e testar um mock do adaptador — a segunda coisa passa
-// mesmo quando o adaptador está errado.
+// The provider's API is NEVER really called here: the double is on the other
+// side of the WIRE (httptest), and the adapter under test is the REAL one, with
+// its own `net/http`, its own headers and its own decoding. It is the difference
+// between testing the adapter and testing a mock of the adapter — the second
+// passes even when the adapter is wrong.
 //
-// Campo de função vazio no Env quer dizer "este ambiente não sabe produzir esse
-// caso": o subteste é PULADO com registro, nunca em silêncio.
+// An empty function field in Env means "this environment cannot produce that
+// case": the subtest is SKIPPED on the record, never in silence.
 // ════════════════════════════════════════════════════════════════════════════
 
-// RespostaProgramada é o que o duplo deve responder, descrito no vocabulário do
-// DOMÍNIO — cada duplo traduz para o formato do fornecedor dele.
+// ScriptedResponse is what the double should answer, described in the DOMAIN's
+// vocabulary — each double translates it into its provider's shape.
 //
-// `Uso` é DISJUNTO aqui, sempre. É essa escolha que torna a garantia 6
-// verificável de fora: o duplo da OpenAI recebe parcelas disjuntas e as reescreve
-// no formato INCLUSIVO daquele fornecedor; se o adaptador não subtrair, a suíte
-// vê a entrada inflada e reprova. Um duplo que falasse em vocabulário de
-// fornecedor não conseguiria fazer essa pergunta.
-type RespostaProgramada struct {
-	Texto        string
-	Uso          agent.Usage
-	ParadaNativa string // motivo de parada no vocabulário do FORNECEDOR
-	Status       int    // 0 = 200
-	Corpo        string // corpo cru quando Status >= 400
+// `Usage` is DISJOINT here, always. It is that choice that makes guarantee 6
+// verifiable from the outside: OpenAI's double receives disjoint parts and
+// rewrites them in that provider's INCLUSIVE shape; if the adapter does not
+// subtract, the suite sees the inflated input and fails. A double speaking a
+// provider's vocabulary could not ask that question.
+type ScriptedResponse struct {
+	Text       string
+	Usage      agent.Usage
+	NativeStop string // stop reason in the PROVIDER's vocabulary
+	Status     int    // 0 = 200
+	Body       string // raw body when Status >= 400
 
-	// Ferramentas é o que o modelo PEDE nesta resposta, descrito no vocabulário
-	// do domínio. Cada duplo escreve isso no dialeto dele — objeto dentro de
-	// `content` num, string em `tool_calls` no outro (D8) —, e é essa diferença
-	// que torna a garantia 17 verificável de fora: um adaptador que não
-	// normalize entrega um `Input` nulo onde o outro entrega o mapa.
-	Ferramentas []agent.ToolCall
-	// ArgumentoIlegivel faz o duplo escrever, no lugar dos argumentos, algo que
-	// NÃO decodifica para objeto. É o caso degenerado do D8, e o que se exige
-	// dele é que o turno SOBREVIVA: quem conserta o argumento é o modelo, e ele
-	// só conserta se receber o erro de volta.
-	ArgumentoIlegivel bool
+	// Tools is what the model ASKS FOR in this response, described in the
+	// domain's vocabulary. Each double writes it in its own dialect — an object
+	// inside `content` in one, a string in `tool_calls` in the other (D8) — and
+	// it is that difference that makes guarantee 17 verifiable from the
+	// outside: an adapter that does not normalize delivers a null `Input` where
+	// the other delivers the map.
+	Tools []agent.ToolCall
+	// UnreadableArgument makes the double write, in place of the arguments,
+	// something that does NOT decode into an object. It is D8's degenerate
+	// case, and what is required of it is that the turn SURVIVES: the one who
+	// fixes the argument is the model, and it only fixes it if it gets the
+	// error back.
+	UnreadableArgument bool
 }
 
-// AgentProviderEnv é o que ESTE fornecedor oferece para a suíte trabalhar.
+// AgentProviderEnv is what THIS provider offers for the suite to work with.
 type AgentProviderEnv struct {
-	// Conectar monta o adaptador REAL, apontado para o duplo, com a credencial
-	// sentinela.
-	Conectar func(t *testing.T) agent.AgentProvider
-	// SemCredencial monta o adaptador sem chave nenhuma — o caso da razão
-	// MISSING_CREDENTIAL, que precisa ser decidido SEM tocar na rede.
-	SemCredencial func(t *testing.T) agent.AgentProvider
-	// Inalcancavel monta o adaptador apontado para um endereço que não atende.
-	Inalcancavel func(t *testing.T) agent.AgentProvider
+	// Connect builds the REAL adapter, pointed at the double, with the sentinel
+	// credential.
+	Connect func(t *testing.T) agent.AgentProvider
+	// WithoutCredential builds the adapter with no key at all — the
+	// MISSING_CREDENTIAL reason's case, which has to be decided WITHOUT
+	// touching the network.
+	WithoutCredential func(t *testing.T) agent.AgentProvider
+	// Unreachable builds the adapter pointed at an address that does not
+	// answer.
+	Unreachable func(t *testing.T) agent.AgentProvider
 
-	// TokenSentinela é a chave EXATA que `Conectar` carrega. A suíte varre toda
-	// saída atrás dela (garantia 10). Vazio = varredura pulada com aviso
-	// GRITADO: é a garantia cuja falha custa a conta inteira.
-	TokenSentinela string
+	// SentinelToken is the EXACT key `Connect` carries. The suite sweeps every
+	// output looking for it (guarantee 10). Empty = the sweep is skipped with a
+	// SHOUTED warning: it is the guarantee whose failure costs the whole bill.
+	SentinelToken string
 
-	// Programar diz ao duplo o que responder na PRÓXIMA chamada.
-	Programar func(t *testing.T, r RespostaProgramada)
-	// UltimoCorpo devolve o corpo que o adaptador REALMENTE enviou. É o que
-	// permite conferir que `Send` manda o mesmo que `Render` mostra — sem isso,
-	// `Render` poderia ser uma vitrine bonita ao lado de um envio diferente.
-	UltimoCorpo func() []byte
-	// Chamadas conta as requisições recebidas pelo duplo.
-	Chamadas func() int
+	// Script tells the double what to answer on the NEXT call.
+	Script func(t *testing.T, r ScriptedResponse)
+	// LastBody returns the body the adapter REALLY sent. It is what allows
+	// checking that `Send` sends the same thing `Render` shows — without it,
+	// `Render` could be a pretty shop window next to a different send.
+	LastBody func() []byte
+	// Calls counts the requests the double received.
+	Calls func() int
 
-	// Paradas mapeia motivo nativo do fornecedor → o que o domínio deve
-	// enxergar (D5).
-	Paradas map[string]agent.StopReason
+	// Stops maps the provider's native reason → what the domain should see
+	// (D5).
+	Stops map[string]agent.StopReason
 
-	// EffortAplicado mapeia cada um dos CINCO níveis do núcleo para o que ESTE
-	// fornecedor de fato aplica (D4). Quem tem os cinco mapeia cada um em si
-	// mesmo; quem tem três rebaixa — e a suíte exige o aviso.
-	EffortAplicado map[agent.Effort]agent.Effort
+	// EffortApplied maps each of the core's FIVE levels to what THIS provider
+	// actually applies (D4). Whoever has all five maps each onto itself;
+	// whoever has three downgrades — and the suite requires the warning.
+	EffortApplied map[agent.Effort]agent.Effort
 
-	// ModeloSemCanalDeOperador é um modelo que o fornecedor RECUSA (400) quando
-	// recebe a instrução de operador pelo canal próprio. Vazio = este
-	// fornecedor não tem esse caso, e o subteste do recuo é pulado.
-	ModeloSemCanalDeOperador string
+	// ModelWithoutOperatorChannel is a model the provider REFUSES (400) when it
+	// receives the operator instruction through the dedicated channel. Empty =
+	// this provider has no such case, and the fallback's subtest is skipped.
+	ModelWithoutOperatorChannel string
 
-	// ModeloComPreco é um nome que ESTE adaptador tem na tabela de preço. Vazio
-	// = o adaptador não publica preços, e o subteste inverte: `PriceFor` tem de
-	// dizer que NÃO SABE, em vez de devolver zero.
-	ModeloComPreco string
+	// ModelWithPrice is a name THIS adapter has in its price table. Empty = the
+	// adapter publishes no prices, and the subtest inverts: `PriceFor` has to
+	// say it does NOT KNOW, instead of returning zero.
+	ModelWithPrice string
 
-	// MarcadorDeCache é o trecho que, no corpo DESTE fornecedor, marca o
-	// breakpoint do prefixo cacheado — "cache_control" na Anthropic. Vazio
-	// quando o cache é automático (OpenAI), e aí a suíte só exige coerência
-	// com a capacidade declarada.
+	// CacheMarker is the fragment that, in THIS provider's body, marks the
+	// cached prefix's breakpoint — "cache_control" at Anthropic. Empty when the
+	// cache is automatic (OpenAI), and then the suite only requires coherence
+	// with the declared capability.
 	//
-	// Este campo nasceu de uma sonda: apagar o breakpoint da Anthropic passava
-	// na suíte inteira. O prefixo continuava no lugar certo, a ordem continuava
-	// certa, e a conta passaria a chegar ~10× maior sem um único teste vermelho
-	// — que é exatamente a falha silenciosa que a ADR-0012 §1 descreve.
-	MarcadorDeCache string
+	// This field was born from a probe: deleting Anthropic's breakpoint passed
+	// the entire suite. The prefix stayed in the right place, the order stayed
+	// right, and the bill would start arriving ~10× larger without a single red
+	// test — which is exactly the silent failure ADR-0012 §1 describes.
+	CacheMarker string
 
-	// MarcadorDeFerramenta é o trecho que, no corpo DESTE fornecedor, marca a
-	// DECLARAÇÃO de uma ferramenta: "input_schema" na Anthropic, "parameters"
-	// na OpenAI (D7). Vazio = este adaptador não implementa ferramentas, e a
-	// suíte exige que ele também NÃO anuncie CapToolUse — capacidade é dado que
-	// a telemetria lê, e declarar o que não se faz é pior que não declarar.
-	MarcadorDeFerramenta string
+	// ToolMarker is the fragment that, in THIS provider's body, marks a tool's
+	// DECLARATION: "input_schema" at Anthropic, "parameters" at OpenAI (D7).
+	// Empty = this adapter does not implement tools, and the suite requires
+	// that it also does NOT announce CapToolUse — a capability is data the
+	// telemetry reads, and declaring what you do not do is worse than not
+	// declaring.
+	ToolMarker string
 }
 
 const (
-	sentinelaPrefixo  = "SENTINELA-PREFIXO-ESTAVEL-NAO-PODE-SAIR-DO-TOPO"
-	sentinelaTurno    = "SENTINELA-TEXTO-VOLATIL-DO-TURNO"
-	sentinelaOperador = "SENTINELA-INSTRUCAO-DO-OPERADOR"
-	// sentinelaSchema é um campo plantado no schema de saída: é como a suíte
-	// pergunta "o schema chegou ao FIO?" sem conhecer o formato de fornecedor
-	// nenhum. Sem ele, um adaptador que parasse de enviar o schema passava — a
-	// decodificação acontece do nosso lado e continuava funcionando.
-	sentinelaSchema = "SENTINELA_CAMPO_DO_SCHEMA"
-	// tetoDeSaidaDoTeste é um número improvável de aparecer por acaso no corpo.
-	tetoDeSaidaDoTeste = 4097
-	// As sentinelas do laço de ferramenta. Cada uma responde a uma pergunta que
-	// a suíte não conseguiria fazer conhecendo o formato de um fornecedor só:
-	// a declaração chegou? o resultado voltou ligado à chamada? a marca de erro
-	// sobreviveu ao fornecedor que não tem campo para ela?
-	sentinelaFerramenta         = "sentinela_ferramenta_do_contrato"
-	sentinelaSchemaDeFerramenta = "SENTINELA_CAMPO_DO_SCHEMA_DA_FERRAMENTA"
-	sentinelaIDDeChamada        = "SENTINELA-ID-DE-CHAMADA-0001"
-	sentinelaResultado          = "SENTINELA-CONTEUDO-DO-RESULTADO"
+	sentinelPrefix   = "SENTINEL-STABLE-PREFIX-MUST-NOT-LEAVE-THE-TOP"
+	sentinelTurn     = "SENTINEL-VOLATILE-TEXT-OF-THE-TURN"
+	sentinelOperator = "SENTINEL-OPERATOR-INSTRUCTION"
+	// sentinelSchema is a field planted in the output schema: it is how the
+	// suite asks "did the schema reach the WIRE?" without knowing any
+	// provider's shape. Without it, an adapter that stopped sending the schema
+	// would pass — the decoding happens on our side and would keep working.
+	sentinelSchema = "SENTINEL_SCHEMA_FIELD"
+	// testOutputCap is a number unlikely to appear in the body by chance.
+	testOutputCap = 4097
+	// The tool loop's sentinels. Each answers a question the suite could not
+	// ask knowing only one provider's shape: did the declaration arrive? did
+	// the result come back bound to the call? did the error mark survive the
+	// provider that has no field for it?
+	sentinelTool       = "contract_sentinel_tool"
+	sentinelToolSchema = "SENTINEL_TOOL_SCHEMA_FIELD"
+	sentinelCallID     = "SENTINEL-CALL-ID-0001"
+	sentinelResult     = "SENTINEL-RESULT-CONTENT"
 )
 
-// ferramentaDeTeste é a declaração que a suíte manda pelo fio.
-func ferramentaDeTeste() agent.ToolSpec {
+// testTool is the declaration the suite sends down the wire.
+func testTool() agent.ToolSpec {
 	return agent.ToolSpec{
-		Name:        sentinelaFerramenta,
-		Description: "ferramenta de contrato, não existe fora daqui",
+		Name:        sentinelTool,
+		Description: "contract tool, does not exist outside here",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				sentinelaSchemaDeFerramenta: map[string]any{"type": "string"},
+				sentinelToolSchema: map[string]any{"type": "string"},
 			},
 			"additionalProperties": false,
 		},
 	}
 }
 
-// turnoDeTeste monta um turno com sentinelas em cada fatia, para que a suíte
-// possa perguntar "onde isto foi parar?" sem conhecer o formato de fornecedor
-// nenhum.
-func turnoDeTeste(comOperador bool) agent.Turn {
-	msgs := []agent.Message{{Role: agent.RoleUser, Text: sentinelaTurno}}
-	if comOperador {
-		msgs = append(msgs, agent.Message{Role: agent.RoleOperator, Text: sentinelaOperador})
+// testTurn builds a turn with sentinels in each slice, so the suite can ask
+// "where did this end up?" without knowing any provider's shape.
+func testTurn(withOperator bool) agent.Turn {
+	msgs := []agent.Message{{Role: agent.RoleUser, Text: sentinelTurn}}
+	if withOperator {
+		msgs = append(msgs, agent.Message{Role: agent.RoleOperator, Text: sentinelOperator})
 	}
-	esquema := agent.OutputSchema()
-	if props, ok := esquema["properties"].(map[string]any); ok {
-		props[sentinelaSchema] = map[string]any{"type": "string"}
+	schema := agent.OutputSchema()
+	if props, ok := schema["properties"].(map[string]any); ok {
+		props[sentinelSchema] = map[string]any{"type": "string"}
 	}
 	return agent.Turn{
-		StablePrefix:    "contrato\n" + sentinelaPrefixo + "\ncontexto",
+		StablePrefix:    "contract\n" + sentinelPrefix + "\ncontext",
 		Messages:        msgs,
-		OutputSchema:    esquema,
-		MaxOutputTokens: tetoDeSaidaDoTeste,
+		OutputSchema:    schema,
+		MaxOutputTokens: testOutputCap,
 	}
 }
 
-// AgentProviderSuite verifica as dez garantias documentadas na porta.
+// AgentProviderSuite verifies the ten guarantees documented on the port.
 func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentProviderEnv) {
 	t.Run(name, func(t *testing.T) {
 		e := env(t)
 		ctx := context.Background()
 
-		// erros coleta TODA mensagem de erro produzida pela suíte, para a
-		// varredura final da garantia 10. Vazamento de credencial quase nunca
-		// aparece no caminho feliz: ele aparece no 401, que é justamente o
-		// caminho onde o fornecedor ecoa o que recebeu.
-		var erros []string
-		anotar := func(err error) error {
+		// failures collects EVERY error message the suite produces, for
+		// guarantee 10's final sweep. A credential leak almost never shows up
+		// on the happy path: it shows up in the 401, which is precisely the
+		// path where the provider echoes what it received.
+		var failures []string
+		note := func(err error) error {
 			if err != nil {
-				erros = append(erros, err.Error())
+				failures = append(failures, err.Error())
 				var u *agent.Unavailable
 				if errors.As(err, &u) {
-					erros = append(erros, u.Detail())
+					failures = append(failures, u.Detail())
 				}
 			}
 			return err
 		}
 
-		t.Run("1_ficha_estavel_e_sem_ida_a_rede", func(t *testing.T) {
-			// A ficha é consultada no caminho quente de todo turno (catálogo,
-			// preço, capacidades). Se ela custasse uma ida à rede, cada turno
-			// pagaria uma chamada a mais — e o adaptador apontado para o vazio
-			// nem responderia. Este subteste prova as duas coisas de uma vez.
-			p := e.Inalcancavel(t)
+		t.Run("1_info_is_stable_and_never_hits_the_network", func(t *testing.T) {
+			// Info is consulted on every turn's hot path (catalog, price,
+			// capabilities). If it cost a network round trip, every turn would
+			// pay one extra call — and the adapter pointed at nothing would not
+			// even answer. This subtest proves both at once.
+			p := e.Unreachable(t)
 			a, b := p.Info(), p.Info()
 			if a.Name == "" {
-				t.Fatal("ficha sem nome de provedor")
+				t.Fatal("info with no provider name")
 			}
 			if a.Name != b.Name || len(a.Catalog) != len(b.Catalog) ||
 				len(a.Capabilities) != len(b.Capabilities) {
-				t.Fatalf("ficha instável entre chamadas: %+v != %+v", a, b)
+				t.Fatalf("info unstable between calls: %+v != %+v", a, b)
 			}
 		})
 
-		t.Run("2_resolve_model_puro_e_total", func(t *testing.T) {
-			info := e.Conectar(t).Info()
+		t.Run("2_resolve_model_is_pure_and_total", func(t *testing.T) {
+			info := e.Connect(t).Info()
 			for _, c := range []agent.ModelClass{agent.ClassCheap, agent.ClassMedium, agent.ClassStrong} {
-				nome := info.ResolveModel(c)
-				if strings.TrimSpace(nome) == "" {
-					t.Fatalf("classe %q resolveu para nome vazio — o fornecedor recusaria a "+
-						"chamada por um motivo que não é o real", c)
+				name := info.ResolveModel(c)
+				if strings.TrimSpace(name) == "" {
+					t.Fatalf("class %q resolved to an empty name — the provider would refuse "+
+						"the call for a reason that is not the real one", c)
 				}
-				if nome != info.ResolveModel(c) {
-					t.Fatalf("classe %q não é determinística", c)
+				if name != info.ResolveModel(c) {
+					t.Fatalf("class %q is not deterministic", c)
 				}
 			}
 		})
 
-		t.Run("3_prefixo_estavel_vem_antes_das_mensagens", func(t *testing.T) {
-			corpo, _, err := e.Conectar(t).Render(turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+		t.Run("3_the_stable_prefix_comes_before_the_messages", func(t *testing.T) {
+			body, _, err := e.Connect(t).Render(testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			iPrefixo := bytes.Index(corpo, []byte(sentinelaPrefixo))
-			iTurno := bytes.Index(corpo, []byte(sentinelaTurno))
-			if iPrefixo < 0 {
-				t.Fatal("o prefixo estável não foi para a requisição")
+			iPrefix := bytes.Index(body, []byte(sentinelPrefix))
+			iTurn := bytes.Index(body, []byte(sentinelTurn))
+			if iPrefix < 0 {
+				t.Fatal("the stable prefix did not go into the request")
 			}
-			if iTurno < 0 {
-				t.Fatal("o texto do turno não foi para a requisição")
+			if iTurn < 0 {
+				t.Fatal("the turn's text did not go into the request")
 			}
-			if iPrefixo > iTurno {
-				t.Fatalf("PREFIXO DEPOIS DO VOLÁTIL (%d > %d): a economia da ADR-0012 §1 "+
-					"quebra SEM BARULHO — não erra, só custa ~10× e aparece na fatura",
-					iPrefixo, iTurno)
+			if iPrefix > iTurn {
+				t.Fatalf("PREFIX AFTER THE VOLATILE PART (%d > %d): ADR-0012 §1's saving "+
+					"breaks SILENTLY — nothing goes wrong, it just costs ~10× and shows up "+
+					"on the invoice", iPrefix, iTurn)
 			}
 		})
 
-		t.Run("4_render_deterministico", func(t *testing.T) {
-			p := e.Conectar(t)
-			turno := turnoDeTeste(true)
-			primeiro, _, err := p.Render(turno, "modelo-x", agent.EffortHigh)
+		t.Run("4_render_is_deterministic", func(t *testing.T) {
+			p := e.Connect(t)
+			turn := testTurn(true)
+			first, _, err := p.Render(turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			// Várias vezes: um mapa iterado em ordem aleatória só denuncia
-			// depois de algumas tentativas, e é exatamente esse o defeito que
-			// invalida o prefixo cacheado a cada turno.
+			// Several times: a map iterated in random order only gives itself
+			// away after a few attempts, and that is exactly the defect that
+			// invalidates the cached prefix on every turn.
 			for i := 0; i < 20; i++ {
-				outro, _, err := p.Render(turno, "modelo-x", agent.EffortHigh)
+				other, _, err := p.Render(turn, "model-x", agent.EffortHigh)
 				if err != nil {
-					t.Fatalf("Render: %v", anotar(err))
+					t.Fatalf("Render: %v", note(err))
 				}
-				if !bytes.Equal(primeiro, outro) {
-					t.Fatalf("Render NÃO é determinístico (tentativa %d): bytes diferentes "+
-						"para o mesmo Turn invalidam o cache de prefixo a cada turno", i)
+				if !bytes.Equal(first, other) {
+					t.Fatalf("Render is NOT deterministic (attempt %d): different bytes for "+
+						"the same Turn invalidate the prefix cache on every turn", i)
 				}
 			}
-			// E o mesmo prefixo com mensagens diferentes tem de dar a MESMA
-			// impressão digital: é isso que significa "o prefixo está estável".
-			outroTurno := turno
-			outroTurno.Messages = []agent.Message{{Role: agent.RoleUser, Text: "outra pergunta"}}
-			if turno.Fingerprint() != outroTurno.Fingerprint() {
-				t.Fatal("Fingerprint mudou com a conversa: ela é do PREFIXO, e só dele")
+			// And the same prefix with different messages has to give the SAME
+			// fingerprint: that is what "the prefix is stable" means.
+			otherTurn := turn
+			otherTurn.Messages = []agent.Message{{Role: agent.RoleUser, Text: "another question"}}
+			if turn.Fingerprint() != otherTurn.Fingerprint() {
+				t.Fatal("Fingerprint changed with the conversation: it is the PREFIX's, and only its")
 			}
 		})
 
-		t.Run("5_operador_nunca_como_usuario", func(t *testing.T) {
-			corpo, avisos, err := e.Conectar(t).Render(turnoDeTeste(true), "modelo-x", agent.EffortHigh)
+		t.Run("5_the_operator_is_never_the_user", func(t *testing.T) {
+			body, warnings, err := e.Connect(t).Render(testTurn(true), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if !bytes.Contains(corpo, []byte(sentinelaOperador)) {
-				t.Fatal("a instrução do operador sumiu da requisição")
+			if !bytes.Contains(body, []byte(sentinelOperator)) {
+				t.Fatal("the operator instruction vanished from the request")
 			}
-			if atribuidaAoUsuario(t, corpo, sentinelaOperador) && len(avisos) == 0 {
-				t.Fatal("INSTRUÇÃO DE OPERADOR SERIALIZADA COMO FALA DE USUÁRIO, sem aviso: " +
-					"é ela que autoriza, e achatar os dois papéis abre a porta para injeção " +
-					"de prompt (D3)")
+			if attributedToUser(t, body, sentinelOperator) && len(warnings) == 0 {
+				t.Fatal("OPERATOR INSTRUCTION SERIALIZED AS USER SPEECH, with no warning: " +
+					"it is the one that authorizes, and flattening the two roles opens the " +
+					"door to prompt injection (D3)")
 			}
-			// E o texto do usuário continua sendo do usuário — a inversa da
-			// garantia, que passaria despercebida sem esta linha.
-			if !atribuidaAoUsuario(t, corpo, sentinelaTurno) {
-				t.Fatal("o texto do turno não foi atribuído ao usuário")
+			// And the user's text is still the user's — the guarantee's
+			// converse, which would go unnoticed without this line.
+			if !attributedToUser(t, body, sentinelTurn) {
+				t.Fatal("the turn's text was not attributed to the user")
 			}
 		})
 
-		t.Run("6_usage_disjunto", func(t *testing.T) {
-			if e.Programar == nil {
-				t.Skip("ambiente não programa resposta")
+		t.Run("6_usage_is_disjoint", func(t *testing.T) {
+			if e.Script == nil {
+				t.Skip("this environment does not script responses")
 			}
-			p := e.Conectar(t)
-			// Números escolhidos para que a soma inclusiva (1000) e a disjunta
-			// (700) sejam inconfundíveis: um adaptador que esqueça de subtrair
-			// devolve 1000 e a diferença salta.
-			programado := agent.Usage{
+			p := e.Connect(t)
+			// Numbers chosen so that the inclusive sum (1000) and the disjoint
+			// one (700) are unmistakable: an adapter that forgets to subtract
+			// returns 1000 and the difference leaps out.
+			scripted := agent.Usage{
 				InputTokens: 700, OutputTokens: 55,
 				CacheReadTokens: 300, CacheCreationTokens: 120,
 			}
-			e.Programar(t, RespostaProgramada{Texto: `{"reply":"ok"}`, Uso: programado,
-				ParadaNativa: paradaConcluida(e)})
+			e.Script(t, ScriptedResponse{Text: `{"reply":"ok"}`, Usage: scripted,
+				NativeStop: completedStop(e)})
 
-			r, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			r, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Send: %v", anotar(err))
+				t.Fatalf("Send: %v", note(err))
 			}
-			esperado := programado
+			want := scripted
 			if !p.Info().Supports(agent.CapCacheCreationAccounting) {
-				// D1: este fornecedor não reporta criação de cache. Zero aqui é
-				// "não dá para saber", e a capacidade AUSENTE é o que diz isso.
-				esperado.CacheCreationTokens = 0
+				// D1: this provider does not report cache creation. Zero here
+				// is "there is no way to know", and the ABSENT capability is
+				// what says so.
+				want.CacheCreationTokens = 0
 			}
-			if r.Usage != esperado {
-				t.Fatalf("DUPLA CONTAGEM (D2): esperava parcelas disjuntas %+v, veio %+v — "+
-					"somar campos inclusivos infla a medição da ADR-0011 sem nada falhar",
-					esperado, r.Usage)
+			if r.Usage != want {
+				t.Fatalf("DOUBLE COUNTING (D2): expected the disjoint parts %+v, got %+v — "+
+					"summing inclusive fields inflates ADR-0011's measurement with nothing "+
+					"failing", want, r.Usage)
 			}
 		})
 
-		t.Run("7_stop_reason_no_vocabulario_do_dominio", func(t *testing.T) {
-			if e.Programar == nil || len(e.Paradas) == 0 {
-				t.Skip("ambiente não programa motivo de parada")
+		t.Run("7_stop_reason_in_the_domain_vocabulary", func(t *testing.T) {
+			if e.Script == nil || len(e.Stops) == 0 {
+				t.Skip("this environment does not script stop reasons")
 			}
-			p := e.Conectar(t)
-			for nativo, esperado := range e.Paradas {
-				e.Programar(t, RespostaProgramada{Texto: "oi", ParadaNativa: nativo})
-				r, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			p := e.Connect(t)
+			for native, want := range e.Stops {
+				e.Script(t, ScriptedResponse{Text: "hi", NativeStop: native})
+				r, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
 				if err != nil {
-					t.Fatalf("Send (%s): %v", nativo, anotar(err))
+					t.Fatalf("Send (%s): %v", native, note(err))
 				}
-				if r.StopReason != esperado {
-					t.Fatalf("parada %q virou %q, esperava %q", nativo, r.StopReason, esperado)
+				if r.StopReason != want {
+					t.Fatalf("stop %q became %q, expected %q", native, r.StopReason, want)
 				}
 			}
-			// Motivo NOVO do fornecedor não pode virar erro: parar de trabalhar
-			// por causa de uma string desconhecida é pior que registrá-la.
-			e.Programar(t, RespostaProgramada{Texto: "oi", ParadaNativa: "motivo_que_ainda_nao_existe"})
-			r, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			// A NEW reason from the provider must not become an error: stopping
+			// work because of an unknown string is worse than recording it.
+			e.Script(t, ScriptedResponse{Text: "hi", NativeStop: "reason_that_does_not_exist_yet"})
+			r, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("motivo desconhecido virou ERRO: %v", anotar(err))
+				t.Fatalf("an unknown reason became an ERROR: %v", note(err))
 			}
 			if r.StopReason != agent.StopUnknown {
-				t.Fatalf("motivo desconhecido virou %q, esperava %q", r.StopReason, agent.StopUnknown)
+				t.Fatalf("an unknown reason became %q, expected %q", r.StopReason, agent.StopUnknown)
 			}
 		})
 
-		t.Run("8_effort_aplicado_nunca_afirma_demais", func(t *testing.T) {
-			if e.Programar == nil || len(e.EffortAplicado) == 0 {
-				t.Skip("ambiente não declara o mapeamento de effort")
+		t.Run("8_the_applied_effort_never_claims_too_much", func(t *testing.T) {
+			if e.Script == nil || len(e.EffortApplied) == 0 {
+				t.Skip("this environment does not declare the effort mapping")
 			}
-			p := e.Conectar(t)
-			for pedido, esperado := range e.EffortAplicado {
-				e.Programar(t, RespostaProgramada{Texto: "oi", ParadaNativa: paradaConcluida(e)})
-				r, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", pedido)
+			p := e.Connect(t)
+			for asked, want := range e.EffortApplied {
+				e.Script(t, ScriptedResponse{Text: "hi", NativeStop: completedStop(e)})
+				r, err := p.Send(ctx, testTurn(false), "model-x", asked)
 				if err != nil {
-					t.Fatalf("Send (%s): %v", pedido, anotar(err))
+					t.Fatalf("Send (%s): %v", asked, note(err))
 				}
-				if r.EffortApplied != esperado {
-					t.Fatalf("effort %q: adaptador afirmou %q, o fornecedor aplica %q — "+
-						"fingir que aplicou é pior que rebaixar (D4)", pedido, r.EffortApplied, esperado)
+				if r.EffortApplied != want {
+					t.Fatalf("effort %q: the adapter claimed %q, the provider applies %q — "+
+						"pretending it applied is worse than downgrading (D4)", asked, r.EffortApplied, want)
 				}
-				if esperado != pedido && len(r.Warnings) == 0 {
-					t.Fatalf("effort %q foi REBAIXADO para %q sem aviso: em trabalho crítico "+
-						"(ADR-0007) isso é decisão de produto, e quem roteou precisa saber",
-						pedido, esperado)
+				if want != asked && len(r.Warnings) == 0 {
+					t.Fatalf("effort %q was DOWNGRADED to %q with no warning: on critical work "+
+						"(ADR-0007) that is a product decision, and whoever routed needs to know",
+						asked, want)
 				}
 			}
 		})
 
-		t.Run("9_indisponibilidade_com_a_razao_certa", func(t *testing.T) {
-			casos := []struct {
-				nome     string
+		t.Run("9_unavailability_with_the_right_reason", func(t *testing.T) {
+			cases := []struct {
+				name     string
 				provider func(t *testing.T) agent.AgentProvider
 				status   int
-				corpo    string
-				razao    agent.UnavailableReason
+				body     string
+				reason   agent.UnavailableReason
 			}{
-				{nome: "sem_credencial", provider: e.SemCredencial, razao: agent.ReasonMissingCredential},
-				{nome: "rede_fora", provider: e.Inalcancavel, razao: agent.ReasonUnreachable},
-				{nome: "credencial_recusada", status: 401, razao: agent.ReasonRejectedCredential},
-				{nome: "sem_permissao", status: 403, razao: agent.ReasonRejectedCredential},
-				{nome: "modelo_inexistente", status: 404, razao: agent.ReasonUnknownModel},
-				{nome: "fornecedor_falhou", status: 500, razao: agent.ReasonProviderError},
-				{nome: "limite_de_taxa", status: 429, razao: agent.ReasonProviderError},
+				{name: "no_credential", provider: e.WithoutCredential, reason: agent.ReasonMissingCredential},
+				{name: "network_down", provider: e.Unreachable, reason: agent.ReasonUnreachable},
+				{name: "credential_refused", status: 401, reason: agent.ReasonRejectedCredential},
+				{name: "no_permission", status: 403, reason: agent.ReasonRejectedCredential},
+				{name: "unknown_model", status: 404, reason: agent.ReasonUnknownModel},
+				{name: "provider_failed", status: 500, reason: agent.ReasonProviderError},
+				{name: "rate_limit", status: 429, reason: agent.ReasonProviderError},
 			}
-			for _, c := range casos {
-				t.Run(c.nome, func(t *testing.T) {
-					p := e.Conectar(t)
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					p := e.Connect(t)
 					if c.provider != nil {
 						p = c.provider(t)
 					} else {
-						if e.Programar == nil {
-							t.Skip("ambiente não programa status")
+						if e.Script == nil {
+							t.Skip("this environment does not script statuses")
 						}
-						// Corpo com a sentinela DENTRO: é o pior caso real —
-						// fornecedor ecoando o que recebeu num corpo de erro.
-						e.Programar(t, RespostaProgramada{Status: c.status,
-							Corpo: `{"error":"detalhe cru com ` + e.TokenSentinela + ` dentro"}`})
+						// A body with the sentinel INSIDE: it is the real worst
+						// case — the provider echoing what it received in an
+						// error body.
+						e.Script(t, ScriptedResponse{Status: c.status,
+							Body: `{"error":"raw detail with ` + e.SentinelToken + ` inside"}`})
 					}
-					_, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
-					anotar(err)
+					_, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
+					note(err)
 					if err == nil {
-						t.Fatal("esperava indisponibilidade, veio sucesso")
+						t.Fatal("expected unavailability, got success")
 					}
 					var u *agent.Unavailable
 					if !errors.As(err, &u) {
-						t.Fatalf("erro CRU vazou pela porta (%T): indisponibilidade de terceiro "+
-							"não pode chegar como erro nosso (D6): %v", err, err)
+						t.Fatalf("a RAW error leaked through the port (%T): a third party's "+
+							"unavailability must not arrive as an error of ours (D6): %v", err, err)
 					}
-					if u.Reason != c.razao {
-						t.Fatalf("razão %q, esperava %q", u.Reason, c.razao)
+					if u.Reason != c.reason {
+						t.Fatalf("reason %q, expected %q", u.Reason, c.reason)
 					}
 				})
 			}
 		})
 
-		t.Run("9b_sem_credencial_nao_toca_a_rede", func(t *testing.T) {
-			if e.Chamadas == nil {
-				t.Skip("ambiente não conta chamadas")
+		t.Run("9b_a_missing_credential_never_touches_the_network", func(t *testing.T) {
+			if e.Calls == nil {
+				t.Skip("this environment does not count calls")
 			}
-			antes := e.Chamadas()
-			_, err := e.SemCredencial(t).Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
-			anotar(err)
-			if depois := e.Chamadas(); depois != antes {
-				t.Fatalf("credencial ausente custou %d ida(s) à rede: quem chama sem chave "+
-					"não pode gastar uma chamada para descobrir isso", depois-antes)
+			before := e.Calls()
+			_, err := e.WithoutCredential(t).Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
+			note(err)
+			if after := e.Calls(); after != before {
+				t.Fatalf("a missing credential cost %d network round trip(s): whoever calls "+
+					"with no key must not spend a call to find that out", after-before)
 			}
 		})
 
-		t.Run("10_credencial_nunca_vaza", func(t *testing.T) {
-			if e.TokenSentinela == "" {
-				t.Log("### AVISO: sem TokenSentinela, a garantia mais cara da porta NÃO foi " +
-					"verificada — chave de agente em log é chave em repouso")
-				t.Skip("sem sentinela")
+		t.Run("10_the_credential_never_leaks", func(t *testing.T) {
+			if e.SentinelToken == "" {
+				t.Log("### WARNING: with no SentinelToken, the port's most expensive guarantee " +
+					"was NOT verified — an agent key in a log is a key at rest")
+				t.Skip("no sentinel")
 			}
-			p := e.Conectar(t)
-			corpo, _, err := p.Render(turnoDeTeste(true), "modelo-x", agent.EffortHigh)
+			p := e.Connect(t)
+			body, _, err := p.Render(testTurn(true), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if bytes.Contains(corpo, []byte(e.TokenSentinela)) {
-				t.Fatal("A CREDENCIAL FOI PARAR NO CORPO DA REQUISIÇÃO: ela vai em cabeçalho, " +
-					"e `Render` precisa ser superfície segura para log")
+			if bytes.Contains(body, []byte(e.SentinelToken)) {
+				t.Fatal("THE CREDENTIAL ENDED UP IN THE REQUEST BODY: it goes in a header, " +
+					"and `Render` has to be a surface that is safe to log")
 			}
-			// %v e %+v: o fmt lê campos NÃO exportados por reflexão e não
-			// consegue chamar o String() deles. É por isso que a chave mora num
-			// closure, e é isto que confere que ela continua lá.
-			for _, formatado := range []string{fmt.Sprintf("%v", p), fmt.Sprintf("%+v", p)} {
-				if strings.Contains(formatado, e.TokenSentinela) {
-					t.Fatalf("A CREDENCIAL APARECE NA FORMATAÇÃO DO ADAPTADOR: %s", formatado)
+			// %v and %+v: fmt reads UNEXPORTED fields by reflection and cannot
+			// call their String(). That is why the key lives in a closure, and
+			// this is what checks it is still there.
+			for _, formatted := range []string{fmt.Sprintf("%v", p), fmt.Sprintf("%+v", p)} {
+				if strings.Contains(formatted, e.SentinelToken) {
+					t.Fatalf("THE CREDENTIAL APPEARS IN THE ADAPTER'S FORMATTING: %s", formatted)
 				}
 			}
-			for _, msg := range erros {
-				if strings.Contains(msg, e.TokenSentinela) {
-					t.Fatalf("A CREDENCIAL APARECE NUMA MENSAGEM DE ERRO: %s", msg)
+			for _, msg := range failures {
+				if strings.Contains(msg, e.SentinelToken) {
+					t.Fatalf("THE CREDENTIAL APPEARS IN AN ERROR MESSAGE: %s", msg)
 				}
 			}
-			if len(erros) == 0 {
-				t.Fatal("nenhuma mensagem de erro foi coletada: a varredura passaria vazia, " +
-					"que é pior que não varrer — ela afirmaria uma garantia que não testou")
+			if len(failures) == 0 {
+				t.Fatal("no error message was collected: the sweep would pass empty, which is " +
+					"worse than not sweeping — it would assert a guarantee it did not test")
 			}
 		})
 
-		t.Run("11_preco_desconhecido_nao_vira_zero", func(t *testing.T) {
-			info := e.Conectar(t).Info()
-			if _, ok := info.PriceFor("modelo-que-nao-existe-em-catalogo-nenhum"); ok {
-				t.Fatal("PriceFor inventou preço para modelo desconhecido")
+		t.Run("11_an_unknown_price_never_becomes_zero", func(t *testing.T) {
+			info := e.Connect(t).Info()
+			if _, ok := info.PriceFor("model-that-exists-in-no-catalog-at-all"); ok {
+				t.Fatal("PriceFor invented a price for an unknown model")
 			}
-			if e.ModeloComPreco == "" {
-				// Adaptador sem tabela: a única resposta honesta é "não sei"
-				// para TUDO, inclusive para o próprio catálogo. Zero afirmaria
-				// que a chamada foi de graça (ADR-0011 §2).
+			if e.ModelWithPrice == "" {
+				// An adapter with no table: the only honest answer is "I do not
+				// know" for EVERYTHING, including its own catalog. Zero would
+				// assert the call was free (ADR-0011 §2).
 				for _, c := range []agent.ModelClass{agent.ClassCheap, agent.ClassMedium, agent.ClassStrong} {
 					if _, ok := info.PriceFor(info.ResolveModel(c)); ok {
-						t.Fatalf("ambiente diz não ter tabela de preço, mas %q tem preço", c)
+						t.Fatalf("the environment says it has no price table, but %q has a price", c)
 					}
 				}
 				return
 			}
-			preco, ok := info.PriceFor(e.ModeloComPreco)
+			price, ok := info.PriceFor(e.ModelWithPrice)
 			if !ok {
-				t.Fatalf("modelo %q deveria ter preço", e.ModeloComPreco)
+				t.Fatalf("model %q should have a price", e.ModelWithPrice)
 			}
-			if preco.Currency == "" {
-				t.Fatal("preço sem moeda: micros sem unidade é número que soma dólar com real")
+			if price.Currency == "" {
+				t.Fatal("a price with no currency: micros with no unit is a number that adds " +
+					"dollars to reais")
 			}
-			// Aritmética INTEIRA do começo ao fim, e por 1.000 tokens.
-			custo := preco.CostMicros(agent.Usage{InputTokens: 1000})
-			if custo != preco.InputPer1k {
-				t.Fatalf("1.000 tokens de entrada custaram %d, esperava %d", custo, preco.InputPer1k)
+			// INTEGER arithmetic from start to finish, and per 1,000 tokens.
+			cost := price.CostMicros(agent.Usage{InputTokens: 1000})
+			if cost != price.InputPer1k {
+				t.Fatalf("1,000 input tokens cost %d, expected %d", cost, price.InputPer1k)
 			}
 		})
 
-		t.Run("12_saida_estruturada_chega_decodificada", func(t *testing.T) {
-			if e.Programar == nil {
-				t.Skip("ambiente não programa resposta")
+		t.Run("12_structured_output_arrives_decoded", func(t *testing.T) {
+			if e.Script == nil {
+				t.Skip("this environment does not script responses")
 			}
-			p := e.Conectar(t)
+			p := e.Connect(t)
 			if !p.Info().Supports(agent.CapStructuredOutput) {
-				t.Skip("provedor não anuncia saída estruturada")
+				t.Skip("this provider does not announce structured output")
 			}
-			e.Programar(t, RespostaProgramada{
-				Texto:        `{"reply":"resposta ao humano","concluded":true,"finding_title":"t","finding_summary":"s","finding_evidence":["e1"]}`,
-				ParadaNativa: paradaConcluida(e),
+			e.Script(t, ScriptedResponse{
+				Text:       `{"reply":"answer to the human","concluded":true,"finding_title":"t","finding_summary":"s","finding_evidence":["e1"]}`,
+				NativeStop: completedStop(e),
 			})
-			r, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			r, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Send: %v", anotar(err))
+				t.Fatalf("Send: %v", note(err))
 			}
 			if r.Data == nil {
-				t.Fatal("saída estruturada não foi decodificada: o domínio teria de " +
-					"re-parsear texto, que é o que a ADR-0012 §2 evita")
+				t.Fatal("the structured output was not decoded: the domain would have to " +
+					"re-parse text, which is what ADR-0012 §2 avoids")
 			}
-			if r.Data["reply"] != "resposta ao humano" {
-				t.Fatalf("campo `reply` veio %v", r.Data["reply"])
+			if r.Data["reply"] != "answer to the human" {
+				t.Fatalf("the `reply` field came back as %v", r.Data["reply"])
 			}
-			// Texto solto NÃO pode virar erro: o schema pode falhar e a fala
-			// crua ainda vale para o humano que lê a thread.
-			e.Programar(t, RespostaProgramada{Texto: "texto solto, sem JSON", ParadaNativa: paradaConcluida(e)})
-			r2, err := p.Send(ctx, turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			// Loose text must NOT become an error: the schema may fail and the
+			// raw speech is still worth something to the human reading the
+			// thread.
+			e.Script(t, ScriptedResponse{Text: "loose text, no JSON", NativeStop: completedStop(e)})
+			r2, err := p.Send(ctx, testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("texto solto virou erro: %v", anotar(err))
+				t.Fatalf("loose text became an error: %v", note(err))
 			}
-			if r2.Text != "texto solto, sem JSON" {
-				t.Fatalf("texto cru se perdeu: %q", r2.Text)
+			if r2.Text != "loose text, no JSON" {
+				t.Fatalf("the raw text was lost: %q", r2.Text)
 			}
 		})
 
-		t.Run("13_send_manda_o_que_render_mostra", func(t *testing.T) {
-			if e.Programar == nil || e.UltimoCorpo == nil {
-				t.Skip("ambiente não expõe o corpo enviado")
+		t.Run("13_send_sends_what_render_shows", func(t *testing.T) {
+			if e.Script == nil || e.LastBody == nil {
+				t.Skip("this environment does not expose the sent body")
 			}
-			p := e.Conectar(t)
-			turno := turnoDeTeste(true)
-			esperado, _, err := p.Render(turno, "modelo-x", agent.EffortHigh)
+			p := e.Connect(t)
+			turn := testTurn(true)
+			want, _, err := p.Render(turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			e.Programar(t, RespostaProgramada{Texto: "oi", ParadaNativa: paradaConcluida(e)})
-			if _, err := p.Send(ctx, turno, "modelo-x", agent.EffortHigh); err != nil {
-				t.Fatalf("Send: %v", anotar(err))
+			e.Script(t, ScriptedResponse{Text: "hi", NativeStop: completedStop(e)})
+			if _, err := p.Send(ctx, turn, "model-x", agent.EffortHigh); err != nil {
+				t.Fatalf("Send: %v", note(err))
 			}
-			if !bytes.Equal(esperado, e.UltimoCorpo()) {
-				t.Fatalf("Send enviou algo DIFERENTE do que Render mostra — a auditoria da "+
-					"garantia 3 estaria olhando para uma vitrine:\nrender: %s\nenviado: %s",
-					esperado, e.UltimoCorpo())
+			if !bytes.Equal(want, e.LastBody()) {
+				t.Fatalf("Send sent something DIFFERENT from what Render shows — guarantee 3's "+
+					"audit would be looking at a shop window:\nrender: %s\nsent: %s",
+					want, e.LastBody())
 			}
 		})
 
-		t.Run("15_breakpoint_de_cache_marca_o_fim_do_prefixo", func(t *testing.T) {
-			p := e.Conectar(t)
-			explicito := p.Info().Supports(agent.CapExplicitPrefixCache)
-			if explicito == (e.MarcadorDeCache == "") {
-				t.Fatalf("incoerência entre a capacidade declarada (%v) e o marcador do "+
-					"ambiente (%q): capacidade é DADO que a telemetria lê, e declarar o que "+
-					"não se faz é pior do que não declarar", explicito, e.MarcadorDeCache)
+		t.Run("15_the_cache_breakpoint_marks_the_end_of_the_prefix", func(t *testing.T) {
+			p := e.Connect(t)
+			explicit := p.Info().Supports(agent.CapExplicitPrefixCache)
+			if explicit == (e.CacheMarker == "") {
+				t.Fatalf("incoherence between the declared capability (%v) and the "+
+					"environment's marker (%q): a capability is DATA the telemetry reads, and "+
+					"declaring what you do not do is worse than not declaring", explicit, e.CacheMarker)
 			}
-			if !explicito {
-				t.Skip("cache automático neste fornecedor: não há breakpoint para marcar (D1)")
+			if !explicit {
+				t.Skip("automatic cache at this provider: there is no breakpoint to mark (D1)")
 			}
-			corpo, _, err := p.Render(turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			body, _, err := p.Render(testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			iMarca := bytes.Index(corpo, []byte(e.MarcadorDeCache))
-			if iMarca < 0 {
-				t.Fatal("O BREAKPOINT DE CACHE SUMIU: o adaptador anuncia cache explícito e " +
-					"não marca o prefixo. Nada falha — o prefixo inteiro passa a ser cobrado " +
-					"como entrada nova a cada turno (~10×), e só a fatura conta (ADR-0012 §1)")
+			iMark := bytes.Index(body, []byte(e.CacheMarker))
+			if iMark < 0 {
+				t.Fatal("THE CACHE BREAKPOINT VANISHED: the adapter announces an explicit " +
+					"cache and does not mark the prefix. Nothing fails — the whole prefix " +
+					"starts being charged as new input on every turn (~10×), and only the " +
+					"invoice tells (ADR-0012 §1)")
 			}
-			if iTurno := bytes.Index(corpo, []byte(sentinelaTurno)); iMarca > iTurno {
-				t.Fatalf("o breakpoint ficou DEPOIS do texto volátil (%d > %d): marcar no fim "+
-					"do prompt escreve uma entrada de cache nova a cada turno e não lê nenhuma",
-					iMarca, iTurno)
+			if iTurn := bytes.Index(body, []byte(sentinelTurn)); iMark > iTurn {
+				t.Fatalf("the breakpoint ended up AFTER the volatile text (%d > %d): marking "+
+					"at the end of the prompt writes a new cache entry every turn and reads "+
+					"none", iMark, iTurn)
 			}
 		})
 
-		t.Run("16_schema_de_saida_vai_para_o_fio", func(t *testing.T) {
-			p := e.Conectar(t)
+		t.Run("16_the_output_schema_goes_to_the_wire", func(t *testing.T) {
+			p := e.Connect(t)
 			if !p.Info().Supports(agent.CapStructuredOutput) {
-				t.Skip("provedor não anuncia saída estruturada")
+				t.Skip("this provider does not announce structured output")
 			}
-			corpo, _, err := p.Render(turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			body, _, err := p.Render(testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if !bytes.Contains(corpo, []byte(sentinelaSchema)) {
-				t.Fatal("O SCHEMA DE SAÍDA NÃO FOI PARA A REQUISIÇÃO: o adaptador anuncia " +
-					"saída estruturada e não a pede. A decodificação do nosso lado continua " +
-					"funcionando enquanto o modelo colaborar, e a validação do fornecedor " +
-					"(ADR-0012 §2) vira sorte — sem um teste vermelho")
+			if !bytes.Contains(body, []byte(sentinelSchema)) {
+				t.Fatal("THE OUTPUT SCHEMA DID NOT GO INTO THE REQUEST: the adapter announces " +
+					"structured output and does not ask for it. The decoding on our side keeps " +
+					"working while the model cooperates, and the provider's validation " +
+					"(ADR-0012 §2) becomes luck — with no red test")
 			}
 		})
 
-		t.Run("17_teto_de_saida_vai_para_o_fio", func(t *testing.T) {
-			corpo, _, err := e.Conectar(t).Render(turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+		t.Run("17_the_output_cap_goes_to_the_wire", func(t *testing.T) {
+			body, _, err := e.Connect(t).Render(testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if !bytes.Contains(corpo, []byte(fmt.Sprint(tetoDeSaidaDoTeste))) {
-				t.Fatal("O TETO DE SAÍDA DO TURNO NÃO CHEGOU AO FORNECEDOR: o adaptador está " +
-					"usando um limite que ninguém pediu. Resposta cortada passaria a sair como " +
-					"StopReason=max_tokens sem que nada no sistema explique por quê — e o teto " +
-					"é uma alavanca de custo (ADR-0011)")
+			if !bytes.Contains(body, []byte(fmt.Sprint(testOutputCap))) {
+				t.Fatal("THE TURN'S OUTPUT CAP DID NOT REACH THE PROVIDER: the adapter is " +
+					"using a limit nobody asked for. A truncated answer would start coming out " +
+					"as StopReason=max_tokens with nothing in the system explaining why — and " +
+					"the cap is a cost lever (ADR-0011)")
 			}
 		})
 
-		// ── ferramentas: as garantias 15 a 21 (D7–D11) ──────────────────────
+		// ── tools: guarantees 15 to 21 (D7–D11) ─────────────────────────────
 		//
-		// Prefixo `garantia` no nome porque os subtestes acima foram numerados
-		// pela ORDEM em que nasceram, e não pela garantia que provam (o "15_"
-		// de cima é a garantia 11). Reaproveitar os números aqui daria dois
-		// subtestes "15" provando coisas diferentes, e quem lê a saída de `-v`
-		// não teria como saber qual é qual.
+		// The `guarantee` prefix in the name because the subtests above were
+		// numbered by the ORDER in which they were born, not by the guarantee
+		// they prove (the "15_" above is guarantee 11). Reusing the numbers
+		// here would give two subtests called "15" proving different things,
+		// and whoever reads the `-v` output would have no way to tell which is
+		// which.
 
-		t.Run("garantia15_declaracao_de_ferramenta_vai_antes_do_volatil", func(t *testing.T) {
-			p := e.Conectar(t)
-			temFerramentas := p.Info().Supports(agent.CapToolUse)
-			if temFerramentas == (e.MarcadorDeFerramenta == "") {
-				t.Fatalf("incoerência entre a capacidade declarada (%v) e o marcador do "+
-					"ambiente (%q): capacidade é DADO que a telemetria lê, e declarar o que "+
-					"não se faz é pior do que não declarar", temFerramentas, e.MarcadorDeFerramenta)
+		t.Run("guarantee15_the_tool_declaration_goes_before_the_volatile_part", func(t *testing.T) {
+			p := e.Connect(t)
+			hasTools := p.Info().Supports(agent.CapToolUse)
+			if hasTools == (e.ToolMarker == "") {
+				t.Fatalf("incoherence between the declared capability (%v) and the "+
+					"environment's marker (%q): a capability is DATA the telemetry reads, and "+
+					"declaring what you do not do is worse than not declaring", hasTools, e.ToolMarker)
 			}
-			if !temFerramentas {
-				t.Skip("este adaptador não implementa ferramentas")
+			if !hasTools {
+				t.Skip("this adapter does not implement tools")
 			}
 
-			turno := turnoDeTeste(false)
-			turno.Tools = []agent.ToolSpec{ferramentaDeTeste()}
-			corpo, _, err := p.Render(turno, "modelo-x", agent.EffortHigh)
+			turn := testTurn(false)
+			turn.Tools = []agent.ToolSpec{testTool()}
+			body, _, err := p.Render(turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if !bytes.Contains(corpo, []byte(e.MarcadorDeFerramenta)) {
-				t.Fatalf("a DECLARAÇÃO de ferramenta não foi para a requisição (esperava %q "+
-					"no corpo): o adaptador anuncia ferramentas e não as declara, e o modelo "+
-					"nunca vai pedir o que não sabe que existe", e.MarcadorDeFerramenta)
+			if !bytes.Contains(body, []byte(e.ToolMarker)) {
+				t.Fatalf("the tool DECLARATION did not go into the request (expected %q in "+
+					"the body): the adapter announces tools and does not declare them, and the "+
+					"model will never ask for what it does not know exists", e.ToolMarker)
 			}
-			if !bytes.Contains(corpo, []byte(sentinelaSchemaDeFerramenta)) {
-				t.Fatal("o SCHEMA da ferramenta não foi para a requisição: sem ele o " +
-					"fornecedor não valida nada e todo argumento vira sorte")
+			if !bytes.Contains(body, []byte(sentinelToolSchema)) {
+				t.Fatal("the tool's SCHEMA did not go into the request: without it the " +
+					"provider validates nothing and every argument becomes luck")
 			}
-			iFerr := bytes.Index(corpo, []byte(sentinelaFerramenta))
-			iTurno := bytes.Index(corpo, []byte(sentinelaTurno))
-			if iFerr > iTurno {
-				t.Fatalf("a declaração ficou DEPOIS do texto volátil (%d > %d): declaração é "+
-					"estável por thread e sai do trecho cacheável quando vai para o fim — não "+
-					"erra, só custa (ADR-0012 §1)", iFerr, iTurno)
+			iTool := bytes.Index(body, []byte(sentinelTool))
+			iTurn := bytes.Index(body, []byte(sentinelTurn))
+			if iTool > iTurn {
+				t.Fatalf("the declaration ended up AFTER the volatile text (%d > %d): a "+
+					"declaration is stable per thread and leaves the cacheable stretch when it "+
+					"goes to the end — nothing goes wrong, it just costs (ADR-0012 §1)", iTool, iTurn)
 			}
 		})
 
-		t.Run("garantia16_turno_sem_ferramenta_nao_manda_o_campo", func(t *testing.T) {
-			p := e.Conectar(t)
-			if !p.Info().Supports(agent.CapToolUse) || e.MarcadorDeFerramenta == "" {
-				t.Skip("este adaptador não implementa ferramentas")
+		t.Run("guarantee16_a_turn_with_no_tool_does_not_send_the_field", func(t *testing.T) {
+			p := e.Connect(t)
+			if !p.Info().Supports(agent.CapToolUse) || e.ToolMarker == "" {
+				t.Skip("this adapter does not implement tools")
 			}
-			corpo, _, err := p.Render(turnoDeTeste(false), "modelo-x", agent.EffortHigh)
+			body, _, err := p.Render(testTurn(false), "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			// Array vazio não é a mesma coisa que campo ausente: ele ocupa
-			// lugar no prompt e convida o modelo a chamar o que não existe.
-			if bytes.Contains(corpo, []byte(`"tools"`)) {
-				t.Fatalf("turno SEM ferramentas mandou o campo `tools` assim mesmo:\n%s", corpo)
+			// An empty array is not the same thing as an absent field: it takes
+			// up room in the prompt and invites the model to call what does not
+			// exist.
+			if bytes.Contains(body, []byte(`"tools"`)) {
+				t.Fatalf("a turn WITHOUT tools sent the `tools` field anyway:\n%s", body)
 			}
 		})
 
-		t.Run("garantia17e19_chamada_normalizada_e_parada_tool_use", func(t *testing.T) {
-			p := e.Conectar(t)
-			if e.Programar == nil || !p.Info().Supports(agent.CapToolUse) {
-				t.Skip("ambiente não programa resposta ou adaptador sem ferramentas")
+		t.Run("guarantee17and19_the_call_is_normalized_and_the_stop_is_tool_use", func(t *testing.T) {
+			p := e.Connect(t)
+			if e.Script == nil || !p.Info().Supports(agent.CapToolUse) {
+				t.Skip("this environment does not script responses, or the adapter has no tools")
 			}
-			pedidas := []agent.ToolCall{
-				{ID: sentinelaIDDeChamada, Name: sentinelaFerramenta,
-					Input: map[string]any{"alvo": "primeira"}},
-				{ID: sentinelaIDDeChamada + "-b", Name: sentinelaFerramenta,
-					Input: map[string]any{"alvo": "segunda"}},
+			asked := []agent.ToolCall{
+				{ID: sentinelCallID, Name: sentinelTool,
+					Input: map[string]any{"target": "first"}},
+				{ID: sentinelCallID + "-b", Name: sentinelTool,
+					Input: map[string]any{"target": "second"}},
 			}
-			e.Programar(t, RespostaProgramada{
-				Texto: "vou olhar", Ferramentas: pedidas, ParadaNativa: paradaDeFerramenta(e),
+			e.Script(t, ScriptedResponse{
+				Text: "let me look", Tools: asked, NativeStop: toolStop(e),
 			})
 
-			turno := turnoDeTeste(false)
-			turno.Tools = []agent.ToolSpec{ferramentaDeTeste()}
-			r, err := p.Send(ctx, turno, "modelo-x", agent.EffortHigh)
+			turn := testTurn(false)
+			turn.Tools = []agent.ToolSpec{testTool()}
+			r, err := p.Send(ctx, turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Send: %v", anotar(err))
+				t.Fatalf("Send: %v", note(err))
 			}
 			if r.StopReason != agent.StopToolUse {
-				t.Fatalf("o fornecedor pediu ferramenta e a parada veio %q, esperava %q (D5)",
+				t.Fatalf("the provider asked for a tool and the stop came as %q, expected %q (D5)",
 					r.StopReason, agent.StopToolUse)
 			}
 			if len(r.ToolCalls) != 2 {
-				t.Fatalf("esperava 2 chamadas, vieram %d: %+v", len(r.ToolCalls), r.ToolCalls)
+				t.Fatalf("expected 2 calls, got %d: %+v", len(r.ToolCalls), r.ToolCalls)
 			}
-			// A ORDEM é a que o fornecedor emitiu (D10). Reordenar transforma
-			// "rodei o teste e depois li o log" em "li o log e depois rodei o
-			// teste" na leitura do modelo.
-			for i, quero := range pedidas {
-				veio := r.ToolCalls[i]
-				if veio.ID != quero.ID || veio.Name != quero.Name {
-					t.Fatalf("chamada %d veio %+v, esperava id=%q nome=%q",
-						i, veio, quero.ID, quero.Name)
+			// The ORDER is the one the provider emitted (D10). Reordering turns
+			// "I ran the test and then read the log" into "I read the log and
+			// then ran the test" in the model's reading.
+			for i, want := range asked {
+				got := r.ToolCalls[i]
+				if got.ID != want.ID || got.Name != want.Name {
+					t.Fatalf("call %d came as %+v, expected id=%q name=%q",
+						i, got, want.ID, want.Name)
 				}
-				if veio.Input == nil {
-					t.Fatalf("chamada %d chegou com Input NULO: um dos fornecedores manda os "+
-						"argumentos como STRING (D8), e não decodificá-los deixa o laço sem "+
-						"o que executar", i)
+				if got.Input == nil {
+					t.Fatalf("call %d arrived with a NULL Input: one of the providers sends the "+
+						"arguments as a STRING (D8), and not decoding them leaves the loop with "+
+						"nothing to execute", i)
 				}
-				if veio.Input["alvo"] != quero.Input["alvo"] {
-					t.Fatalf("chamada %d perdeu o argumento: %+v", i, veio.Input)
+				if got.Input["target"] != want.Input["target"] {
+					t.Fatalf("call %d lost its argument: %+v", i, got.Input)
 				}
 			}
 		})
 
-		t.Run("garantia18_argumento_ilegivel_nao_derruba_o_turno", func(t *testing.T) {
-			p := e.Conectar(t)
-			if e.Programar == nil || !p.Info().Supports(agent.CapToolUse) {
-				t.Skip("ambiente não programa resposta ou adaptador sem ferramentas")
+		t.Run("guarantee18_an_unreadable_argument_does_not_bring_the_turn_down", func(t *testing.T) {
+			p := e.Connect(t)
+			if e.Script == nil || !p.Info().Supports(agent.CapToolUse) {
+				t.Skip("this environment does not script responses, or the adapter has no tools")
 			}
-			e.Programar(t, RespostaProgramada{
-				Texto: "vou olhar",
-				Ferramentas: []agent.ToolCall{
-					{ID: sentinelaIDDeChamada, Name: sentinelaFerramenta},
+			e.Script(t, ScriptedResponse{
+				Text: "let me look",
+				Tools: []agent.ToolCall{
+					{ID: sentinelCallID, Name: sentinelTool},
 				},
-				ArgumentoIlegivel: true,
-				ParadaNativa:      paradaDeFerramenta(e),
+				UnreadableArgument: true,
+				NativeStop:         toolStop(e),
 			})
-			turno := turnoDeTeste(false)
-			turno.Tools = []agent.ToolSpec{ferramentaDeTeste()}
+			turn := testTurn(false)
+			turn.Tools = []agent.ToolSpec{testTool()}
 
-			r, err := p.Send(ctx, turno, "modelo-x", agent.EffortHigh)
+			r, err := p.Send(ctx, turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("ARGUMENTO ILEGÍVEL DERRUBOU O TURNO: quem conserta o argumento é o "+
-					"MODELO, e ele só conserta se receber o erro de volta (D8): %v", anotar(err))
+				t.Fatalf("AN UNREADABLE ARGUMENT BROUGHT THE TURN DOWN: the one who fixes the "+
+					"argument is the MODEL, and it only fixes it if it gets the error back "+
+					"(D8): %v", note(err))
 			}
 			if len(r.ToolCalls) != 1 {
-				t.Fatalf("a chamada com argumento ilegível SUMIU: %+v", r.ToolCalls)
+				t.Fatalf("the call with the unreadable argument VANISHED: %+v", r.ToolCalls)
 			}
 			c := r.ToolCalls[0]
 			if c.Input != nil {
-				t.Fatalf("argumento ilegível virou objeto: %+v — nulo é o que diz 'não deu "+
-					"para ler', e mapa vazio afirmaria 'sem argumentos'", c.Input)
+				t.Fatalf("the unreadable argument became an object: %+v — null is what says "+
+					"'it could not be read', and an empty map would assert 'no arguments'", c.Input)
 			}
 			if strings.TrimSpace(c.RawInput) == "" {
-				t.Fatal("o argumento cru se perdeu: 'seu argumento é inválido' sem dizer QUAL " +
-					"argumento é uma mensagem que não conserta nada")
+				t.Fatal("the raw argument was lost: 'your argument is invalid' without saying " +
+					"WHICH argument is a message that fixes nothing")
 			}
 			if len(r.Warnings) == 0 {
-				t.Fatal("argumento ilegível sem aviso: quem lê a telemetria não tem como " +
-					"distinguir isto de um modelo que simplesmente não chamou ferramenta")
+				t.Fatal("an unreadable argument with no warning: whoever reads the telemetry " +
+					"has no way to tell this from a model that simply did not call a tool")
 			}
-			// E o id precisa sobreviver: sem ele, o resultado de erro do laço
-			// fica órfão e os DOIS fornecedores recusam o turno seguinte (D11).
-			if c.ID != sentinelaIDDeChamada {
-				t.Fatalf("o id da chamada se perdeu (%q): resultado sem par é 400 nos dois", c.ID)
+			// And the id has to survive: without it the loop's error result is
+			// orphaned and BOTH providers refuse the next turn (D11).
+			if c.ID != sentinelCallID {
+				t.Fatalf("the call's id was lost (%q): a result with no pair is a 400 at both", c.ID)
 			}
 		})
 
-		t.Run("garantia20e21_resultado_ligado_a_chamada_e_marca_de_erro", func(t *testing.T) {
-			p := e.Conectar(t)
+		t.Run("guarantee20and21_the_result_is_bound_to_the_call_and_carries_the_error_mark", func(t *testing.T) {
+			p := e.Connect(t)
 			if !p.Info().Supports(agent.CapToolUse) {
-				t.Skip("este adaptador não implementa ferramentas")
+				t.Skip("this adapter does not implement tools")
 			}
-			turno := turnoDeTeste(false)
-			turno.Tools = []agent.ToolSpec{ferramentaDeTeste()}
-			// A história de uma segunda volta: a fala do modelo COM a chamada,
-			// e o resultado logo depois. As duas são obrigatórias e nesta
-			// ordem — os dois fornecedores recusam resultado sem chamada (D11).
-			turno.Messages = append(turno.Messages,
-				agent.Message{Role: agent.RoleAssistant, Text: "vou olhar",
+			turn := testTurn(false)
+			turn.Tools = []agent.ToolSpec{testTool()}
+			// The story of a second round: the model's speech WITH the call,
+			// and the result right after. Both are mandatory and in this order
+			// — both providers refuse a result with no call (D11).
+			turn.Messages = append(turn.Messages,
+				agent.Message{Role: agent.RoleAssistant, Text: "let me look",
 					ToolCalls: []agent.ToolCall{{
-						ID: sentinelaIDDeChamada, Name: sentinelaFerramenta,
-						Input: map[string]any{"alvo": "x"},
+						ID: sentinelCallID, Name: sentinelTool,
+						Input: map[string]any{"target": "x"},
 					}}},
 				agent.Message{Role: agent.RoleToolResult,
 					ToolResults: []agent.ToolResult{{
-						CallID: sentinelaIDDeChamada, Name: sentinelaFerramenta,
-						Content: sentinelaResultado, IsError: true,
+						CallID: sentinelCallID, Name: sentinelTool,
+						Content: sentinelResult, IsError: true,
 					}}},
 			)
 
-			corpo, _, err := p.Render(turno, "modelo-x", agent.EffortHigh)
+			body, _, err := p.Render(turn, "model-x", agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("Render: %v", anotar(err))
+				t.Fatalf("Render: %v", note(err))
 			}
-			if !bytes.Contains(corpo, []byte(sentinelaResultado)) {
-				t.Fatal("o resultado da ferramenta não foi para a requisição")
+			if !bytes.Contains(body, []byte(sentinelResult)) {
+				t.Fatal("the tool's result did not go into the request")
 			}
-			// O id precisa aparecer DUAS vezes: uma na chamada reenviada (do
-			// lado do assistente) e outra ligando o resultado a ela. Contar as
-			// ocorrências, e não só procurar o id, é o que separa "o par
-			// existe" de "o id está em algum lugar do corpo" — e a diferença
-			// não é acadêmica: a primeira versão deste subteste procurava só a
-			// presença, e apagar o reenvio das chamadas PASSAVA nela. Um
-			// resultado órfão é 400 nos dois fornecedores (D11), e é a suíte
-			// que tem de pegar isso, não a API em produção.
-			if n := bytes.Count(corpo, []byte(sentinelaIDDeChamada)); n < 2 {
-				t.Fatalf("o id da chamada aparece %d vez(es) no corpo, esperava ao menos 2 "+
-					"(a chamada reenviada e o resultado que a referencia). Resultado cujo id "+
-					"não tem par é 400 nos dois fornecedores (D11):\n%s", n, corpo)
+			// The id has to appear TWICE: once in the resent call (on the
+			// assistant's side) and once binding the result to it. Counting the
+			// occurrences, and not just looking for the id, is what separates
+			// "the pair exists" from "the id is somewhere in the body" — and
+			// the difference is not academic: this subtest's first version
+			// looked only for presence, and deleting the resending of the calls
+			// PASSED it. An orphaned result is a 400 at both providers (D11),
+			// and it is the suite that has to catch that, not the API in
+			// production.
+			if n := bytes.Count(body, []byte(sentinelCallID)); n < 2 {
+				t.Fatalf("the call's id appears %d time(s) in the body, expected at least 2 "+
+					"(the resent call and the result referencing it). A result whose id has no "+
+					"pair is a 400 at both providers (D11):\n%s", n, body)
 			}
-			// E a FALA do assistente também é reenviada: sem ela o modelo lê o
-			// resultado sem lembrar por que o pediu.
-			if !bytes.Contains(corpo, []byte("vou olhar")) {
-				t.Fatal("a fala do assistente com a chamada não foi reenviada: o resultado " +
-					"seguinte fica órfão (D11)")
+			// And the assistant's SPEECH is resent too: without it the model
+			// reads the result without remembering why it asked for it.
+			if !bytes.Contains(body, []byte("let me look")) {
+				t.Fatal("the assistant's speech carrying the call was not resent: the " +
+					"following result is orphaned (D11)")
 			}
-			// A marca de erro precisa CHEGAR ao modelo de algum jeito: um
-			// fornecedor tem o booleano nativo, o outro não tem campo nenhum e
-			// escreve no texto (D9). A suíte não sabe qual é qual — ela exige
-			// que a informação exista em ALGUMA forma.
-			if !bytes.Contains(corpo, []byte("is_error")) &&
-				!bytes.Contains(bytes.ToUpper(corpo), []byte("ERRO")) {
-				t.Fatalf("a MARCA DE ERRO do resultado se perdeu: o modelo vai ler uma falha "+
-					"como saída normal e seguir afirmando o contrário do que aconteceu "+
-					"(garantia 21):\n%s", corpo)
+			// The error mark has to REACH the model somehow: one provider has
+			// the native boolean, the other has no field at all and writes it
+			// in the text (D9). The suite does not know which is which — it
+			// requires the information to exist in SOME form.
+			if !bytes.Contains(body, []byte("is_error")) &&
+				!bytes.Contains(bytes.ToUpper(body), []byte("ERROR")) {
+				t.Fatalf("the result's ERROR MARK was lost: the model will read a failure as "+
+					"normal output and go on asserting the opposite of what happened "+
+					"(guarantee 21):\n%s", body)
 			}
-			// E o conteúdo do resultado NÃO pode ser atribuído ao usuário: é
-			// conteúdo não confiável (spec do substrato §6), e um `README`
-			// malicioso lido por `cat` não pode chegar com autoridade de quem
-			// pediu o trabalho.
-			if papelDoTexto(t, corpo, sentinelaResultado) == "user" &&
-				!bytes.Contains(corpo, []byte("tool_result")) {
-				t.Fatal("o resultado da ferramenta foi serializado como FALA DO USUÁRIO solta: " +
-					"saída de comando é conteúdo não confiável e não pode virar instrução")
+			// And the result's content must NOT be attributed to the user: it
+			// is untrusted content (the substrate's spec §6), and a malicious
+			// `README` read by `cat` must not arrive with the authority of
+			// whoever asked for the work.
+			if roleOfText(t, body, sentinelResult) == "user" &&
+				!bytes.Contains(body, []byte("tool_result")) {
+				t.Fatal("the tool's result was serialized as loose USER SPEECH: a command's " +
+					"output is untrusted content and must not become an instruction")
 			}
 		})
 
-		t.Run("14_recuo_do_canal_de_operador", func(t *testing.T) {
-			if e.ModeloSemCanalDeOperador == "" || e.Programar == nil {
-				t.Skip("este fornecedor não tem modelo sem canal de operador")
+		t.Run("14_the_operator_channel_fallback", func(t *testing.T) {
+			if e.ModelWithoutOperatorChannel == "" || e.Script == nil {
+				t.Skip("this provider has no model without an operator channel")
 			}
-			p := e.Conectar(t)
-			e.Programar(t, RespostaProgramada{Texto: "oi", ParadaNativa: paradaConcluida(e)})
-			r, err := p.Send(ctx, turnoDeTeste(true), e.ModeloSemCanalDeOperador, agent.EffortHigh)
+			p := e.Connect(t)
+			e.Script(t, ScriptedResponse{Text: "hi", NativeStop: completedStop(e)})
+			r, err := p.Send(ctx, testTurn(true), e.ModelWithoutOperatorChannel, agent.EffortHigh)
 			if err != nil {
-				t.Fatalf("o recuo não aconteceu: %v", anotar(err))
+				t.Fatalf("the fallback did not happen: %v", note(err))
 			}
 			if len(r.Warnings) == 0 {
-				t.Fatal("RECUO SEM AVISO: a instrução do operador foi entregue dentro do turno " +
-					"do usuário e ninguém ficou sabendo (D3)")
+				t.Fatal("FALLBACK WITH NO WARNING: the operator instruction was delivered " +
+					"inside the user's turn and nobody found out (D3)")
 			}
-			corpo := e.UltimoCorpo()
-			if !bytes.Contains(corpo, []byte(sentinelaOperador)) {
-				t.Fatal("a instrução do operador sumiu no recuo")
+			body := e.LastBody()
+			if !bytes.Contains(body, []byte(sentinelOperator)) {
+				t.Fatal("the operator instruction vanished in the fallback")
 			}
-			// Mesmo no recuo, ela precisa estar MARCADA — entregue como texto
-			// solto do usuário, ela viraria dado indistinguível de injeção.
-			if !bytes.Contains(corpo, []byte("operator-intervention")) {
-				t.Fatal("no recuo, a instrução entrou no turno do usuário SEM MARCAÇÃO")
+			// Even in the fallback it has to be MARKED — delivered as loose
+			// user text, it would become data indistinguishable from an
+			// injection.
+			if !bytes.Contains(body, []byte("operator-intervention")) {
+				t.Fatal("in the fallback, the instruction entered the user's turn UNMARKED")
 			}
 		})
 	})
 }
 
-// paradaConcluida devolve um motivo de parada nativo que signifique "terminou",
-// para os subtestes que não estão medindo parada.
-func paradaConcluida(e AgentProviderEnv) string {
-	for nativo, dominio := range e.Paradas {
-		if dominio == agent.StopCompleted {
-			return nativo
+// completedStop returns a native stop reason meaning "it finished", for the
+// subtests that are not measuring the stop.
+func completedStop(e AgentProviderEnv) string {
+	for native, domain := range e.Stops {
+		if domain == agent.StopCompleted {
+			return native
 		}
 	}
 	return ""
 }
 
-// paradaDeFerramenta devolve o motivo NATIVO que significa "pedi ferramenta".
-func paradaDeFerramenta(e AgentProviderEnv) string {
-	for nativo, dominio := range e.Paradas {
-		if dominio == agent.StopToolUse {
-			return nativo
+// toolStop returns the NATIVE reason meaning "I asked for a tool".
+func toolStop(e AgentProviderEnv) string {
+	for native, domain := range e.Stops {
+		if domain == agent.StopToolUse {
+			return native
 		}
 	}
 	return ""
 }
 
-// papelDoTexto devolve o papel do objeto que contém `alvo`, ou "" se não achar.
+// roleOfText returns the role of the object containing `target`, or "" if it
+// does not find it.
 //
-// Genérica pelo mesmo motivo de `atribuidaAoUsuario`: a suíte não pode conhecer
-// o formato de fornecedor nenhum. O que ela sabe é que os dois marcam quem fala
-// num campo `role`.
-func papelDoTexto(t *testing.T, corpo []byte, alvo string) string {
+// Generic for the same reason as `attributedToUser`: the suite cannot know any
+// provider's shape. What it does know is that both mark who speaks in a `role`
+// field.
+func roleOfText(t *testing.T, body []byte, target string) string {
 	t.Helper()
-	var raiz any
-	if err := json.Unmarshal(corpo, &raiz); err != nil {
-		t.Fatalf("corpo ilegível: %v", err)
+	var root any
+	if err := json.Unmarshal(body, &root); err != nil {
+		t.Fatalf("unreadable body: %v", err)
 	}
-	for _, papel := range []string{"user", "assistant", "tool", "developer", "system"} {
-		if procurarSobPapel(raiz, papel, alvo) {
-			return papel
+	for _, role := range []string{"user", "assistant", "tool", "developer", "system"} {
+		if findUnderRole(root, role, target) {
+			return role
 		}
 	}
 	return ""
 }
 
-// atribuidaAoUsuario procura `alvo` DENTRO de algum objeto com `role: "user"`.
+// attributedToUser looks for `target` INSIDE some object with `role: "user"`.
 //
-// Genérico de propósito: a suíte não pode conhecer o formato de fornecedor
-// nenhum, senão ela vira dois testes com um nome só. O que ela sabe é que os dois
-// formatos marcam o papel de quem fala num campo `role`, e isso basta para
-// perguntar "esta frase foi atribuída ao usuário?".
-func atribuidaAoUsuario(t *testing.T, corpo []byte, alvo string) bool {
+// Generic on purpose: the suite cannot know any provider's shape, or it becomes
+// two tests with a single name. What it does know is that both shapes mark the
+// speaker's role in a `role` field, and that is enough to ask "was this sentence
+// attributed to the user?".
+func attributedToUser(t *testing.T, body []byte, target string) bool {
 	t.Helper()
-	var raiz any
-	if err := json.Unmarshal(corpo, &raiz); err != nil {
-		t.Fatalf("corpo ilegível: %v", err)
+	var root any
+	if err := json.Unmarshal(body, &root); err != nil {
+		t.Fatalf("unreadable body: %v", err)
 	}
-	return procurarSobPapel(raiz, "user", alvo)
+	return findUnderRole(root, "user", target)
 }
 
-func procurarSobPapel(v any, papel, alvo string) bool {
+func findUnderRole(v any, role, target string) bool {
 	switch n := v.(type) {
 	case map[string]any:
-		if p, ok := n["role"].(string); ok && p == papel && contemTexto(n, alvo) {
+		if p, ok := n["role"].(string); ok && p == role && containsText(n, target) {
 			return true
 		}
 		for _, e := range n {
-			if procurarSobPapel(e, papel, alvo) {
+			if findUnderRole(e, role, target) {
 				return true
 			}
 		}
 	case []any:
 		for _, e := range n {
-			if procurarSobPapel(e, papel, alvo) {
+			if findUnderRole(e, role, target) {
 				return true
 			}
 		}
@@ -944,19 +960,19 @@ func procurarSobPapel(v any, papel, alvo string) bool {
 	return false
 }
 
-func contemTexto(v any, alvo string) bool {
+func containsText(v any, target string) bool {
 	switch n := v.(type) {
 	case string:
-		return strings.Contains(n, alvo)
+		return strings.Contains(n, target)
 	case map[string]any:
 		for _, e := range n {
-			if contemTexto(e, alvo) {
+			if containsText(e, target) {
 				return true
 			}
 		}
 	case []any:
 		for _, e := range n {
-			if contemTexto(e, alvo) {
+			if containsText(e, target) {
 				return true
 			}
 		}

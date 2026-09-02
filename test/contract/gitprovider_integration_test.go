@@ -131,25 +131,25 @@ func TestGitProviderContractGitHubReal(t *testing.T) {
 	}
 	contract.GitProviderSuite(t, "github-real", func(t *testing.T) contract.GitProviderEnv {
 		return contract.GitProviderEnv{
-			Connect:              func(t *testing.T, a string) delivery.GitProvider { return novo(a, token) },
+			Connect:                  func(t *testing.T, a string) delivery.GitProvider { return novo(a, token) },
 			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider { return novo(ator, "ghp_invalido_de_proposito") },
-			Actor:                  ator,
-			SentinelToken:        token,
-			Repo:                  repo,
-			InvisibleRepo:         env("GITHUB_TEST_REPO_INVISIVEL", "dop-does-not-exist/repo-does-not-exist-"+t.Name()),
-			RepoWithNativeQueue:     os.Getenv("GITHUB_TEST_REPO_COM_FILA"),
-			RepoWithoutNativeQueue:     os.Getenv("GITHUB_TEST_REPO_SEM_FILA"),
-			RepoWithUnreadableQueue:      os.Getenv("GITHUB_TEST_REPO_SEM_PERMISSAO_DE_REGRAS"),
-			Pair:                   pares,
+			Actor:                    ator,
+			SentinelToken:            token,
+			Repo:                     repo,
+			InvisibleRepo:            env("GITHUB_TEST_REPO_INVISIVEL", "dop-does-not-exist/repo-does-not-exist-"+t.Name()),
+			RepoWithNativeQueue:      os.Getenv("GITHUB_TEST_REPO_COM_FILA"),
+			RepoWithoutNativeQueue:   os.Getenv("GITHUB_TEST_REPO_SEM_FILA"),
+			RepoWithUnreadableQueue:  os.Getenv("GITHUB_TEST_REPO_SEM_PERMISSAO_DE_REGRAS"),
+			Pair:                     pares,
 			// A real conflict and a real block require PREPARED branches (one
 			// that diverges from the target, another covered by a required
 			// check). There is no way to fabricate them through the port, so
 			// they stay out until somebody prepares them — and the subtest SKIPS
 			// saying so.
-			ConflictingPair: pairsFrom(t, "GITHUB_TEST_BRANCHES_CONFLITANTES"),
-			BlockedPair:   pairsFrom(t, "GITHUB_TEST_BRANCHES_BLOQUEADAS"),
-			PairWithNoCommits:  pairsFrom(t, "GITHUB_TEST_BRANCHES_SEM_COMMITS"),
-			Wait:         3 * time.Minute,
+			ConflictingPair:   pairsFrom(t, "GITHUB_TEST_BRANCHES_CONFLITANTES"),
+			BlockedPair:       pairsFrom(t, "GITHUB_TEST_BRANCHES_BLOQUEADAS"),
+			PairWithNoCommits: pairsFrom(t, "GITHUB_TEST_BRANCHES_SEM_COMMITS"),
+			Wait:              3 * time.Minute,
 		}
 	})
 }
@@ -188,20 +188,20 @@ func TestGitProviderContractGitLabReal(t *testing.T) {
 	}
 	contract.GitProviderSuite(t, "gitlab-real", func(t *testing.T) contract.GitProviderEnv {
 		return contract.GitProviderEnv{
-			Connect:              func(t *testing.T, a string) delivery.GitProvider { return novo(a, token) },
+			Connect:                  func(t *testing.T, a string) delivery.GitProvider { return novo(a, token) },
 			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider { return novo(ator, "glpat-invalido-de-proposito") },
-			Actor:                  ator,
-			SentinelToken:        token,
-			Repo:                  proj,
-			InvisibleRepo:         env("GITLAB_TEST_PROJECT_INVISIVEL", "dop-does-not-exist/project-does-not-exist"),
-			RepoWithNativeQueue:     os.Getenv("GITLAB_TEST_PROJECT_COM_TREM"),
-			RepoWithoutNativeQueue:     os.Getenv("GITLAB_TEST_PROJECT_SEM_TREM"),
-			RepoWithUnreadableQueue:      os.Getenv("GITLAB_TEST_PROJECT_SEM_ESCOPO"),
-			Pair:                   pares,
-			ConflictingPair:        pairsFrom(t, "GITLAB_TEST_BRANCHES_CONFLITANTES"),
-			BlockedPair:          pairsFrom(t, "GITLAB_TEST_BRANCHES_BLOQUEADAS"),
-			PairWithNoCommits:         pairsFrom(t, "GITLAB_TEST_BRANCHES_SEM_COMMITS"),
-			Wait:                3 * time.Minute,
+			Actor:                    ator,
+			SentinelToken:            token,
+			Repo:                     proj,
+			InvisibleRepo:            env("GITLAB_TEST_PROJECT_INVISIVEL", "dop-does-not-exist/project-does-not-exist"),
+			RepoWithNativeQueue:      os.Getenv("GITLAB_TEST_PROJECT_COM_TREM"),
+			RepoWithoutNativeQueue:   os.Getenv("GITLAB_TEST_PROJECT_SEM_TREM"),
+			RepoWithUnreadableQueue:  os.Getenv("GITLAB_TEST_PROJECT_SEM_ESCOPO"),
+			Pair:                     pares,
+			ConflictingPair:          pairsFrom(t, "GITLAB_TEST_BRANCHES_CONFLITANTES"),
+			BlockedPair:              pairsFrom(t, "GITLAB_TEST_BRANCHES_BLOQUEADAS"),
+			PairWithNoCommits:        pairsFrom(t, "GITLAB_TEST_BRANCHES_SEM_COMMITS"),
+			Wait:                     3 * time.Minute,
 		}
 	})
 }
