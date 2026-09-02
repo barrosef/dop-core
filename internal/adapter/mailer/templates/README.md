@@ -1,29 +1,35 @@
-# Templates de e-mail
+# E-mail templates
 
-Dois diretórios, e a duplicação é DELIBERADA — é a consequência negativa que a
-ADR-0025 assume por escrito ("dois lugares para o template do mesmo aviso
-enquanto os dois adaptadores existirem"). Ela não é acidente nem preguiça: é o
-preço de a porta `Mailer` não vazar vocabulário de fornecedor.
+Two directories, and the duplication is DELIBERATE — it is the negative
+consequence ADR-0025 accepts in writing ("two places for the same notice's
+template for as long as both adapters exist"). It is neither an accident nor
+laziness: it is the price of the `Mailer` port not leaking a provider's
+vocabulary.
 
-| Diretório | Quem usa | Sintaxe | Como chega ao destino |
+| Directory | Who uses it | Syntax | How it reaches its destination |
 |---|---|---|---|
-| `smtp/` | adaptador SMTP | Go `html/template` (`{{.campo}}`) | embutido no binário (`go:embed`), renderizado no envio |
-| `sendgrid/` | adaptador SendGrid | Handlebars (`{{campo}}`) | publicado no fornecedor pelo script idempotente |
+| `smtp/` | the SMTP adapter | Go `html/template` (`{{.field}}`) | embedded in the binary (`go:embed`), rendered on send |
+| `sendgrid/` | the SendGrid adapter | Handlebars (`{{field}}`) | published at the provider by the idempotent script |
 
-As sintaxes são diferentes porque os motores são diferentes — um arquivo só não
-serviria aos dois. O que impede um de ficar para trás não é disciplina: é a
-suíte de contrato, que exige de TODO adaptador que resolva TODOS os tipos que
-`notification.Kinds()` devolve.
+The syntaxes differ because the engines differ — a single file would not serve
+both. What keeps one from falling behind is not discipline: it is the contract
+suite, which requires EVERY adapter to resolve EVERY kind
+`notification.Kinds()` returns.
 
-## Publicar no SendGrid
+The template CONTENT is still in Portuguese. That is notification content, not
+code: localizing it means one template per locale at the provider (and one per
+locale under `smtp/`), and it is a pending item — see ADR-0025.
 
-O script é idempotente — cria o que falta, cria versão nova do que já existe:
+## Publishing to SendGrid
+
+The script is idempotent — it creates what is missing and creates a new version
+of what already exists:
 
 ```
 SENDGRID_TEMPLATES_API_KEY=SG.xxx \
   go run internal/adapter/mailer/publish_templates.go
 ```
 
-Ele imprime os `template_id` resultantes, que vão para a configuração
-(`SENDGRID_TEMPLATE_<TIPO>`). A lista do que publicar é DERIVADA do índice do
-adaptador — não há segunda lista para esquecer de atualizar.
+It prints the resulting `template_id`s, which go into the configuration
+(`SENDGRID_TEMPLATE_<KIND>`). The list of what to publish is DERIVED from the
+adapter's index — there is no second list to forget to update.

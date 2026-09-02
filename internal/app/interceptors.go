@@ -34,7 +34,7 @@ func UnaryLogging() grpc.UnaryServerInterceptor {
 		resp, err := h(ctx, req)
 		ms := time.Since(start).Milliseconds()
 		if err != nil {
-			log.Error("rpc falhou", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
+			log.Error("the rpc failed", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
 			return nil, toStatus(err)
 		}
 		log.Info("rpc finished", logging.FieldDurationMs, ms)
@@ -49,7 +49,7 @@ func StreamLogging() grpc.StreamServerInterceptor {
 		err := h(srv, ss)
 		ms := time.Since(start).Milliseconds()
 		if err != nil {
-			log.Error("stream falhou", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
+			log.Error("the stream failed", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
 			return toStatus(err)
 		}
 		log.Info("stream encerrado", logging.FieldDurationMs, ms)

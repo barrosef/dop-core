@@ -64,11 +64,11 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 	// 3. The vault gives the credential — and it is HERE that it is read, in
 	// the core, which is the one that has the vault. The adapter receives the
 	// token ready-made and never knew a vault exists.
-	valor, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
+	value, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
 	if err != nil {
 		return nil, err
 	}
-	if len(valor) == 0 {
+	if len(value) == 0 {
 		return nil, errs.Precondition(
 			"integration %q has no credential configured", res.Name)
 	}
@@ -82,7 +82,7 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 		return gitprovider.NewGitHub(gitprovider.GitHubConfig{
 			APIBase:     base,
 			GraphQLURL:  g.cfg.GitHubGraphQL,
-			Token:       string(valor),
+			Token:       string(value),
 			ActorID:     externalID,
 			MergeMethod: g.cfg.GitMergeMethod,
 		}), nil
@@ -93,7 +93,7 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 		}
 		return gitprovider.NewGitLab(gitprovider.GitLabConfig{
 			APIBase:     base,
-			Token:       string(valor),
+			Token:       string(value),
 			ActorID:     externalID,
 			MergeMethod: g.cfg.GitMergeMethod,
 		}), nil

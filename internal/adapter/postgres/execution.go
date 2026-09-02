@@ -88,7 +88,7 @@ func (r *ExecutionRepo) ByIdempotencyKey(ctx context.Context, accountID, key str
 }
 
 // LiveByDemand: alive is everything that was not destroyed. The partial index
-// sandboxes_demanda_viva_uniq guarantees there is at most one.
+// The sandboxes_demanda_viva_uniq index guarantees there is at most one.
 func (r *ExecutionRepo) LiveByDemand(ctx context.Context, accountID, demandID string) (*execution.Sandbox, error) {
 	s, err := scanSandbox(r.pool.QueryRow(ctx,
 		`SELECT `+sandboxCols+` FROM sandboxes

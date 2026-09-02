@@ -172,7 +172,7 @@ func (d *DeliveryRepo) ListPullRequests(ctx context.Context, accountID string, f
 		 WHERE p.account_id = $1
 		   -- NULLIF before the cast: an empty filter has to become NULL, not
 		   -- ''::uuid. Postgres does not guarantee short-circuiting in an OR, and a cast
-		   -- de string vazia para uuid derrubaria a consulta sem filtro.
+		   -- casting an empty string to uuid would bring the unfiltered query down.
 		   AND ($2::text = '' OR p.demand_id  = NULLIF($2,'')::uuid)
 		   AND ($3::text = '' OR r.project_id = NULLIF($3,'')::uuid)
 		   AND ($4::text = '' OR p.repo_id    = NULLIF($4,'')::uuid)
@@ -279,7 +279,7 @@ func reviewersJSON(rs []delivery.Reviewer) []reviewerRow {
 	return out
 }
 
-// ─────────────────────────── fila de merge ───────────────────────────
+// ─────────────────────────── merge queue ────────────────────────────
 
 const queueCols = `id, account_id, repo_id::text, demand_id::text, pull_request_id::text,
 	seq, priority, state::text, overlapping_files, conflict, enqueued_at, updated_at`
@@ -325,7 +325,7 @@ func (d *DeliveryRepo) QueueOfRepo(ctx context.Context, accountID, repoID string
 		   AND ($3::bool OR state <> 'merged')
 		 ORDER BY priority, seq`, accountID, repoID, includeMerged)
 	if err != nil {
-		return nil, Translate(err, "fila de merge")
+		return nil, Translate(err, "merge queue")
 	}
 	defer rows.Close()
 
@@ -333,7 +333,7 @@ func (d *DeliveryRepo) QueueOfRepo(ctx context.Context, accountID, repoID string
 	for rows.Next() {
 		e, err := scanQueueEntry(rows)
 		if err != nil {
-			return nil, Translate(err, "fila de merge")
+			return nil, Translate(err, "merge queue")
 		}
 		out = append(out, *e)
 	}
@@ -635,7 +635,7 @@ func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string
 				   SET priority = $3, updated_at = now()
 				 WHERE account_id = $1 AND demand_id = $2::uuid AND state <> 'merged'`,
 				accountID, i.DemandID, priority); err != nil {
-				return Translate(err, "ordem da fila de merge")
+				return Translate(err, "merge queue order")
 			}
 		}
 

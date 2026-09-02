@@ -161,6 +161,9 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 // and falling back to the title is better than demanding a schema — a finding
 // with no summary is still worth more in the context than an absent finding.
 func findingSummary(f demand.Finding) string {
+	// "resumo" is kept as a legacy key: findings published before the platform
+	// standardized on English are still in the database, and dropping it here
+	// would silently empty their summary in the context.
 	for _, key := range []string{"summary", "resumo"} {
 		if v, ok := f.Payload[key].(string); ok && v != "" {
 			return v

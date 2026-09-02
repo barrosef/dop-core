@@ -282,7 +282,7 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 			postgres.NewExecutionRepo(deps.Pool), deps.Launcher, clock.NewSystem())
 		accounts, suspended, err := sweeper.SweepAllAccounts(ctx)
 		if err != nil {
-			log.Error("varredura de sandboxes ociosos falhou", logging.FieldError, err.Error())
+			log.Error("the idle sandbox sweep failed", logging.FieldError, err.Error())
 		} else if suspended > 0 {
 			log.Info("idle sandboxes suspended", "accounts", accounts, "sandboxes", suspended)
 		}

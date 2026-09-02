@@ -77,11 +77,11 @@ func (g agentProviders) For(ctx context.Context, resourceID string) (agent.Agent
 	// 3. The vault gives the credential — and it is HERE that it is read, in
 	// the core, which is the one that has the vault. The adapter receives the
 	// key ready-made and never knew a vault exists.
-	valor, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
+	value, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
 	if err != nil {
 		return nil, err
 	}
-	if len(valor) == 0 {
+	if len(value) == 0 {
 		// A missing credential is a PRECONDITION with the resource's name —
 		// never with the value, which does not exist, nor with the vault's
 		// reference, which is a path.
@@ -93,13 +93,13 @@ func (g agentProviders) For(ctx context.Context, resourceID string) (agent.Agent
 	case agentprovider.NameAnthropic:
 		return agentprovider.NewAnthropic(agentprovider.AnthropicConfig{
 			APIBase: spec.BaseURL,
-			APIKey:  string(valor),
+			APIKey:  string(value),
 			Catalog: resourceCatalog(res.Config, agentprovider.CatalogAnthropic()),
 		}), nil
 	case agentprovider.NameOpenAI:
 		return agentprovider.NewOpenAI(agentprovider.OpenAIConfig{
 			APIBase: spec.BaseURL,
-			APIKey:  string(valor),
+			APIKey:  string(value),
 			Catalog: resourceCatalog(res.Config, agentprovider.CatalogOpenAI()),
 		}), nil
 	}
@@ -159,18 +159,18 @@ func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource,
 // starting catalog — never to an empty catalog, which would make `ResolveModel`
 // return an empty name and the provider refuse the call for a reason that is not
 // the real one.
-func resourceCatalog(config map[string]any, padrao map[agent.ModelClass]string) map[agent.ModelClass]string {
-	bruto, ok := config["catalog"].(map[string]any)
-	if !ok || len(bruto) == 0 {
-		return padrao
+func resourceCatalog(config map[string]any, defaults map[agent.ModelClass]string) map[agent.ModelClass]string {
+	raw, ok := config["catalog"].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return defaults
 	}
-	out := make(map[agent.ModelClass]string, len(padrao))
-	for classe, nome := range padrao {
-		out[classe] = nome
+	out := make(map[agent.ModelClass]string, len(defaults))
+	for class, name := range defaults {
+		out[class] = name
 	}
-	for _, classe := range []agent.ModelClass{agent.ClassCheap, agent.ClassMedium, agent.ClassStrong} {
-		if nome, ok := bruto[string(classe)].(string); ok && nome != "" {
-			out[classe] = nome
+	for _, class := range []agent.ModelClass{agent.ClassCheap, agent.ClassMedium, agent.ClassStrong} {
+		if name, ok := raw[string(class)].(string); ok && name != "" {
+			out[class] = name
 		}
 	}
 	return out

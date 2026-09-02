@@ -133,9 +133,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 
 	// Ponte STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST (ADR-0020).
-	// Sem ela, upload local vai para o bucket REAL.
+	// Without it, a local upload goes to the REAL bucket.
 	if ep := objectstore.ResolveEmulatorHost(); ep != "" {
-		log.Info("armazenamento apontado para o emulador", "endpoint", ep)
+		log.Info("storage pointed at the emulator", "endpoint", ep)
 	}
 	objects := objectstore.NewGCS(objectstore.GCSConfig{Endpoint: cfg.StorageEndpoint})
 
@@ -151,7 +151,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 			ClockSkew:      cfg.OIDCClockSkew,
 			KeysMinRefresh: cfg.OIDCKeysMinRefresh,
 		})
-		log.Info("identidade por OIDC", "emissor", cfg.OIDCIssuer)
+		log.Info("identity through OIDC", "issuer", cfg.OIDCIssuer)
 	default:
 		fb := identity.NewFirebase(cfg.FirebaseProject)
 		// The emulator issues `alg: none`, so the SIGNATURE verification is

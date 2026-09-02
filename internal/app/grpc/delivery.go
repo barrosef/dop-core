@@ -47,13 +47,13 @@ func (s *DeliveryServer) ListPullRequests(ctx context.Context, req *dopv1.ListPu
 // the domain — the server does not reorder, not even for presentation's
 // convenience.
 func (s *DeliveryServer) GetMergeQueue(ctx context.Context, req *dopv1.GetMergeQueueRequest) (*dopv1.GetMergeQueueResponse, error) {
-	fila, err := s.svc.GetMergeQueue(ctx, req.GetRepoId())
+	queue, err := s.svc.GetMergeQueue(ctx, req.GetRepoId())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*dopv1.MergeQueueEntry, 0, len(fila))
-	for i := range fila {
-		out = append(out, mergeQueueEntryToProto(&fila[i]))
+	out := make([]*dopv1.MergeQueueEntry, 0, len(queue))
+	for i := range queue {
+		out = append(out, mergeQueueEntryToProto(&queue[i]))
 	}
 	return &dopv1.GetMergeQueueResponse{Entries: out}, nil
 }
