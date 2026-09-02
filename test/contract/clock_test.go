@@ -9,14 +9,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// Os dois relógios passam pela MESMA suíte. É esse o ponto: se o relógio
-// controlável não cumprir as garantias do de verdade, um teste que passa com
-// ele não diz nada sobre produção.
+// Both clocks go through the SAME suite. That is the point: if the controllable
+// clock does not deliver the real one's guarantees, a test that passes with it
+// says nothing about production.
 func TestClockContract(t *testing.T) {
-	contract.ClockSuite(t, "sistema", func(t *testing.T) ports.Clock {
+	contract.ClockSuite(t, "system", func(t *testing.T) ports.Clock {
 		return clock.NewSystem()
 	})
-	contract.ClockSuite(t, "fixo", func(t *testing.T) ports.Clock {
+	contract.ClockSuite(t, "fixed", func(t *testing.T) ports.Clock {
 		return clock.NewFixed(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC))
 	})
 }

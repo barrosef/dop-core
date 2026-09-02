@@ -8,10 +8,10 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// O adaptador em memória roda sempre. O k8s roda quando há cluster
-// (ver secretstore_k8s_test.go) e o do GCP quando há credencial.
+// The in-memory adapter always runs. The k8s one runs when there is a cluster
+// (see secretstore_k8s_test.go) and GCP's when there is a credential.
 func TestSecretStoreContract(t *testing.T) {
-	contract.SecretStoreSuite(t, "memoria", func(t *testing.T) ports.SecretStore {
+	contract.SecretStoreSuite(t, "memory", func(t *testing.T) ports.SecretStore {
 		return secretstore.NewMemory()
 	})
 }

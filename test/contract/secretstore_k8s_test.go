@@ -1,14 +1,14 @@
 //go:build integration
 
-// A MESMA suíte de contrato, contra a API do Kubernetes de verdade.
+// The SAME contract suite, against the real Kubernetes API.
 //
 //	go test ./test/contract/ -tags=integration -v -run SecretStore
 //
-// Este arquivo estava PROMETIDO num comentário de `secretstore_test.go` e não
-// existia: o adaptador k8s — que é o de produção do ambiente self-hosted, e
-// cujo cabeçalho afirma ser "exercitado TODO DIA" — nunca havia passado pela
-// suíte. Só o duplo em memória passava, o que provava que o duplo é consistente
-// consigo mesmo.
+// This file was PROMISED in a comment in `secretstore_test.go` and did not
+// exist: the k8s adapter — which is the production one for the self-hosted
+// environment, and whose header claims to be "exercised EVERY DAY" — had never
+// gone through the suite. Only the in-memory double passed, which proved the
+// double is consistent with itself.
 package contract_test
 
 import (
@@ -23,8 +23,8 @@ import (
 func TestSecretStoreContractK8s(t *testing.T) {
 	api := os.Getenv("K8S_API_SERVER")
 	if api == "" {
-		// `kubectl proxy --port=8001` é o caminho de menor atrito fora do
-		// cluster: ele já resolve autenticação e TLS.
+		// `kubectl proxy --port=8001` is the path of least friction outside the
+		// cluster: it already resolves authentication and TLS.
 		api = "http://127.0.0.1:8001"
 	}
 	ns := os.Getenv("SECRET_NAMESPACE")
@@ -37,13 +37,13 @@ func TestSecretStoreContractK8s(t *testing.T) {
 			Token:     os.Getenv("K8S_TOKEN"),
 			Namespace: ns,
 		})
-		// Sonda barata: se a API não responde, PULA com motivo — em vez de
-		// deixar cada subteste falhar por indisponibilidade e parecer defeito
-		// do adaptador.
+		// A cheap probe: if the API does not answer, it SKIPS with a reason —
+		// instead of letting every subtest fail on unavailability and look like
+		// a defect of the adapter.
 		if _, err := k.Exists(t.Context(), ports.SecretRef{
-			AccountID: "sonda", Kind: "sonda", OwnerID: "sonda",
+			AccountID: "probe", Kind: "probe", OwnerID: "probe",
 		}); err != nil {
-			t.Skipf("API do Kubernetes indisponível em %s: %v", api, err)
+			t.Skipf("Kubernetes API unavailable at %s: %v", api, err)
 		}
 		return k
 	})
