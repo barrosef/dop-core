@@ -36,7 +36,7 @@ service EventService {
 }
 
 message WatchEventsRequest {
-  CallContext ctx = 1;
+  reserved 1;
 
   // Optional filters. Empty = everything the account produces. They exist so
   // the attention box does not have to receive (and discard) the whole log.

@@ -290,7 +290,6 @@ func (x *RoutingDecision) GetReason() string {
 
 type RecordUsageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Usage          *UsageEvent            `protobuf:"bytes,2,opt,name=usage,proto3" json:"usage,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -325,13 +324,6 @@ func (x *RecordUsageRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RecordUsageRequest.ProtoReflect.Descriptor instead.
 func (*RecordUsageRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_cost_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *RecordUsageRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *RecordUsageRequest) GetUsage() *UsageEvent {
@@ -402,7 +394,6 @@ func (x *RecordUsageResponse) GetBudgetExceeded() bool {
 
 type GetBudgetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Scope         string                 `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	ScopeId       string                 `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -439,13 +430,6 @@ func (*GetBudgetRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_cost_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *GetBudgetRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetBudgetRequest) GetScope() string {
 	if x != nil {
 		return x.Scope
@@ -462,7 +446,6 @@ func (x *GetBudgetRequest) GetScopeId() string {
 
 type SetBudgetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Budget        *Budget                `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -498,13 +481,6 @@ func (*SetBudgetRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_cost_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *SetBudgetRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *SetBudgetRequest) GetBudget() *Budget {
 	if x != nil {
 		return x.Budget
@@ -514,7 +490,6 @@ func (x *SetBudgetRequest) GetBudget() *Budget {
 
 type RouteModelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	TaskKind      string                 `protobuf:"bytes,2,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"`
 	DemandId      string                 `protobuf:"bytes,3,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -551,13 +526,6 @@ func (*RouteModelRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_cost_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *RouteModelRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *RouteModelRequest) GetTaskKind() string {
 	if x != nil {
 		return x.TaskKind
@@ -574,7 +542,6 @@ func (x *RouteModelRequest) GetDemandId() string {
 
 type SummarizeCostRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Scope         string                 `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	ScopeId       string                 `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -609,13 +576,6 @@ func (x *SummarizeCostRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SummarizeCostRequest.ProtoReflect.Descriptor instead.
 func (*SummarizeCostRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_cost_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *SummarizeCostRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *SummarizeCostRequest) GetScope() string {
@@ -720,29 +680,24 @@ const file_dop_v1_cost_proto_rawDesc = "" +
 	"\ttask_kind\x18\x01 \x01(\tR\btaskKind\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12\x16\n" +
 	"\x06effort\x18\x03 \x01(\tR\x06effort\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x8e\x01\n" +
-	"\x12RecordUsageRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12(\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"m\n" +
+	"\x12RecordUsageRequest\x12(\n" +
 	"\x05usage\x18\x02 \x01(\v2\x12.dop.v1.UsageEventR\x05usage\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"Z\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"Z\n" +
 	"\x13RecordUsageResponse\x12\x1a\n" +
 	"\brecorded\x18\x01 \x01(\bR\brecorded\x12'\n" +
-	"\x0fbudget_exceeded\x18\x02 \x01(\bR\x0ebudgetExceeded\"j\n" +
-	"\x10GetBudgetRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x14\n" +
+	"\x0fbudget_exceeded\x18\x02 \x01(\bR\x0ebudgetExceeded\"I\n" +
+	"\x10GetBudgetRequest\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x19\n" +
-	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"a\n" +
-	"\x10SetBudgetRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12&\n" +
-	"\x06budget\x18\x02 \x01(\v2\x0e.dop.v1.BudgetR\x06budget\"t\n" +
-	"\x11RouteModelRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeIdJ\x04\b\x01\x10\x02\"@\n" +
+	"\x10SetBudgetRequest\x12&\n" +
+	"\x06budget\x18\x02 \x01(\v2\x0e.dop.v1.BudgetR\x06budgetJ\x04\b\x01\x10\x02\"S\n" +
+	"\x11RouteModelRequest\x12\x1b\n" +
 	"\ttask_kind\x18\x02 \x01(\tR\btaskKind\x12\x1b\n" +
-	"\tdemand_id\x18\x03 \x01(\tR\bdemandId\"n\n" +
-	"\x14SummarizeCostRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x14\n" +
+	"\tdemand_id\x18\x03 \x01(\tR\bdemandIdJ\x04\b\x01\x10\x02\"M\n" +
+	"\x14SummarizeCostRequest\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x19\n" +
-	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"\x90\x01\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeIdJ\x04\b\x01\x10\x02\"\x90\x01\n" +
 	"\x15SummarizeCostResponse\x12#\n" +
 	"\x05total\x18\x01 \x01(\v2\r.dop.v1.MoneyR\x05total\x12&\n" +
 	"\x0fcache_hit_ratio\x18\x02 \x01(\x01R\rcacheHitRatio\x12*\n" +
@@ -784,36 +739,30 @@ var file_dop_v1_cost_proto_goTypes = []any{
 	(*DemandRef)(nil),             // 10: dop.v1.DemandRef
 	(*Money)(nil),                 // 11: dop.v1.Money
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
-	(*CallContext)(nil),           // 13: dop.v1.CallContext
 }
 var file_dop_v1_cost_proto_depIdxs = []int32{
 	10, // 0: dop.v1.UsageEvent.demand:type_name -> dop.v1.DemandRef
 	11, // 1: dop.v1.UsageEvent.cost:type_name -> dop.v1.Money
 	12, // 2: dop.v1.UsageEvent.at:type_name -> google.protobuf.Timestamp
-	13, // 3: dop.v1.RecordUsageRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 4: dop.v1.RecordUsageRequest.usage:type_name -> dop.v1.UsageEvent
-	13, // 5: dop.v1.GetBudgetRequest.ctx:type_name -> dop.v1.CallContext
-	13, // 6: dop.v1.SetBudgetRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 7: dop.v1.SetBudgetRequest.budget:type_name -> dop.v1.Budget
-	13, // 8: dop.v1.RouteModelRequest.ctx:type_name -> dop.v1.CallContext
-	13, // 9: dop.v1.SummarizeCostRequest.ctx:type_name -> dop.v1.CallContext
-	11, // 10: dop.v1.SummarizeCostResponse.total:type_name -> dop.v1.Money
-	0,  // 11: dop.v1.SummarizeCostResponse.recent:type_name -> dop.v1.UsageEvent
-	3,  // 12: dop.v1.CostService.RecordUsage:input_type -> dop.v1.RecordUsageRequest
-	5,  // 13: dop.v1.CostService.GetBudget:input_type -> dop.v1.GetBudgetRequest
-	6,  // 14: dop.v1.CostService.SetBudget:input_type -> dop.v1.SetBudgetRequest
-	7,  // 15: dop.v1.CostService.RouteModel:input_type -> dop.v1.RouteModelRequest
-	8,  // 16: dop.v1.CostService.SummarizeCost:input_type -> dop.v1.SummarizeCostRequest
-	4,  // 17: dop.v1.CostService.RecordUsage:output_type -> dop.v1.RecordUsageResponse
-	1,  // 18: dop.v1.CostService.GetBudget:output_type -> dop.v1.Budget
-	1,  // 19: dop.v1.CostService.SetBudget:output_type -> dop.v1.Budget
-	2,  // 20: dop.v1.CostService.RouteModel:output_type -> dop.v1.RoutingDecision
-	9,  // 21: dop.v1.CostService.SummarizeCost:output_type -> dop.v1.SummarizeCostResponse
-	17, // [17:22] is the sub-list for method output_type
-	12, // [12:17] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	0,  // 3: dop.v1.RecordUsageRequest.usage:type_name -> dop.v1.UsageEvent
+	1,  // 4: dop.v1.SetBudgetRequest.budget:type_name -> dop.v1.Budget
+	11, // 5: dop.v1.SummarizeCostResponse.total:type_name -> dop.v1.Money
+	0,  // 6: dop.v1.SummarizeCostResponse.recent:type_name -> dop.v1.UsageEvent
+	3,  // 7: dop.v1.CostService.RecordUsage:input_type -> dop.v1.RecordUsageRequest
+	5,  // 8: dop.v1.CostService.GetBudget:input_type -> dop.v1.GetBudgetRequest
+	6,  // 9: dop.v1.CostService.SetBudget:input_type -> dop.v1.SetBudgetRequest
+	7,  // 10: dop.v1.CostService.RouteModel:input_type -> dop.v1.RouteModelRequest
+	8,  // 11: dop.v1.CostService.SummarizeCost:input_type -> dop.v1.SummarizeCostRequest
+	4,  // 12: dop.v1.CostService.RecordUsage:output_type -> dop.v1.RecordUsageResponse
+	1,  // 13: dop.v1.CostService.GetBudget:output_type -> dop.v1.Budget
+	1,  // 14: dop.v1.CostService.SetBudget:output_type -> dop.v1.Budget
+	2,  // 15: dop.v1.CostService.RouteModel:output_type -> dop.v1.RoutingDecision
+	9,  // 16: dop.v1.CostService.SummarizeCost:output_type -> dop.v1.SummarizeCostResponse
+	12, // [12:17] is the sub-list for method output_type
+	7,  // [7:12] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_cost_proto_init() }

@@ -25,12 +25,19 @@ message ActorRef {
   string name = 3;   // readable label
 }
 
-// The mandatory context of every call: who, in which account.
-// The edge fills it in; the domain trusts it (ADR-0016).
-message CallContext {
-  AccountRef account = 1;   // the active account — a request without it is invalid
-  ActorRef   actor   = 2;
-}
+// CallContext DOES NOT EXIST — and the absence is deliberate.
+//
+// Every request used to declare `CallContext ctx = 1`, and the server ignored
+// it: authorization reads the metadata (`x-actor-id`, `x-account-id`,
+// `x-session-id`), never the body (ADR-0017, convention 5). A contract that
+// declares a field with no effect teaches the wrong thing to whoever reads it —
+// and the field was already being copied into every new proto.
+//
+// Number 1 is RESERVED in every request that carried it, so nobody reuses a tag
+// an old client may still be sending on the wire.
+//
+// Who and in which account travel in the METADATA. If one day a field on the
+// body is wanted, it will have to earn its own number and, above all, be read.
 
 message PageRequest  { int32 size = 1; string token = 2; }
 message PageResponse { string next_token = 1; int32 total = 2; }

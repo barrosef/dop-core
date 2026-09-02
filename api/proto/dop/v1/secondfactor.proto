@@ -46,7 +46,7 @@ message SecondFactor {
 // ── enrolment ───────────────────────────────────────────────────────────────
 
 message EnrollSecondFactorRequest {
-  CallContext ctx = 1;
+  reserved 1;
   SecondFactorKind kind = 2;
   string label = 3;
   // destination is required for email and sms, and refused for totp.
@@ -67,7 +67,7 @@ message EnrollSecondFactorResponse {
 }
 
 message ConfirmSecondFactorRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string factor_id    = 2;
   string challenge_id = 3;
   string code         = 4;
@@ -82,17 +82,17 @@ message ConfirmSecondFactorResponse {
 }
 
 message RevokeSecondFactorRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string id = 2;
 }
 
-message ListSecondFactorsRequest  { CallContext ctx = 1; }
+message ListSecondFactorsRequest  { reserved 1; }
 message ListSecondFactorsResponse { repeated SecondFactor factors = 1; }
 
 // ── the challenge ───────────────────────────────────────────────────────────
 
 message ChallengeSecondFactorRequest {
-  CallContext ctx = 1;
+  reserved 1;
   // Empty uses the person's only active factor. With more than one it REFUSES:
   // choosing for them would send an SMS — and a charge — to somebody who wanted
   // TOTP.
@@ -107,13 +107,13 @@ message ChallengeSecondFactorResponse {
 }
 
 message VerifySecondFactorRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string challenge_id = 2;
   string code = 3;
 }
 
 message VerifyRecoveryCodeRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string code = 2;
 }
 
@@ -128,7 +128,7 @@ message StepUp {
 
 // ── state and recovery ──────────────────────────────────────────────────────
 
-message GetSecondFactorStateRequest { CallContext ctx = 1; }
+message GetSecondFactorStateRequest { reserved 1; }
 
 message GetSecondFactorStateResponse {
   // required is the ACTIVE ACCOUNT's policy, not the person's preference.
@@ -145,7 +145,7 @@ message GetSecondFactorStateResponse {
   google.protobuf.Timestamp step_up_expires_at = 8;
 }
 
-message RegenerateRecoveryCodesRequest  { CallContext ctx = 1; }
+message RegenerateRecoveryCodesRequest  { reserved 1; }
 message RegenerateRecoveryCodesResponse { repeated string codes = 1; }
 
 service SecondFactorService {

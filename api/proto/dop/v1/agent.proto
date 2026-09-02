@@ -97,7 +97,7 @@ service AgentService {
 }
 
 message RunTurnRequest {
-  CallContext ctx       = 1;
+  reserved 1;
   string      demand_id = 2;
   string      thread_id = 3;
   string      text      = 4;

@@ -377,7 +377,6 @@ func (x *ProjectTaskManager) GetCardTypes() []string {
 
 type ListWorkspacesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Page          *PageRequest           `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -411,13 +410,6 @@ func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListWorkspacesRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListWorkspacesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListWorkspacesRequest) GetPage() *PageRequest {
@@ -481,7 +473,6 @@ func (x *ListWorkspacesResponse) GetPage() *PageResponse {
 
 type GetWorkspaceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -517,13 +508,6 @@ func (*GetWorkspaceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *GetWorkspaceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetWorkspaceRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -533,7 +517,6 @@ func (x *GetWorkspaceRequest) GetId() string {
 
 type CreateWorkspaceRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Key            string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
@@ -573,13 +556,6 @@ func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *CreateWorkspaceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateWorkspaceRequest) GetName() string {
 	if x != nil {
 		return x.Name
@@ -617,7 +593,6 @@ func (x *CreateWorkspaceRequest) GetIdempotencyKey() string {
 
 type UpdateWorkspaceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Workspace     *Workspace             `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -653,13 +628,6 @@ func (*UpdateWorkspaceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *UpdateWorkspaceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *UpdateWorkspaceRequest) GetWorkspace() *Workspace {
 	if x != nil {
 		return x.Workspace
@@ -669,7 +637,6 @@ func (x *UpdateWorkspaceRequest) GetWorkspace() *Workspace {
 
 type ListProjectsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Workspace     *WorkspaceRef          `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -703,13 +670,6 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *ListProjectsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListProjectsRequest) GetWorkspace() *WorkspaceRef {
@@ -765,7 +725,6 @@ func (x *ListProjectsResponse) GetProjects() []*Project {
 
 type GetProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -801,13 +760,6 @@ func (*GetProjectRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *GetProjectRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetProjectRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -817,7 +769,6 @@ func (x *GetProjectRequest) GetId() string {
 
 type CreateProjectRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Workspace      *WorkspaceRef          `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	Name           string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Description    string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
@@ -856,13 +807,6 @@ func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *CreateProjectRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateProjectRequest) GetWorkspace() *WorkspaceRef {
 	if x != nil {
 		return x.Workspace
@@ -893,7 +837,6 @@ func (x *CreateProjectRequest) GetIdempotencyKey() string {
 
 type UpdateProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Project       *Project               `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -929,13 +872,6 @@ func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *UpdateProjectRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *UpdateProjectRequest) GetProject() *Project {
 	if x != nil {
 		return x.Project
@@ -945,7 +881,6 @@ func (x *UpdateProjectRequest) GetProject() *Project {
 
 type GetTreeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -978,13 +913,6 @@ func (x *GetTreeRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetTreeRequest.ProtoReflect.Descriptor instead.
 func (*GetTreeRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_hierarchy_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *GetTreeRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 type GetTreeResponse struct {
@@ -1120,47 +1048,38 @@ const file_dop_v1_hierarchy_proto_rawDesc = "" +
 	"\x11external_space_id\x18\x02 \x01(\tR\x0fexternalSpaceId\x12.\n" +
 	"\x13external_project_id\x18\x03 \x01(\tR\x11externalProjectId\x12\x1d\n" +
 	"\n" +
-	"card_types\x18\x04 \x03(\tR\tcardTypes\"g\n" +
-	"\x15ListWorkspacesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12'\n" +
-	"\x04page\x18\x02 \x01(\v2\x13.dop.v1.PageRequestR\x04page\"u\n" +
+	"card_types\x18\x04 \x03(\tR\tcardTypes\"F\n" +
+	"\x15ListWorkspacesRequest\x12'\n" +
+	"\x04page\x18\x02 \x01(\v2\x13.dop.v1.PageRequestR\x04pageJ\x04\b\x01\x10\x02\"u\n" +
 	"\x16ListWorkspacesResponse\x121\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x11.dop.v1.WorkspaceR\n" +
 	"workspaces\x12(\n" +
-	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\"L\n" +
-	"\x13GetWorkspaceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xc4\x01\n" +
-	"\x16CreateWorkspaceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x12\n" +
+	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\"+\n" +
+	"\x13GetWorkspaceRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xa3\x01\n" +
+	"\x16CreateWorkspaceRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04tags\x18\x05 \x03(\tR\x04tags\x12'\n" +
-	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\"p\n" +
-	"\x16UpdateWorkspaceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12/\n" +
-	"\tworkspace\x18\x02 \x01(\v2\x11.dop.v1.WorkspaceR\tworkspace\"p\n" +
-	"\x13ListProjectsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x122\n" +
-	"\tworkspace\x18\x02 \x01(\v2\x14.dop.v1.WorkspaceRefR\tworkspace\"C\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"O\n" +
+	"\x16UpdateWorkspaceRequest\x12/\n" +
+	"\tworkspace\x18\x02 \x01(\v2\x11.dop.v1.WorkspaceR\tworkspaceJ\x04\b\x01\x10\x02\"O\n" +
+	"\x13ListProjectsRequest\x122\n" +
+	"\tworkspace\x18\x02 \x01(\v2\x14.dop.v1.WorkspaceRefR\tworkspaceJ\x04\b\x01\x10\x02\"C\n" +
 	"\x14ListProjectsResponse\x12+\n" +
-	"\bprojects\x18\x01 \x03(\v2\x0f.dop.v1.ProjectR\bprojects\"J\n" +
-	"\x11GetProjectRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xd0\x01\n" +
-	"\x14CreateProjectRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x122\n" +
+	"\bprojects\x18\x01 \x03(\v2\x0f.dop.v1.ProjectR\bprojects\")\n" +
+	"\x11GetProjectRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xaf\x01\n" +
+	"\x14CreateProjectRequest\x122\n" +
 	"\tworkspace\x18\x02 \x01(\v2\x14.dop.v1.WorkspaceRefR\tworkspace\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"h\n" +
-	"\x14UpdateProjectRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12)\n" +
-	"\aproject\x18\x02 \x01(\v2\x0f.dop.v1.ProjectR\aproject\"7\n" +
-	"\x0eGetTreeRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"\xab\x01\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"G\n" +
+	"\x14UpdateProjectRequest\x12)\n" +
+	"\aproject\x18\x02 \x01(\v2\x0f.dop.v1.ProjectR\aprojectJ\x04\b\x01\x10\x02\"\x16\n" +
+	"\x0eGetTreeRequestJ\x04\b\x01\x10\x02\"\xab\x01\n" +
 	"\x0fGetTreeResponse\x122\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x1c.dop.v1.GetTreeResponse.NodeR\x05nodes\x1ad\n" +
 	"\x04Node\x12/\n" +
@@ -1215,9 +1134,8 @@ var file_dop_v1_hierarchy_proto_goTypes = []any{
 	(*AuditStamp)(nil),             // 18: dop.v1.AuditStamp
 	(*WorkspaceRef)(nil),           // 19: dop.v1.WorkspaceRef
 	(*ResourceRef)(nil),            // 20: dop.v1.ResourceRef
-	(*CallContext)(nil),            // 21: dop.v1.CallContext
-	(*PageRequest)(nil),            // 22: dop.v1.PageRequest
-	(*PageResponse)(nil),           // 23: dop.v1.PageResponse
+	(*PageRequest)(nil),            // 21: dop.v1.PageRequest
+	(*PageResponse)(nil),           // 22: dop.v1.PageResponse
 }
 var file_dop_v1_hierarchy_proto_depIdxs = []int32{
 	17, // 0: dop.v1.Workspace.account:type_name -> dop.v1.AccountRef
@@ -1229,49 +1147,40 @@ var file_dop_v1_hierarchy_proto_depIdxs = []int32{
 	18, // 6: dop.v1.Project.audit:type_name -> dop.v1.AuditStamp
 	20, // 7: dop.v1.ProjectRepo.integration:type_name -> dop.v1.ResourceRef
 	20, // 8: dop.v1.ProjectTaskManager.integration:type_name -> dop.v1.ResourceRef
-	21, // 9: dop.v1.ListWorkspacesRequest.ctx:type_name -> dop.v1.CallContext
-	22, // 10: dop.v1.ListWorkspacesRequest.page:type_name -> dop.v1.PageRequest
-	0,  // 11: dop.v1.ListWorkspacesResponse.workspaces:type_name -> dop.v1.Workspace
-	23, // 12: dop.v1.ListWorkspacesResponse.page:type_name -> dop.v1.PageResponse
-	21, // 13: dop.v1.GetWorkspaceRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 14: dop.v1.CreateWorkspaceRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 15: dop.v1.UpdateWorkspaceRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 16: dop.v1.UpdateWorkspaceRequest.workspace:type_name -> dop.v1.Workspace
-	21, // 17: dop.v1.ListProjectsRequest.ctx:type_name -> dop.v1.CallContext
-	19, // 18: dop.v1.ListProjectsRequest.workspace:type_name -> dop.v1.WorkspaceRef
-	1,  // 19: dop.v1.ListProjectsResponse.projects:type_name -> dop.v1.Project
-	21, // 20: dop.v1.GetProjectRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 21: dop.v1.CreateProjectRequest.ctx:type_name -> dop.v1.CallContext
-	19, // 22: dop.v1.CreateProjectRequest.workspace:type_name -> dop.v1.WorkspaceRef
-	21, // 23: dop.v1.UpdateProjectRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 24: dop.v1.UpdateProjectRequest.project:type_name -> dop.v1.Project
-	21, // 25: dop.v1.GetTreeRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 26: dop.v1.GetTreeResponse.nodes:type_name -> dop.v1.GetTreeResponse.Node
-	0,  // 27: dop.v1.GetTreeResponse.Node.workspace:type_name -> dop.v1.Workspace
-	1,  // 28: dop.v1.GetTreeResponse.Node.projects:type_name -> dop.v1.Project
-	4,  // 29: dop.v1.HierarchyService.ListWorkspaces:input_type -> dop.v1.ListWorkspacesRequest
-	6,  // 30: dop.v1.HierarchyService.GetWorkspace:input_type -> dop.v1.GetWorkspaceRequest
-	7,  // 31: dop.v1.HierarchyService.CreateWorkspace:input_type -> dop.v1.CreateWorkspaceRequest
-	8,  // 32: dop.v1.HierarchyService.UpdateWorkspace:input_type -> dop.v1.UpdateWorkspaceRequest
-	9,  // 33: dop.v1.HierarchyService.ListProjects:input_type -> dop.v1.ListProjectsRequest
-	11, // 34: dop.v1.HierarchyService.GetProject:input_type -> dop.v1.GetProjectRequest
-	12, // 35: dop.v1.HierarchyService.CreateProject:input_type -> dop.v1.CreateProjectRequest
-	13, // 36: dop.v1.HierarchyService.UpdateProject:input_type -> dop.v1.UpdateProjectRequest
-	14, // 37: dop.v1.HierarchyService.GetTree:input_type -> dop.v1.GetTreeRequest
-	5,  // 38: dop.v1.HierarchyService.ListWorkspaces:output_type -> dop.v1.ListWorkspacesResponse
-	0,  // 39: dop.v1.HierarchyService.GetWorkspace:output_type -> dop.v1.Workspace
-	0,  // 40: dop.v1.HierarchyService.CreateWorkspace:output_type -> dop.v1.Workspace
-	0,  // 41: dop.v1.HierarchyService.UpdateWorkspace:output_type -> dop.v1.Workspace
-	10, // 42: dop.v1.HierarchyService.ListProjects:output_type -> dop.v1.ListProjectsResponse
-	1,  // 43: dop.v1.HierarchyService.GetProject:output_type -> dop.v1.Project
-	1,  // 44: dop.v1.HierarchyService.CreateProject:output_type -> dop.v1.Project
-	1,  // 45: dop.v1.HierarchyService.UpdateProject:output_type -> dop.v1.Project
-	15, // 46: dop.v1.HierarchyService.GetTree:output_type -> dop.v1.GetTreeResponse
-	38, // [38:47] is the sub-list for method output_type
-	29, // [29:38] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	21, // 9: dop.v1.ListWorkspacesRequest.page:type_name -> dop.v1.PageRequest
+	0,  // 10: dop.v1.ListWorkspacesResponse.workspaces:type_name -> dop.v1.Workspace
+	22, // 11: dop.v1.ListWorkspacesResponse.page:type_name -> dop.v1.PageResponse
+	0,  // 12: dop.v1.UpdateWorkspaceRequest.workspace:type_name -> dop.v1.Workspace
+	19, // 13: dop.v1.ListProjectsRequest.workspace:type_name -> dop.v1.WorkspaceRef
+	1,  // 14: dop.v1.ListProjectsResponse.projects:type_name -> dop.v1.Project
+	19, // 15: dop.v1.CreateProjectRequest.workspace:type_name -> dop.v1.WorkspaceRef
+	1,  // 16: dop.v1.UpdateProjectRequest.project:type_name -> dop.v1.Project
+	16, // 17: dop.v1.GetTreeResponse.nodes:type_name -> dop.v1.GetTreeResponse.Node
+	0,  // 18: dop.v1.GetTreeResponse.Node.workspace:type_name -> dop.v1.Workspace
+	1,  // 19: dop.v1.GetTreeResponse.Node.projects:type_name -> dop.v1.Project
+	4,  // 20: dop.v1.HierarchyService.ListWorkspaces:input_type -> dop.v1.ListWorkspacesRequest
+	6,  // 21: dop.v1.HierarchyService.GetWorkspace:input_type -> dop.v1.GetWorkspaceRequest
+	7,  // 22: dop.v1.HierarchyService.CreateWorkspace:input_type -> dop.v1.CreateWorkspaceRequest
+	8,  // 23: dop.v1.HierarchyService.UpdateWorkspace:input_type -> dop.v1.UpdateWorkspaceRequest
+	9,  // 24: dop.v1.HierarchyService.ListProjects:input_type -> dop.v1.ListProjectsRequest
+	11, // 25: dop.v1.HierarchyService.GetProject:input_type -> dop.v1.GetProjectRequest
+	12, // 26: dop.v1.HierarchyService.CreateProject:input_type -> dop.v1.CreateProjectRequest
+	13, // 27: dop.v1.HierarchyService.UpdateProject:input_type -> dop.v1.UpdateProjectRequest
+	14, // 28: dop.v1.HierarchyService.GetTree:input_type -> dop.v1.GetTreeRequest
+	5,  // 29: dop.v1.HierarchyService.ListWorkspaces:output_type -> dop.v1.ListWorkspacesResponse
+	0,  // 30: dop.v1.HierarchyService.GetWorkspace:output_type -> dop.v1.Workspace
+	0,  // 31: dop.v1.HierarchyService.CreateWorkspace:output_type -> dop.v1.Workspace
+	0,  // 32: dop.v1.HierarchyService.UpdateWorkspace:output_type -> dop.v1.Workspace
+	10, // 33: dop.v1.HierarchyService.ListProjects:output_type -> dop.v1.ListProjectsResponse
+	1,  // 34: dop.v1.HierarchyService.GetProject:output_type -> dop.v1.Project
+	1,  // 35: dop.v1.HierarchyService.CreateProject:output_type -> dop.v1.Project
+	1,  // 36: dop.v1.HierarchyService.UpdateProject:output_type -> dop.v1.Project
+	15, // 37: dop.v1.HierarchyService.GetTree:output_type -> dop.v1.GetTreeResponse
+	29, // [29:38] is the sub-list for method output_type
+	20, // [20:29] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_hierarchy_proto_init() }

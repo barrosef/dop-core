@@ -47,10 +47,10 @@ service KnowledgeService {
   rpc ListRules          (ListRulesRequest)           returns (ListRulesResponse);
 }
 
-message BuildContextPackageRequest { CallContext ctx = 1; string demand_id = 2; }
-message SearchMemoryRequest  { CallContext ctx = 1; ProjectRef project = 2; string query = 3; int32 limit = 4; }
+message BuildContextPackageRequest { reserved 1; string demand_id = 2; }
+message SearchMemoryRequest  { reserved 1; ProjectRef project = 2; string query = 3; int32 limit = 4; }
 message SearchMemoryResponse { repeated KnowledgeArtifact artifacts = 1; repeated float scores = 2; }
-message ReadIndexRequest     { CallContext ctx = 1; ProjectRef project = 2; string repo = 3; }
-message PutArtifactRequest   { CallContext ctx = 1; KnowledgeArtifact artifact = 2; bytes content = 3; string idempotency_key = 4; }
-message ListRulesRequest     { CallContext ctx = 1; ProjectRef project = 2; }
+message ReadIndexRequest     { reserved 1; ProjectRef project = 2; string repo = 3; }
+message PutArtifactRequest   { reserved 1; KnowledgeArtifact artifact = 2; bytes content = 3; string idempotency_key = 4; }
+message ListRulesRequest     { reserved 1; ProjectRef project = 2; }
 message ListRulesResponse    { repeated string rules = 1; }

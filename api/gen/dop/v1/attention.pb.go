@@ -286,7 +286,6 @@ func (x *AttentionItem) GetResolvedAt() *timestamppb.Timestamp {
 
 type ListAttentionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	// Empty = only the open ones, which is the box's case. Resolved ones come in
 	// by explicit request, for history.
 	IncludeResolved bool `protobuf:"varint,2,opt,name=include_resolved,json=includeResolved,proto3" json:"include_resolved,omitempty"`
@@ -325,13 +324,6 @@ func (x *ListAttentionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListAttentionRequest.ProtoReflect.Descriptor instead.
 func (*ListAttentionRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_attention_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ListAttentionRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListAttentionRequest) GetIncludeResolved() bool {
@@ -420,7 +412,6 @@ func (x *ListAttentionResponse) GetOpenTotal() int32 {
 
 type WatchAttentionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	// The resumption cursor, as in WatchEvents: a client that dropped comes back
 	// from where it stopped instead of starting over or losing an item.
 	SinceEventId  string `protobuf:"bytes,2,opt,name=since_event_id,json=sinceEventId,proto3" json:"since_event_id,omitempty"`
@@ -456,13 +447,6 @@ func (x *WatchAttentionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use WatchAttentionRequest.ProtoReflect.Descriptor instead.
 func (*WatchAttentionRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_attention_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *WatchAttentionRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *WatchAttentionRequest) GetSinceEventId() string {
@@ -568,20 +552,18 @@ const file_dop_v1_attention_proto_rawDesc = "" +
 	"\x13KIND_MERGE_CONFLICT\x10\x04\x12\x12\n" +
 	"\x0eKIND_DIRECTIVE\x10\x05\x12\x18\n" +
 	"\x14KIND_BUDGET_EXCEEDED\x10\x06\x12\x1b\n" +
-	"\x17KIND_INTEGRATION_BROKEN\x10\a\"\xbc\x01\n" +
-	"\x14ListAttentionRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12)\n" +
+	"\x17KIND_INTEGRATION_BROKEN\x10\a\"\x9b\x01\n" +
+	"\x14ListAttentionRequest\x12)\n" +
 	"\x10include_resolved\x18\x02 \x01(\bR\x0fincludeResolved\x12)\n" +
 	"\x06demand\x18\x03 \x01(\v2\x11.dop.v1.DemandRefR\x06demand\x12'\n" +
-	"\x04page\x18\x04 \x01(\v2\x13.dop.v1.PageRequestR\x04page\"\x8d\x01\n" +
+	"\x04page\x18\x04 \x01(\v2\x13.dop.v1.PageRequestR\x04pageJ\x04\b\x01\x10\x02\"\x8d\x01\n" +
 	"\x15ListAttentionResponse\x12+\n" +
 	"\x05items\x18\x01 \x03(\v2\x15.dop.v1.AttentionItemR\x05items\x12(\n" +
 	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\x12\x1d\n" +
 	"\n" +
-	"open_total\x18\x03 \x01(\x05R\topenTotal\"d\n" +
-	"\x15WatchAttentionRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12$\n" +
-	"\x0esince_event_id\x18\x02 \x01(\tR\fsinceEventId\"\xd9\x01\n" +
+	"open_total\x18\x03 \x01(\x05R\topenTotal\"C\n" +
+	"\x15WatchAttentionRequest\x12$\n" +
+	"\x0esince_event_id\x18\x02 \x01(\tR\fsinceEventIdJ\x04\b\x01\x10\x02\"\xd9\x01\n" +
 	"\x0fAttentionUpdate\x126\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x1e.dop.v1.AttentionUpdate.ChangeR\x06change\x12)\n" +
 	"\x04item\x18\x02 \x01(\v2\x15.dop.v1.AttentionItemR\x04item\x12\x19\n" +
@@ -621,9 +603,8 @@ var file_dop_v1_attention_proto_goTypes = []any{
 	(*AccountRef)(nil),            // 7: dop.v1.AccountRef
 	(*DemandRef)(nil),             // 8: dop.v1.DemandRef
 	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
-	(*CallContext)(nil),           // 10: dop.v1.CallContext
-	(*PageRequest)(nil),           // 11: dop.v1.PageRequest
-	(*PageResponse)(nil),          // 12: dop.v1.PageResponse
+	(*PageRequest)(nil),           // 10: dop.v1.PageRequest
+	(*PageResponse)(nil),          // 11: dop.v1.PageResponse
 }
 var file_dop_v1_attention_proto_depIdxs = []int32{
 	7,  // 0: dop.v1.AttentionItem.account:type_name -> dop.v1.AccountRef
@@ -631,23 +612,21 @@ var file_dop_v1_attention_proto_depIdxs = []int32{
 	8,  // 2: dop.v1.AttentionItem.demand:type_name -> dop.v1.DemandRef
 	9,  // 3: dop.v1.AttentionItem.opened_at:type_name -> google.protobuf.Timestamp
 	9,  // 4: dop.v1.AttentionItem.resolved_at:type_name -> google.protobuf.Timestamp
-	10, // 5: dop.v1.ListAttentionRequest.ctx:type_name -> dop.v1.CallContext
-	8,  // 6: dop.v1.ListAttentionRequest.demand:type_name -> dop.v1.DemandRef
-	11, // 7: dop.v1.ListAttentionRequest.page:type_name -> dop.v1.PageRequest
-	2,  // 8: dop.v1.ListAttentionResponse.items:type_name -> dop.v1.AttentionItem
-	12, // 9: dop.v1.ListAttentionResponse.page:type_name -> dop.v1.PageResponse
-	10, // 10: dop.v1.WatchAttentionRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 11: dop.v1.AttentionUpdate.change:type_name -> dop.v1.AttentionUpdate.Change
-	2,  // 12: dop.v1.AttentionUpdate.item:type_name -> dop.v1.AttentionItem
-	3,  // 13: dop.v1.AttentionService.ListAttention:input_type -> dop.v1.ListAttentionRequest
-	5,  // 14: dop.v1.AttentionService.WatchAttention:input_type -> dop.v1.WatchAttentionRequest
-	4,  // 15: dop.v1.AttentionService.ListAttention:output_type -> dop.v1.ListAttentionResponse
-	6,  // 16: dop.v1.AttentionService.WatchAttention:output_type -> dop.v1.AttentionUpdate
-	15, // [15:17] is the sub-list for method output_type
-	13, // [13:15] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	8,  // 5: dop.v1.ListAttentionRequest.demand:type_name -> dop.v1.DemandRef
+	10, // 6: dop.v1.ListAttentionRequest.page:type_name -> dop.v1.PageRequest
+	2,  // 7: dop.v1.ListAttentionResponse.items:type_name -> dop.v1.AttentionItem
+	11, // 8: dop.v1.ListAttentionResponse.page:type_name -> dop.v1.PageResponse
+	1,  // 9: dop.v1.AttentionUpdate.change:type_name -> dop.v1.AttentionUpdate.Change
+	2,  // 10: dop.v1.AttentionUpdate.item:type_name -> dop.v1.AttentionItem
+	3,  // 11: dop.v1.AttentionService.ListAttention:input_type -> dop.v1.ListAttentionRequest
+	5,  // 12: dop.v1.AttentionService.WatchAttention:input_type -> dop.v1.WatchAttentionRequest
+	4,  // 13: dop.v1.AttentionService.ListAttention:output_type -> dop.v1.ListAttentionResponse
+	6,  // 14: dop.v1.AttentionService.WatchAttention:output_type -> dop.v1.AttentionUpdate
+	13, // [13:15] is the sub-list for method output_type
+	11, // [11:13] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_attention_proto_init() }

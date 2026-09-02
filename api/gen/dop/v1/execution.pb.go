@@ -300,7 +300,6 @@ func (x *SandboxEndpoint) GetState() string {
 
 type ProvisionSandboxRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId       string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	MinTier        IsolationTier          `protobuf:"varint,3,opt,name=min_tier,json=minTier,proto3,enum=dop.v1.IsolationTier" json:"min_tier,omitempty"` // the account's policy; a violation is a REFUSAL, it does not degrade
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -338,13 +337,6 @@ func (*ProvisionSandboxRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ProvisionSandboxRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *ProvisionSandboxRequest) GetDemandId() string {
 	if x != nil {
 		return x.DemandId
@@ -368,7 +360,6 @@ func (x *ProvisionSandboxRequest) GetIdempotencyKey() string {
 
 type SuspendSandboxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -404,13 +395,6 @@ func (*SuspendSandboxRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SuspendSandboxRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *SuspendSandboxRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -420,7 +404,6 @@ func (x *SuspendSandboxRequest) GetId() string {
 
 type ResumeSandboxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -456,13 +439,6 @@ func (*ResumeSandboxRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *ResumeSandboxRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *ResumeSandboxRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -472,7 +448,6 @@ func (x *ResumeSandboxRequest) GetId() string {
 
 type DestroySandboxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -506,13 +481,6 @@ func (x *DestroySandboxRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use DestroySandboxRequest.ProtoReflect.Descriptor instead.
 func (*DestroySandboxRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *DestroySandboxRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *DestroySandboxRequest) GetId() string {
@@ -568,7 +536,6 @@ func (x *DestroySandboxResponse) GetDestroyed() bool {
 
 type DescribeSandboxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -604,13 +571,6 @@ func (*DescribeSandboxRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *DescribeSandboxRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *DescribeSandboxRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -620,7 +580,6 @@ func (x *DescribeSandboxRequest) GetId() string {
 
 type StreamLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	SandboxId     string                 `protobuf:"bytes,2,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
 	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"` // app | test | infra
 	Service       string                 `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"`
@@ -657,13 +616,6 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_execution_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *StreamLogsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *StreamLogsRequest) GetSandboxId() string {
@@ -786,33 +738,27 @@ const file_dop_v1_execution_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x12\n" +
 	"\x04port\x18\x03 \x01(\x05R\x04port\x12\x14\n" +
-	"\x05state\x18\x04 \x01(\tR\x05state\"\xb8\x01\n" +
-	"\x17ProvisionSandboxRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\"\x97\x01\n" +
+	"\x17ProvisionSandboxRequest\x12\x1b\n" +
 	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\x120\n" +
 	"\bmin_tier\x18\x03 \x01(\x0e2\x15.dop.v1.IsolationTierR\aminTier\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"N\n" +
-	"\x15SuspendSandboxRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"M\n" +
-	"\x14ResumeSandboxRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"N\n" +
-	"\x15DestroySandboxRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"6\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"-\n" +
+	"\x15SuspendSandboxRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\",\n" +
+	"\x14ResumeSandboxRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"-\n" +
+	"\x15DestroySandboxRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"6\n" +
 	"\x16DestroySandboxResponse\x12\x1c\n" +
-	"\tdestroyed\x18\x01 \x01(\bR\tdestroyed\"O\n" +
-	"\x16DescribeSandboxRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xa8\x01\n" +
-	"\x11StreamLogsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1d\n" +
+	"\tdestroyed\x18\x01 \x01(\bR\tdestroyed\".\n" +
+	"\x16DescribeSandboxRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\x87\x01\n" +
+	"\x11StreamLogsRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x02 \x01(\tR\tsandboxId\x12\x16\n" +
 	"\x06source\x18\x03 \x01(\tR\x06source\x12\x18\n" +
 	"\aservice\x18\x04 \x01(\tR\aservice\x12\x1b\n" +
-	"\ttest_type\x18\x05 \x01(\tR\btestType\"{\n" +
+	"\ttest_type\x18\x05 \x01(\tR\btestTypeJ\x04\b\x01\x10\x02\"{\n" +
 	"\aLogLine\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x18\n" +
 	"\aservice\x18\x02 \x01(\tR\aservice\x12\x12\n" +
@@ -864,7 +810,6 @@ var file_dop_v1_execution_proto_goTypes = []any{
 	(*DemandRef)(nil),               // 12: dop.v1.DemandRef
 	(*timestamppb.Timestamp)(nil),   // 13: google.protobuf.Timestamp
 	(*AuditStamp)(nil),              // 14: dop.v1.AuditStamp
-	(*CallContext)(nil),             // 15: dop.v1.CallContext
 }
 var file_dop_v1_execution_proto_depIdxs = []int32{
 	12, // 0: dop.v1.Sandbox.demand:type_name -> dop.v1.DemandRef
@@ -873,31 +818,25 @@ var file_dop_v1_execution_proto_depIdxs = []int32{
 	3,  // 3: dop.v1.Sandbox.endpoints:type_name -> dop.v1.SandboxEndpoint
 	13, // 4: dop.v1.Sandbox.last_active_at:type_name -> google.protobuf.Timestamp
 	14, // 5: dop.v1.Sandbox.audit:type_name -> dop.v1.AuditStamp
-	15, // 6: dop.v1.ProvisionSandboxRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 7: dop.v1.ProvisionSandboxRequest.min_tier:type_name -> dop.v1.IsolationTier
-	15, // 8: dop.v1.SuspendSandboxRequest.ctx:type_name -> dop.v1.CallContext
-	15, // 9: dop.v1.ResumeSandboxRequest.ctx:type_name -> dop.v1.CallContext
-	15, // 10: dop.v1.DestroySandboxRequest.ctx:type_name -> dop.v1.CallContext
-	15, // 11: dop.v1.DescribeSandboxRequest.ctx:type_name -> dop.v1.CallContext
-	15, // 12: dop.v1.StreamLogsRequest.ctx:type_name -> dop.v1.CallContext
-	13, // 13: dop.v1.LogLine.at:type_name -> google.protobuf.Timestamp
-	4,  // 14: dop.v1.ExecutionService.ProvisionSandbox:input_type -> dop.v1.ProvisionSandboxRequest
-	5,  // 15: dop.v1.ExecutionService.SuspendSandbox:input_type -> dop.v1.SuspendSandboxRequest
-	6,  // 16: dop.v1.ExecutionService.ResumeSandbox:input_type -> dop.v1.ResumeSandboxRequest
-	7,  // 17: dop.v1.ExecutionService.DestroySandbox:input_type -> dop.v1.DestroySandboxRequest
-	9,  // 18: dop.v1.ExecutionService.DescribeSandbox:input_type -> dop.v1.DescribeSandboxRequest
-	10, // 19: dop.v1.ExecutionService.StreamLogs:input_type -> dop.v1.StreamLogsRequest
-	2,  // 20: dop.v1.ExecutionService.ProvisionSandbox:output_type -> dop.v1.Sandbox
-	2,  // 21: dop.v1.ExecutionService.SuspendSandbox:output_type -> dop.v1.Sandbox
-	2,  // 22: dop.v1.ExecutionService.ResumeSandbox:output_type -> dop.v1.Sandbox
-	8,  // 23: dop.v1.ExecutionService.DestroySandbox:output_type -> dop.v1.DestroySandboxResponse
-	2,  // 24: dop.v1.ExecutionService.DescribeSandbox:output_type -> dop.v1.Sandbox
-	11, // 25: dop.v1.ExecutionService.StreamLogs:output_type -> dop.v1.LogLine
-	20, // [20:26] is the sub-list for method output_type
-	14, // [14:20] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 6: dop.v1.ProvisionSandboxRequest.min_tier:type_name -> dop.v1.IsolationTier
+	13, // 7: dop.v1.LogLine.at:type_name -> google.protobuf.Timestamp
+	4,  // 8: dop.v1.ExecutionService.ProvisionSandbox:input_type -> dop.v1.ProvisionSandboxRequest
+	5,  // 9: dop.v1.ExecutionService.SuspendSandbox:input_type -> dop.v1.SuspendSandboxRequest
+	6,  // 10: dop.v1.ExecutionService.ResumeSandbox:input_type -> dop.v1.ResumeSandboxRequest
+	7,  // 11: dop.v1.ExecutionService.DestroySandbox:input_type -> dop.v1.DestroySandboxRequest
+	9,  // 12: dop.v1.ExecutionService.DescribeSandbox:input_type -> dop.v1.DescribeSandboxRequest
+	10, // 13: dop.v1.ExecutionService.StreamLogs:input_type -> dop.v1.StreamLogsRequest
+	2,  // 14: dop.v1.ExecutionService.ProvisionSandbox:output_type -> dop.v1.Sandbox
+	2,  // 15: dop.v1.ExecutionService.SuspendSandbox:output_type -> dop.v1.Sandbox
+	2,  // 16: dop.v1.ExecutionService.ResumeSandbox:output_type -> dop.v1.Sandbox
+	8,  // 17: dop.v1.ExecutionService.DestroySandbox:output_type -> dop.v1.DestroySandboxResponse
+	2,  // 18: dop.v1.ExecutionService.DescribeSandbox:output_type -> dop.v1.Sandbox
+	11, // 19: dop.v1.ExecutionService.StreamLogs:output_type -> dop.v1.LogLine
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_execution_proto_init() }

@@ -68,11 +68,11 @@ service DeliveryService {
   rpc DecideDirective (DecideDirectiveRequest)  returns (Directive);
 }
 
-message ListPullRequestsRequest  { CallContext ctx = 1; string demand_id = 2; ProjectRef project = 3; }
+message ListPullRequestsRequest  { reserved 1; string demand_id = 2; ProjectRef project = 3; }
 message ListPullRequestsResponse { repeated PullRequest pull_requests = 1; }
-message GetMergeQueueRequest     { CallContext ctx = 1; string repo_id = 2; }
+message GetMergeQueueRequest     { reserved 1; string repo_id = 2; }
 message GetMergeQueueResponse    { repeated MergeQueueEntry entries = 1; }
-message EnqueueMergeRequest      { CallContext ctx = 1; string repo_id = 2; string demand_id = 3; string idempotency_key = 4; }
-message ListDirectivesRequest    { CallContext ctx = 1; ProjectRef project = 2; }
+message EnqueueMergeRequest      { reserved 1; string repo_id = 2; string demand_id = 3; string idempotency_key = 4; }
+message ListDirectivesRequest    { reserved 1; ProjectRef project = 2; }
 message ListDirectivesResponse   { repeated Directive directives = 1; }
-message DecideDirectiveRequest   { CallContext ctx = 1; string directive_id = 2; google.protobuf.Struct decision = 3; string idempotency_key = 4; }
+message DecideDirectiveRequest   { reserved 1; string directive_id = 2; google.protobuf.Struct decision = 3; string idempotency_key = 4; }

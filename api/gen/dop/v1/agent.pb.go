@@ -444,7 +444,6 @@ func (x *TurnOutcome) GetWarnings() []string {
 
 type RunTurnRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
-	Ctx      *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	ThreadId string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	Text     string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
@@ -500,13 +499,6 @@ func (x *RunTurnRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RunTurnRequest.ProtoReflect.Descriptor instead.
 func (*RunTurnRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_agent_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *RunTurnRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *RunTurnRequest) GetDemandId() string {
@@ -607,9 +599,8 @@ const file_dop_v1_agent_proto_rawDesc = "" +
 	"\x06paused\x18\v \x01(\bR\x06paused\x12\x16\n" +
 	"\x06notice\x18\f \x01(\tR\x06notice\x12(\n" +
 	"\abudgets\x18\r \x03(\v2\x0e.dop.v1.BudgetR\abudgets\x12\x1a\n" +
-	"\bwarnings\x18\x0e \x03(\tR\bwarnings\"\xbd\x02\n" +
-	"\x0eRunTurnRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\bwarnings\x18\x0e \x03(\tR\bwarnings\"\x9c\x02\n" +
+	"\x0eRunTurnRequest\x12\x1b\n" +
 	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\x12\x1b\n" +
 	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x12\x1b\n" +
@@ -618,7 +609,7 @@ const file_dop_v1_agent_proto_rawDesc = "" +
 	"resourceId\x12#\n" +
 	"\roperator_note\x18\a \x01(\tR\foperatorNote\x12*\n" +
 	"\x11max_output_tokens\x18\b \x01(\x05R\x0fmaxOutputTokens\x12'\n" +
-	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKey2F\n" +
+	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x022F\n" +
 	"\fAgentService\x126\n" +
 	"\aRunTurn\x12\x16.dop.v1.RunTurnRequest\x1a\x13.dop.v1.TurnOutcomeB\x90\x01\n" +
 	"\n" +
@@ -647,7 +638,6 @@ var file_dop_v1_agent_proto_goTypes = []any{
 	(*Money)(nil),          // 5: dop.v1.Money
 	(*DemandRef)(nil),      // 6: dop.v1.DemandRef
 	(*Budget)(nil),         // 7: dop.v1.Budget
-	(*CallContext)(nil),    // 8: dop.v1.CallContext
 }
 var file_dop_v1_agent_proto_depIdxs = []int32{
 	5, // 0: dop.v1.TurnUsage.cost:type_name -> dop.v1.Money
@@ -656,14 +646,13 @@ var file_dop_v1_agent_proto_depIdxs = []int32{
 	2, // 3: dop.v1.TurnOutcome.finding:type_name -> dop.v1.TurnFinding
 	1, // 4: dop.v1.TurnOutcome.usage:type_name -> dop.v1.TurnUsage
 	7, // 5: dop.v1.TurnOutcome.budgets:type_name -> dop.v1.Budget
-	8, // 6: dop.v1.RunTurnRequest.ctx:type_name -> dop.v1.CallContext
-	4, // 7: dop.v1.AgentService.RunTurn:input_type -> dop.v1.RunTurnRequest
-	3, // 8: dop.v1.AgentService.RunTurn:output_type -> dop.v1.TurnOutcome
-	8, // [8:9] is the sub-list for method output_type
-	7, // [7:8] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	4, // 6: dop.v1.AgentService.RunTurn:input_type -> dop.v1.RunTurnRequest
+	3, // 7: dop.v1.AgentService.RunTurn:output_type -> dop.v1.TurnOutcome
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_agent_proto_init() }

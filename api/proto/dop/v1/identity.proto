@@ -89,10 +89,10 @@ service IdentityService {
   rpc GetInvite      (GetInviteRequest)      returns (InvitePreview);
 }
 
-message ListInvitesRequest  { CallContext ctx = 1; }
+message ListInvitesRequest  { reserved 1; }
 message ListInvitesResponse { repeated Invite invites = 1; }
 
-message GetInviteRequest { CallContext ctx = 1; string id = 2; }
+message GetInviteRequest { reserved 1; string id = 2; }
 
 // What whoever OPENS the link sees. It does NOT carry the invitee's e-mail:
 // whoever finds the link must not learn an address from it (ADR-0026).
@@ -105,7 +105,7 @@ message InvitePreview {
   bool usable = 6;
 }
 
-message GetUserRequest    { CallContext ctx = 1; string id = 2; }
+message GetUserRequest    { reserved 1; string id = 2; }
 message EnsureUserRequest {
   // A normalized Principal coming from the IdentityProvider — Firebase claims
   // do not cross this frontier (ADR-0001).
@@ -117,21 +117,21 @@ message EnsureUserRequest {
   string provider       = 6;
   string idempotency_key = 7;
 }
-message ListAccountsRequest  { CallContext ctx = 1; UserRef user = 2; }
+message ListAccountsRequest  { reserved 1; UserRef user = 2; }
 message ListAccountsResponse { repeated Account accounts = 1; }
-message GetAccountRequest    { CallContext ctx = 1; string id = 2; }
+message GetAccountRequest    { reserved 1; string id = 2; }
 message CreateAccountRequest {
-  CallContext  ctx  = 1;
+  reserved 1;
   Account.Kind kind = 2;
   string handle       = 3;
   string display_name = 4;
   string legal_id     = 5;
   string idempotency_key = 6;
 }
-message ListMembershipsRequest  { CallContext ctx = 1; AccountRef account = 2; }
+message ListMembershipsRequest  { reserved 1; AccountRef account = 2; }
 message ListMembershipsResponse { repeated Membership memberships = 1; }
 message CreateInviteRequest {
-  CallContext ctx   = 1;
+  reserved 1;
   string      email = 2;
   Role        role  = 3;
   repeated ResourceGrantSpec grants = 4;
@@ -141,10 +141,10 @@ message CreateInviteRequest {
 // grants nothing: the server requires the session's verified email to be the
 // invite's. An old client sending the token here simply does not find the row,
 // which is the correct failure.
-message AcceptInviteRequest { CallContext ctx = 1; string invite_id = 2; string idempotency_key = 3; }
-message RevokeInviteRequest { CallContext ctx = 1; string id = 2; }
+message AcceptInviteRequest { reserved 1; string invite_id = 2; string idempotency_key = 3; }
+message RevokeInviteRequest { reserved 1; string id = 2; }
 message UpdateMembershipRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string membership_id = 2;
   Role   role = 3;
   repeated ResourceGrantSpec grants = 4;

@@ -47,18 +47,18 @@ service ExecutionService {
 }
 
 message ProvisionSandboxRequest {
-  CallContext   ctx = 1;
+  reserved 1;
   string        demand_id = 2;
   IsolationTier min_tier  = 3;   // the account's policy; a violation is a REFUSAL, it does not degrade
   string idempotency_key  = 4;
 }
-message SuspendSandboxRequest  { CallContext ctx = 1; string id = 2; }
-message ResumeSandboxRequest   { CallContext ctx = 1; string id = 2; }
-message DestroySandboxRequest  { CallContext ctx = 1; string id = 2; }
+message SuspendSandboxRequest  { reserved 1; string id = 2; }
+message ResumeSandboxRequest   { reserved 1; string id = 2; }
+message DestroySandboxRequest  { reserved 1; string id = 2; }
 message DestroySandboxResponse { bool destroyed = 1; }
-message DescribeSandboxRequest { CallContext ctx = 1; string id = 2; }
+message DescribeSandboxRequest { reserved 1; string id = 2; }
 message StreamLogsRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string sandbox_id = 2;
   string source     = 3;  // app | test | infra
   string service    = 4;

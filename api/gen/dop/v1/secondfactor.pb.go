@@ -232,7 +232,6 @@ func (x *SecondFactor) GetAudit() *AuditStamp {
 
 type EnrollSecondFactorRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Kind  SecondFactorKind       `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.SecondFactorKind" json:"kind,omitempty"`
 	Label string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
 	// destination is required for email and sms, and refused for totp.
@@ -270,13 +269,6 @@ func (x *EnrollSecondFactorRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use EnrollSecondFactorRequest.ProtoReflect.Descriptor instead.
 func (*EnrollSecondFactorRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *EnrollSecondFactorRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *EnrollSecondFactorRequest) GetKind() SecondFactorKind {
@@ -382,7 +374,6 @@ func (x *EnrollSecondFactorResponse) GetUri() string {
 
 type ConfirmSecondFactorRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	FactorId      string                 `protobuf:"bytes,2,opt,name=factor_id,json=factorId,proto3" json:"factor_id,omitempty"`
 	ChallengeId   string                 `protobuf:"bytes,3,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
 	Code          string                 `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
@@ -418,13 +409,6 @@ func (x *ConfirmSecondFactorRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ConfirmSecondFactorRequest.ProtoReflect.Descriptor instead.
 func (*ConfirmSecondFactorRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ConfirmSecondFactorRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ConfirmSecondFactorRequest) GetFactorId() string {
@@ -505,7 +489,6 @@ func (x *ConfirmSecondFactorResponse) GetRecoveryCodes() []string {
 
 type RevokeSecondFactorRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -541,13 +524,6 @@ func (*RevokeSecondFactorRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *RevokeSecondFactorRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *RevokeSecondFactorRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -557,7 +533,6 @@ func (x *RevokeSecondFactorRequest) GetId() string {
 
 type ListSecondFactorsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -590,13 +565,6 @@ func (x *ListSecondFactorsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListSecondFactorsRequest.ProtoReflect.Descriptor instead.
 func (*ListSecondFactorsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ListSecondFactorsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 type ListSecondFactorsResponse struct {
@@ -645,7 +613,6 @@ func (x *ListSecondFactorsResponse) GetFactors() []*SecondFactor {
 
 type ChallengeSecondFactorRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	// Empty uses the person's only active factor. With more than one it REFUSES:
 	// choosing for them would send an SMS — and a charge — to somebody who wanted
 	// TOTP.
@@ -682,13 +649,6 @@ func (x *ChallengeSecondFactorRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ChallengeSecondFactorRequest.ProtoReflect.Descriptor instead.
 func (*ChallengeSecondFactorRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *ChallengeSecondFactorRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ChallengeSecondFactorRequest) GetFactorId() string {
@@ -768,7 +728,6 @@ func (x *ChallengeSecondFactorResponse) GetExpiresAt() *timestamppb.Timestamp {
 
 type VerifySecondFactorRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	ChallengeId   string                 `protobuf:"bytes,2,opt,name=challenge_id,json=challengeId,proto3" json:"challenge_id,omitempty"`
 	Code          string                 `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -805,13 +764,6 @@ func (*VerifySecondFactorRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *VerifySecondFactorRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *VerifySecondFactorRequest) GetChallengeId() string {
 	if x != nil {
 		return x.ChallengeId
@@ -828,7 +780,6 @@ func (x *VerifySecondFactorRequest) GetCode() string {
 
 type VerifyRecoveryCodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -862,13 +813,6 @@ func (x *VerifyRecoveryCodeRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use VerifyRecoveryCodeRequest.ProtoReflect.Descriptor instead.
 func (*VerifyRecoveryCodeRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *VerifyRecoveryCodeRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *VerifyRecoveryCodeRequest) GetCode() string {
@@ -950,7 +894,6 @@ func (x *StepUp) GetExpiresAt() *timestamppb.Timestamp {
 
 type GetSecondFactorStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -983,13 +926,6 @@ func (x *GetSecondFactorStateRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetSecondFactorStateRequest.ProtoReflect.Descriptor instead.
 func (*GetSecondFactorStateRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *GetSecondFactorStateRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 type GetSecondFactorStateResponse struct {
@@ -1098,7 +1034,6 @@ func (x *GetSecondFactorStateResponse) GetStepUpExpiresAt() *timestamppb.Timesta
 
 type RegenerateRecoveryCodesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1131,13 +1066,6 @@ func (x *RegenerateRecoveryCodesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RegenerateRecoveryCodesRequest.ProtoReflect.Descriptor instead.
 func (*RegenerateRecoveryCodesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_secondfactor_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *RegenerateRecoveryCodesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 type RegenerateRecoveryCodesResponse struct {
@@ -1203,58 +1131,50 @@ const file_dop_v1_secondfactor_proto_rawDesc = "" +
 	"\x12STATUS_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTATUS_PENDING\x10\x01\x12\x11\n" +
 	"\rSTATUS_ACTIVE\x10\x02\x12\x12\n" +
-	"\x0eSTATUS_REVOKED\x10\x03\"\xd1\x01\n" +
-	"\x19EnrollSecondFactorRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
+	"\x0eSTATUS_REVOKED\x10\x03\"\xb0\x01\n" +
+	"\x19EnrollSecondFactorRequest\x12,\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x18.dop.v1.SecondFactorKindR\x04kind\x12\x14\n" +
 	"\x05label\x18\x03 \x01(\tR\x05label\x12 \n" +
 	"\vdestination\x18\x04 \x01(\tR\vdestination\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\x97\x01\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"\x97\x01\n" +
 	"\x1aEnrollSecondFactorResponse\x12,\n" +
 	"\x06factor\x18\x01 \x01(\v2\x14.dop.v1.SecondFactorR\x06factor\x12!\n" +
 	"\fchallenge_id\x18\x02 \x01(\tR\vchallengeId\x12\x16\n" +
 	"\x06secret\x18\x03 \x01(\tR\x06secret\x12\x10\n" +
-	"\x03uri\x18\x04 \x01(\tR\x03uri\"\x97\x01\n" +
-	"\x1aConfirmSecondFactorRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\x03uri\x18\x04 \x01(\tR\x03uri\"v\n" +
+	"\x1aConfirmSecondFactorRequest\x12\x1b\n" +
 	"\tfactor_id\x18\x02 \x01(\tR\bfactorId\x12!\n" +
 	"\fchallenge_id\x18\x03 \x01(\tR\vchallengeId\x12\x12\n" +
-	"\x04code\x18\x04 \x01(\tR\x04code\"r\n" +
+	"\x04code\x18\x04 \x01(\tR\x04codeJ\x04\b\x01\x10\x02\"r\n" +
 	"\x1bConfirmSecondFactorResponse\x12,\n" +
 	"\x06factor\x18\x01 \x01(\v2\x14.dop.v1.SecondFactorR\x06factor\x12%\n" +
-	"\x0erecovery_codes\x18\x02 \x03(\tR\rrecoveryCodes\"R\n" +
-	"\x19RevokeSecondFactorRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"A\n" +
-	"\x18ListSecondFactorsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"K\n" +
+	"\x0erecovery_codes\x18\x02 \x03(\tR\rrecoveryCodes\"1\n" +
+	"\x19RevokeSecondFactorRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\" \n" +
+	"\x18ListSecondFactorsRequestJ\x04\b\x01\x10\x02\"K\n" +
 	"\x19ListSecondFactorsResponse\x12.\n" +
-	"\afactors\x18\x01 \x03(\v2\x14.dop.v1.SecondFactorR\afactors\"b\n" +
-	"\x1cChallengeSecondFactorRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
-	"\tfactor_id\x18\x02 \x01(\tR\bfactorId\"\xda\x01\n" +
+	"\afactors\x18\x01 \x03(\v2\x14.dop.v1.SecondFactorR\afactors\"A\n" +
+	"\x1cChallengeSecondFactorRequest\x12\x1b\n" +
+	"\tfactor_id\x18\x02 \x01(\tR\bfactorIdJ\x04\b\x01\x10\x02\"\xda\x01\n" +
 	"\x1dChallengeSecondFactorResponse\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12,\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x18.dop.v1.SecondFactorKindR\x04kind\x12-\n" +
 	"\x12masked_destination\x18\x03 \x01(\tR\x11maskedDestination\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"y\n" +
-	"\x19VerifySecondFactorRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12!\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"X\n" +
+	"\x19VerifySecondFactorRequest\x12!\n" +
 	"\fchallenge_id\x18\x02 \x01(\tR\vchallengeId\x12\x12\n" +
-	"\x04code\x18\x03 \x01(\tR\x04code\"V\n" +
-	"\x19VerifyRecoveryCodeRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x12\n" +
-	"\x04code\x18\x02 \x01(\tR\x04code\"\xce\x01\n" +
+	"\x04code\x18\x03 \x01(\tR\x04codeJ\x04\b\x01\x10\x02\"5\n" +
+	"\x19VerifyRecoveryCodeRequest\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04codeJ\x04\b\x01\x10\x02\"\xce\x01\n" +
 	"\x06StepUp\x120\n" +
 	"\x06method\x18\x01 \x01(\x0e2\x18.dop.v1.SecondFactorKindR\x06method\x12\x1a\n" +
 	"\brecovery\x18\x02 \x01(\bR\brecovery\x12;\n" +
 	"\vverified_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"verifiedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"D\n" +
-	"\x1bGetSecondFactorStateRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"\xf3\x02\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"#\n" +
+	"\x1bGetSecondFactorStateRequestJ\x04\b\x01\x10\x02\"\xf3\x02\n" +
 	"\x1cGetSecondFactorStateResponse\x12\x1a\n" +
 	"\brequired\x18\x01 \x01(\bR\brequired\x12\x1a\n" +
 	"\benrolled\x18\x02 \x01(\bR\benrolled\x12\x1d\n" +
@@ -1265,9 +1185,8 @@ const file_dop_v1_secondfactor_proto_rawDesc = "" +
 	"\aallowed\x18\x05 \x03(\x0e2\x18.dop.v1.SecondFactorKindR\aallowed\x12.\n" +
 	"\afactors\x18\x06 \x03(\v2\x14.dop.v1.SecondFactorR\afactors\x12.\n" +
 	"\x13recovery_codes_left\x18\a \x01(\x05R\x11recoveryCodesLeft\x12G\n" +
-	"\x12step_up_expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x0fstepUpExpiresAt\"G\n" +
-	"\x1eRegenerateRecoveryCodesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"7\n" +
+	"\x12step_up_expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x0fstepUpExpiresAt\"&\n" +
+	"\x1eRegenerateRecoveryCodesRequestJ\x04\b\x01\x10\x02\"7\n" +
 	"\x1fRegenerateRecoveryCodesResponse\x12\x14\n" +
 	"\x05codes\x18\x01 \x03(\tR\x05codes*\x8d\x01\n" +
 	"\x10SecondFactorKind\x12\"\n" +
@@ -1324,7 +1243,6 @@ var file_dop_v1_secondfactor_proto_goTypes = []any{
 	(*RegenerateRecoveryCodesResponse)(nil), // 18: dop.v1.RegenerateRecoveryCodesResponse
 	(*timestamppb.Timestamp)(nil),           // 19: google.protobuf.Timestamp
 	(*AuditStamp)(nil),                      // 20: dop.v1.AuditStamp
-	(*CallContext)(nil),                     // 21: dop.v1.CallContext
 }
 var file_dop_v1_secondfactor_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.SecondFactor.kind:type_name -> dop.v1.SecondFactorKind
@@ -1332,50 +1250,41 @@ var file_dop_v1_secondfactor_proto_depIdxs = []int32{
 	19, // 2: dop.v1.SecondFactor.confirmed_at:type_name -> google.protobuf.Timestamp
 	19, // 3: dop.v1.SecondFactor.last_used_at:type_name -> google.protobuf.Timestamp
 	20, // 4: dop.v1.SecondFactor.audit:type_name -> dop.v1.AuditStamp
-	21, // 5: dop.v1.EnrollSecondFactorRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 6: dop.v1.EnrollSecondFactorRequest.kind:type_name -> dop.v1.SecondFactorKind
-	2,  // 7: dop.v1.EnrollSecondFactorResponse.factor:type_name -> dop.v1.SecondFactor
-	21, // 8: dop.v1.ConfirmSecondFactorRequest.ctx:type_name -> dop.v1.CallContext
-	2,  // 9: dop.v1.ConfirmSecondFactorResponse.factor:type_name -> dop.v1.SecondFactor
-	21, // 10: dop.v1.RevokeSecondFactorRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 11: dop.v1.ListSecondFactorsRequest.ctx:type_name -> dop.v1.CallContext
-	2,  // 12: dop.v1.ListSecondFactorsResponse.factors:type_name -> dop.v1.SecondFactor
-	21, // 13: dop.v1.ChallengeSecondFactorRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 14: dop.v1.ChallengeSecondFactorResponse.kind:type_name -> dop.v1.SecondFactorKind
-	19, // 15: dop.v1.ChallengeSecondFactorResponse.expires_at:type_name -> google.protobuf.Timestamp
-	21, // 16: dop.v1.VerifySecondFactorRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 17: dop.v1.VerifyRecoveryCodeRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 18: dop.v1.StepUp.method:type_name -> dop.v1.SecondFactorKind
-	19, // 19: dop.v1.StepUp.verified_at:type_name -> google.protobuf.Timestamp
-	19, // 20: dop.v1.StepUp.expires_at:type_name -> google.protobuf.Timestamp
-	21, // 21: dop.v1.GetSecondFactorStateRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 22: dop.v1.GetSecondFactorStateResponse.allowed:type_name -> dop.v1.SecondFactorKind
-	2,  // 23: dop.v1.GetSecondFactorStateResponse.factors:type_name -> dop.v1.SecondFactor
-	19, // 24: dop.v1.GetSecondFactorStateResponse.step_up_expires_at:type_name -> google.protobuf.Timestamp
-	21, // 25: dop.v1.RegenerateRecoveryCodesRequest.ctx:type_name -> dop.v1.CallContext
-	8,  // 26: dop.v1.SecondFactorService.ListSecondFactors:input_type -> dop.v1.ListSecondFactorsRequest
-	3,  // 27: dop.v1.SecondFactorService.EnrollSecondFactor:input_type -> dop.v1.EnrollSecondFactorRequest
-	5,  // 28: dop.v1.SecondFactorService.ConfirmSecondFactor:input_type -> dop.v1.ConfirmSecondFactorRequest
-	7,  // 29: dop.v1.SecondFactorService.RevokeSecondFactor:input_type -> dop.v1.RevokeSecondFactorRequest
-	10, // 30: dop.v1.SecondFactorService.ChallengeSecondFactor:input_type -> dop.v1.ChallengeSecondFactorRequest
-	12, // 31: dop.v1.SecondFactorService.VerifySecondFactor:input_type -> dop.v1.VerifySecondFactorRequest
-	13, // 32: dop.v1.SecondFactorService.VerifyRecoveryCode:input_type -> dop.v1.VerifyRecoveryCodeRequest
-	15, // 33: dop.v1.SecondFactorService.GetSecondFactorState:input_type -> dop.v1.GetSecondFactorStateRequest
-	17, // 34: dop.v1.SecondFactorService.RegenerateRecoveryCodes:input_type -> dop.v1.RegenerateRecoveryCodesRequest
-	9,  // 35: dop.v1.SecondFactorService.ListSecondFactors:output_type -> dop.v1.ListSecondFactorsResponse
-	4,  // 36: dop.v1.SecondFactorService.EnrollSecondFactor:output_type -> dop.v1.EnrollSecondFactorResponse
-	6,  // 37: dop.v1.SecondFactorService.ConfirmSecondFactor:output_type -> dop.v1.ConfirmSecondFactorResponse
-	2,  // 38: dop.v1.SecondFactorService.RevokeSecondFactor:output_type -> dop.v1.SecondFactor
-	11, // 39: dop.v1.SecondFactorService.ChallengeSecondFactor:output_type -> dop.v1.ChallengeSecondFactorResponse
-	14, // 40: dop.v1.SecondFactorService.VerifySecondFactor:output_type -> dop.v1.StepUp
-	14, // 41: dop.v1.SecondFactorService.VerifyRecoveryCode:output_type -> dop.v1.StepUp
-	16, // 42: dop.v1.SecondFactorService.GetSecondFactorState:output_type -> dop.v1.GetSecondFactorStateResponse
-	18, // 43: dop.v1.SecondFactorService.RegenerateRecoveryCodes:output_type -> dop.v1.RegenerateRecoveryCodesResponse
-	35, // [35:44] is the sub-list for method output_type
-	26, // [26:35] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	0,  // 5: dop.v1.EnrollSecondFactorRequest.kind:type_name -> dop.v1.SecondFactorKind
+	2,  // 6: dop.v1.EnrollSecondFactorResponse.factor:type_name -> dop.v1.SecondFactor
+	2,  // 7: dop.v1.ConfirmSecondFactorResponse.factor:type_name -> dop.v1.SecondFactor
+	2,  // 8: dop.v1.ListSecondFactorsResponse.factors:type_name -> dop.v1.SecondFactor
+	0,  // 9: dop.v1.ChallengeSecondFactorResponse.kind:type_name -> dop.v1.SecondFactorKind
+	19, // 10: dop.v1.ChallengeSecondFactorResponse.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 11: dop.v1.StepUp.method:type_name -> dop.v1.SecondFactorKind
+	19, // 12: dop.v1.StepUp.verified_at:type_name -> google.protobuf.Timestamp
+	19, // 13: dop.v1.StepUp.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 14: dop.v1.GetSecondFactorStateResponse.allowed:type_name -> dop.v1.SecondFactorKind
+	2,  // 15: dop.v1.GetSecondFactorStateResponse.factors:type_name -> dop.v1.SecondFactor
+	19, // 16: dop.v1.GetSecondFactorStateResponse.step_up_expires_at:type_name -> google.protobuf.Timestamp
+	8,  // 17: dop.v1.SecondFactorService.ListSecondFactors:input_type -> dop.v1.ListSecondFactorsRequest
+	3,  // 18: dop.v1.SecondFactorService.EnrollSecondFactor:input_type -> dop.v1.EnrollSecondFactorRequest
+	5,  // 19: dop.v1.SecondFactorService.ConfirmSecondFactor:input_type -> dop.v1.ConfirmSecondFactorRequest
+	7,  // 20: dop.v1.SecondFactorService.RevokeSecondFactor:input_type -> dop.v1.RevokeSecondFactorRequest
+	10, // 21: dop.v1.SecondFactorService.ChallengeSecondFactor:input_type -> dop.v1.ChallengeSecondFactorRequest
+	12, // 22: dop.v1.SecondFactorService.VerifySecondFactor:input_type -> dop.v1.VerifySecondFactorRequest
+	13, // 23: dop.v1.SecondFactorService.VerifyRecoveryCode:input_type -> dop.v1.VerifyRecoveryCodeRequest
+	15, // 24: dop.v1.SecondFactorService.GetSecondFactorState:input_type -> dop.v1.GetSecondFactorStateRequest
+	17, // 25: dop.v1.SecondFactorService.RegenerateRecoveryCodes:input_type -> dop.v1.RegenerateRecoveryCodesRequest
+	9,  // 26: dop.v1.SecondFactorService.ListSecondFactors:output_type -> dop.v1.ListSecondFactorsResponse
+	4,  // 27: dop.v1.SecondFactorService.EnrollSecondFactor:output_type -> dop.v1.EnrollSecondFactorResponse
+	6,  // 28: dop.v1.SecondFactorService.ConfirmSecondFactor:output_type -> dop.v1.ConfirmSecondFactorResponse
+	2,  // 29: dop.v1.SecondFactorService.RevokeSecondFactor:output_type -> dop.v1.SecondFactor
+	11, // 30: dop.v1.SecondFactorService.ChallengeSecondFactor:output_type -> dop.v1.ChallengeSecondFactorResponse
+	14, // 31: dop.v1.SecondFactorService.VerifySecondFactor:output_type -> dop.v1.StepUp
+	14, // 32: dop.v1.SecondFactorService.VerifyRecoveryCode:output_type -> dop.v1.StepUp
+	16, // 33: dop.v1.SecondFactorService.GetSecondFactorState:output_type -> dop.v1.GetSecondFactorStateResponse
+	18, // 34: dop.v1.SecondFactorService.RegenerateRecoveryCodes:output_type -> dop.v1.RegenerateRecoveryCodesResponse
+	26, // [26:35] is the sub-list for method output_type
+	17, // [17:26] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_secondfactor_proto_init() }

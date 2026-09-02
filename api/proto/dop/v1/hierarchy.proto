@@ -56,17 +56,17 @@ service HierarchyService {
   rpc GetTree        (GetTreeRequest)        returns (GetTreeResponse);
 }
 
-message ListWorkspacesRequest  { CallContext ctx = 1; PageRequest page = 2; }
+message ListWorkspacesRequest  { reserved 1; PageRequest page = 2; }
 message ListWorkspacesResponse { repeated Workspace workspaces = 1; PageResponse page = 2; }
-message GetWorkspaceRequest    { CallContext ctx = 1; string id = 2; }
-message CreateWorkspaceRequest { CallContext ctx = 1; string name = 2; string key = 3; string description = 4; repeated string tags = 5; string idempotency_key = 6; }
-message UpdateWorkspaceRequest { CallContext ctx = 1; Workspace workspace = 2; }
-message ListProjectsRequest    { CallContext ctx = 1; WorkspaceRef workspace = 2; }
+message GetWorkspaceRequest    { reserved 1; string id = 2; }
+message CreateWorkspaceRequest { reserved 1; string name = 2; string key = 3; string description = 4; repeated string tags = 5; string idempotency_key = 6; }
+message UpdateWorkspaceRequest { reserved 1; Workspace workspace = 2; }
+message ListProjectsRequest    { reserved 1; WorkspaceRef workspace = 2; }
 message ListProjectsResponse   { repeated Project projects = 1; }
-message GetProjectRequest      { CallContext ctx = 1; string id = 2; }
-message CreateProjectRequest   { CallContext ctx = 1; WorkspaceRef workspace = 2; string name = 3; string description = 4; string idempotency_key = 5; }
-message UpdateProjectRequest   { CallContext ctx = 1; Project project = 2; }
-message GetTreeRequest         { CallContext ctx = 1; }
+message GetProjectRequest      { reserved 1; string id = 2; }
+message CreateProjectRequest   { reserved 1; WorkspaceRef workspace = 2; string name = 3; string description = 4; string idempotency_key = 5; }
+message UpdateProjectRequest   { reserved 1; Project project = 2; }
+message GetTreeRequest         { reserved 1; }
 message GetTreeResponse {
   message Node {
     Workspace workspace = 1;

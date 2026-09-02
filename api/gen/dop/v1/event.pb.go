@@ -125,7 +125,6 @@ func (x *EventEnvelope) GetOccurredAt() *timestamppb.Timestamp {
 
 type WatchEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	// Optional filters. Empty = everything the account produces. They exist so
 	// the attention box does not have to receive (and discard) the whole log.
 	Aggregate []string `protobuf:"bytes,2,rep,name=aggregate,proto3" json:"aggregate,omitempty"` // demand, project
@@ -174,13 +173,6 @@ func (*WatchEventsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_event_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *WatchEventsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *WatchEventsRequest) GetAggregate() []string {
 	if x != nil {
 		return x.Aggregate
@@ -215,12 +207,11 @@ const file_dop_v1_event_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\tR\x04type\x121\n" +
 	"\apayload\x18\x06 \x01(\v2\x17.google.protobuf.StructR\apayload\x12;\n" +
 	"\voccurred_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"\x95\x01\n" +
-	"\x12WatchEventsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1c\n" +
+	"occurredAt\"t\n" +
+	"\x12WatchEventsRequest\x12\x1c\n" +
 	"\taggregate\x18\x02 \x03(\tR\taggregate\x12\x14\n" +
 	"\x05types\x18\x03 \x03(\tR\x05types\x12$\n" +
-	"\x0esince_event_id\x18\x04 \x01(\tR\fsinceEventId2R\n" +
+	"\x0esince_event_id\x18\x04 \x01(\tR\fsinceEventIdJ\x04\b\x01\x10\x022R\n" +
 	"\fEventService\x12B\n" +
 	"\vWatchEvents\x12\x1a.dop.v1.WatchEventsRequest\x1a\x15.dop.v1.EventEnvelope0\x01B\x90\x01\n" +
 	"\n" +
@@ -246,20 +237,18 @@ var file_dop_v1_event_proto_goTypes = []any{
 	(*AccountRef)(nil),            // 2: dop.v1.AccountRef
 	(*structpb.Struct)(nil),       // 3: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
-	(*CallContext)(nil),           // 5: dop.v1.CallContext
 }
 var file_dop_v1_event_proto_depIdxs = []int32{
 	2, // 0: dop.v1.EventEnvelope.account:type_name -> dop.v1.AccountRef
 	3, // 1: dop.v1.EventEnvelope.payload:type_name -> google.protobuf.Struct
 	4, // 2: dop.v1.EventEnvelope.occurred_at:type_name -> google.protobuf.Timestamp
-	5, // 3: dop.v1.WatchEventsRequest.ctx:type_name -> dop.v1.CallContext
-	1, // 4: dop.v1.EventService.WatchEvents:input_type -> dop.v1.WatchEventsRequest
-	0, // 5: dop.v1.EventService.WatchEvents:output_type -> dop.v1.EventEnvelope
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1, // 3: dop.v1.EventService.WatchEvents:input_type -> dop.v1.WatchEventsRequest
+	0, // 4: dop.v1.EventService.WatchEvents:output_type -> dop.v1.EventEnvelope
+	4, // [4:5] is the sub-list for method output_type
+	3, // [3:4] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_event_proto_init() }

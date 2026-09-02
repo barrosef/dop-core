@@ -119,18 +119,18 @@ service DemandService {
   rpc WatchDemand  (WatchDemandRequest)  returns (stream DemandEvent);
 }
 
-message ListDemandsRequest  { CallContext ctx = 1; ProjectRef project = 2; PageRequest page = 3; }
+message ListDemandsRequest  { reserved 1; ProjectRef project = 2; PageRequest page = 3; }
 message ListDemandsResponse { repeated Demand demands = 1; PageResponse page = 2; }
-message GetDemandRequest    { CallContext ctx = 1; string id = 2; }
-message StartDemandRequest  { CallContext ctx = 1; ProjectRef project = 2; string external_key = 3; string idempotency_key = 4; }
-message AdvanceStageRequest { CallContext ctx = 1; string demand_id = 2; string stage_key = 3; StageStatus status = 4; string idempotency_key = 5; }
-message DecideGateRequest   { CallContext ctx = 1; string demand_id = 2; string stage_key = 3; bool approved = 4; string comment = 5; string idempotency_key = 6; }
-message ListThreadsRequest  { CallContext ctx = 1; string demand_id = 2; }
+message GetDemandRequest    { reserved 1; string id = 2; }
+message StartDemandRequest  { reserved 1; ProjectRef project = 2; string external_key = 3; string idempotency_key = 4; }
+message AdvanceStageRequest { reserved 1; string demand_id = 2; string stage_key = 3; StageStatus status = 4; string idempotency_key = 5; }
+message DecideGateRequest   { reserved 1; string demand_id = 2; string stage_key = 3; bool approved = 4; string comment = 5; string idempotency_key = 6; }
+message ListThreadsRequest  { reserved 1; string demand_id = 2; }
 message ListThreadsResponse { repeated Thread threads = 1; }
-message CreateThreadRequest { CallContext ctx = 1; string demand_id = 2; string key = 3; AgentCard card = 4; string idempotency_key = 5; }
-message PostMessageRequest  { CallContext ctx = 1; string thread_id = 2; string text = 3; string idempotency_key = 4; }
+message CreateThreadRequest { reserved 1; string demand_id = 2; string key = 3; AgentCard card = 4; string idempotency_key = 5; }
+message PostMessageRequest  { reserved 1; string thread_id = 2; string text = 3; string idempotency_key = 4; }
 message ListFindingsRequest {
-  CallContext ctx = 1;
+  reserved 1;
   string demand_id = 2;
   // Empty brings the whole demand's findings; filled in, one thread's.
   string thread_id = 3;
@@ -141,8 +141,8 @@ message ListFindingsResponse {
   PageResponse page = 2;
 }
 
-message PublishFindingRequest { CallContext ctx = 1; string demand_id = 2; string thread_id = 3; string title = 4; google.protobuf.Struct payload = 5; string idempotency_key = 6; }
-message WatchDemandRequest  { CallContext ctx = 1; string demand_id = 2; }
+message PublishFindingRequest { reserved 1; string demand_id = 2; string thread_id = 3; string title = 4; google.protobuf.Struct payload = 5; string idempotency_key = 6; }
+message WatchDemandRequest  { reserved 1; string demand_id = 2; }
 message DemandEvent {
   string   type       = 1;   // stage.advanced, message.posted, finding.published...
   string   aggregate  = 2;

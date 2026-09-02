@@ -582,7 +582,6 @@ func (x *ScopeRef) GetId() string {
 
 type ListFlowsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	OwnerScope    string                 `protobuf:"bytes,2,opt,name=owner_scope,json=ownerScope,proto3" json:"owner_scope,omitempty"`
 	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -617,13 +616,6 @@ func (x *ListFlowsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListFlowsRequest.ProtoReflect.Descriptor instead.
 func (*ListFlowsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ListFlowsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListFlowsRequest) GetOwnerScope() string {
@@ -686,7 +678,6 @@ func (x *ListFlowsResponse) GetFlows() []*Flow {
 
 type GetFlowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -722,13 +713,6 @@ func (*GetFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *GetFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetFlowRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -738,7 +722,6 @@ func (x *GetFlowRequest) GetId() string {
 
 type CreateFlowRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Flow           *Flow                  `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -775,13 +758,6 @@ func (*CreateFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *CreateFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateFlowRequest) GetFlow() *Flow {
 	if x != nil {
 		return x.Flow
@@ -798,7 +774,6 @@ func (x *CreateFlowRequest) GetIdempotencyKey() string {
 
 type UpdateFlowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Flow          *Flow                  `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -834,13 +809,6 @@ func (*UpdateFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *UpdateFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *UpdateFlowRequest) GetFlow() *Flow {
 	if x != nil {
 		return x.Flow
@@ -850,7 +818,6 @@ func (x *UpdateFlowRequest) GetFlow() *Flow {
 
 type ValidateFlowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Flow          *Flow                  `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -884,13 +851,6 @@ func (x *ValidateFlowRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ValidateFlowRequest.ProtoReflect.Descriptor instead.
 func (*ValidateFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *ValidateFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ValidateFlowRequest) GetFlow() *Flow {
@@ -962,7 +922,6 @@ func (x *ValidateFlowResponse) GetWarnings() []string {
 
 type ResolveFlowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Scope         string                 `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	ScopeId       string                 `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -999,13 +958,6 @@ func (*ResolveFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ResolveFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *ResolveFlowRequest) GetScope() string {
 	if x != nil {
 		return x.Scope
@@ -1022,7 +974,6 @@ func (x *ResolveFlowRequest) GetScopeId() string {
 
 type PromoteFlowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	FlowId        string                 `protobuf:"bytes,2,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
 	TargetScope   string                 `protobuf:"bytes,3,opt,name=target_scope,json=targetScope,proto3" json:"target_scope,omitempty"`
 	TargetId      string                 `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
@@ -1058,13 +1009,6 @@ func (x *PromoteFlowRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use PromoteFlowRequest.ProtoReflect.Descriptor instead.
 func (*PromoteFlowRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *PromoteFlowRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *PromoteFlowRequest) GetFlowId() string {
@@ -1121,40 +1065,33 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\aorigins\x18\x04 \x03(\v2\x13.dop.v1.StageOriginR\aorigins\"0\n" +
 	"\bScopeRef\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"u\n" +
-	"\x10ListFlowsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1f\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"T\n" +
+	"\x10ListFlowsRequest\x12\x1f\n" +
 	"\vowner_scope\x18\x02 \x01(\tR\n" +
 	"ownerScope\x12\x19\n" +
-	"\bowner_id\x18\x03 \x01(\tR\aownerId\"7\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerIdJ\x04\b\x01\x10\x02\"7\n" +
 	"\x11ListFlowsResponse\x12\"\n" +
-	"\x05flows\x18\x01 \x03(\v2\f.dop.v1.FlowR\x05flows\"G\n" +
-	"\x0eGetFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\x85\x01\n" +
-	"\x11CreateFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12 \n" +
+	"\x05flows\x18\x01 \x03(\v2\f.dop.v1.FlowR\x05flows\"&\n" +
+	"\x0eGetFlowRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"d\n" +
+	"\x11CreateFlowRequest\x12 \n" +
 	"\x04flow\x18\x02 \x01(\v2\f.dop.v1.FlowR\x04flow\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\\\n" +
-	"\x11UpdateFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12 \n" +
-	"\x04flow\x18\x02 \x01(\v2\f.dop.v1.FlowR\x04flow\"^\n" +
-	"\x13ValidateFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12 \n" +
-	"\x04flow\x18\x02 \x01(\v2\f.dop.v1.FlowR\x04flow\"`\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\";\n" +
+	"\x11UpdateFlowRequest\x12 \n" +
+	"\x04flow\x18\x02 \x01(\v2\f.dop.v1.FlowR\x04flowJ\x04\b\x01\x10\x02\"=\n" +
+	"\x13ValidateFlowRequest\x12 \n" +
+	"\x04flow\x18\x02 \x01(\v2\f.dop.v1.FlowR\x04flowJ\x04\b\x01\x10\x02\"`\n" +
 	"\x14ValidateFlowResponse\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x16\n" +
 	"\x06errors\x18\x02 \x03(\tR\x06errors\x12\x1a\n" +
-	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"l\n" +
-	"\x12ResolveFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x14\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"K\n" +
+	"\x12ResolveFlowRequest\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x19\n" +
-	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"\x94\x01\n" +
-	"\x12PromoteFlowRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x17\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeIdJ\x04\b\x01\x10\x02\"s\n" +
+	"\x12PromoteFlowRequest\x12\x17\n" +
 	"\aflow_id\x18\x02 \x01(\tR\x06flowId\x12!\n" +
 	"\ftarget_scope\x18\x03 \x01(\tR\vtargetScope\x12\x1b\n" +
-	"\ttarget_id\x18\x04 \x01(\tR\btargetId*\xf3\x01\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetIdJ\x04\b\x01\x10\x02*\xf3\x01\n" +
 	"\tStageType\x12\x1a\n" +
 	"\x16STAGE_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12STAGE_TYPE_CONTEXT\x10\x01\x12\x13\n" +
@@ -1224,7 +1161,6 @@ var file_dop_v1_workflow_proto_goTypes = []any{
 	(*ResolveFlowRequest)(nil),   // 15: dop.v1.ResolveFlowRequest
 	(*PromoteFlowRequest)(nil),   // 16: dop.v1.PromoteFlowRequest
 	(*AuditStamp)(nil),           // 17: dop.v1.AuditStamp
-	(*CallContext)(nil),          // 18: dop.v1.CallContext
 }
 var file_dop_v1_workflow_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
@@ -1235,36 +1171,29 @@ var file_dop_v1_workflow_proto_depIdxs = []int32{
 	4,  // 5: dop.v1.EffectiveFlow.flow:type_name -> dop.v1.Flow
 	7,  // 6: dop.v1.EffectiveFlow.contributors:type_name -> dop.v1.ScopeRef
 	5,  // 7: dop.v1.EffectiveFlow.origins:type_name -> dop.v1.StageOrigin
-	18, // 8: dop.v1.ListFlowsRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 9: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
-	18, // 10: dop.v1.GetFlowRequest.ctx:type_name -> dop.v1.CallContext
-	18, // 11: dop.v1.CreateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 12: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
-	18, // 13: dop.v1.UpdateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 14: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
-	18, // 15: dop.v1.ValidateFlowRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 16: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
-	18, // 17: dop.v1.ResolveFlowRequest.ctx:type_name -> dop.v1.CallContext
-	18, // 18: dop.v1.PromoteFlowRequest.ctx:type_name -> dop.v1.CallContext
-	8,  // 19: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
-	10, // 20: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
-	11, // 21: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
-	12, // 22: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
-	13, // 23: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
-	15, // 24: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
-	16, // 25: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
-	9,  // 26: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
-	4,  // 27: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
-	4,  // 28: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
-	4,  // 29: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
-	14, // 30: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
-	6,  // 31: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
-	4,  // 32: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
-	26, // [26:33] is the sub-list for method output_type
-	19, // [19:26] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	4,  // 8: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
+	4,  // 9: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
+	4,  // 10: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
+	4,  // 11: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
+	8,  // 12: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
+	10, // 13: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
+	11, // 14: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
+	12, // 15: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
+	13, // 16: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
+	15, // 17: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
+	16, // 18: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
+	9,  // 19: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
+	4,  // 20: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
+	4,  // 21: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
+	4,  // 22: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
+	14, // 23: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
+	6,  // 24: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
+	4,  // 25: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
+	19, // [19:26] is the sub-list for method output_type
+	12, // [12:19] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_workflow_proto_init() }

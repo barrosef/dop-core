@@ -79,7 +79,7 @@ message AttentionItem {
 }
 
 message ListAttentionRequest {
-  CallContext ctx = 1;
+  reserved 1;
   // Empty = only the open ones, which is the box's case. Resolved ones come in
   // by explicit request, for history.
   bool include_resolved = 2;
@@ -98,7 +98,7 @@ message ListAttentionResponse {
 }
 
 message WatchAttentionRequest {
-  CallContext ctx = 1;
+  reserved 1;
   // The resumption cursor, as in WatchEvents: a client that dropped comes back
   // from where it stopped instead of starting over or losing an item.
   string since_event_id = 2;

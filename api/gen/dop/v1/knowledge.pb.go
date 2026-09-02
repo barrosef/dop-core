@@ -274,7 +274,6 @@ func (x *ContextPackage) GetDropped() map[string]int32 {
 
 type BuildContextPackageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId      string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -310,13 +309,6 @@ func (*BuildContextPackageRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *BuildContextPackageRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *BuildContextPackageRequest) GetDemandId() string {
 	if x != nil {
 		return x.DemandId
@@ -326,7 +318,6 @@ func (x *BuildContextPackageRequest) GetDemandId() string {
 
 type SearchMemoryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Project       *ProjectRef            `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	Query         string                 `protobuf:"bytes,3,opt,name=query,proto3" json:"query,omitempty"`
 	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -362,13 +353,6 @@ func (x *SearchMemoryRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SearchMemoryRequest.ProtoReflect.Descriptor instead.
 func (*SearchMemoryRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *SearchMemoryRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *SearchMemoryRequest) GetProject() *ProjectRef {
@@ -446,7 +430,6 @@ func (x *SearchMemoryResponse) GetScores() []float32 {
 
 type ReadIndexRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Project       *ProjectRef            `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	Repo          string                 `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -483,13 +466,6 @@ func (*ReadIndexRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ReadIndexRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *ReadIndexRequest) GetProject() *ProjectRef {
 	if x != nil {
 		return x.Project
@@ -506,7 +482,6 @@ func (x *ReadIndexRequest) GetRepo() string {
 
 type PutArtifactRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Artifact       *KnowledgeArtifact     `protobuf:"bytes,2,opt,name=artifact,proto3" json:"artifact,omitempty"`
 	Content        []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -544,13 +519,6 @@ func (*PutArtifactRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *PutArtifactRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *PutArtifactRequest) GetArtifact() *KnowledgeArtifact {
 	if x != nil {
 		return x.Artifact
@@ -574,7 +542,6 @@ func (x *PutArtifactRequest) GetIdempotencyKey() string {
 
 type ListRulesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Project       *ProjectRef            `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -608,13 +575,6 @@ func (x *ListRulesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListRulesRequest.ProtoReflect.Descriptor instead.
 func (*ListRulesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ListRulesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListRulesRequest) GetProject() *ProjectRef {
@@ -699,30 +659,25 @@ const file_dop_v1_knowledge_proto_rawDesc = "" +
 	"\adropped\x18\a \x03(\v2#.dop.v1.ContextPackage.DroppedEntryR\adropped\x1a:\n" +
 	"\fDroppedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"`\n" +
-	"\x1aBuildContextPackageRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
-	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\"\x96\x01\n" +
-	"\x13SearchMemoryRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"?\n" +
+	"\x1aBuildContextPackageRequest\x12\x1b\n" +
+	"\tdemand_id\x18\x02 \x01(\tR\bdemandIdJ\x04\b\x01\x10\x02\"u\n" +
+	"\x13SearchMemoryRequest\x12,\n" +
 	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aproject\x12\x14\n" +
 	"\x05query\x18\x03 \x01(\tR\x05query\x12\x14\n" +
-	"\x05limit\x18\x04 \x01(\x05R\x05limit\"g\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02\"g\n" +
 	"\x14SearchMemoryResponse\x127\n" +
 	"\tartifacts\x18\x01 \x03(\v2\x19.dop.v1.KnowledgeArtifactR\tartifacts\x12\x16\n" +
-	"\x06scores\x18\x02 \x03(\x02R\x06scores\"{\n" +
-	"\x10ReadIndexRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
+	"\x06scores\x18\x02 \x03(\x02R\x06scores\"Z\n" +
+	"\x10ReadIndexRequest\x12,\n" +
 	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aproject\x12\x12\n" +
-	"\x04repo\x18\x03 \x01(\tR\x04repo\"\xb5\x01\n" +
-	"\x12PutArtifactRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x125\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repoJ\x04\b\x01\x10\x02\"\x94\x01\n" +
+	"\x12PutArtifactRequest\x125\n" +
 	"\bartifact\x18\x02 \x01(\v2\x19.dop.v1.KnowledgeArtifactR\bartifact\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"g\n" +
-	"\x10ListRulesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
-	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aproject\")\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"F\n" +
+	"\x10ListRulesRequest\x12,\n" +
+	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aprojectJ\x04\b\x01\x10\x02\")\n" +
 	"\x11ListRulesResponse\x12\x14\n" +
 	"\x05rules\x18\x01 \x03(\tR\x05rules2\xfa\x02\n" +
 	"\x10KnowledgeService\x12Q\n" +
@@ -765,7 +720,6 @@ var file_dop_v1_knowledge_proto_goTypes = []any{
 	(*AuditStamp)(nil),                 // 13: dop.v1.AuditStamp
 	(*DemandRef)(nil),                  // 14: dop.v1.DemandRef
 	(*Finding)(nil),                    // 15: dop.v1.Finding
-	(*CallContext)(nil),                // 16: dop.v1.CallContext
 }
 var file_dop_v1_knowledge_proto_depIdxs = []int32{
 	11, // 0: dop.v1.KnowledgeArtifact.project:type_name -> dop.v1.ProjectRef
@@ -777,31 +731,26 @@ var file_dop_v1_knowledge_proto_depIdxs = []int32{
 	1,  // 6: dop.v1.ContextPackage.memories:type_name -> dop.v1.KnowledgeArtifact
 	15, // 7: dop.v1.ContextPackage.findings:type_name -> dop.v1.Finding
 	10, // 8: dop.v1.ContextPackage.dropped:type_name -> dop.v1.ContextPackage.DroppedEntry
-	16, // 9: dop.v1.BuildContextPackageRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 10: dop.v1.SearchMemoryRequest.ctx:type_name -> dop.v1.CallContext
-	11, // 11: dop.v1.SearchMemoryRequest.project:type_name -> dop.v1.ProjectRef
-	1,  // 12: dop.v1.SearchMemoryResponse.artifacts:type_name -> dop.v1.KnowledgeArtifact
-	16, // 13: dop.v1.ReadIndexRequest.ctx:type_name -> dop.v1.CallContext
-	11, // 14: dop.v1.ReadIndexRequest.project:type_name -> dop.v1.ProjectRef
-	16, // 15: dop.v1.PutArtifactRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 16: dop.v1.PutArtifactRequest.artifact:type_name -> dop.v1.KnowledgeArtifact
-	16, // 17: dop.v1.ListRulesRequest.ctx:type_name -> dop.v1.CallContext
-	11, // 18: dop.v1.ListRulesRequest.project:type_name -> dop.v1.ProjectRef
-	3,  // 19: dop.v1.KnowledgeService.BuildContextPackage:input_type -> dop.v1.BuildContextPackageRequest
-	4,  // 20: dop.v1.KnowledgeService.SearchMemory:input_type -> dop.v1.SearchMemoryRequest
-	6,  // 21: dop.v1.KnowledgeService.ReadIndex:input_type -> dop.v1.ReadIndexRequest
-	7,  // 22: dop.v1.KnowledgeService.PutArtifact:input_type -> dop.v1.PutArtifactRequest
-	8,  // 23: dop.v1.KnowledgeService.ListRules:input_type -> dop.v1.ListRulesRequest
-	2,  // 24: dop.v1.KnowledgeService.BuildContextPackage:output_type -> dop.v1.ContextPackage
-	5,  // 25: dop.v1.KnowledgeService.SearchMemory:output_type -> dop.v1.SearchMemoryResponse
-	1,  // 26: dop.v1.KnowledgeService.ReadIndex:output_type -> dop.v1.KnowledgeArtifact
-	1,  // 27: dop.v1.KnowledgeService.PutArtifact:output_type -> dop.v1.KnowledgeArtifact
-	9,  // 28: dop.v1.KnowledgeService.ListRules:output_type -> dop.v1.ListRulesResponse
-	24, // [24:29] is the sub-list for method output_type
-	19, // [19:24] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	11, // 9: dop.v1.SearchMemoryRequest.project:type_name -> dop.v1.ProjectRef
+	1,  // 10: dop.v1.SearchMemoryResponse.artifacts:type_name -> dop.v1.KnowledgeArtifact
+	11, // 11: dop.v1.ReadIndexRequest.project:type_name -> dop.v1.ProjectRef
+	1,  // 12: dop.v1.PutArtifactRequest.artifact:type_name -> dop.v1.KnowledgeArtifact
+	11, // 13: dop.v1.ListRulesRequest.project:type_name -> dop.v1.ProjectRef
+	3,  // 14: dop.v1.KnowledgeService.BuildContextPackage:input_type -> dop.v1.BuildContextPackageRequest
+	4,  // 15: dop.v1.KnowledgeService.SearchMemory:input_type -> dop.v1.SearchMemoryRequest
+	6,  // 16: dop.v1.KnowledgeService.ReadIndex:input_type -> dop.v1.ReadIndexRequest
+	7,  // 17: dop.v1.KnowledgeService.PutArtifact:input_type -> dop.v1.PutArtifactRequest
+	8,  // 18: dop.v1.KnowledgeService.ListRules:input_type -> dop.v1.ListRulesRequest
+	2,  // 19: dop.v1.KnowledgeService.BuildContextPackage:output_type -> dop.v1.ContextPackage
+	5,  // 20: dop.v1.KnowledgeService.SearchMemory:output_type -> dop.v1.SearchMemoryResponse
+	1,  // 21: dop.v1.KnowledgeService.ReadIndex:output_type -> dop.v1.KnowledgeArtifact
+	1,  // 22: dop.v1.KnowledgeService.PutArtifact:output_type -> dop.v1.KnowledgeArtifact
+	9,  // 23: dop.v1.KnowledgeService.ListRules:output_type -> dop.v1.ListRulesResponse
+	19, // [19:24] is the sub-list for method output_type
+	14, // [14:19] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_knowledge_proto_init() }

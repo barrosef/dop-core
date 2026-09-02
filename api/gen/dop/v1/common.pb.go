@@ -403,60 +403,6 @@ func (x *ActorRef) GetName() string {
 	return ""
 }
 
-// The mandatory context of every call: who, in which account.
-// The edge fills it in; the domain trusts it (ADR-0016).
-type CallContext struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Account       *AccountRef            `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"` // the active account — a request without it is invalid
-	Actor         *ActorRef              `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CallContext) Reset() {
-	*x = CallContext{}
-	mi := &file_dop_v1_common_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CallContext) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CallContext) ProtoMessage() {}
-
-func (x *CallContext) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_common_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CallContext.ProtoReflect.Descriptor instead.
-func (*CallContext) Descriptor() ([]byte, []int) {
-	return file_dop_v1_common_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *CallContext) GetAccount() *AccountRef {
-	if x != nil {
-		return x.Account
-	}
-	return nil
-}
-
-func (x *CallContext) GetActor() *ActorRef {
-	if x != nil {
-		return x.Actor
-	}
-	return nil
-}
-
 type PageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Size          int32                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
@@ -467,7 +413,7 @@ type PageRequest struct {
 
 func (x *PageRequest) Reset() {
 	*x = PageRequest{}
-	mi := &file_dop_v1_common_proto_msgTypes[8]
+	mi := &file_dop_v1_common_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +425,7 @@ func (x *PageRequest) String() string {
 func (*PageRequest) ProtoMessage() {}
 
 func (x *PageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_common_proto_msgTypes[8]
+	mi := &file_dop_v1_common_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +438,7 @@ func (x *PageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PageRequest.ProtoReflect.Descriptor instead.
 func (*PageRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_dop_v1_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PageRequest) GetSize() int32 {
@@ -519,7 +465,7 @@ type PageResponse struct {
 
 func (x *PageResponse) Reset() {
 	*x = PageResponse{}
-	mi := &file_dop_v1_common_proto_msgTypes[9]
+	mi := &file_dop_v1_common_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -531,7 +477,7 @@ func (x *PageResponse) String() string {
 func (*PageResponse) ProtoMessage() {}
 
 func (x *PageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_common_proto_msgTypes[9]
+	mi := &file_dop_v1_common_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -544,7 +490,7 @@ func (x *PageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PageResponse.ProtoReflect.Descriptor instead.
 func (*PageResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_common_proto_rawDescGZIP(), []int{9}
+	return file_dop_v1_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PageResponse) GetNextToken() string {
@@ -571,7 +517,7 @@ type Money struct {
 
 func (x *Money) Reset() {
 	*x = Money{}
-	mi := &file_dop_v1_common_proto_msgTypes[10]
+	mi := &file_dop_v1_common_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +529,7 @@ func (x *Money) String() string {
 func (*Money) ProtoMessage() {}
 
 func (x *Money) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_common_proto_msgTypes[10]
+	mi := &file_dop_v1_common_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +542,7 @@ func (x *Money) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Money.ProtoReflect.Descriptor instead.
 func (*Money) Descriptor() ([]byte, []int) {
-	return file_dop_v1_common_proto_rawDescGZIP(), []int{10}
+	return file_dop_v1_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Money) GetCurrency() string {
@@ -624,7 +570,7 @@ type AuditStamp struct {
 
 func (x *AuditStamp) Reset() {
 	*x = AuditStamp{}
-	mi := &file_dop_v1_common_proto_msgTypes[11]
+	mi := &file_dop_v1_common_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -636,7 +582,7 @@ func (x *AuditStamp) String() string {
 func (*AuditStamp) ProtoMessage() {}
 
 func (x *AuditStamp) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_common_proto_msgTypes[11]
+	mi := &file_dop_v1_common_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -649,7 +595,7 @@ func (x *AuditStamp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditStamp.ProtoReflect.Descriptor instead.
 func (*AuditStamp) Descriptor() ([]byte, []int) {
-	return file_dop_v1_common_proto_rawDescGZIP(), []int{11}
+	return file_dop_v1_common_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AuditStamp) GetCreatedAt() *timestamppb.Timestamp {
@@ -702,10 +648,7 @@ const file_dop_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"KIND_AGENT\x10\x02\x12\x11\n" +
 	"\rKIND_SUBAGENT\x10\x03\x12\x0f\n" +
-	"\vKIND_SYSTEM\x10\x04\"c\n" +
-	"\vCallContext\x12,\n" +
-	"\aaccount\x18\x01 \x01(\v2\x12.dop.v1.AccountRefR\aaccount\x12&\n" +
-	"\x05actor\x18\x02 \x01(\v2\x10.dop.v1.ActorRefR\x05actor\"7\n" +
+	"\vKIND_SYSTEM\x10\x04\"7\n" +
 	"\vPageRequest\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x05R\x04size\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"C\n" +
@@ -740,7 +683,7 @@ func file_dop_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dop_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_dop_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_dop_v1_common_proto_goTypes = []any{
 	(ActorRef_Kind)(0),            // 0: dop.v1.ActorRef.Kind
 	(*AccountRef)(nil),            // 1: dop.v1.AccountRef
@@ -750,25 +693,22 @@ var file_dop_v1_common_proto_goTypes = []any{
 	(*UserRef)(nil),               // 5: dop.v1.UserRef
 	(*ResourceRef)(nil),           // 6: dop.v1.ResourceRef
 	(*ActorRef)(nil),              // 7: dop.v1.ActorRef
-	(*CallContext)(nil),           // 8: dop.v1.CallContext
-	(*PageRequest)(nil),           // 9: dop.v1.PageRequest
-	(*PageResponse)(nil),          // 10: dop.v1.PageResponse
-	(*Money)(nil),                 // 11: dop.v1.Money
-	(*AuditStamp)(nil),            // 12: dop.v1.AuditStamp
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
+	(*PageRequest)(nil),           // 8: dop.v1.PageRequest
+	(*PageResponse)(nil),          // 9: dop.v1.PageResponse
+	(*Money)(nil),                 // 10: dop.v1.Money
+	(*AuditStamp)(nil),            // 11: dop.v1.AuditStamp
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_dop_v1_common_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.ActorRef.kind:type_name -> dop.v1.ActorRef.Kind
-	1,  // 1: dop.v1.CallContext.account:type_name -> dop.v1.AccountRef
-	7,  // 2: dop.v1.CallContext.actor:type_name -> dop.v1.ActorRef
-	13, // 3: dop.v1.AuditStamp.created_at:type_name -> google.protobuf.Timestamp
-	13, // 4: dop.v1.AuditStamp.updated_at:type_name -> google.protobuf.Timestamp
-	7,  // 5: dop.v1.AuditStamp.created_by:type_name -> dop.v1.ActorRef
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	12, // 1: dop.v1.AuditStamp.created_at:type_name -> google.protobuf.Timestamp
+	12, // 2: dop.v1.AuditStamp.updated_at:type_name -> google.protobuf.Timestamp
+	7,  // 3: dop.v1.AuditStamp.created_by:type_name -> dop.v1.ActorRef
+	4,  // [4:4] is the sub-list for method output_type
+	4,  // [4:4] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_common_proto_init() }
@@ -782,7 +722,7 @@ func file_dop_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_common_proto_rawDesc), len(file_dop_v1_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

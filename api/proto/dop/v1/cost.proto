@@ -46,12 +46,12 @@ service CostService {
   rpc SummarizeCost(SummarizeCostRequest)returns (SummarizeCostResponse);
 }
 
-message RecordUsageRequest  { CallContext ctx = 1; UsageEvent usage = 2; string idempotency_key = 3; }
+message RecordUsageRequest  { reserved 1; UsageEvent usage = 2; string idempotency_key = 3; }
 message RecordUsageResponse { bool recorded = 1; bool budget_exceeded = 2; }
-message GetBudgetRequest    { CallContext ctx = 1; string scope = 2; string scope_id = 3; }
-message SetBudgetRequest    { CallContext ctx = 1; Budget budget = 2; }
-message RouteModelRequest   { CallContext ctx = 1; string task_kind = 2; string demand_id = 3; }
-message SummarizeCostRequest  { CallContext ctx = 1; string scope = 2; string scope_id = 3; }
+message GetBudgetRequest    { reserved 1; string scope = 2; string scope_id = 3; }
+message SetBudgetRequest    { reserved 1; Budget budget = 2; }
+message RouteModelRequest   { reserved 1; string task_kind = 2; string demand_id = 3; }
+message SummarizeCostRequest  { reserved 1; string scope = 2; string scope_id = 3; }
 message SummarizeCostResponse {
   Money total = 1;
   double cache_hit_ratio = 2;

@@ -97,16 +97,16 @@ service WorkflowService {
   rpc PromoteFlow   (PromoteFlowRequest)   returns (Flow);
 }
 
-message ListFlowsRequest  { CallContext ctx = 1; string owner_scope = 2; string owner_id = 3; }
+message ListFlowsRequest  { reserved 1; string owner_scope = 2; string owner_id = 3; }
 message ListFlowsResponse { repeated Flow flows = 1; }
-message GetFlowRequest    { CallContext ctx = 1; string id = 2; }
-message CreateFlowRequest { CallContext ctx = 1; Flow flow = 2; string idempotency_key = 3; }
-message UpdateFlowRequest { CallContext ctx = 1; Flow flow = 2; }
-message ValidateFlowRequest  { CallContext ctx = 1; Flow flow = 2; }
+message GetFlowRequest    { reserved 1; string id = 2; }
+message CreateFlowRequest { reserved 1; Flow flow = 2; string idempotency_key = 3; }
+message UpdateFlowRequest { reserved 1; Flow flow = 2; }
+message ValidateFlowRequest  { reserved 1; Flow flow = 2; }
 message ValidateFlowResponse {
   bool valid = 1;
   repeated string errors   = 2;
   repeated string warnings = 3;  // e.g.: a flow with no spec stage
 }
-message ResolveFlowRequest { CallContext ctx = 1; string scope = 2; string scope_id = 3; }
-message PromoteFlowRequest { CallContext ctx = 1; string flow_id = 2; string target_scope = 3; string target_id = 4; }
+message ResolveFlowRequest { reserved 1; string scope = 2; string scope_id = 3; }
+message PromoteFlowRequest { reserved 1; string flow_id = 2; string target_scope = 3; string target_id = 4; }

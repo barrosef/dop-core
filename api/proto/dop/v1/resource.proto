@@ -73,21 +73,21 @@ service ResourceService {
   rpc SetCredential  (SetCredentialRequest)  returns (SetCredentialResponse);
 }
 
-message ListResourcesRequest  { CallContext ctx = 1; Resource.Kind kind = 2; PageRequest page = 3; }
+message ListResourcesRequest  { reserved 1; Resource.Kind kind = 2; PageRequest page = 3; }
 message ListResourcesResponse { repeated Resource resources = 1; PageResponse page = 2; }
-message GetResourceRequest    { CallContext ctx = 1; string id = 2; }
+message GetResourceRequest    { reserved 1; string id = 2; }
 message CreateResourceRequest {
-  CallContext ctx = 1;
+  reserved 1;
   Resource.Kind kind = 2;
   string name = 3;
   google.protobuf.Struct config = 4;
   string idempotency_key = 5;
 }
-message UpdateResourceRequest { CallContext ctx = 1; string id = 2; google.protobuf.Struct config = 3; }
-message DeleteResourceRequest { CallContext ctx = 1; string id = 2; }
+message UpdateResourceRequest { reserved 1; string id = 2; google.protobuf.Struct config = 3; }
+message DeleteResourceRequest { reserved 1; string id = 2; }
 message DeleteResourceResponse{ bool deleted = 1; }
-message GrantResourceRequest  { CallContext ctx = 1; string resource_id = 2; string user_id = 3; string level = 4; }
-message RevokeGrantRequest    { CallContext ctx = 1; string grant_id = 2; }
+message GrantResourceRequest  { reserved 1; string resource_id = 2; string user_id = 3; string level = 4; }
+message RevokeGrantRequest    { reserved 1; string grant_id = 2; }
 message RevokeGrantResponse   { bool revoked = 1; }
-message SetCredentialRequest  { CallContext ctx = 1; string resource_id = 2; bytes secret = 3; }
+message SetCredentialRequest  { reserved 1; string resource_id = 2; bytes secret = 3; }
 message SetCredentialResponse { string credential_ref = 1; }

@@ -597,7 +597,6 @@ func (x *ResourceGrantSpec) GetLevel() string {
 
 type ListInvitesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -630,13 +629,6 @@ func (x *ListInvitesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListInvitesRequest.ProtoReflect.Descriptor instead.
 func (*ListInvitesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ListInvitesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 type ListInvitesResponse struct {
@@ -685,7 +677,6 @@ func (x *ListInvitesResponse) GetInvites() []*Invite {
 
 type GetInviteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -719,13 +710,6 @@ func (x *GetInviteRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetInviteRequest.ProtoReflect.Descriptor instead.
 func (*GetInviteRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *GetInviteRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *GetInviteRequest) GetId() string {
@@ -823,7 +807,6 @@ func (x *InvitePreview) GetUsable() bool {
 
 type GetUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -857,13 +840,6 @@ func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetUserRequest.ProtoReflect.Descriptor instead.
 func (*GetUserRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *GetUserRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *GetUserRequest) GetId() string {
@@ -969,7 +945,6 @@ func (x *EnsureUserRequest) GetIdempotencyKey() string {
 
 type ListAccountsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	User          *UserRef               `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1003,13 +978,6 @@ func (x *ListAccountsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListAccountsRequest.ProtoReflect.Descriptor instead.
 func (*ListAccountsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ListAccountsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListAccountsRequest) GetUser() *UserRef {
@@ -1065,7 +1033,6 @@ func (x *ListAccountsResponse) GetAccounts() []*Account {
 
 type GetAccountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1101,13 +1068,6 @@ func (*GetAccountRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *GetAccountRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetAccountRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -1117,7 +1077,6 @@ func (x *GetAccountRequest) GetId() string {
 
 type CreateAccountRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Kind           Account_Kind           `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.Account_Kind" json:"kind,omitempty"`
 	Handle         string                 `protobuf:"bytes,3,opt,name=handle,proto3" json:"handle,omitempty"`
 	DisplayName    string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
@@ -1157,13 +1116,6 @@ func (*CreateAccountRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *CreateAccountRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateAccountRequest) GetKind() Account_Kind {
 	if x != nil {
 		return x.Kind
@@ -1201,7 +1153,6 @@ func (x *CreateAccountRequest) GetIdempotencyKey() string {
 
 type ListMembershipsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Account       *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1235,13 +1186,6 @@ func (x *ListMembershipsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListMembershipsRequest.ProtoReflect.Descriptor instead.
 func (*ListMembershipsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *ListMembershipsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListMembershipsRequest) GetAccount() *AccountRef {
@@ -1297,7 +1241,6 @@ func (x *ListMembershipsResponse) GetMemberships() []*Membership {
 
 type CreateInviteRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Email          string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	Role           Role                   `protobuf:"varint,3,opt,name=role,proto3,enum=dop.v1.Role" json:"role,omitempty"`
 	Grants         []*ResourceGrantSpec   `protobuf:"bytes,4,rep,name=grants,proto3" json:"grants,omitempty"`
@@ -1336,13 +1279,6 @@ func (*CreateInviteRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *CreateInviteRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateInviteRequest) GetEmail() string {
 	if x != nil {
 		return x.Email
@@ -1377,7 +1313,6 @@ func (x *CreateInviteRequest) GetIdempotencyKey() string {
 // which is the correct failure.
 type AcceptInviteRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	InviteId       string                 `protobuf:"bytes,2,opt,name=invite_id,json=inviteId,proto3" json:"invite_id,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1414,13 +1349,6 @@ func (*AcceptInviteRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *AcceptInviteRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *AcceptInviteRequest) GetInviteId() string {
 	if x != nil {
 		return x.InviteId
@@ -1437,7 +1365,6 @@ func (x *AcceptInviteRequest) GetIdempotencyKey() string {
 
 type RevokeInviteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1473,13 +1400,6 @@ func (*RevokeInviteRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *RevokeInviteRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *RevokeInviteRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -1489,7 +1409,6 @@ func (x *RevokeInviteRequest) GetId() string {
 
 type UpdateMembershipRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	MembershipId  string                 `protobuf:"bytes,2,opt,name=membership_id,json=membershipId,proto3" json:"membership_id,omitempty"`
 	Role          Role                   `protobuf:"varint,3,opt,name=role,proto3,enum=dop.v1.Role" json:"role,omitempty"`
 	Grants        []*ResourceGrantSpec   `protobuf:"bytes,4,rep,name=grants,proto3" json:"grants,omitempty"`
@@ -1525,13 +1444,6 @@ func (x *UpdateMembershipRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UpdateMembershipRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMembershipRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_identity_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *UpdateMembershipRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *UpdateMembershipRequest) GetMembershipId() string {
@@ -1608,14 +1520,12 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x0eSTATUS_REVOKED\x10\x04\"Z\n" +
 	"\x11ResourceGrantSpec\x12/\n" +
 	"\bresource\x18\x01 \x01(\v2\x13.dop.v1.ResourceRefR\bresource\x12\x14\n" +
-	"\x05level\x18\x02 \x01(\tR\x05level\";\n" +
-	"\x12ListInvitesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"?\n" +
+	"\x05level\x18\x02 \x01(\tR\x05level\"\x1a\n" +
+	"\x12ListInvitesRequestJ\x04\b\x01\x10\x02\"?\n" +
 	"\x13ListInvitesResponse\x12(\n" +
-	"\ainvites\x18\x01 \x03(\v2\x0e.dop.v1.InviteR\ainvites\"I\n" +
-	"\x10GetInviteRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xe6\x01\n" +
+	"\ainvites\x18\x01 \x03(\v2\x0e.dop.v1.InviteR\ainvites\"(\n" +
+	"\x10GetInviteRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xe6\x01\n" +
 	"\rInvitePreview\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\faccount_name\x18\x02 \x01(\tR\vaccountName\x12 \n" +
@@ -1623,10 +1533,9 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\x0e2\x15.dop.v1.Invite.StatusR\x06status\x129\n" +
 	"\n" +
 	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x16\n" +
-	"\x06usable\x18\x06 \x01(\bR\x06usable\"G\n" +
-	"\x0eGetUserRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xe2\x01\n" +
+	"\x06usable\x18\x06 \x01(\bR\x06usable\"&\n" +
+	"\x0eGetUserRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xe2\x01\n" +
 	"\x11EnsureUserRequest\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12%\n" +
@@ -1635,45 +1544,37 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x05 \x01(\tR\tavatarUrl\x12\x1a\n" +
 	"\bprovider\x18\x06 \x01(\tR\bprovider\x12'\n" +
-	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"a\n" +
-	"\x13ListAccountsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12#\n" +
-	"\x04user\x18\x02 \x01(\v2\x0f.dop.v1.UserRefR\x04user\"C\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"@\n" +
+	"\x13ListAccountsRequest\x12#\n" +
+	"\x04user\x18\x02 \x01(\v2\x0f.dop.v1.UserRefR\x04userJ\x04\b\x01\x10\x02\"C\n" +
 	"\x14ListAccountsResponse\x12+\n" +
-	"\baccounts\x18\x01 \x03(\v2\x0f.dop.v1.AccountR\baccounts\"J\n" +
-	"\x11GetAccountRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xe6\x01\n" +
-	"\x14CreateAccountRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12(\n" +
+	"\baccounts\x18\x01 \x03(\v2\x0f.dop.v1.AccountR\baccounts\")\n" +
+	"\x11GetAccountRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xc5\x01\n" +
+	"\x14CreateAccountRequest\x12(\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x14.dop.v1.Account.KindR\x04kind\x12\x16\n" +
 	"\x06handle\x18\x03 \x01(\tR\x06handle\x12!\n" +
 	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x19\n" +
 	"\blegal_id\x18\x05 \x01(\tR\alegalId\x12'\n" +
-	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\"m\n" +
-	"\x16ListMembershipsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
-	"\aaccount\x18\x02 \x01(\v2\x12.dop.v1.AccountRefR\aaccount\"O\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"L\n" +
+	"\x16ListMembershipsRequest\x12,\n" +
+	"\aaccount\x18\x02 \x01(\v2\x12.dop.v1.AccountRefR\aaccountJ\x04\b\x01\x10\x02\"O\n" +
 	"\x17ListMembershipsResponse\x124\n" +
-	"\vmemberships\x18\x01 \x03(\v2\x12.dop.v1.MembershipR\vmemberships\"\xd0\x01\n" +
-	"\x13CreateInviteRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x14\n" +
+	"\vmemberships\x18\x01 \x03(\v2\x12.dop.v1.MembershipR\vmemberships\"\xaf\x01\n" +
+	"\x13CreateInviteRequest\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12 \n" +
 	"\x04role\x18\x03 \x01(\x0e2\f.dop.v1.RoleR\x04role\x121\n" +
 	"\x06grants\x18\x04 \x03(\v2\x19.dop.v1.ResourceGrantSpecR\x06grants\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\x82\x01\n" +
-	"\x13AcceptInviteRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"a\n" +
+	"\x13AcceptInviteRequest\x12\x1b\n" +
 	"\tinvite_id\x18\x02 \x01(\tR\binviteId\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"L\n" +
-	"\x13RevokeInviteRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xba\x01\n" +
-	"\x17UpdateMembershipRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12#\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"+\n" +
+	"\x13RevokeInviteRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\x99\x01\n" +
+	"\x17UpdateMembershipRequest\x12#\n" +
 	"\rmembership_id\x18\x02 \x01(\tR\fmembershipId\x12 \n" +
 	"\x04role\x18\x03 \x01(\x0e2\f.dop.v1.RoleR\x04role\x121\n" +
-	"\x06grants\x18\x04 \x03(\v2\x19.dop.v1.ResourceGrantSpecR\x06grants*a\n" +
+	"\x06grants\x18\x04 \x03(\v2\x19.dop.v1.ResourceGrantSpecR\x06grantsJ\x04\b\x01\x10\x02*a\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -1744,7 +1645,6 @@ var file_dop_v1_identity_proto_goTypes = []any{
 	(*AccountRef)(nil),              // 26: dop.v1.AccountRef
 	(*timestamppb.Timestamp)(nil),   // 27: google.protobuf.Timestamp
 	(*ResourceRef)(nil),             // 28: dop.v1.ResourceRef
-	(*CallContext)(nil),             // 29: dop.v1.CallContext
 }
 var file_dop_v1_identity_proto_depIdxs = []int32{
 	24, // 0: dop.v1.User.audit:type_name -> dop.v1.AuditStamp
@@ -1761,59 +1661,48 @@ var file_dop_v1_identity_proto_depIdxs = []int32{
 	27, // 11: dop.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
 	24, // 12: dop.v1.Invite.audit:type_name -> dop.v1.AuditStamp
 	28, // 13: dop.v1.ResourceGrantSpec.resource:type_name -> dop.v1.ResourceRef
-	29, // 14: dop.v1.ListInvitesRequest.ctx:type_name -> dop.v1.CallContext
-	6,  // 15: dop.v1.ListInvitesResponse.invites:type_name -> dop.v1.Invite
-	29, // 16: dop.v1.GetInviteRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 17: dop.v1.InvitePreview.role:type_name -> dop.v1.Role
-	2,  // 18: dop.v1.InvitePreview.status:type_name -> dop.v1.Invite.Status
-	27, // 19: dop.v1.InvitePreview.expires_at:type_name -> google.protobuf.Timestamp
-	29, // 20: dop.v1.GetUserRequest.ctx:type_name -> dop.v1.CallContext
-	29, // 21: dop.v1.ListAccountsRequest.ctx:type_name -> dop.v1.CallContext
-	25, // 22: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
-	4,  // 23: dop.v1.ListAccountsResponse.accounts:type_name -> dop.v1.Account
-	29, // 24: dop.v1.GetAccountRequest.ctx:type_name -> dop.v1.CallContext
-	29, // 25: dop.v1.CreateAccountRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 26: dop.v1.CreateAccountRequest.kind:type_name -> dop.v1.Account.Kind
-	29, // 27: dop.v1.ListMembershipsRequest.ctx:type_name -> dop.v1.CallContext
-	26, // 28: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
-	5,  // 29: dop.v1.ListMembershipsResponse.memberships:type_name -> dop.v1.Membership
-	29, // 30: dop.v1.CreateInviteRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 31: dop.v1.CreateInviteRequest.role:type_name -> dop.v1.Role
-	7,  // 32: dop.v1.CreateInviteRequest.grants:type_name -> dop.v1.ResourceGrantSpec
-	29, // 33: dop.v1.AcceptInviteRequest.ctx:type_name -> dop.v1.CallContext
-	29, // 34: dop.v1.RevokeInviteRequest.ctx:type_name -> dop.v1.CallContext
-	29, // 35: dop.v1.UpdateMembershipRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 36: dop.v1.UpdateMembershipRequest.role:type_name -> dop.v1.Role
-	7,  // 37: dop.v1.UpdateMembershipRequest.grants:type_name -> dop.v1.ResourceGrantSpec
-	12, // 38: dop.v1.IdentityService.GetUser:input_type -> dop.v1.GetUserRequest
-	13, // 39: dop.v1.IdentityService.EnsureUser:input_type -> dop.v1.EnsureUserRequest
-	14, // 40: dop.v1.IdentityService.ListAccounts:input_type -> dop.v1.ListAccountsRequest
-	16, // 41: dop.v1.IdentityService.GetAccount:input_type -> dop.v1.GetAccountRequest
-	17, // 42: dop.v1.IdentityService.CreateAccount:input_type -> dop.v1.CreateAccountRequest
-	18, // 43: dop.v1.IdentityService.ListMemberships:input_type -> dop.v1.ListMembershipsRequest
-	20, // 44: dop.v1.IdentityService.CreateInvite:input_type -> dop.v1.CreateInviteRequest
-	21, // 45: dop.v1.IdentityService.AcceptInvite:input_type -> dop.v1.AcceptInviteRequest
-	22, // 46: dop.v1.IdentityService.RevokeInvite:input_type -> dop.v1.RevokeInviteRequest
-	23, // 47: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
-	8,  // 48: dop.v1.IdentityService.ListInvites:input_type -> dop.v1.ListInvitesRequest
-	10, // 49: dop.v1.IdentityService.GetInvite:input_type -> dop.v1.GetInviteRequest
-	3,  // 50: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
-	3,  // 51: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
-	15, // 52: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
-	4,  // 53: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
-	4,  // 54: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
-	19, // 55: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
-	6,  // 56: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
-	5,  // 57: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
-	6,  // 58: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
-	5,  // 59: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
-	9,  // 60: dop.v1.IdentityService.ListInvites:output_type -> dop.v1.ListInvitesResponse
-	11, // 61: dop.v1.IdentityService.GetInvite:output_type -> dop.v1.InvitePreview
-	50, // [50:62] is the sub-list for method output_type
-	38, // [38:50] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	6,  // 14: dop.v1.ListInvitesResponse.invites:type_name -> dop.v1.Invite
+	0,  // 15: dop.v1.InvitePreview.role:type_name -> dop.v1.Role
+	2,  // 16: dop.v1.InvitePreview.status:type_name -> dop.v1.Invite.Status
+	27, // 17: dop.v1.InvitePreview.expires_at:type_name -> google.protobuf.Timestamp
+	25, // 18: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
+	4,  // 19: dop.v1.ListAccountsResponse.accounts:type_name -> dop.v1.Account
+	1,  // 20: dop.v1.CreateAccountRequest.kind:type_name -> dop.v1.Account.Kind
+	26, // 21: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
+	5,  // 22: dop.v1.ListMembershipsResponse.memberships:type_name -> dop.v1.Membership
+	0,  // 23: dop.v1.CreateInviteRequest.role:type_name -> dop.v1.Role
+	7,  // 24: dop.v1.CreateInviteRequest.grants:type_name -> dop.v1.ResourceGrantSpec
+	0,  // 25: dop.v1.UpdateMembershipRequest.role:type_name -> dop.v1.Role
+	7,  // 26: dop.v1.UpdateMembershipRequest.grants:type_name -> dop.v1.ResourceGrantSpec
+	12, // 27: dop.v1.IdentityService.GetUser:input_type -> dop.v1.GetUserRequest
+	13, // 28: dop.v1.IdentityService.EnsureUser:input_type -> dop.v1.EnsureUserRequest
+	14, // 29: dop.v1.IdentityService.ListAccounts:input_type -> dop.v1.ListAccountsRequest
+	16, // 30: dop.v1.IdentityService.GetAccount:input_type -> dop.v1.GetAccountRequest
+	17, // 31: dop.v1.IdentityService.CreateAccount:input_type -> dop.v1.CreateAccountRequest
+	18, // 32: dop.v1.IdentityService.ListMemberships:input_type -> dop.v1.ListMembershipsRequest
+	20, // 33: dop.v1.IdentityService.CreateInvite:input_type -> dop.v1.CreateInviteRequest
+	21, // 34: dop.v1.IdentityService.AcceptInvite:input_type -> dop.v1.AcceptInviteRequest
+	22, // 35: dop.v1.IdentityService.RevokeInvite:input_type -> dop.v1.RevokeInviteRequest
+	23, // 36: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
+	8,  // 37: dop.v1.IdentityService.ListInvites:input_type -> dop.v1.ListInvitesRequest
+	10, // 38: dop.v1.IdentityService.GetInvite:input_type -> dop.v1.GetInviteRequest
+	3,  // 39: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
+	3,  // 40: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
+	15, // 41: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
+	4,  // 42: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
+	4,  // 43: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
+	19, // 44: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
+	6,  // 45: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
+	5,  // 46: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
+	6,  // 47: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
+	5,  // 48: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
+	9,  // 49: dop.v1.IdentityService.ListInvites:output_type -> dop.v1.ListInvitesResponse
+	11, // 50: dop.v1.IdentityService.GetInvite:output_type -> dop.v1.InvitePreview
+	39, // [39:51] is the sub-list for method output_type
+	27, // [27:39] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_identity_proto_init() }

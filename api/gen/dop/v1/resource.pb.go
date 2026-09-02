@@ -496,7 +496,6 @@ func (x *ResourceGrant) GetLevel() string {
 
 type ListResourcesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Kind          Resource_Kind          `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.Resource_Kind" json:"kind,omitempty"`
 	Page          *PageRequest           `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -531,13 +530,6 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListResourcesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListResourcesRequest) GetKind() Resource_Kind {
@@ -608,7 +600,6 @@ func (x *ListResourcesResponse) GetPage() *PageResponse {
 
 type GetResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -644,13 +635,6 @@ func (*GetResourceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *GetResourceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GetResourceRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -660,7 +644,6 @@ func (x *GetResourceRequest) GetId() string {
 
 type CreateResourceRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Kind           Resource_Kind          `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.Resource_Kind" json:"kind,omitempty"`
 	Name           string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Config         *structpb.Struct       `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
@@ -699,13 +682,6 @@ func (*CreateResourceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *CreateResourceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *CreateResourceRequest) GetKind() Resource_Kind {
 	if x != nil {
 		return x.Kind
@@ -736,7 +712,6 @@ func (x *CreateResourceRequest) GetIdempotencyKey() string {
 
 type UpdateResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	Config        *structpb.Struct       `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -773,13 +748,6 @@ func (*UpdateResourceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *UpdateResourceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *UpdateResourceRequest) GetId() string {
 	if x != nil {
 		return x.Id
@@ -796,7 +764,6 @@ func (x *UpdateResourceRequest) GetConfig() *structpb.Struct {
 
 type DeleteResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -830,13 +797,6 @@ func (x *DeleteResourceRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use DeleteResourceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteResourceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *DeleteResourceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *DeleteResourceRequest) GetId() string {
@@ -892,7 +852,6 @@ func (x *DeleteResourceResponse) GetDeleted() bool {
 
 type GrantResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	ResourceId    string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
 	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Level         string                 `protobuf:"bytes,4,opt,name=level,proto3" json:"level,omitempty"`
@@ -930,13 +889,6 @@ func (*GrantResourceRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *GrantResourceRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *GrantResourceRequest) GetResourceId() string {
 	if x != nil {
 		return x.ResourceId
@@ -960,7 +912,6 @@ func (x *GrantResourceRequest) GetLevel() string {
 
 type RevokeGrantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	GrantId       string                 `protobuf:"bytes,2,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -994,13 +945,6 @@ func (x *RevokeGrantRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RevokeGrantRequest.ProtoReflect.Descriptor instead.
 func (*RevokeGrantRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *RevokeGrantRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *RevokeGrantRequest) GetGrantId() string {
@@ -1056,7 +1000,6 @@ func (x *RevokeGrantResponse) GetRevoked() bool {
 
 type SetCredentialRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	ResourceId    string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
 	Secret        []byte                 `protobuf:"bytes,3,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1091,13 +1034,6 @@ func (x *SetCredentialRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SetCredentialRequest.ProtoReflect.Descriptor instead.
 func (*SetCredentialRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *SetCredentialRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *SetCredentialRequest) GetResourceId() string {
@@ -1209,48 +1145,40 @@ const file_dop_v1_resource_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
 	"\bresource\x18\x02 \x01(\v2\x13.dop.v1.ResourceRefR\bresource\x12#\n" +
 	"\x04user\x18\x03 \x01(\v2\x0f.dop.v1.UserRefR\x04user\x12\x14\n" +
-	"\x05level\x18\x04 \x01(\tR\x05level\"\x91\x01\n" +
-	"\x14ListResourcesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12)\n" +
+	"\x05level\x18\x04 \x01(\tR\x05level\"p\n" +
+	"\x14ListResourcesRequest\x12)\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x15.dop.v1.Resource.KindR\x04kind\x12'\n" +
-	"\x04page\x18\x03 \x01(\v2\x13.dop.v1.PageRequestR\x04page\"q\n" +
+	"\x04page\x18\x03 \x01(\v2\x13.dop.v1.PageRequestR\x04pageJ\x04\b\x01\x10\x02\"q\n" +
 	"\x15ListResourcesResponse\x12.\n" +
 	"\tresources\x18\x01 \x03(\v2\x10.dop.v1.ResourceR\tresources\x12(\n" +
-	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\"K\n" +
-	"\x12GetResourceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xd7\x01\n" +
-	"\x15CreateResourceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12)\n" +
+	"\x04page\x18\x02 \x01(\v2\x14.dop.v1.PageResponseR\x04page\"*\n" +
+	"\x12GetResourceRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\xb6\x01\n" +
+	"\x15CreateResourceRequest\x12)\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x15.dop.v1.Resource.KindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12/\n" +
 	"\x06config\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06config\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"\x7f\n" +
-	"\x15UpdateResourceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"^\n" +
+	"\x15UpdateResourceRequest\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12/\n" +
-	"\x06config\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06config\"N\n" +
-	"\x15DeleteResourceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"2\n" +
+	"\x06config\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06configJ\x04\b\x01\x10\x02\"-\n" +
+	"\x15DeleteResourceRequest\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"2\n" +
 	"\x16DeleteResourceResponse\x12\x18\n" +
-	"\adeleted\x18\x01 \x01(\bR\adeleted\"\x8d\x01\n" +
-	"\x14GrantResourceRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1f\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"l\n" +
+	"\x14GrantResourceRequest\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
 	"resourceId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x14\n" +
-	"\x05level\x18\x04 \x01(\tR\x05level\"V\n" +
-	"\x12RevokeGrantRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x19\n" +
-	"\bgrant_id\x18\x02 \x01(\tR\agrantId\"/\n" +
+	"\x05level\x18\x04 \x01(\tR\x05levelJ\x04\b\x01\x10\x02\"5\n" +
+	"\x12RevokeGrantRequest\x12\x19\n" +
+	"\bgrant_id\x18\x02 \x01(\tR\agrantIdJ\x04\b\x01\x10\x02\"/\n" +
 	"\x13RevokeGrantResponse\x12\x18\n" +
-	"\arevoked\x18\x01 \x01(\bR\arevoked\"v\n" +
-	"\x14SetCredentialRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1f\n" +
+	"\arevoked\x18\x01 \x01(\bR\arevoked\"U\n" +
+	"\x14SetCredentialRequest\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
 	"resourceId\x12\x16\n" +
-	"\x06secret\x18\x03 \x01(\fR\x06secret\">\n" +
+	"\x06secret\x18\x03 \x01(\fR\x06secretJ\x04\b\x01\x10\x02\">\n" +
 	"\x15SetCredentialResponse\x12%\n" +
 	"\x0ecredential_ref\x18\x01 \x01(\tR\rcredentialRef2\xcf\x04\n" +
 	"\x0fResourceService\x12L\n" +
@@ -1304,9 +1232,8 @@ var file_dop_v1_resource_proto_goTypes = []any{
 	(*AuditStamp)(nil),              // 21: dop.v1.AuditStamp
 	(*UserRef)(nil),                 // 22: dop.v1.UserRef
 	(*ResourceRef)(nil),             // 23: dop.v1.ResourceRef
-	(*CallContext)(nil),             // 24: dop.v1.CallContext
-	(*PageRequest)(nil),             // 25: dop.v1.PageRequest
-	(*PageResponse)(nil),            // 26: dop.v1.PageResponse
+	(*PageRequest)(nil),             // 24: dop.v1.PageRequest
+	(*PageResponse)(nil),            // 25: dop.v1.PageResponse
 }
 var file_dop_v1_resource_proto_depIdxs = []int32{
 	19, // 0: dop.v1.Resource.account:type_name -> dop.v1.AccountRef
@@ -1319,42 +1246,34 @@ var file_dop_v1_resource_proto_depIdxs = []int32{
 	22, // 7: dop.v1.IntegrationSpec.connected_by:type_name -> dop.v1.UserRef
 	23, // 8: dop.v1.ResourceGrant.resource:type_name -> dop.v1.ResourceRef
 	22, // 9: dop.v1.ResourceGrant.user:type_name -> dop.v1.UserRef
-	24, // 10: dop.v1.ListResourcesRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 11: dop.v1.ListResourcesRequest.kind:type_name -> dop.v1.Resource.Kind
-	25, // 12: dop.v1.ListResourcesRequest.page:type_name -> dop.v1.PageRequest
-	4,  // 13: dop.v1.ListResourcesResponse.resources:type_name -> dop.v1.Resource
-	26, // 14: dop.v1.ListResourcesResponse.page:type_name -> dop.v1.PageResponse
-	24, // 15: dop.v1.GetResourceRequest.ctx:type_name -> dop.v1.CallContext
-	24, // 16: dop.v1.CreateResourceRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 17: dop.v1.CreateResourceRequest.kind:type_name -> dop.v1.Resource.Kind
-	20, // 18: dop.v1.CreateResourceRequest.config:type_name -> google.protobuf.Struct
-	24, // 19: dop.v1.UpdateResourceRequest.ctx:type_name -> dop.v1.CallContext
-	20, // 20: dop.v1.UpdateResourceRequest.config:type_name -> google.protobuf.Struct
-	24, // 21: dop.v1.DeleteResourceRequest.ctx:type_name -> dop.v1.CallContext
-	24, // 22: dop.v1.GrantResourceRequest.ctx:type_name -> dop.v1.CallContext
-	24, // 23: dop.v1.RevokeGrantRequest.ctx:type_name -> dop.v1.CallContext
-	24, // 24: dop.v1.SetCredentialRequest.ctx:type_name -> dop.v1.CallContext
-	7,  // 25: dop.v1.ResourceService.ListResources:input_type -> dop.v1.ListResourcesRequest
-	9,  // 26: dop.v1.ResourceService.GetResource:input_type -> dop.v1.GetResourceRequest
-	10, // 27: dop.v1.ResourceService.CreateResource:input_type -> dop.v1.CreateResourceRequest
-	11, // 28: dop.v1.ResourceService.UpdateResource:input_type -> dop.v1.UpdateResourceRequest
-	12, // 29: dop.v1.ResourceService.DeleteResource:input_type -> dop.v1.DeleteResourceRequest
-	14, // 30: dop.v1.ResourceService.GrantResource:input_type -> dop.v1.GrantResourceRequest
-	15, // 31: dop.v1.ResourceService.RevokeGrant:input_type -> dop.v1.RevokeGrantRequest
-	17, // 32: dop.v1.ResourceService.SetCredential:input_type -> dop.v1.SetCredentialRequest
-	8,  // 33: dop.v1.ResourceService.ListResources:output_type -> dop.v1.ListResourcesResponse
-	4,  // 34: dop.v1.ResourceService.GetResource:output_type -> dop.v1.Resource
-	4,  // 35: dop.v1.ResourceService.CreateResource:output_type -> dop.v1.Resource
-	4,  // 36: dop.v1.ResourceService.UpdateResource:output_type -> dop.v1.Resource
-	13, // 37: dop.v1.ResourceService.DeleteResource:output_type -> dop.v1.DeleteResourceResponse
-	6,  // 38: dop.v1.ResourceService.GrantResource:output_type -> dop.v1.ResourceGrant
-	16, // 39: dop.v1.ResourceService.RevokeGrant:output_type -> dop.v1.RevokeGrantResponse
-	18, // 40: dop.v1.ResourceService.SetCredential:output_type -> dop.v1.SetCredentialResponse
-	33, // [33:41] is the sub-list for method output_type
-	25, // [25:33] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	0,  // 10: dop.v1.ListResourcesRequest.kind:type_name -> dop.v1.Resource.Kind
+	24, // 11: dop.v1.ListResourcesRequest.page:type_name -> dop.v1.PageRequest
+	4,  // 12: dop.v1.ListResourcesResponse.resources:type_name -> dop.v1.Resource
+	25, // 13: dop.v1.ListResourcesResponse.page:type_name -> dop.v1.PageResponse
+	0,  // 14: dop.v1.CreateResourceRequest.kind:type_name -> dop.v1.Resource.Kind
+	20, // 15: dop.v1.CreateResourceRequest.config:type_name -> google.protobuf.Struct
+	20, // 16: dop.v1.UpdateResourceRequest.config:type_name -> google.protobuf.Struct
+	7,  // 17: dop.v1.ResourceService.ListResources:input_type -> dop.v1.ListResourcesRequest
+	9,  // 18: dop.v1.ResourceService.GetResource:input_type -> dop.v1.GetResourceRequest
+	10, // 19: dop.v1.ResourceService.CreateResource:input_type -> dop.v1.CreateResourceRequest
+	11, // 20: dop.v1.ResourceService.UpdateResource:input_type -> dop.v1.UpdateResourceRequest
+	12, // 21: dop.v1.ResourceService.DeleteResource:input_type -> dop.v1.DeleteResourceRequest
+	14, // 22: dop.v1.ResourceService.GrantResource:input_type -> dop.v1.GrantResourceRequest
+	15, // 23: dop.v1.ResourceService.RevokeGrant:input_type -> dop.v1.RevokeGrantRequest
+	17, // 24: dop.v1.ResourceService.SetCredential:input_type -> dop.v1.SetCredentialRequest
+	8,  // 25: dop.v1.ResourceService.ListResources:output_type -> dop.v1.ListResourcesResponse
+	4,  // 26: dop.v1.ResourceService.GetResource:output_type -> dop.v1.Resource
+	4,  // 27: dop.v1.ResourceService.CreateResource:output_type -> dop.v1.Resource
+	4,  // 28: dop.v1.ResourceService.UpdateResource:output_type -> dop.v1.Resource
+	13, // 29: dop.v1.ResourceService.DeleteResource:output_type -> dop.v1.DeleteResourceResponse
+	6,  // 30: dop.v1.ResourceService.GrantResource:output_type -> dop.v1.ResourceGrant
+	16, // 31: dop.v1.ResourceService.RevokeGrant:output_type -> dop.v1.RevokeGrantResponse
+	18, // 32: dop.v1.ResourceService.SetCredential:output_type -> dop.v1.SetCredentialResponse
+	25, // [25:33] is the sub-list for method output_type
+	17, // [17:25] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_resource_proto_init() }

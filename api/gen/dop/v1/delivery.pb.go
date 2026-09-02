@@ -485,7 +485,6 @@ func (x *Directive) GetAudit() *AuditStamp {
 
 type ListPullRequestsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId      string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	Project       *ProjectRef            `protobuf:"bytes,3,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -520,13 +519,6 @@ func (x *ListPullRequestsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListPullRequestsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestsRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_delivery_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListPullRequestsRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListPullRequestsRequest) GetDemandId() string {
@@ -589,7 +581,6 @@ func (x *ListPullRequestsResponse) GetPullRequests() []*PullRequest {
 
 type GetMergeQueueRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	RepoId        string                 `protobuf:"bytes,2,opt,name=repo_id,json=repoId,proto3" json:"repo_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -623,13 +614,6 @@ func (x *GetMergeQueueRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetMergeQueueRequest.ProtoReflect.Descriptor instead.
 func (*GetMergeQueueRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_delivery_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *GetMergeQueueRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *GetMergeQueueRequest) GetRepoId() string {
@@ -685,7 +669,6 @@ func (x *GetMergeQueueResponse) GetEntries() []*MergeQueueEntry {
 
 type EnqueueMergeRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	RepoId         string                 `protobuf:"bytes,2,opt,name=repo_id,json=repoId,proto3" json:"repo_id,omitempty"`
 	DemandId       string                 `protobuf:"bytes,3,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -723,13 +706,6 @@ func (*EnqueueMergeRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_delivery_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *EnqueueMergeRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
-}
-
 func (x *EnqueueMergeRequest) GetRepoId() string {
 	if x != nil {
 		return x.RepoId
@@ -753,7 +729,6 @@ func (x *EnqueueMergeRequest) GetIdempotencyKey() string {
 
 type ListDirectivesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Project       *ProjectRef            `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -787,13 +762,6 @@ func (x *ListDirectivesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListDirectivesRequest.ProtoReflect.Descriptor instead.
 func (*ListDirectivesRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_delivery_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *ListDirectivesRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *ListDirectivesRequest) GetProject() *ProjectRef {
@@ -849,7 +817,6 @@ func (x *ListDirectivesResponse) GetDirectives() []*Directive {
 
 type DecideDirectiveRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DirectiveId    string                 `protobuf:"bytes,2,opt,name=directive_id,json=directiveId,proto3" json:"directive_id,omitempty"`
 	Decision       *structpb.Struct       `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -885,13 +852,6 @@ func (x *DecideDirectiveRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use DecideDirectiveRequest.ProtoReflect.Descriptor instead.
 func (*DecideDirectiveRequest) Descriptor() ([]byte, []int) {
 	return file_dop_v1_delivery_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *DecideDirectiveRequest) GetCtx() *CallContext {
-	if x != nil {
-		return x.Ctx
-	}
-	return nil
 }
 
 func (x *DecideDirectiveRequest) GetDirectiveId() string {
@@ -963,35 +923,30 @@ const file_dop_v1_delivery_proto_rawDesc = "" +
 	"\x10KIND_CHERRY_PICK\x10\x01\x12\x14\n" +
 	"\x10KIND_MERGE_ORDER\x10\x02\x12\x17\n" +
 	"\x13KIND_FILE_PARTITION\x10\x03\x12\x15\n" +
-	"\x11KIND_CROSS_VERIFY\x10\x04\"\x8b\x01\n" +
-	"\x17ListPullRequestsRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\x11KIND_CROSS_VERIFY\x10\x04\"j\n" +
+	"\x17ListPullRequestsRequest\x12\x1b\n" +
 	"\tdemand_id\x18\x02 \x01(\tR\bdemandId\x12,\n" +
-	"\aproject\x18\x03 \x01(\v2\x12.dop.v1.ProjectRefR\aproject\"T\n" +
+	"\aproject\x18\x03 \x01(\v2\x12.dop.v1.ProjectRefR\aprojectJ\x04\b\x01\x10\x02\"T\n" +
 	"\x18ListPullRequestsResponse\x128\n" +
-	"\rpull_requests\x18\x01 \x03(\v2\x13.dop.v1.PullRequestR\fpullRequests\"V\n" +
-	"\x14GetMergeQueueRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x17\n" +
-	"\arepo_id\x18\x02 \x01(\tR\x06repoId\"J\n" +
+	"\rpull_requests\x18\x01 \x03(\v2\x13.dop.v1.PullRequestR\fpullRequests\"5\n" +
+	"\x14GetMergeQueueRequest\x12\x17\n" +
+	"\arepo_id\x18\x02 \x01(\tR\x06repoIdJ\x04\b\x01\x10\x02\"J\n" +
 	"\x15GetMergeQueueResponse\x121\n" +
-	"\aentries\x18\x01 \x03(\v2\x17.dop.v1.MergeQueueEntryR\aentries\"\x9b\x01\n" +
-	"\x13EnqueueMergeRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x17\n" +
+	"\aentries\x18\x01 \x03(\v2\x17.dop.v1.MergeQueueEntryR\aentries\"z\n" +
+	"\x13EnqueueMergeRequest\x12\x17\n" +
 	"\arepo_id\x18\x02 \x01(\tR\x06repoId\x12\x1b\n" +
 	"\tdemand_id\x18\x03 \x01(\tR\bdemandId\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"l\n" +
-	"\x15ListDirectivesRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12,\n" +
-	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aproject\"K\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"K\n" +
+	"\x15ListDirectivesRequest\x12,\n" +
+	"\aproject\x18\x02 \x01(\v2\x12.dop.v1.ProjectRefR\aprojectJ\x04\b\x01\x10\x02\"K\n" +
 	"\x16ListDirectivesResponse\x121\n" +
 	"\n" +
 	"directives\x18\x01 \x03(\v2\x11.dop.v1.DirectiveR\n" +
-	"directives\"\xc0\x01\n" +
-	"\x16DecideDirectiveRequest\x12%\n" +
-	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12!\n" +
+	"directives\"\x9f\x01\n" +
+	"\x16DecideDirectiveRequest\x12!\n" +
 	"\fdirective_id\x18\x02 \x01(\tR\vdirectiveId\x123\n" +
 	"\bdecision\x18\x03 \x01(\v2\x17.google.protobuf.StructR\bdecision\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey2\x93\x03\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x022\x93\x03\n" +
 	"\x0fDeliveryService\x12U\n" +
 	"\x10ListPullRequests\x12\x1f.dop.v1.ListPullRequestsRequest\x1a .dop.v1.ListPullRequestsResponse\x12L\n" +
 	"\rGetMergeQueue\x12\x1c.dop.v1.GetMergeQueueRequest\x1a\x1d.dop.v1.GetMergeQueueResponse\x12D\n" +
@@ -1035,7 +990,6 @@ var file_dop_v1_delivery_proto_goTypes = []any{
 	(*ProjectRef)(nil),               // 16: dop.v1.ProjectRef
 	(*structpb.Struct)(nil),          // 17: google.protobuf.Struct
 	(*ActorRef)(nil),                 // 18: dop.v1.ActorRef
-	(*CallContext)(nil),              // 19: dop.v1.CallContext
 }
 var file_dop_v1_delivery_proto_depIdxs = []int32{
 	14, // 0: dop.v1.PullRequest.demand:type_name -> dop.v1.DemandRef
@@ -1048,32 +1002,27 @@ var file_dop_v1_delivery_proto_depIdxs = []int32{
 	17, // 7: dop.v1.Directive.payload:type_name -> google.protobuf.Struct
 	18, // 8: dop.v1.Directive.decided_by:type_name -> dop.v1.ActorRef
 	15, // 9: dop.v1.Directive.audit:type_name -> dop.v1.AuditStamp
-	19, // 10: dop.v1.ListPullRequestsRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 11: dop.v1.ListPullRequestsRequest.project:type_name -> dop.v1.ProjectRef
-	2,  // 12: dop.v1.ListPullRequestsResponse.pull_requests:type_name -> dop.v1.PullRequest
-	19, // 13: dop.v1.GetMergeQueueRequest.ctx:type_name -> dop.v1.CallContext
-	4,  // 14: dop.v1.GetMergeQueueResponse.entries:type_name -> dop.v1.MergeQueueEntry
-	19, // 15: dop.v1.EnqueueMergeRequest.ctx:type_name -> dop.v1.CallContext
-	19, // 16: dop.v1.ListDirectivesRequest.ctx:type_name -> dop.v1.CallContext
-	16, // 17: dop.v1.ListDirectivesRequest.project:type_name -> dop.v1.ProjectRef
-	5,  // 18: dop.v1.ListDirectivesResponse.directives:type_name -> dop.v1.Directive
-	19, // 19: dop.v1.DecideDirectiveRequest.ctx:type_name -> dop.v1.CallContext
-	17, // 20: dop.v1.DecideDirectiveRequest.decision:type_name -> google.protobuf.Struct
-	6,  // 21: dop.v1.DeliveryService.ListPullRequests:input_type -> dop.v1.ListPullRequestsRequest
-	8,  // 22: dop.v1.DeliveryService.GetMergeQueue:input_type -> dop.v1.GetMergeQueueRequest
-	10, // 23: dop.v1.DeliveryService.EnqueueMerge:input_type -> dop.v1.EnqueueMergeRequest
-	11, // 24: dop.v1.DeliveryService.ListDirectives:input_type -> dop.v1.ListDirectivesRequest
-	13, // 25: dop.v1.DeliveryService.DecideDirective:input_type -> dop.v1.DecideDirectiveRequest
-	7,  // 26: dop.v1.DeliveryService.ListPullRequests:output_type -> dop.v1.ListPullRequestsResponse
-	9,  // 27: dop.v1.DeliveryService.GetMergeQueue:output_type -> dop.v1.GetMergeQueueResponse
-	4,  // 28: dop.v1.DeliveryService.EnqueueMerge:output_type -> dop.v1.MergeQueueEntry
-	12, // 29: dop.v1.DeliveryService.ListDirectives:output_type -> dop.v1.ListDirectivesResponse
-	5,  // 30: dop.v1.DeliveryService.DecideDirective:output_type -> dop.v1.Directive
-	26, // [26:31] is the sub-list for method output_type
-	21, // [21:26] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	16, // 10: dop.v1.ListPullRequestsRequest.project:type_name -> dop.v1.ProjectRef
+	2,  // 11: dop.v1.ListPullRequestsResponse.pull_requests:type_name -> dop.v1.PullRequest
+	4,  // 12: dop.v1.GetMergeQueueResponse.entries:type_name -> dop.v1.MergeQueueEntry
+	16, // 13: dop.v1.ListDirectivesRequest.project:type_name -> dop.v1.ProjectRef
+	5,  // 14: dop.v1.ListDirectivesResponse.directives:type_name -> dop.v1.Directive
+	17, // 15: dop.v1.DecideDirectiveRequest.decision:type_name -> google.protobuf.Struct
+	6,  // 16: dop.v1.DeliveryService.ListPullRequests:input_type -> dop.v1.ListPullRequestsRequest
+	8,  // 17: dop.v1.DeliveryService.GetMergeQueue:input_type -> dop.v1.GetMergeQueueRequest
+	10, // 18: dop.v1.DeliveryService.EnqueueMerge:input_type -> dop.v1.EnqueueMergeRequest
+	11, // 19: dop.v1.DeliveryService.ListDirectives:input_type -> dop.v1.ListDirectivesRequest
+	13, // 20: dop.v1.DeliveryService.DecideDirective:input_type -> dop.v1.DecideDirectiveRequest
+	7,  // 21: dop.v1.DeliveryService.ListPullRequests:output_type -> dop.v1.ListPullRequestsResponse
+	9,  // 22: dop.v1.DeliveryService.GetMergeQueue:output_type -> dop.v1.GetMergeQueueResponse
+	4,  // 23: dop.v1.DeliveryService.EnqueueMerge:output_type -> dop.v1.MergeQueueEntry
+	12, // 24: dop.v1.DeliveryService.ListDirectives:output_type -> dop.v1.ListDirectivesResponse
+	5,  // 25: dop.v1.DeliveryService.DecideDirective:output_type -> dop.v1.Directive
+	21, // [21:26] is the sub-list for method output_type
+	16, // [16:21] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_delivery_proto_init() }
