@@ -95,12 +95,12 @@ func (c *Inbox) Calls() int {
 type Failure string
 
 const (
-	// FailureCredential: o fornecedor recusa a credencial (401 / 535).
-	FailureCredential Failure = "credencial"
+	// FailureCredential: the provider refuses the credential (401 / 535).
+	FailureCredential Failure = "credential"
 	// FailureUnavailable: the provider does not answer (503 / connection refused).
-	FailureUnavailable Failure = "indisponivel"
-	// FailureContent: o fornecedor recusa a mensagem (400 / 550).
-	FailureContent Failure = "conteudo"
+	FailureUnavailable Failure = "unavailable"
+	// FailureContent: the provider refuses the message (400 / 550).
+	FailureContent Failure = "content"
 )
 
 // MailerHarness is what each runner supplies: three assemblies of the SAME real
@@ -119,7 +119,7 @@ type MailerHarness struct {
 	Secret string
 }
 
-// MailerSuite verifica as dez garantias documentadas na porta.
+// MailerSuite verifies the ten guarantees documented on the port.
 func MailerSuite(t *testing.T, name string, h MailerHarness) {
 	t.Run(name, func(t *testing.T) {
 		ctx := context.Background()

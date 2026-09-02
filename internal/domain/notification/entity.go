@@ -52,7 +52,27 @@ const (
 	// KindAttentionDigest — the attention notice, delayed and grouped. It hangs
 	// off the BOX (ADR-0006), not off raw events. See DefaultDigestDelay.
 	KindAttentionDigest Kind = "attention_digest"
+	// KindSecondFactorCode — the second factor's code (ADR-0027).
+	//
+	// It has NO ROW in the table, and that is the point: it uses the channel and
+	// not the Notifier. Nobody is being interrupted — the person is staring at
+	// the screen waiting for it — and it cannot pass through a policy of digests,
+	// delays and recipients resolved by membership. It is request/response.
+	//
+	// It is a Kind all the same because a Kind is what a channel adapter has to
+	// know how to BUILD, and this one does go out through the Mailer.
+	KindSecondFactorCode Kind = "second_factor_code"
 )
+
+// directKinds are the kinds emitted WITHOUT a rule — straight from a domain, in
+// answer to somebody's action.
+//
+// It is a hand-written list, and it is not a second copy of the table: it is
+// precisely the set of kinds that CANNOT be derived from it, because they have
+// no row. Leaving them out of Kinds() would let the Mailer's guarantee 1 pass
+// green while an adapter had no template — which is the silence ADR-0025 orders
+// us to test.
+var directKinds = []Kind{KindSecondFactorCode}
 
 // Action is WHAT is done when the rule matches, addressable by NAME.
 //
@@ -216,13 +236,19 @@ type AttentionNotice struct {
 // silence ADR-0025 orders us to test.
 func Kinds() []Kind {
 	seen := map[Kind]bool{}
-	out := make([]Kind, 0, len(Rules()))
+	out := make([]Kind, 0, len(Rules())+len(directKinds))
 	for _, r := range Rules() {
 		if r.Kind == "" || seen[r.Kind] {
 			continue
 		}
 		seen[r.Kind] = true
 		out = append(out, r.Kind)
+	}
+	for _, k := range directKinds {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
 	}
 	// Stable order: the contract suite iterates over this, and a test whose order
 	// changes between runs is a test nobody can debug.

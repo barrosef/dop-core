@@ -186,7 +186,7 @@ func serveSMTP(conn net.Conn, inbox *Inbox, f Failure, secret string) {
 				// The refusal ECHOES what was received — the password included,
 				// in base64 in the AUTH PLAIN argument and in clear here. It is
 				// how the suite proves the adapter redacts.
-				reply("535 5.7.8 credencial recusada: " + secret)
+				reply("535 5.7.8 the credential was refused: " + secret)
 				continue
 			}
 			reply("235 2.7.0 autenticado")

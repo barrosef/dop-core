@@ -70,6 +70,11 @@ var sendgridIndex = map[string]sgTemplate{
 		Subject: "Você tem pendências esperando",
 		File:    "attention_digest.html",
 	},
+	string(notification.KindSecondFactorCode): {
+		Name:    "DOP — Código de verificação",
+		Subject: "{{code}} é o seu código de verificação do DOP",
+		File:    "second_factor_code.html",
+	},
 }
 
 type SendGridConfig struct {

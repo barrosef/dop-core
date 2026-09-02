@@ -54,30 +54,55 @@ func TestRuleNamesAreUnique(t *testing.T) {
 	}
 }
 
-func TestKindsComesFromTheTableAndDoesNotRepeat(t *testing.T) {
+func TestKindsComesFromTheTableOrFromTheDirectListAndDoesNotRepeat(t *testing.T) {
 	ks := Kinds()
 	if len(ks) == 0 {
 		t.Fatal("no kinds: the Mailer contract suite would prove nothing")
 	}
-	naTabela := map[Kind]bool{}
+	inTable := map[Kind]bool{}
 	for _, r := range Rules() {
-		naTabela[r.Kind] = true
+		inTable[r.Kind] = true
 	}
-	vistos := map[Kind]bool{}
+	direct := map[Kind]bool{}
+	for _, k := range directKinds {
+		direct[k] = true
+	}
+
+	seen := map[Kind]bool{}
 	for _, k := range ks {
-		if vistos[k] {
+		if seen[k] {
 			t.Errorf("kind %q repeated in Kinds()", k)
 		}
-		vistos[k] = true
-		if !naTabela[k] {
-			t.Errorf("kind %q comes from no rule: Kinds() became a hand-written list, "+
-				"and a hand-written list is what leaves the contract suite green with a "+
-				"faltando", k)
+		seen[k] = true
+		if !inTable[k] && !direct[k] {
+			t.Errorf("kind %q comes from no rule and is not declared in directKinds: "+
+				"Kinds() became a hand-written list, and a hand-written list is what "+
+				"leaves the contract suite green with an adapter missing a template", k)
 		}
 	}
-	for k := range naTabela {
-		if !vistos[k] {
+	for k := range inTable {
+		if !seen[k] {
 			t.Errorf("a rule declares kind %q and Kinds() does not return it", k)
+		}
+	}
+	for k := range direct {
+		if !seen[k] {
+			t.Errorf("directKinds declares %q and Kinds() does not return it", k)
+		}
+	}
+}
+
+// directKinds is the exception, and an exception that grows silently stops being
+// one. A kind that HAS a rule must not be in the list: there it would be a
+// second, hand-written copy of the table — exactly what Kinds() exists to avoid.
+func TestADirectKindHasNoRule(t *testing.T) {
+	inTable := map[Kind]bool{}
+	for _, r := range Rules() {
+		inTable[r.Kind] = true
+	}
+	for _, k := range directKinds {
+		if inTable[k] {
+			t.Errorf("kind %q is in directKinds AND in the table: pick one", k)
 		}
 	}
 }

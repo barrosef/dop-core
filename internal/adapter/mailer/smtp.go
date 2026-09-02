@@ -64,6 +64,13 @@ var smtpIndex = map[string]smtpTemplate{
 		Subject: "{{.total}} pendência(s) esperando você no DOP",
 		File:    "templates/smtp/attention_digest.html",
 	},
+	string(notification.KindSecondFactorCode): {
+		// The code goes in the SUBJECT as well, on purpose: it is what makes it
+		// readable from the notification, without opening the message — which
+		// is where a person actually reads it.
+		Subject: "{{.code}} é o seu código de verificação do DOP",
+		File:    "templates/smtp/second_factor_code.html",
+	},
 }
 
 type SMTPConfig struct {
