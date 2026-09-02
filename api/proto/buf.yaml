@@ -4,9 +4,9 @@ modules:
 lint:
   use: [STANDARD]
   except:
-    # Retornamos a entidade diretamente (GetDemand → Demand) em vez de
-    # embrulhar em <Method>Response. É mais ergonômico para o consumidor e
-    # não impede evolução: campo novo entra na própria entidade.
+    # We return the entity directly (GetDemand → Demand) instead of wrapping it
+    # in a <Method>Response. It is more ergonomic for the consumer and does not
+    # block evolution: a new field goes into the entity itself.
     - RPC_RESPONSE_STANDARD_NAME
     - RPC_REQUEST_RESPONSE_UNIQUE
     - PACKAGE_VERSION_SUFFIX

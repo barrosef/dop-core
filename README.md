@@ -1,71 +1,73 @@
 # dop-core
 
-Núcleo da plataforma DOP: domínio, estado, transações e eventos.
+The DOP platform's core: domain, state, transactions and events.
 
-**Um binário, quatro modos** (ADR-0016) — um artefato, um pipeline:
+**One binary, four modes** (ADR-0016) — one artifact, one pipeline:
 
-| modo | papel |
+| mode | role |
 |---|---|
-| `serve` | servidor gRPC do domínio |
-| `worker` | consome eventos, constrói projeções e roda o **relay do outbox** |
-| `sched` | polling de PRs, suspensão de sandboxes, partições, expirações |
-| `launcher` | provisiona sandboxes no cluster de execução |
+| `serve` | the domain's gRPC server |
+| `worker` | consumes events, builds projections and runs the **outbox relay** |
+| `sched` | PR polling, sandbox suspension, partitions, expirations |
+| `launcher` | provisions sandboxes in the execution cluster |
 
-## A fronteira que sustenta tudo
+## The boundary that holds everything up
 
-`internal/domain` **não pode** importar `internal/adapter`, nem SDK de fornecedor.
-O domínio declara PORTAS; adaptadores vivem em `internal/adapter` e são escolhidos
-no composition root (`internal/app/wire.go` e `register.go`).
+`internal/domain` **may not** import `internal/adapter`, nor any provider SDK.
+The domain declares PORTS; adapters live in `internal/adapter` and are chosen in
+the composition root (`internal/app/wire.go` and `register.go`).
 
-Isso é um **teste**, não uma convenção no README: `test/contract/architecture_test.go`
-quebra o build de quem violar, nomeando arquivo, import e regra.
+This is a **test**, not a convention in the README:
+`test/contract/architecture_test.go` breaks the build of whoever violates it,
+naming the file, the import and the rule.
 
-## A espinha de eventos
+## The event spine
 
-Toda mudança de estado grava o evento na **mesma transação**:
+Every state change writes the event in the **same transaction**:
 
 ```go
 postgres.InTx(ctx, pool, func(tx pgx.Tx) error {
-    if err := gravarEstado(ctx, tx); err != nil { return err }
-    return postgres.Emit(ctx, tx, evento)   // mesma transação
+    if err := writeState(ctx, tx); err != nil { return err }
+    return postgres.Emit(ctx, tx, event)   // the same transaction
 })
 ```
 
-Commit ⇒ atômico por construção; nunca "gravei mas não publiquei". O relay lê o
-outbox e publica no NATS; consumidores são idempotentes porque a entrega é
-ao-menos-uma-vez. Verificado em `test/integration/outbox_test.go`, que inclui a
-prova negativa: transação que falha **não deixa evento órfão**.
+Commit ⇒ atomic by construction; never "I wrote but did not publish". The relay
+reads the outbox and publishes to NATS; consumers are idempotent because
+delivery is at-least-once. Verified in `test/integration/outbox_test.go`, which
+includes the negative proof: a transaction that fails **leaves no orphan
+event**.
 
-## Estrutura
+## Structure
 
 ```
-api/proto/          .proto — a FONTE DA VERDADE do contrato (ADR-0017)
-api/gen/            código gerado (buf)
-cmd/dop-core/       main: despacha os quatro modos
+api/proto/          .proto — the contract's SOURCE OF TRUTH (ADR-0017)
+api/gen/            generated code (buf)
+cmd/dop-core/       main: dispatches the four modes
 internal/
-  domain/           entidades, serviços e PORTAS — zero imports de infra
+  domain/           entities, services and PORTS — zero infrastructure imports
     ports/          SecretStore · ObjectStore · IdentityProvider · EventBus
-    identity/       ← implementação de REFERÊNCIA; siga este padrão
-  app/              composition root, interceptores, registro
-    grpc/           tradução proto ↔ domínio (camada fina, sem regra de negócio)
-  adapter/          postgres (outbox, repositórios, projeções) · nats ·
+    identity/       ← the REFERENCE implementation; follow this pattern
+  app/              composition root, interceptors, registration
+    grpc/           proto ↔ domain translation (a thin layer, no business rule)
+  adapter/          postgres (outbox, repositories, projections) · nats ·
                     secretstore · objectstore · identity
   platform/         logging (JSON) · ctxutil · errs · idem · config
-migrations/         SQL — schema, espinha de eventos e projeções
-test/contract/      testes de CONTRATO por porta + teste de arquitetura
-test/integration/   espinha de eventos contra o ambiente local (build tag)
+migrations/         SQL — schema, event spine and projections
+test/contract/      CONTRACT tests per port + the architecture test
+test/integration/   the event spine against the local environment (build tag)
 ```
 
-## Desenvolvimento
+## Development
 
 ```bash
-make proto             # regenera do .proto
-make test              # unidade + contrato + arquitetura
-make migrate           # aplica o schema no Postgres do k3d
+make proto             # regenerate from the .proto files
+make test              # unit + contract + architecture
+make migrate           # apply the schema to k3d's Postgres
 make run-serve
 
-# integração (exige port-forward de postgres e nats)
+# integration (requires a port-forward of postgres and nats)
 make test-integration
 ```
 
-Ambiente local (Postgres, NATS, emuladores): ver `dop-infra`.
+The local environment (Postgres, NATS, emulators): see `dop-infra`.
