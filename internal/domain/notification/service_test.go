@@ -137,7 +137,7 @@ func TestANilClockIsRefused(t *testing.T) {
 	NewService(novoRepo(), &fakeMailer{}, nil, Config{})
 }
 
-func eventoDeConvite(id string) Event {
+func inviteEvent(id string) Event {
 	return Event{
 		ID: id, AccountID: "acct-1", Aggregate: "invite", AggregateID: "inv-1",
 		Type: EvInviteCreated, OccurredAt: time.Now().UTC(),
@@ -158,7 +158,7 @@ func TestAnInviteBecomesAnEmail(t *testing.T) {
 	s := NewService(repo, mail, relogioFake{time.Now()},
 		Config{BaseURL: "https://cockpit.test"})
 
-	if err := s.HandleEvent(context.Background(), eventoDeConvite("ev-1")); err != nil {
+	if err := s.HandleEvent(context.Background(), inviteEvent("ev-1")); err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}
 	if len(mail.sent) != 1 {
@@ -185,7 +185,7 @@ func TestRedeliveryOfTheSameEventSendsNoSecondEmail(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		if err := s.HandleEvent(ctx, eventoDeConvite("ev-1")); err != nil {
+		if err := s.HandleEvent(ctx, inviteEvent("ev-1")); err != nil {
 			t.Fatalf("entrega %d: %v", i, err)
 		}
 	}
@@ -201,8 +201,8 @@ func TestADifferentEventOfTheSameKindSendsAnotherEmail(t *testing.T) {
 	// know.
 	repo, mail := novoRepo(), &fakeMailer{}
 	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
-	_ = s.HandleEvent(context.Background(), eventoDeConvite("ev-1"))
-	_ = s.HandleEvent(context.Background(), eventoDeConvite("ev-2"))
+	_ = s.HandleEvent(context.Background(), inviteEvent("ev-1"))
+	_ = s.HandleEvent(context.Background(), inviteEvent("ev-2"))
 	if len(mail.sent) != 2 {
 		t.Fatalf("expected 2 sends, got %d", len(mail.sent))
 	}
@@ -215,7 +215,7 @@ func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
 	ctx := context.Background()
 
-	err := s.HandleEvent(ctx, eventoDeConvite("ev-1"))
+	err := s.HandleEvent(ctx, inviteEvent("ev-1"))
 	if err == nil {
 		t.Fatal("a send failure has to propagate: redelivery is what gives a second chance")
 	}
@@ -228,7 +228,7 @@ func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 
 	// Redelivery now RESUMES (the claim is in error) and the send succeeds.
 	mail.err = nil
-	if err := s.HandleEvent(ctx, eventoDeConvite("ev-1")); err != nil {
+	if err := s.HandleEvent(ctx, inviteEvent("ev-1")); err != nil {
 		t.Fatalf("retomada: %v", err)
 	}
 	if len(mail.sent) != 1 {
@@ -243,7 +243,7 @@ func TestExhaustedAttemptsStopResending(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
-		_ = s.HandleEvent(ctx, eventoDeConvite("ev-1"))
+		_ = s.HandleEvent(ctx, inviteEvent("ev-1"))
 	}
 	if n := len(repo.settled); n != 2 {
 		t.Fatalf("%d attempts: with no ceiling, an invalid address becomes a traffic "+
@@ -256,7 +256,7 @@ func TestLocalRehearsalBecomesItsOwnStateInTheRecord(t *testing.T) {
 	repo := novoRepo()
 	mail := &fakeMailer{estado: ports.MailSentLocal}
 	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
-	_ = s.HandleEvent(context.Background(), eventoDeConvite("ev-1"))
+	_ = s.HandleEvent(context.Background(), inviteEvent("ev-1"))
 	if repo.settled[0].State != StateSentLocal {
 		t.Fatalf("state %q: the difference between 'we notified' and 'we pretended "+
 			"to notify' must not depend on whoever reads the log remembering which "+
