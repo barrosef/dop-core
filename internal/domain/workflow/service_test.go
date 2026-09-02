@@ -19,8 +19,8 @@ import (
 
 // ── duplos ───────────────────────────────────────────────────────────────────
 
-// fixedClock makes what depends on time deterministic. A wall clock
-// parede aqui faria o teste de versionamento passar por sorte.
+// fixedClock makes what depends on time deterministic. A wall clock here would
+// make the versioning test pass by luck.
 type fixedClock struct{ t time.Time }
 
 func (r *fixedClock) Now() time.Time { r.t = r.t.Add(time.Second); return r.t }
@@ -35,7 +35,7 @@ type fakeRepo struct {
 	flows  map[string]*registro
 	keys   map[string]string // idempotency key → flow id
 	nextID int
-	// Contadores para provar as promessas de forma da porta.
+	// Counters, to prove the port's promises of shape.
 	byOwnersCalls int
 }
 
@@ -178,9 +178,9 @@ var _ workflow.Repository = (*fakeRepo)(nil)
 
 // fakeTree is the lineage's narrow port: who is inside whom.
 type fakeTree struct {
-	workspaceDe map[string]string // projeto → workspace
-	contaDe     map[string]string // workspace → conta
-	projetoDe   map[string]string // demanda → projeto
+	workspaceDe map[string]string // project → workspace
+	contaDe     map[string]string // workspace → account
+	projetoDe   map[string]string // demand → project
 }
 
 func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.ScopeRef) ([]workflow.ScopeRef, error) {
@@ -190,30 +190,30 @@ func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.
 		return base, nil
 	case workflow.ScopeAccount:
 		if target.ID != accountID {
-			return nil, errs.NotFound("conta")
+			return nil, errs.NotFound("account")
 		}
 		return append(base, target), nil
 	}
 	base = append(base, workflow.ScopeRef{Scope: workflow.ScopeAccount, ID: accountID})
 
-	projeto := ""
+	project := ""
 	workspace := ""
 	switch target.Scope {
 	case workflow.ScopeWorkspace:
 		workspace = target.ID
 	case workflow.ScopeProject:
-		projeto = target.ID
-		workspace = t.workspaceDe[projeto]
+		project = target.ID
+		workspace = t.workspaceDe[project]
 	case workflow.ScopeDemand:
-		projeto = t.projetoDe[target.ID]
-		workspace = t.workspaceDe[projeto]
+		project = t.projetoDe[target.ID]
+		workspace = t.workspaceDe[project]
 	}
 	if workspace == "" || t.contaDe[workspace] != accountID {
 		return nil, errs.NotFound("%s", target.Scope.Label())
 	}
 	out := append(base, workflow.ScopeRef{Scope: workflow.ScopeWorkspace, ID: workspace})
-	if projeto != "" {
-		out = append(out, workflow.ScopeRef{Scope: workflow.ScopeProject, ID: projeto})
+	if project != "" {
+		out = append(out, workflow.ScopeRef{Scope: workflow.ScopeProject, ID: project})
 	}
 	if target.Scope == workflow.ScopeDemand {
 		out = append(out, target)
@@ -239,10 +239,10 @@ var _ workflow.Access = (*fakeAccess)(nil)
 // ── scenario ─────────────────────────────────────────────────────────────────
 
 const (
-	conta     = "acct-1"
+	account   = "acct-1"
 	workspace = "ws-1"
-	projeto   = "prj-1"
-	demanda   = "dmd-1"
+	project   = "prj-1"
+	demand    = "dmd-1"
 	dono      = "usr-owner"
 	membro    = "usr-dev"
 )
@@ -251,17 +251,17 @@ func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 	t.Helper()
 	repo := newFakeRepo()
 	tree := &fakeTree{
-		workspaceDe: map[string]string{projeto: workspace},
-		contaDe:     map[string]string{workspace: conta, "ws-vizinho": conta, "ws-alheio": "acct-2"},
-		projetoDe:   map[string]string{demanda: projeto},
+		workspaceDe: map[string]string{project: workspace},
+		contaDe:     map[string]string{workspace: account, "ws-vizinho": account, "ws-alheio": "acct-2"},
+		projetoDe:   map[string]string{demand: project},
 	}
 	acc := &fakeAccess{papel: map[string]string{
-		dono + "@" + conta:   workflow.RoleOwner,
-		membro + "@" + conta: "developer",
+		dono + "@" + account:   workflow.RoleOwner,
+		membro + "@" + account: "developer",
 	}}
 	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()})
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
-		AccountID: conta, ActorID: dono, ActorKind: ctxutil.ActorUser,
+		AccountID: account, ActorID: dono, ActorKind: ctxutil.ActorUser,
 	})
 	return repo, svc, ctx
 }
@@ -287,7 +287,7 @@ func validFlow() workflow.Flow {
 	return workflow.Flow{
 		Name:       "Team default",
 		OwnerScope: workflow.ScopeProject,
-		OwnerID:    projeto,
+		OwnerID:    project,
 		Stages: []workflow.StageSpec{
 			stage("context", workflow.TypeContext, workflow.ArtifactDocument),
 			stage("spec", workflow.TypeSpec, workflow.ArtifactSpec),
@@ -311,47 +311,47 @@ func TestTheInheritanceChainOverlaysAndSaysWhereEachStageCameFrom(t *testing.T) 
 		stage("spec", workflow.TypeSpec, workflow.ArtifactSpec),
 		stage("implementation", workflow.TypeImplementation))
 	// Account: rewrites the spec (same key) — overlays by declaration.
-	seed(repo, conta, workflow.ScopeAccount, conta,
+	seed(repo, account, workflow.ScopeAccount, account,
 		stage("spec", workflow.TypeSpec, workflow.ArtifactSpec, workflow.ArtifactDiagram))
 	// Workspace: declares nothing — inherits by omission.
-	// Projeto: acrescenta uma stage nova, que entra no fim.
-	seed(repo, conta, workflow.ScopeProject, projeto,
+	// Project: it adds a new stage, which goes at the end.
+	seed(repo, account, workflow.ScopeProject, project,
 		stage("test", workflow.TypeTest, workflow.ArtifactTestPlan))
 
-	eff, err := svc.Resolve(ctx, workflow.ScopeProject, projeto)
+	eff, err := svc.Resolve(ctx, workflow.ScopeProject, project)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	esperado := []string{"context", "spec", "implementation", "test"}
-	if len(eff.Flow.Stages) != len(esperado) {
-		t.Fatalf("esperadas %d stages, vieram %d (%v)", len(esperado), len(eff.Flow.Stages), eff.Flow.Stages)
+	want := []string{"context", "spec", "implementation", "test"}
+	if len(eff.Flow.Stages) != len(want) {
+		t.Fatalf("esperadas %d stages, vieram %d (%v)", len(want), len(eff.Flow.Stages), eff.Flow.Stages)
 	}
-	for i, key := range esperado {
+	for i, key := range want {
 		if eff.Flow.Stages[i].Key != key {
-			t.Errorf("stage %d deveria ser %q, veio %q", i, key, eff.Flow.Stages[i].Key)
+			t.Errorf("stage %d should be %q, got %q", i, key, eff.Flow.Stages[i].Key)
 		}
 	}
 
 	// The account's spec won over the platform's — and the inherited position was kept.
 	if got := len(eff.Flow.Stages[1].Artifacts); got != 2 {
-		t.Errorf("a spec da conta deveria ter vencido a da plataforma (%d artifacts)", got)
+		t.Errorf("the account's spec should have beaten the platform's (%d artifacts)", got)
 	}
 
 	// The provenance, stage by stage.
 	proc := map[string]workflow.Scope{
-		"context":      workflow.ScopePlatform,
-		"spec":          workflow.ScopeAccount,
+		"context":        workflow.ScopePlatform,
+		"spec":           workflow.ScopeAccount,
 		"implementation": workflow.ScopePlatform,
-		"test":         workflow.ScopeProject,
+		"test":           workflow.ScopeProject,
 	}
-	for key, esperada := range proc {
-		origem, ok := eff.OriginOf(key)
+	for key, wantScope := range proc {
+		origin, ok := eff.OriginOf(key)
 		if !ok {
 			t.Fatalf("stage %q has no recorded provenance", key)
 		}
-		if origem.Scope != esperada {
-			t.Errorf("stage %q deveria vir de %s, veio de %s", key, esperada, origem.Scope)
+		if origin.Scope != wantScope {
+			t.Errorf("stage %q should come from %s, came from %s", key, wantScope, origin.Scope)
 		}
 	}
 
@@ -376,14 +376,14 @@ func TestTheInheritanceChainOverlaysAndSaysWhereEachStageCameFrom(t *testing.T) 
 func TestResolvingADemandCrossesTheWholeChain(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	seed(repo, "", workflow.ScopePlatform, "", stage("context", workflow.TypeContext))
-	seed(repo, conta, workflow.ScopeDemand, demanda, stage("hotfix", workflow.TypeGeneric))
+	seed(repo, account, workflow.ScopeDemand, demand, stage("hotfix", workflow.TypeGeneric))
 
-	eff, err := svc.Resolve(ctx, workflow.ScopeDemand, demanda)
+	eff, err := svc.Resolve(ctx, workflow.ScopeDemand, demand)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if len(eff.Flow.Stages) != 2 {
-		t.Fatalf("a demanda deveria herdar a plataforma e somar a sua stage: %v", eff.Flow.Stages)
+		t.Fatalf("the demand should inherit the platform and add its own stage: %v", eff.Flow.Stages)
 	}
 	if eff.Contributors[0].Scope != workflow.ScopeDemand {
 		t.Errorf("the most specific level should open the trail, got %v", eff.Contributors)
@@ -392,8 +392,8 @@ func TestResolvingADemandCrossesTheWholeChain(t *testing.T) {
 
 func TestResolveWithNoDeclaredLevelDoesNotInventAFlow(t *testing.T) {
 	_, svc, ctx := scenario(t)
-	if _, err := svc.Resolve(ctx, workflow.ScopeProject, projeto); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("cadeia vazia deveria dar NotFound; erro: %v", err)
+	if _, err := svc.Resolve(ctx, workflow.ScopeProject, project); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("an empty chain should give NotFound; err: %v", err)
 	}
 }
 
@@ -401,7 +401,7 @@ func TestResolveDoesNotReachAnotherAccount(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	seed(repo, "acct-2", workflow.ScopeWorkspace, "ws-alheio", stage("x", workflow.TypeGeneric))
 	if _, err := svc.Resolve(ctx, workflow.ScopeWorkspace, "ws-alheio"); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("workspace de outra conta deveria dar NotFound; erro: %v", err)
+		t.Fatalf("a workspace of another account should give NotFound; err: %v", err)
 	}
 }
 
@@ -437,7 +437,7 @@ func TestUpdateCreatesANewVersionWithoutTouchingThePrevious(t *testing.T) {
 		t.Fatalf("Update should have created version 2, got %d", updated.Version)
 	}
 
-	// O que a demanda congelou continua exatamente como estava.
+	// What the demand froze stays exactly as it was.
 	frozen, err := svc.GetVersion(ctx, created.ID, 1)
 	if err != nil {
 		t.Fatalf("GetVersion: %v", err)
@@ -521,7 +521,7 @@ func TestCreateWithNoKeyDerivesOneFromTheContent(t *testing.T) {
 		t.Fatalf("the same content should collide on the derived key: %v", err)
 	}
 	if len(repo.flows) != 1 {
-		t.Errorf("escrita sem chave do cliente ainda precisa ser idempotente: %d fluxos", len(repo.flows))
+		t.Errorf("a write with no client key still has to be idempotent: %d flows", len(repo.flows))
 	}
 }
 
@@ -632,14 +632,15 @@ func TestValidateWarnsWithoutRefusing(t *testing.T) {
 	}
 }
 
-// In Create and Update the refusal becomes an error: there an invalid flow does
-// alguma coisa, e gravar seria deixar uma demanda futura sem resposta.
+// In Create and Update the refusal becomes an error: there an invalid flow is
+// something somebody is writing, and storing it would leave a future demand
+// with no answer.
 func TestCreateRefusesAnInvalidFlow(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	f := validFlow()
-	f.Stages = append(f.Stages, stage("spec", workflow.TypeSpec)) // chave repetida
+	f.Stages = append(f.Stages, stage("spec", workflow.TypeSpec)) // key repetida
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("flow com ciclo deveria dar Invalid; erro: %v", err)
+		t.Fatalf("a flow with a cycle should give Invalid; err: %v", err)
 	}
 	if len(repo.flows) != 0 {
 		t.Error("nada pode ter sido gravado")
@@ -689,24 +690,24 @@ func TestPromoteClimbsOneLevelAndPublishesWithoutMovingTheSource(t *testing.T) {
 		t.Fatalf("Promote: %v", err)
 	}
 	if promoted.OwnerScope != workflow.ScopeWorkspace || promoted.OwnerID != workspace {
-		t.Errorf("o flow deveria ter sido publicado no workspace, veio %s/%s",
+		t.Errorf("the flow should have been published in the workspace, got %s/%s",
 			promoted.OwnerScope, promoted.OwnerID)
 	}
 	if promoted.ID == created.ID {
 		t.Error("promoting PUBLISHES, it does not move: the source stays where it was")
 	}
-	if origem, err := svc.Get(ctx, created.ID); err != nil || origem.OwnerScope != workflow.ScopeProject {
-		t.Errorf("o flow de origem sumiu do projeto: %v %v", origem, err)
+	if origin, err := svc.Get(ctx, created.ID); err != nil || origin.OwnerScope != workflow.ScopeProject {
+		t.Errorf("the source flow vanished from the project: %v %v", origin, err)
 	}
 }
 
 func TestPromotingToALevelBelowOrEqualIsRefused(t *testing.T) {
 	_, svc, ctx := scenario(t)
 	created, _ := svc.Create(ctx, validFlow(), "k1")
-	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeDemand, demanda); errs.KindOf(err) != errs.KindInvalid {
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeDemand, demand); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("does promotion descend the chain? error: %v", err)
 	}
-	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeProject, projeto); errs.KindOf(err) != errs.KindInvalid {
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeProject, project); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("promoting to the same level should be refused; error: %v", err)
 	}
 }
@@ -727,7 +728,7 @@ func TestPromoteRequiresManage(t *testing.T) {
 
 	// The same request, made by somebody with no manage over the account's content.
 	ctxDev := ctxutil.Into(context.Background(), ctxutil.Call{
-		AccountID: conta, ActorID: membro, ActorKind: ctxutil.ActorUser,
+		AccountID: account, ActorID: membro, ActorKind: ctxutil.ActorUser,
 	})
 	if _, err := svc.Promote(ctxDev, created.ID, workflow.ScopeWorkspace, workspace); errs.KindOf(err) != errs.KindPermission {
 		t.Fatalf("promoting changes the flow of people who asked for nothing; error: %v", err)
@@ -740,7 +741,7 @@ func TestPromotingToANeighbouringBranchIsRefused(t *testing.T) {
 
 	// ws-neighbour belongs to the SAME account — and is still outside this flow's
 	// lineage. Promoting is climbing your OWN chain, not landing on a branch next
-	// lado que por acaso pertence ao mesmo tenant.
+	// door that happens to belong to the same tenant.
 	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeWorkspace, "ws-vizinho"); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("promoting to a neighbouring branch should be Invalid; error: %v", err)
 	}
@@ -757,7 +758,7 @@ func TestPromoteVersionsTheFlowThatAlreadyExistsAtTheTarget(t *testing.T) {
 
 	doProjeto, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
-		t.Fatalf("Create no projeto: %v", err)
+		t.Fatalf("Create no project: %v", err)
 	}
 
 	promoted, err := svc.Promote(ctx, doProjeto.ID, workflow.ScopeWorkspace, workspace)

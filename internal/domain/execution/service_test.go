@@ -174,7 +174,7 @@ func TestTheIdempotencyKeyDoesNotDuplicateASandbox(t *testing.T) {
 // half a sandbox nobody can fix afterwards.
 func TestAnInterruptedProvisioningIsResumed(t *testing.T) {
 	f := novoCenario(t)
-	f.launcher.falhasNoLaunch = 1
+	f.launcher.launchFailures = 1
 
 	if _, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, ""); err == nil {
 		t.Fatal("the first attempt should have failed")
@@ -366,17 +366,17 @@ func TestTheSweepSuspendsOnlyWhatIsIdle(t *testing.T) {
 }
 
 func TestShouldSuspendIsPure(t *testing.T) {
-	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	ativo := execution.Sandbox{State: execution.StateActive, LastActiveAt: agora.Add(-execution.IdleTimeout)}
-	if !ativo.ShouldSuspend(agora) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	ativo := execution.Sandbox{State: execution.StateActive, LastActiveAt: now.Add(-execution.IdleTimeout)}
+	if !ativo.ShouldSuspend(now) {
 		t.Error("no limit de idleness o sandbox suspende")
 	}
-	quase := execution.Sandbox{State: execution.StateActive, LastActiveAt: agora.Add(-execution.IdleTimeout + time.Second)}
-	if quase.ShouldSuspend(agora) {
+	quase := execution.Sandbox{State: execution.StateActive, LastActiveAt: now.Add(-execution.IdleTimeout + time.Second)}
+	if quase.ShouldSuspend(now) {
 		t.Error("um segundo before do limit ele fica")
 	}
-	suspenso := execution.Sandbox{State: execution.StateSuspended, LastActiveAt: agora.Add(-time.Hour)}
-	if suspenso.ShouldSuspend(agora) {
+	suspenso := execution.Sandbox{State: execution.StateSuspended, LastActiveAt: now.Add(-time.Hour)}
+	if suspenso.ShouldSuspend(now) {
 		t.Error("suspending the already suspended saves nothing")
 	}
 }
@@ -410,7 +410,7 @@ func TestLineClassification(t *testing.T) {
 func TestLogFilter(t *testing.T) {
 	linha := execution.LogLine{Source: execution.SourceTest, TestType: execution.TestE2E, Service: "backend"}
 	if !(execution.LogFilter{}).Matches(linha) {
-		t.Error("filtro vazio pede tudo")
+		t.Error("an empty filter asks for everything")
 	}
 	if !(execution.LogFilter{Source: execution.SourceTest}).Matches(linha) {
 		t.Error("origem igual deveria casar")
@@ -541,7 +541,7 @@ func novoCenario(t *testing.T) *cenario {
 		demands:  &fakeDemands{owner: map[string]string{"demand-1": "account-a"}},
 		clock:    &relogioFixo{t: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)},
 	}
-	c.repo.agora = c.clock.Now
+	c.repo.now = c.clock.Now
 	c.svc = execution.NewService(c.repo, c.launcher, c.access, c.demands, c.clock,
 		execution.Config{DevboxImage: "dop/devbox:1", IngressDomain: "dev.dop.app"})
 	return c
@@ -568,8 +568,8 @@ type fakeRepo struct {
 	mu sync.Mutex
 	// now comes from the service's SAME clock. A double that reads the wall
 	// clock reintroduces, in the test, exactly the dependency the Clock port
-	// existe para remover — e o teste passa ou failure conforme a hora do dia.
-	agora       func() time.Time
+	// exists to remove — and the test passes or fails depending on the time of day.
+	now         func() time.Time
 	lines       map[string]*execution.Sandbox
 	seq         int
 	transitions int
@@ -579,7 +579,7 @@ type fakeRepo struct {
 func novoRepo() *fakeRepo {
 	return &fakeRepo{
 		lines: map[string]*execution.Sandbox{},
-		agora: func() time.Time { return time.Now().UTC() },
+		now:   func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -649,7 +649,7 @@ func (r *fakeRepo) Create(_ context.Context, s *execution.Sandbox) (*execution.S
 	r.seq++
 	cp := *s
 	cp.ID = fmt.Sprintf("sbx-%d", r.seq)
-	cp.CreatedAt, cp.UpdatedAt = r.agora(), r.agora()
+	cp.CreatedAt, cp.UpdatedAt = r.now(), r.now()
 	r.lines[cp.ID] = &cp
 	out := cp
 	return &out, nil
@@ -702,7 +702,7 @@ func (r *fakeRepo) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([]
 	seen := map[string]bool{}
 	var out []string
 	for _, s := range r.lines {
-		if s.State == execution.StateActive && r.agora().Sub(s.LastActiveAt) >= corte &&
+		if s.State == execution.StateActive && r.now().Sub(s.LastActiveAt) >= corte &&
 			!seen[s.AccountID] {
 			seen[s.AccountID] = true
 			out = append(out, s.AccountID)
@@ -718,7 +718,7 @@ func (r *fakeRepo) ListIdle(_ context.Context, accountID string, olderThanSecond
 	var out []execution.Sandbox
 	for _, s := range r.lines {
 		if s.AccountID == accountID && s.State == execution.StateActive &&
-			r.agora().Sub(s.LastActiveAt) >= corte {
+			r.now().Sub(s.LastActiveAt) >= corte {
 			out = append(out, *s)
 		}
 	}
@@ -728,24 +728,24 @@ func (r *fakeRepo) ListIdle(_ context.Context, accountID string, olderThanSecond
 // ── launcher ─────────────────────────────────────────────────────────────────
 
 type fakeLauncher struct {
-	falhasNoLaunch int
+	launchFailures int
 	tiers          []ports.IsolationTier
-	delivers       ports.IsolationTier // vazio = delivers o que foi request
+	delivers       ports.IsolationTier // empty = it delivers what was requested
 	gone           bool
 	lines          []ports.LogLine
 	launches       int
 	resumes        int
 	destroys       int
 	phases         map[string]ports.SandboxPhase
-	// execs guarda os commands recebidos, e execOutput o que devolver. Comando
+	// execs keeps the commands received, and execOutput what to return. A command
 	// that fails is a RESULT on this port (guarantee 15), so the double has to
 	// know how to return a non-zero code without returning an error.
 	execs      []ports.ExecRequest
 	execOutput *ports.ExecResult
-	execErro   error
+	execErr    error
 }
 
-func (l *fakeLauncher) tierEntregue(request ports.IsolationTier) ports.IsolationTier {
+func (l *fakeLauncher) deliveredTier(request ports.IsolationTier) ports.IsolationTier {
 	if l.delivers != "" {
 		return l.delivers
 	}
@@ -758,15 +758,15 @@ func (l *fakeLauncher) SupportedTiers(context.Context) ([]ports.IsolationTier, e
 
 func (l *fakeLauncher) Launch(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	l.launches++
-	if l.falhasNoLaunch > 0 {
-		l.falhasNoLaunch--
+	if l.launchFailures > 0 {
+		l.launchFailures--
 		return nil, errs.New(errs.KindUnavailable, "the substrate did not answer")
 	}
 	if l.phases == nil {
 		l.phases = map[string]ports.SandboxPhase{}
 	}
 	l.phases[spec.ID] = ports.PhaseActive
-	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
+	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.deliveredTier(spec.Tier)}, nil
 }
 
 func (l *fakeLauncher) Suspend(_ context.Context, h ports.SandboxHandle) error {
@@ -781,7 +781,7 @@ func (l *fakeLauncher) Resume(_ context.Context, spec ports.SandboxSpec) (*ports
 	if l.phases != nil {
 		l.phases[spec.ID] = ports.PhaseActive
 	}
-	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
+	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.deliveredTier(spec.Tier)}, nil
 }
 
 func (l *fakeLauncher) Destroy(_ context.Context, h ports.SandboxHandle) error {
@@ -803,8 +803,8 @@ func (l *fakeLauncher) Describe(_ context.Context, h ports.SandboxHandle) (*port
 
 func (l *fakeLauncher) Exec(_ context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
 	l.execs = append(l.execs, req)
-	if l.execErro != nil {
-		return nil, l.execErro
+	if l.execErr != nil {
+		return nil, l.execErr
 	}
 	if phase, ok := l.phases[h.ID]; !ok || phase != ports.PhaseActive {
 		// The real adapter refuses through Describe before trying; the double does

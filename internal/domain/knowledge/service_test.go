@@ -14,12 +14,12 @@ import (
 )
 
 // The domain is testable WITHOUT a database, WITHOUT storage and WITHOUT an
-// embedding service: all three are ports, and in-memory doubles go in here. It is the practical return of
-// arquitetura hexagonal.
+// embedding service: all three are ports, and in-memory doubles go in here. It
+// is the practical return on hexagonal architecture.
 //
-// The doubles live in THIS file, and not in internal/adapter: the
-// arquitetura varre todo .go sob internal/domain, inclusive os _test.go, e
-// importar adaptador daqui quebraria a fronteira que ele protege.
+// The doubles live in THIS file, and not in internal/adapter: the architecture
+// test sweeps every .go under internal/domain, the _test.go files included, and
+// importing an adapter from here would break the very boundary it protects.
 
 // ── package selection: the pure function that decides what the agent knows ───
 
@@ -28,7 +28,7 @@ func TestRuleInheritance(t *testing.T) {
 		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "branches", Body: "rule da casa"},
 		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "segredos", Body: "nada em text puro"},
 		{Scope: knowledge.WorkspaceScope("a1", "w1"), Kind: knowledge.KindRule, Name: "testes", Body: "rule do workspace"},
-		{Scope: knowledge.ProjectScope("a1", "p1"), Kind: knowledge.KindRule, Name: "branches", Body: "rule do projeto"},
+		{Scope: knowledge.ProjectScope("a1", "p1"), Kind: knowledge.KindRule, Name: "branches", Body: "rule do project"},
 		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "vazia", Body: "  "},
 	}
 	got := knowledge.ResolveRules(rules)
@@ -37,13 +37,13 @@ func TestRuleInheritance(t *testing.T) {
 	// replaces the account's), what was not replaced still applies, and the
 	// list comes out from specific to general — that is what makes the budget cut
 	// sacrifice the generic rule first.
-	esperado := []string{"rule do projeto", "rule do workspace", "nada em text puro"}
-	if len(got) != len(esperado) {
-		t.Fatalf("rules resolvidas = %v, esperado %v", got, esperado)
+	want := []string{"rule do project", "rule do workspace", "nada em text puro"}
+	if len(got) != len(want) {
+		t.Fatalf("resolved rules = %v, want %v", got, want)
 	}
-	for i := range esperado {
-		if got[i] != esperado[i] {
-			t.Errorf("rule %d = %q, esperado %q", i, got[i], esperado[i])
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("rule %d = %q, want %q", i, got[i], want[i])
 		}
 	}
 	for _, r := range got {
@@ -84,13 +84,13 @@ func TestSelectionRespectsTheBudget(t *testing.T) {
 		t.Fatalf("the package blew the budget: %d > %d", p.EstimatedTokens, bud.Total)
 	}
 	if len(p.Rules) != 1 {
-		t.Errorf("a rule do projeto tem de entrar antes de tudo, veio %d", len(p.Rules))
+		t.Errorf("the project's rule has to come before everything, got %d", len(p.Rules))
 	}
 	// A large finding does not fit the layer's quota: it stays out, and what stays
 	// out is COUNTED — "it fit" and "it fit by throwing half away" are different
 	// diferentes.
 	if len(p.Findings) != 1 || p.Dropped.Findings != 1 {
-		t.Errorf("achados = %d, descartados = %d; esperado 1 e 1", len(p.Findings), p.Dropped.Findings)
+		t.Errorf("findings = %d, dropped = %d; want 1 and 1", len(p.Findings), p.Dropped.Findings)
 	}
 	// The index comes out in a stable name order, not in the order the query
 	// devolveu.
@@ -132,7 +132,7 @@ func TestSelectionIsDeterministic(t *testing.T) {
 	}
 	for i := range first.Memories {
 		if first.Memories[i].ID != segundo.Memories[i].ID {
-			t.Fatal("duas montagens da mesma demanda produziram ordens diferentes")
+			t.Fatal("two assemblies of the same demand produced different orders")
 		}
 	}
 	if first.EstimatedTokens != segundo.EstimatedTokens {
@@ -178,10 +178,10 @@ func TestBuildContextPackageCutsByBudgetAndMeasures(t *testing.T) {
 
 	pkg, err := svc.BuildContextPackage(ctxOf("a1"), "d1", knowledge.Budget{})
 	if err != nil {
-		t.Fatalf("montagem falhou: %v", err)
+		t.Fatalf("the assembly failed: %v", err)
 	}
 	if pkg.EstimatedTokens > 200 {
-		t.Fatalf("o pacote estourou o teto: %d", pkg.EstimatedTokens)
+		t.Fatalf("the package blew the cap: %d", pkg.EstimatedTokens)
 	}
 	// What grows with the DEMAND: only the index of the repository it touches.
 	if len(pkg.Index) != 1 || pkg.Index[0].Name != "dop-core" {
@@ -219,7 +219,7 @@ func TestThePackageRequiresADemandAndAnAccount(t *testing.T) {
 		t.Errorf("an empty demand should be an invalid argument, got %v", err)
 	}
 	if _, err := svc.BuildContextPackage(ctxOf("a1"), "d-inexistente", knowledge.Budget{}); errs.KindOf(err) != errs.KindNotFound {
-		t.Errorf("demanda inexistente deveria ser not_found, veio %v", err)
+		t.Errorf("a nonexistent demand should be not_found, got %v", err)
 	}
 }
 
@@ -230,14 +230,14 @@ func TestThePackageRequiresADemandAndAnAccount(t *testing.T) {
 func TestMemorySearchIsolatesByAccount(t *testing.T) {
 	repo := newFakeRepo()
 	repo.add(memory("a1", "p1", "nossa", "timeout no pgbouncer", 10))
-	repo.add(memory("a2", "p9", "da-outra-conta", "timeout no pgbouncer", 10))
+	repo.add(memory("a2", "p9", "da-outra-account", "timeout no pgbouncer", 10))
 
 	svc := knowledge.NewService(repo, newFakeStorage(), &demandasFalsas{}, nil,
 		relogioFixo{}, knowledge.Budget{})
 
 	hits, err := svc.SearchMemory(ctxOf("a1"), "p1", "timeout no pgbouncer", 10)
 	if err != nil {
-		t.Fatalf("busca falhou: %v", err)
+		t.Fatalf("the search failed: %v", err)
 	}
 	for _, h := range hits {
 		if h.Artifact.AccountID() != "a1" {
@@ -251,7 +251,7 @@ func TestMemorySearchIsolatesByAccount(t *testing.T) {
 	// that accepted the account as a parameter would pass this scenario and fail in
 	// mundo real.
 	if repo.lastSearch.AccountID != "a1" {
-		t.Errorf("a busca foi emitida com conta %q", repo.lastSearch.AccountID)
+		t.Errorf("the search was issued with account %q", repo.lastSearch.AccountID)
 	}
 }
 
@@ -264,7 +264,7 @@ func TestSemanticSearchOnlyWhenThereIsAnEmbedder(t *testing.T) {
 	semEmbedder := knowledge.NewService(repo, newFakeStorage(), &demandasFalsas{}, nil,
 		relogioFixo{}, knowledge.Budget{})
 	if _, err := semEmbedder.SearchMemory(ctxOf("a1"), "p1", "pool", 5); err != nil {
-		t.Fatalf("busca lexical falhou: %v", err)
+		t.Fatalf("the lexical search failed: %v", err)
 	}
 	if len(repo.lastSearch.Embedding) != 0 {
 		t.Error("with no Embedder the query must not carry a vector")
@@ -279,12 +279,12 @@ func TestSemanticSearchOnlyWhenThereIsAnEmbedder(t *testing.T) {
 		t.Errorf("the query should carry the vector, got %d dimensions", len(repo.lastSearch.Embedding))
 	}
 	if repo.lastSearch.Text == "" {
-		t.Error("o text acompanha o vetor: o adaptador precisa dos dois caminhos")
+		t.Error("the text travels with the vector: the adapter needs both paths")
 	}
 }
 
-// Buscar com um embedder diferente do que gerou os vetores devolve resultado
-// PLAUSIBLE and wrong — a search's worst failure mode. Better to refuse.
+// Searching with an embedder different from the one that produced the vectors
+// returns a result that is PLAUSIBLE and wrong — a search's worst failure mode. Better to refuse.
 func TestAnEmbedderWithTheWrongDimensionIsRefused(t *testing.T) {
 	repo := newFakeRepo()
 	svc := knowledge.NewService(repo, newFakeStorage(), &demandasFalsas{},
@@ -301,14 +301,14 @@ func TestASearchWithNoQueryIsRefused(t *testing.T) {
 		t.Errorf("an empty search should be an invalid argument, got %v", err)
 	}
 	if _, err := svc.SearchMemory(context.Background(), "p1", "x", 5); err == nil {
-		t.Error("busca sem conta ativa deveria ser recusada")
+		t.Error("a search with no active account should be refused")
 	}
 }
 
 // ── writes: where the content lives ──────────────────────────────────────────
 
-// TestALargeArtifactGoesToTheObjectStore proves the split that holds the cost
-// de leitura da tabela: a linha guarda a REFERÊNCIA, nunca os bytes.
+// TestALargeArtifactGoesToTheObjectStore proves the split that keeps the table's
+// read cost down: the row keeps the REFERENCE, never the bytes.
 func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 	repo, storage := newFakeRepo(), newFakeStorage()
 	svc := knowledge.NewService(repo, storage, &demandasFalsas{}, nil, relogioFixo{}, knowledge.Budget{})
@@ -318,7 +318,7 @@ func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 		Kind: knowledge.KindIndex, ProjectID: "p1", Name: "dop-core", Content: grande,
 	})
 	if err != nil {
-		t.Fatalf("escrita falhou: %v", err)
+		t.Fatalf("the write failed: %v", err)
 	}
 	if a.Body != "" {
 		t.Error("the row stored the content: a megabyte map in the column makes EVERY read of the table expensive")
@@ -327,7 +327,7 @@ func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 		t.Fatal("the row should store the ObjectStore reference")
 	}
 	if a.SizeBytes != len(grande) {
-		t.Errorf("tamanho gravado = %d, esperado %d", a.SizeBytes, len(grande))
+		t.Errorf("size stored = %d, want %d", a.SizeBytes, len(grande))
 	}
 	if len(storage.puts) != 1 {
 		t.Fatalf("the content should have gone to storage, there were %d writes", len(storage.puts))
@@ -336,18 +336,18 @@ func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 	if string(put.conteudo) != string(grande) {
 		t.Error("storage received content different from what was sent")
 	}
-	// O emulador de Storage do ambiente local PENDURA com application/json
+	// The local environment's Storage emulator HANGS on application/json
 	// (P-13). This test exists so that changing the type does not slip through.
 	if put.contentType != knowledge.ArtifactContentType {
-		t.Errorf("Content-Type = %q, esperado %q", put.contentType, knowledge.ArtifactContentType)
+		t.Errorf("Content-Type = %q, want %q", put.contentType, knowledge.ArtifactContentType)
 	}
 	if strings.HasPrefix(put.contentType, "application/json") {
-		t.Error("application/json trava o emulador local sem mensagem de erro — ver P-13")
+		t.Error("application/json trava o emulador local sem mensagem de err — ver P-13")
 	}
 	// The key carries the account: one account's reference never coincides with
-	// outra, nem para o mesmo artefato.
+	// another's, not even for the same artifact.
 	if !strings.HasPrefix(put.ref.Key, "a1/") {
-		t.Errorf("chave sem a conta no prefixo: %q", put.ref.Key)
+		t.Errorf("a key with no account in the prefix: %q", put.ref.Key)
 	}
 
 	// A small artifact takes the opposite path: it stays in the row, indexable.
@@ -355,7 +355,7 @@ func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 		Kind: knowledge.KindMemory, ProjectID: "p1", Name: "lesson", Content: []byte("the pool kept overflowing"),
 	})
 	if err != nil {
-		t.Fatalf("escrita pequena falhou: %v", err)
+		t.Fatalf("the small write failed: %v", err)
 	}
 	if pequeno.Body == "" || pequeno.Externalized() {
 		t.Error("a small artifact should stay in the row, where it is indexable")
@@ -375,7 +375,7 @@ func TestALargeRuleIsRefused(t *testing.T) {
 		Content: []byte(text(knowledge.InlineMaxBytes + 1)),
 	})
 	if errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("rule gigante deveria ser recusada, veio %v", err)
+		t.Errorf("a giant rule should be refused, got %v", err)
 	}
 }
 
@@ -387,7 +387,7 @@ func TestAWriteCarriesAnIdempotencyKey(t *testing.T) {
 	in := knowledge.PutInput{Kind: knowledge.KindMemory, ProjectID: "p1",
 		Name: "lesson", Content: []byte("finding"), IdempotencyKey: "k-1"}
 	if _, err := svc.PutArtifact(ctxOf("a1"), in); err != nil {
-		t.Fatalf("escrita falhou: %v", err)
+		t.Fatalf("the write failed: %v", err)
 	}
 	if len(repo.idems) != 1 || repo.idems[0].Key != "k-1" {
 		t.Fatalf("the key did not reach the repository: %+v", repo.idems)
@@ -406,7 +406,7 @@ func TestAWriteCarriesAnIdempotencyKey(t *testing.T) {
 	}
 	in.Content = []byte("outro achado")
 	if _, err := svc.PutArtifact(ctxOf("a1"), in); err != nil {
-		t.Fatalf("escrita alterada falhou: %v", err)
+		t.Fatalf("the altered write failed: %v", err)
 	}
 	if repo.idems[2].RequestHash == first {
 		t.Error("different content under the same key should change the signature")
@@ -428,7 +428,7 @@ func TestAWriteValidatesKindScopeAndContent(t *testing.T) {
 	}
 	if _, err := svc.PutArtifact(context.Background(), knowledge.PutInput{
 		Kind: knowledge.KindMemory, Name: "x", Content: []byte("c")}); err == nil {
-		t.Error("escrita sem conta ativa deveria ser recusada")
+		t.Error("a write with no active account should be refused")
 	}
 }
 
@@ -440,22 +440,22 @@ func TestScopeIsDerivedFromWhatArrived(t *testing.T) {
 	noProject, err := svc.PutArtifact(ctxOf("a1"), knowledge.PutInput{
 		Kind: knowledge.KindRule, Name: "branches", Content: []byte("rule da casa")})
 	if err != nil {
-		t.Fatalf("escrita falhou: %v", err)
+		t.Fatalf("the write failed: %v", err)
 	}
 	if noProject.Scope.Level != knowledge.ScopeAccount {
 		t.Errorf("with no project the scope is the account's, got %q", noProject.Scope.Level)
 	}
 	comProjeto, err := svc.PutArtifact(ctxOf("a1"), knowledge.PutInput{
-		Kind: knowledge.KindRule, ProjectID: "p1", Name: "branches", Content: []byte("rule do projeto")})
+		Kind: knowledge.KindRule, ProjectID: "p1", Name: "branches", Content: []byte("rule do project")})
 	if err != nil {
-		t.Fatalf("escrita falhou: %v", err)
+		t.Fatalf("the write failed: %v", err)
 	}
 	if comProjeto.Scope.Level != knowledge.ScopeProject || comProjeto.Scope.ProjectID != "p1" {
-		t.Errorf("scopeOf de projeto mal derivado: %+v", comProjeto.Scope)
+		t.Errorf("scopeOf for a project derived wrongly: %+v", comProjeto.Scope)
 	}
-	// A conta vem SEMPRE do context — nunca do que o chamador mandou.
+	// The account ALWAYS comes from the context — never from what the caller sent.
 	if noProject.AccountID() != "a1" || comProjeto.AccountID() != "a1" {
-		t.Error("a conta do artefato tem de vir do context da chamada")
+		t.Error("a account do artifact tem de vir do context da chamada")
 	}
 }
 
@@ -465,8 +465,8 @@ func TestReadIndexAndListRules(t *testing.T) {
 	repo := newFakeRepo()
 	repo.add(indexOf("a1", "p1", "dop-core", 30))
 	repo.add(rule("a1", "", "branches", "rule da casa"))
-	repo.add(rule("a1", "p1", "branches", "rule do projeto"))
-	repo.add(rule("a2", "p9", "branches", "rule de outra conta"))
+	repo.add(rule("a1", "p1", "branches", "rule do project"))
+	repo.add(rule("a2", "p9", "branches", "rule de outra account"))
 
 	svc := knowledge.NewService(repo, newFakeStorage(), &demandasFalsas{}, nil,
 		relogioFixo{}, knowledge.Budget{})
@@ -487,13 +487,13 @@ func TestReadIndexAndListRules(t *testing.T) {
 
 	rules, err := svc.ListRules(ctxOf("a1"), "p1")
 	if err != nil {
-		t.Fatalf("listagem de rules falhou: %v", err)
+		t.Fatalf("listing the rules failed: %v", err)
 	}
-	if len(rules) != 1 || rules[0] != "rule do projeto" {
+	if len(rules) != 1 || rules[0] != "rule do project" {
 		t.Errorf("inheritance resolved wrongly: %v", rules)
 	}
 	if _, err := svc.ListRules(ctxOf("a1"), ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Error("rules de um projeto exigem o projeto")
+		t.Error("rules de um project exigem o project")
 	}
 }
 
@@ -515,14 +515,14 @@ func TestTheServiceRefusesMissingRequiredPorts(t *testing.T) {
 			knowledge.NewService(newFakeRepo(), newFakeStorage(), &demandasFalsas{}, nil, nil, knowledge.Budget{})
 		},
 	}
-	for name, montar := range casos {
+	for name, build := range casos {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
 				if recover() == nil {
 					t.Errorf("assembling the service %s should fail at boot", name)
 				}
 			}()
-			montar()
+			build()
 		})
 	}
 	// The Embedder is the ONLY optional one: with no embedding service the search
@@ -577,8 +577,8 @@ func scopeOf(account, project string) knowledge.Scope {
 	return knowledge.ProjectScope(account, project)
 }
 
-// fakeRepo reproduz o que o SQL faz: filtra por conta SEMPRE, resolve o
-// alcance do scopeOf e devolve candidatas. Sem isso, o teste de isolamento
+// fakeRepo reproduces what the SQL does: it filters by account ALWAYS, resolves
+// scopeOf's reach and returns the candidates. Without that, the isolation test
 // would be testing the double, not the service.
 type fakeRepo struct {
 	arts         []knowledge.Artifact
@@ -616,7 +616,7 @@ func (r *fakeRepo) Put(_ context.Context, a *knowledge.Artifact, id knowledge.Id
 	r.idems = append(r.idems, id)
 	r.seq++
 	saved := *a
-	saved.ID = "novo-" + string(rune('a'+r.seq))
+	saved.ID = "newOne-" + string(rune('a'+r.seq))
 	saved.Version = 1
 	saved.CreatedAt, saved.UpdatedAt = instanteFixo, instanteFixo
 	r.arts = append(r.arts, saved)
@@ -683,7 +683,8 @@ func (r *fakeRepo) RecordContextBuild(_ context.Context, _, _ string, m knowledg
 	return nil
 }
 
-// fakeStorage satisfaz ports.ObjectStore e registra o que recebeu — inclusive
+// fakeStorage satisfies ports.ObjectStore and records what it received —
+// including
 // the Content-Type, which is the detail that freezes the local environment if it changes (P-13).
 type fakeStorage struct {
 	puts []escritaNoStorage
@@ -726,11 +727,11 @@ func (s *fakeStorage) Stat(_ context.Context, ref ports.ObjectRef) (*ports.Objec
 }
 
 func (s *fakeStorage) SignedPutURL(context.Context, ports.ObjectRef, time.Duration) (string, error) {
-	return "", errs.New(errs.KindUnavailable, "sem assinatura no duplo")
+	return "", errs.New(errs.KindUnavailable, "sem assinatura no double")
 }
 
 func (s *fakeStorage) SignedGetURL(context.Context, ports.ObjectRef, time.Duration) (string, error) {
-	return "", errs.New(errs.KindUnavailable, "sem assinatura no duplo")
+	return "", errs.New(errs.KindUnavailable, "sem assinatura no double")
 }
 
 // fakeEmbedder is DETERMINISTIC: the same text produces the same vector, always.
