@@ -36,7 +36,7 @@ func TestStartFreezesTheFlow(t *testing.T) {
 	// The catalogue's flow changes — a new version, different stages.
 	flows.flow = demand.Flow{
 		ID: "flow-1", Name: "fluxo revisado", Version: 2, ResolvedFrom: "projeto",
-		Stages: []demand.StageSpec{{Key: "novo", Name: "Etapa nova", Type: demand.TypeGeneric}},
+		Stages: []demand.StageSpec{{Key: "new", Name: "New stage", Type: demand.TypeGeneric}},
 	}
 
 	recarregada, err := svc.Get(ctx, d.ID)
@@ -55,12 +55,12 @@ func TestStartFreezesTheFlow(t *testing.T) {
 
 	// Restarting the SAME external key returns the demand as it stands:
 	// re-resolving would freeze again, which is exactly what freezing prevents.
-	outra, err := svc.Start(ctx, projeto, "SUOPT-1315", "idem-2")
+	other, err := svc.Start(ctx, projeto, "SUOPT-1315", "idem-2")
 	if err != nil {
 		t.Fatalf("Start repetido: %v", err)
 	}
-	if outra.ID != d.ID {
-		t.Errorf("Start repetido criou demanda nova: %s != %s", outra.ID, d.ID)
+	if other.ID != d.ID {
+		t.Errorf("a repeated Start created a new demand: %s != %s", other.ID, d.ID)
 	}
 	if flows.chamadas != 1 {
 		t.Errorf("o fluxo foi resolvido %d vezes; deveria ser 1", flows.chamadas)
@@ -83,7 +83,7 @@ func TestStartRefusesABrokenFlow(t *testing.T) {
 		{Key: "spec", Type: demand.TypeSpec}, {Key: "spec", Type: demand.TypePlan},
 	}}
 	if _, err := svc.Start(ctx, projeto, "SUOPT-2", ""); errs.KindOf(err) != errs.KindPrecondition {
-		t.Errorf("chave de stage repetida deveria ser recusada, veio %v", err)
+		t.Errorf("a repeated stage key should have been refused, got %v", err)
 	}
 }
 
@@ -225,12 +225,12 @@ func TestAThreadDoesNotConcludeWithoutAPublishedFinding(t *testing.T) {
 		t.Fatalf("PublishFinding: %v", err)
 	}
 	if f.ID == "" || f.ThreadID != th.ID {
-		t.Errorf("achado gravado errado: %+v", f)
+		t.Errorf("the finding was stored wrong: %+v", f)
 	}
 
 	concluida, err := svc.ConcludeThread(ctx, th.ID, "")
 	if err != nil {
-		t.Fatalf("ConcludeThread depois do achado: %v", err)
+		t.Fatalf("ConcludeThread after the finding: %v", err)
 	}
 	if concluida.State != demand.ThreadConcluded {
 		t.Errorf("estado da thread = %s, esperado %s", concluida.State, demand.ThreadConcluded)
@@ -262,8 +262,8 @@ func TestAFindingFromAnotherDemandIsRefused(t *testing.T) {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	// The demand is the security boundary (ADR-0010 §6).
-	if _, err := svc.PublishFinding(ctx, b.ID, th.ID, "achado", nil, ""); errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("achado cruzando demanda deveria ser recusado, veio %v", err)
+	if _, err := svc.PublishFinding(ctx, b.ID, th.ID, "finding", nil, ""); errs.KindOf(err) != errs.KindInvalid {
+		t.Errorf("a finding crossing demands should have been refused, got %v", err)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestWatchDeliversOnlyTheDemandsEvents(t *testing.T) {
 	var vistos []string
 	err := watcher.deliver(ctx, svc, d.ID, []ports.Event{
 		{ID: "e1", Aggregate: "demand", AggregateID: d.ID, Type: demand.EventStarted},
-		{ID: "e2", Aggregate: "demand", AggregateID: "outra", Type: demand.EventMessagePosted},
+		{ID: "e2", Aggregate: "demand", AggregateID: "other", Type: demand.EventMessagePosted},
 		{ID: "e3", Aggregate: "demand", AggregateID: d.ID, Type: demand.EventMessagePosted},
 	}, func(e ports.Event) error {
 		vistos = append(vistos, e.ID)
@@ -386,12 +386,12 @@ func (f *fakeFlows) Resolve(_ context.Context, _, _, _ string) (demand.Flow, err
 // fakeWatcher guarda o filtro pedido e entrega os events que lhe derem.
 type fakeWatcher struct {
 	aggregates []string
-	fila       []ports.Event
+	queue      []ports.Event
 }
 
 func (w *fakeWatcher) Watch(_ context.Context, _ string, aggregates, _ []string, emit func(ports.Event) error) error {
 	w.aggregates = aggregates
-	for _, e := range w.fila {
+	for _, e := range w.queue {
 		if err := emit(e); err != nil {
 			return err
 		}
@@ -400,8 +400,8 @@ func (w *fakeWatcher) Watch(_ context.Context, _ string, aggregates, _ []string,
 }
 
 // deliver runs the service's Watch with a prepared queue.
-func (w *fakeWatcher) deliver(ctx context.Context, svc *demand.Service, demandID string, fila []ports.Event, emit func(ports.Event) error) error {
-	w.fila = fila
+func (w *fakeWatcher) deliver(ctx context.Context, svc *demand.Service, demandID string, queue []ports.Event, emit func(ports.Event) error) error {
+	w.queue = queue
 	return svc.Watch(ctx, demandID, emit)
 }
 
@@ -409,8 +409,8 @@ type fakeRepo struct {
 	demands  map[string]*demand.Demand
 	threads  map[string]*demand.Thread
 	findings []demand.Finding
-	// events is what proves ADR-0006's rule: no write passes through
-	// aqui sem trazer o evento junto.
+	// events is what proves ADR-0006's rule: no write passes through here without
+	// bringing the event along.
 	events []demand.Emission
 	seq    int
 }

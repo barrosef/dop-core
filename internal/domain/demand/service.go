@@ -89,24 +89,24 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Demand, erro
 		return nil, err
 	}
 	if d == nil {
-		return nil, errs.NotFound("demanda")
+		return nil, errs.NotFound("demand")
 	}
 	return d, nil
 }
 
 // ── the start: where the flow is resolved and FROZEN ─────────────────────────
 
-// Start resolve o fluxo efetivo do projeto e o congela dentro da demanda.
+// Start resolves the project's effective flow and freezes it inside the demand.
 //
 // The freezing is this operation's whole point (ADR-0014 §4). A flow is
 // editable, promotable and deletable; a demand in progress must not discover,
-// no meio do caminho, que a etapa que ela estava executando deixou de existir.
+// halfway through, that the stage it was running stopped existing.
 // After this, the stage machine obeys the SNAPSHOT — the live flow has no
-// mais poder sobre esta demanda.
+// more power over this demand.
 //
 // Repeating the Start of the same external key returns the demand as it stands,
-// re-resolver nada: reiniciar seria justamente reescrever o passado que o
-// congelamento protege.
+// re-resolving nothing: restarting would be precisely rewriting the past the
+// freezing protects.
 func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey string) (*Demand, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -198,11 +198,11 @@ func validateFlow(f Flow) error {
 	seen := make(map[string]bool, len(f.Stages))
 	for _, st := range f.Stages {
 		if strings.TrimSpace(st.Key) == "" {
-			return errs.Precondition("o fluxo efetivo %q tem etapa sem chave", f.Name)
+			return errs.Precondition("the effective flow %q has a stage with no key", f.Name)
 		}
 		if seen[st.Key] {
 			return errs.Precondition(
-				"o fluxo efetivo %q repete a chave de etapa %q", f.Name, st.Key)
+				"the effective flow %q repeats the stage key %q", f.Name, st.Key)
 		}
 		seen[st.Key] = true
 	}
@@ -255,8 +255,8 @@ func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, t
 			"stage_key": st.Key, "stage_type": string(st.Type),
 			"from": string(from), "to": string(to),
 			// The GATE travels in the event: the attention box has to tell apart a
-			// "etapa parada esperando gente" de "etapa parada por outro
-			// motivo", e sem isto ela teria que consultar a demanda para
+			// "a stage stopped waiting for a person" from "a stage stopped for
+			// another reason", and without this it would have to query the demand to
 			// decide — a projection that queries state stops being a projection.
 			"gate":       string(st.Gate),
 			"dop_status": string(d.ProjectStatus()),
@@ -266,8 +266,8 @@ func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, t
 
 // DecideGate records the gate's human decision.
 //
-// Reprovar NÃO devolve a etapa para pendente: ela vai para bloqueada, com o
-// comment. Clearing the stage would erase from the screen the fact that there
+// Rejecting does NOT send the stage back to pending: it goes to blocked, with
+// the comment. Clearing the stage would erase from the screen the fact that there
 // was a rejection — and that fact is half the value of human validation.
 func (s *Service) DecideGate(ctx context.Context, demandID, stageKey string, approved bool, comment, idemKey string) (*Stage, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -475,7 +475,7 @@ func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title 
 	if err != nil {
 		return nil, err
 	}
-	// Thread de outra demanda publicando no quadro desta seria vazamento de
+	// A thread of another demand posting on this one's board would be a leak of
 	// context between demands — and the demand is the security boundary
 	// (ADR-0010 §6).
 	if t.DemandID != d.ID {

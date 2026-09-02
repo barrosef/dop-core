@@ -3,8 +3,8 @@
 // techlead's coordination directives.
 //
 // House rule: this package knows nothing of Postgres, gRPC or a git provider's
-// git. Ele declara o que precisa como PORTA (repository.go) e o composition
-// root liga.
+// SDK. It declares what it needs as a PORT (repository.go) and the composition
+// root wires it.
 //
 // Two decisions organize everything here:
 //
@@ -277,7 +277,7 @@ func (s QueueState) CanTransitionTo(n QueueState) bool {
 const DefaultPriority = 100
 
 // ConflictReport is the conflict turned into DATA — what the attention box needs
-// para o humano decidir sem arqueologia (ADR-0008 §2).
+// for the human to decide without archaeology (ADR-0008 §2).
 type ConflictReport struct {
 	Files      []string
 	BaseCommit string // contra qual `main` o rebase foi tentado
@@ -333,8 +333,8 @@ func (e MergeQueueEntry) Before(o MergeQueueEntry) bool {
 // SortQueue orders and NUMBERS the positions (1-based).
 //
 // The order belongs to the domain, not to the ORDER BY: the adapter already
-// ainda assim reordenamos aqui. Uma fila serializa merges — a regra de quem
-// goes first is a business rule, and a business rule that lives only in SQL is
+// returns the rows sorted, and we still reorder here. A queue serializes merges
+// — the rule of who goes first is a business rule, and a business rule that lives only in SQL is
 // not testable without a database.
 func SortQueue(entries []MergeQueueEntry) []MergeQueueEntry {
 	out := make([]MergeQueueEntry, len(entries))

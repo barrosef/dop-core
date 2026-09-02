@@ -76,7 +76,7 @@ func (s *Service) RecordVerification(ctx context.Context, run VerificationRun, i
 	return s.repo.RecordVerification(ctx, &run, idemKey)
 }
 
-// Evidence responde "o que se sabe sobre o verde deste commit" — a consulta que
+// Evidence answers "what is known about this commit's green" — the query that
 // the critic, the cockpit and the queue's refusal all share.
 func (s *Service) Evidence(ctx context.Context, demandID, repoID, commit string) (Evidence, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -308,7 +308,7 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 	return s.repo.SetQueueState(ctx, accountID, entryID, to, nil, idemKey)
 }
 
-// ReportConflict transforma o conflito em ITEM DE DECISÃO HUMANA.
+// ReportConflict turns the conflict into an ITEM FOR A HUMAN DECISION.
 //
 // ADR-0008 §2 is explicit: rebasing and resolving are the demand agent's task;
 // a failure ESCALATES to the human through the attention box, with the
@@ -430,8 +430,8 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 		return nil, errs.Invalid("directive not provided")
 	}
 
-	option := texto(decision[DecisionKeyOption])
-	rationale := texto(decision[DecisionKeyRationale])
+	option := text(decision[DecisionKeyOption])
+	rationale := text(decision[DecisionKeyRationale])
 	if option == "" {
 		return nil, errs.Invalid("the decision has to say which option (%q)", DecisionKeyOption)
 	}
@@ -484,7 +484,7 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 
 // ─────────────────────────── auxiliares ───────────────────────────
 
-// instructedDemands junta, sem repetir, toda demanda citada pela diretriz.
+// instructedDemands gathers, without repeating, every demand the directive cites.
 func instructedDemands(d Directive) []string {
 	visto := make(map[string]bool)
 	var out []string
@@ -513,9 +513,10 @@ func chaves(opts []DirectiveOption) []string {
 	return out
 }
 
-// texto extrai string do Struct do contrato sem explodir com tipo inesperado —
-// the body comes from outside, and a wrong-typed value is a client error, not a panic.
-func texto(v any) string {
+// text extracts a string from the contract's Struct without blowing up on an
+// unexpected type — the body comes from outside, and a wrong-typed value is a
+// client error, not a panic.
+func text(v any) string {
 	s, ok := v.(string)
 	if !ok {
 		if v == nil {

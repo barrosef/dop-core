@@ -98,8 +98,8 @@ type DemandInfo struct {
 	ID        string
 	ProjectID string
 	// Active says whether the demand is still moving. It is READ information:
-	// serve para o evento contar a verdade ("a diretriz foi decidida e a
-	// demanda 1 continua em andamento"), nunca para decidir se ela para.
+	// it lets the event tell the truth ("the directive was decided and demand 1
+	// is still under way"), never to decide whether it stops.
 	Active bool
 }
 
@@ -115,22 +115,24 @@ type DemandInfo struct {
 // One instance speaks for ONE credential and ONE actor. The token arrives READY
 // in the adapter's constructor (ADR-0013: a provider token is a resource
 // credential, kept behind ports.SecretStore). The git adapter does not know the
-// vault, does not query it and does not know it exists — whoever assembles
-// entrega o valor.
+// vault, does not query it and does not know it exists — whoever assembles the
+// adapter hands it the value.
 //
 // Guarantees verified by the contract suite, in EVERY adapter:
 //
 //  1. A CONFLICT IS DATA, AN ERROR IS A FAILURE. Rebase and Merge return
 //     Conflicted=true with a NIL error when the provider says that content does
-//     fica para o que impede de SABER: rede, provedor fora do ar, credencial
+//     not merge. An ERROR is for what stops us from KNOWING: the network, a
+//     provider that is down, a credential that is
 //     invalid, permission, nonexistent repository, unreadable response. The
 //     distinction is operational, not aesthetic — a conflict becomes the agent's
 //     task and, if it does not resolve it, an attention box item (ADR-0008 §2),
-//     erro vira retry e alerta de infra. Trocar um pelo outro ou esconde o
+//     while an error becomes a retry and an infrastructure alert. Swapping one
+//     for the other either hides
 //     the human's conflict or fills the attention box with a network outage;
 //
-//  2. Conflicted=true ALWAYS carries a non-empty Detail, and Files is
-//     vir vazia mesmo havendo conflito. Nenhum dos dois provedores publica a
+//  2. Conflicted=true ALWAYS carries a non-empty Detail, and Files MAY come
+//     back empty even when there is a conflict. Neither provider publishes the
 //     conflicted files in the PR/MR API — GitHub does not expose it, and on
 //     GitLab it only exists on an internal Rails route, outside /api/v4, with no
 //     version and no promise. Promising Files would be promising what only comes
@@ -143,14 +145,14 @@ type DemandInfo struct {
 //     returns the PR that already exists. Both providers refuse the second PR —
 //     GitHub with 422, GitLab with 409 — and it is the adapter that turns that
 //     refusal into "here is what exists". Without it, every network timeout in a
-//     fleet of agents would become an attention item about a PR that was
-//     aberto com sucesso;
+//     fleet of agents would become an attention item about a PR that was opened
+//     successfully;
 //
 //  4. reopening with a different title or body does NOT rewrite the existing PR:
 //     the port returns what is there, and updating a PR stays OUT (see below).
 //     Idempotency that overwrites is not idempotency — it is the last call
-//     winning, and ADR-0007 §4's evidence package is precisely what must not
-//     pode ser trocado por um retry;
+//     winning, and ADR-0007 §4's evidence package is precisely what a retry must
+//     not be allowed to replace;
 //
 //  5. with a nil error, ProviderPR has a NON-EMPTY ExternalID and URL.
 //     ExternalID is the PR's identity at the provider and it is what Merge
@@ -170,14 +172,15 @@ type DemandInfo struct {
 //  8. Merged=false WITH Conflicted=false is a LEGITIMATE answer: the merge did
 //     not happen and the reason is not a conflict — the provider's pipeline is
 //     running, an approval is missing, the PR is a draft, a branch protection
-//     diz qual. Sem esse terceiro estado o adaptador seria obrigado a mentir em
-//     one of the two fields, and "conflict" would become the bucket for
+//     rule says which. Without that third state the adapter would be forced to
+//     lie in one of the two fields, and "conflict" would become the bucket for
 //     everything that did not merge — sending a human to resolve a pipeline that
 //
 //  9. REBASE IS SYNCHRONOUS AT THE PORT. The providers answer before finishing
 //     (GitHub accepts the mutation and processes later; GitLab returns "rebase in
 //     progress" and does the work in a worker), and it is the ADAPTER that waits
-//     desfecho dentro do contexto do chamador. Contexto cancelado ou prazo
+//     for the outcome within the caller's context. A cancelled context or a
+//     blown deadline
 //     is KindUnavailable — never a Conflicted=false, which would mean "it did
 //     not conflict" when what happened was "I do not know";
 //
@@ -185,13 +188,13 @@ type DemandInfo struct {
 //     a git operation and is not: neither provider reapplies a loose branch.
 //     GitHub reapplies a PR's branch, and only through GraphQL — its REST has no
 //     rebase at all, only an `update-branch` that MERGES the base
-//     dentro do branch. O GitLab reaplica o branch de um MR. Os dois reaplicam
-//     sempre sobre o destino DAQUELE PR/MR. Por isso: sem PR aberto para
+//     into the branch. GitLab reapplies an MR's branch. Both always reapply over
+//     the target of THAT PR/MR. Hence: with no PR open for the pair
 //     (Branch → Onto), the answer is KindPrecondition with the explanation —
 //     never a silent reapplication over another base, which is what ADR-0008's
 //     queue would re-verify believing it to be another state of the code;
 //
-//  11. NOMES DO PROVEDOR NÃO CRUZAM A PORTA. `mergeable_state`, `merge_status`,
+//  11. THE PROVIDER'S NAMES DO NOT CROSS THE PORT. `mergeable_state`, `merge_status`,
 //     `detailed_merge_status`, PR numbers and MR iids stay on the far side.
 //     ExternalID is OPAQUE: it is what the port returned and what it accepts
 //     back, with no promised format. It is this guarantee that makes swapping
@@ -203,20 +206,19 @@ type DemandInfo struct {
 //     GitHub answers 404 for a private repository the token cannot see, ON
 //     PURPOSE, so as not to reveal that it exists. The adapter does not guess
 //     which of the two it is — it passes NotFound through. Promising to tell them
-//     provedor esconde;
+//     apart would be promising what the provider hides;
 //
-//  13. O TOKEN NÃO APARECE EM LUGAR NENHUM: nem em mensagem de erro, nem em
-//     log, nem em campo de struct, nem no texto de %v, %+v ou %#v do
-//     adapter. Errors go to logs, and a provider token in a log is a credential
+//  13. THE TOKEN APPEARS NOWHERE: not in an error message, not in a log, not in
+//     a struct field, not in the %v, %+v or %#v text of the adapter. Errors go to logs, and a provider token in a log is a credential
 //     at rest: whoever reads the log opens PRs and merges as the owner. The
 //     contract suite uses a sentinel token and sweeps EVERY error output for it;
 //
 //  14. ActorID is CHECKED, not resolved. The instance was built for one actor
 //     (ADR-0003: whoever conducted signs); a request on behalf of ANOTHER actor
-//     recusado com KindPermission. Ignorar o campo seria pior que recusar: o PR
-//     sairia assinado por quem quer que seja o dono do token fiado, e "quem
-//     conduziu assina" viraria mentira silenciosa no lugar exato onde a
-//     rastreabilidade importa;
+//     is refused with KindPermission. Ignoring the field would be worse than
+//     refusing: the PR would go out signed by whoever owns the borrowed token,
+//     and "whoever conducted signs" would become a silent lie in exactly the
+//     place where traceability matters;
 //
 //  15. HasNativeQueue NEVER INVENTS. When the adapter cannot LOOK — no
 //     permission to read the repository's rules, a token scope that does not
@@ -239,9 +241,10 @@ type DemandInfo struct {
 //
 //   - JOINING the provider's native queue. Asking whether one exists is a single
 //     question in both; JOINING is not the same operation: on GitHub the merge
-//     configurada por ruleset de branch e o PR entra por auto-merge; no GitLab
+//     queue is configured by a branch ruleset and the PR joins through
+//     auto-merge; on GitLab
 //     the merge train is a pipeline queue, on a paid plan, joined through
-//     auto merge. A ADR-0008 §4 pede que a plataforma saiba quando NÃO duplicar
+//     auto merge. ADR-0008 §4 asks that the platform know when NOT to duplicate
 //     the queue — not that it drives somebody else's;
 //
 //   - REVIEW: requesting a reviewer, approving, commenting, resolving a thread.
@@ -251,7 +254,7 @@ type DemandInfo struct {
 //     of the two's vocabulary disguised as a port;
 //
 //   - the provider's STATUS AND CHECKS. DOP's green is ADR-0007's evidence,
-//     produzida no sandbox e gravada como VerificationRun. Trazer o check do
+//     produced in the sandbox and recorded as a VerificationRun. Bringing the
 //     provider in here would make the platform accept as proof a green it did not
 //     produce — which is exactly the trust ADR-0007 refuses;
 //
@@ -285,8 +288,8 @@ type GitProvider interface {
 //
 // It is not a boot-time choice, like SecretStore or EventBus: the provider
 // belongs to the REPOSITORY (ADR-0013), and that is precisely why `ProjectRepo`
-// `IntegrationID` — um projeto com um repo no GitHub e outro no GitLab tem que
-// representable. A single provider chosen by configuration would make that
+// carries an `IntegrationID` — a project with one repo on GitHub and another on
+// GitLab has to be representable. A single provider chosen by configuration would make that
 // impossible, silently.
 //
 // It is the same nature as the agent provider port (ADR-0022): chosen per

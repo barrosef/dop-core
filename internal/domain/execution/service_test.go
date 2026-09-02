@@ -19,10 +19,10 @@ import (
 // database: repository, launcher, access and clock are ports, and in-memory
 // doubles go in here. It is the practical return on hexagonal architecture.
 //
-// The doubles live in THIS file, and not in internal/adapter: the
-// arquitetura varre todo .go sob internal/domain, inclusive os _test.go, e
-// importar adaptador daqui quebraria a fronteira que ele protege. Eles
-// satisfazem as MESMAS portas — o mesmo contrato que o k8s e o Docker cumprem.
+// The doubles live in THIS file, and not in internal/adapter: the architecture
+// test sweeps every .go under internal/domain, the _test.go files included, and
+// importing an adapter from here would break the very boundary it protects. They
+// satisfy the SAME ports — the same contract k8s and Docker fulfil.
 
 // ── o modelo: suspender ≠ destruir ───────────────────────────────────────────
 
@@ -69,9 +69,9 @@ func TestSuspendingIsNotDestroying(t *testing.T) {
 func TestAnUndeclaredTierIsRefused(t *testing.T) {
 	f := novoCenario(t)
 
-	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierUnspecified, "")
+	_, err := f.svc.Provision(f.ctx, "demand-1", ports.TierUnspecified, "")
 	if errs.KindOf(err) != errs.KindInvalid {
-		t.Fatalf("tier ausente precisa ser recusado, veio: %v", err)
+		t.Fatalf("a missing tier has to be refused, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "does not choose for you") {
 		t.Errorf("the message has to say the substrate does not choose: %q", err)
@@ -87,7 +87,7 @@ func TestAnUndeclaredTierIsRefused(t *testing.T) {
 
 func TestAnUnknownTierIsRefused(t *testing.T) {
 	f := novoCenario(t)
-	if _, err := f.svc.Provision(f.ctx, "demanda-1", "microvm-turbinada", ""); errs.KindOf(err) != errs.KindInvalid {
+	if _, err := f.svc.Provision(f.ctx, "demand-1", "microvm-turbinada", ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a tier outside the vocabulary has to be refused, got: %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestAnUnofferedTierRefusesWithoutWriting(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.tiers = []ports.IsolationTier{ports.TierNamespace}
 
-	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, "")
+	_, err := f.svc.Provision(f.ctx, "demand-1", ports.TierHardware, "")
 	if errs.KindOf(err) != errs.KindPrecondition {
 		t.Fatalf("expected a precondition refusal, got: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestASubstrateThatDegradesIsDiscarded(t *testing.T) {
 	f.launcher.tiers = []ports.IsolationTier{ports.TierHardware, ports.TierNamespace}
 	f.launcher.delivers = ports.TierNamespace // we asked for hardware, it gives namespace
 
-	_, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, "")
+	_, err := f.svc.Provision(f.ctx, "demand-1", ports.TierHardware, "")
 	if err == nil {
 		t.Fatal("silent degradation was accepted")
 	}
@@ -133,17 +133,17 @@ func TestASubstrateThatDegradesIsDiscarded(t *testing.T) {
 
 func TestTheDeliveredTierIsStored(t *testing.T) {
 	f := novoCenario(t)
-	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	sb, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	if sb.Tier != ports.TierNamespace {
-		t.Errorf("o cliente precisa ver o que RECEBEU: %q", sb.Tier)
+		t.Errorf("the client has to see what it RECEIVED: %q", sb.Tier)
 	}
 	if sb.State != execution.StateActive {
 		t.Errorf("state after provisioning: %q", sb.State)
 	}
-	if sb.Namespace != execution.NamespaceFor("demanda-1") {
+	if sb.Namespace != execution.NamespaceFor("demand-1") {
 		t.Errorf("namespace: %q", sb.Namespace)
 	}
 }
@@ -152,11 +152,11 @@ func TestTheDeliveredTierIsStored(t *testing.T) {
 
 func TestTheIdempotencyKeyDoesNotDuplicateASandbox(t *testing.T) {
 	f := novoCenario(t)
-	a, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "chave-1")
+	a, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "key-1")
 	if err != nil {
 		t.Fatalf("1º Provision: %v", err)
 	}
-	b, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "chave-1")
+	b, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "key-1")
 	if err != nil {
 		t.Fatalf("2º Provision: %v", err)
 	}
@@ -176,15 +176,15 @@ func TestAnInterruptedProvisioningIsResumed(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.falhasNoLaunch = 1
 
-	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, ""); err == nil {
-		t.Fatal("a primeira tentativa deveria ter falhado")
+	if _, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, ""); err == nil {
+		t.Fatal("the first attempt should have failed")
 	}
 	half := f.repo.only(t)
 	if half.State != execution.StateProvisioning {
 		t.Fatalf("o rastro da tentativa gone: estado %q", half.State)
 	}
 
-	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	sb, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("the repeat should finish the provisioning: %v", err)
 	}
@@ -198,21 +198,21 @@ func TestAnInterruptedProvisioningIsResumed(t *testing.T) {
 
 func TestOneDemandOneSandbox(t *testing.T) {
 	f := novoCenario(t)
-	a, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	a, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
-	b, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	b, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("2º Provision: %v", err)
 	}
 	if a.ID != b.ID {
-		t.Error("a mesma demanda ganhou dois sandboxes")
+		t.Error("a mesma demand ganhou dois sandboxes")
 	}
 	// Swapping the isolation of a sandbox that already exists would silently
 	// degrade (or promote) what somebody already declared.
-	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierHardware, ""); errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("esperava recusa ao mudar o tier de um sandbox existente, veio: %v", err)
+	if _, err := f.svc.Provision(f.ctx, "demand-1", ports.TierHardware, ""); errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("expected a refusal when changing an existing sandbox's tier, got: %v", err)
 	}
 }
 
@@ -220,9 +220,9 @@ func TestOneDemandOneSandbox(t *testing.T) {
 
 func TestAnotherAccountsDemandDoesNotExist(t *testing.T) {
 	f := novoCenario(t)
-	f.demands.dono["demanda-alheia"] = "outra-conta"
+	f.demands.owner["demand-alheia"] = "outra-account"
 
-	if _, err := f.svc.Provision(f.ctx, "demanda-alheia", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindNotFound {
+	if _, err := f.svc.Provision(f.ctx, "demand-alheia", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("another account's demand has to be 'not found' — the id's existence must not leak: %v", err)
 	}
 }
@@ -230,7 +230,7 @@ func TestAnotherAccountsDemandDoesNotExist(t *testing.T) {
 func TestAViewerDoesNotProvision(t *testing.T) {
 	f := novoCenario(t)
 	f.access.papel = identity.RoleViewer
-	if _, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindPermission {
+	if _, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindPermission {
 		t.Fatalf("viewer provisionou: %v", err)
 	}
 }
@@ -238,20 +238,20 @@ func TestAViewerDoesNotProvision(t *testing.T) {
 func TestARequestWithNoActiveAccount(t *testing.T) {
 	f := novoCenario(t)
 	sem := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
-	if _, err := f.svc.Provision(sem, "demanda-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindInvalid {
+	if _, err := f.svc.Provision(sem, "demand-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a request with no active account is invalid by definition: %v", err)
 	}
 }
 
 func TestAnotherAccountsSandboxIsNotFound(t *testing.T) {
 	f := novoCenario(t)
-	sb, err := f.svc.Provision(f.ctx, "demanda-1", ports.TierNamespace, "")
+	sb, err := f.svc.Provision(f.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
-	outra := ctxutil.Into(context.Background(), ctxutil.Call{AccountID: "conta-b", ActorID: "u2"})
+	outra := ctxutil.Into(context.Background(), ctxutil.Call{AccountID: "account-b", ActorID: "u2"})
 	if _, err := f.svc.Describe(outra, sb.ID); errs.KindOf(err) != errs.KindNotFound {
-		t.Fatalf("sandbox de outra conta vazou: %v", err)
+		t.Fatalf("sandbox de outra account vazou: %v", err)
 	}
 }
 
@@ -264,11 +264,11 @@ func TestARepeatedSuspendEmitsNoTransition(t *testing.T) {
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
 		t.Fatalf("1º Suspend: %v", err)
 	}
-	antes := f.repo.transitions
+	before := f.repo.transitions
 	if _, err := f.svc.Suspend(f.ctx, sb.ID); err != nil {
 		t.Fatalf("the 2nd Suspend should be harmless: %v", err)
 	}
-	if f.repo.transitions != antes {
+	if f.repo.transitions != before {
 		t.Error("suspending the already suspended emitted a transition — an event that changed nothing poisons the dossier")
 	}
 }
@@ -290,7 +290,7 @@ func TestDestroyingIsIrreversible(t *testing.T) {
 		t.Fatalf("destroyed resumed: %v", err)
 	}
 	if !strings.Contains(err.Error(), "workspace") {
-		t.Errorf("a mensagem precisa dizer que o trabalho foi junto: %q", err)
+		t.Errorf("the message has to say the work went with it: %q", err)
 	}
 }
 
@@ -344,8 +344,8 @@ func TestTheSweepSuspendsOnlyWhatIsIdle(t *testing.T) {
 	ocioso := f.provisionado(t)
 	f.repo.get(ocioso.ID).LastActiveAt = f.clock.Now().Add(-2 * execution.IdleTimeout)
 
-	f.demands.dono["demanda-2"] = "conta-a"
-	recente, err := f.svc.Provision(f.ctx, "demanda-2", ports.TierNamespace, "")
+	f.demands.owner["demand-2"] = "account-a"
+	recente, err := f.svc.Provision(f.ctx, "demand-2", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
@@ -369,11 +369,11 @@ func TestShouldSuspendIsPure(t *testing.T) {
 	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	ativo := execution.Sandbox{State: execution.StateActive, LastActiveAt: agora.Add(-execution.IdleTimeout)}
 	if !ativo.ShouldSuspend(agora) {
-		t.Error("no limite de ociosidade o sandbox suspende")
+		t.Error("no limit de idleness o sandbox suspende")
 	}
 	quase := execution.Sandbox{State: execution.StateActive, LastActiveAt: agora.Add(-execution.IdleTimeout + time.Second)}
 	if quase.ShouldSuspend(agora) {
-		t.Error("um segundo antes do limite ele fica")
+		t.Error("um segundo before do limit ele fica")
 	}
 	suspenso := execution.Sandbox{State: execution.StateSuspended, LastActiveAt: agora.Add(-time.Hour)}
 	if suspenso.ShouldSuspend(agora) {
@@ -385,10 +385,10 @@ func TestShouldSuspendIsPure(t *testing.T) {
 
 func TestLineClassification(t *testing.T) {
 	casos := []struct {
-		raw   string
-		src   execution.Source
-		tt    execution.TestType
-		texto string
+		raw  string
+		src  execution.Source
+		tt   execution.TestType
+		text string
 	}{
 		{"[app] subiu na 3000", execution.SourceApp, "", "subiu na 3000"},
 		{"[test:e2e] 3 passaram", execution.SourceTest, execution.TestE2E, "3 passaram"},
@@ -399,10 +399,10 @@ func TestLineClassification(t *testing.T) {
 		{"[2026-08-31] backup ok", execution.SourceInfra, "", "[2026-08-31] backup ok"},
 	}
 	for _, c := range casos {
-		src, tt, texto := execution.Classify(c.raw)
-		if src != c.src || tt != c.tt || texto != c.texto {
-			t.Errorf("Classify(%q) = (%q,%q,%q); esperava (%q,%q,%q)",
-				c.raw, src, tt, texto, c.src, c.tt, c.texto)
+		src, tt, text := execution.Classify(c.raw)
+		if src != c.src || tt != c.tt || text != c.text {
+			t.Errorf("Classify(%q) = (%q,%q,%q); expected (%q,%q,%q)",
+				c.raw, src, tt, text, c.src, c.tt, c.text)
 		}
 	}
 }
@@ -483,17 +483,17 @@ func TestAnEmitErrorInterruptsTheStream(t *testing.T) {
 		return boom
 	})
 	if err == nil {
-		t.Fatal("erro do emit precisa subir")
+		t.Fatal("the emit error has to bubble up")
 	}
 	if n != 1 {
-		t.Errorf("continuou emitindo depois do erro: %d lines", n)
+		t.Errorf("continuou emitindo after do err: %d lines", n)
 	}
 }
 
 // ── montagem ─────────────────────────────────────────────────────────────────
 
 // TestTheClockIsRequired: accepting nil would keep the port decorative — the
-// cairia em time.Now() por dentro e nenhum teste de ociosidade seria
+// service would fall back to time.Now() inside and no idleness test would be
 // deterministic.
 func TestTheClockIsRequired(t *testing.T) {
 	defer func() {
@@ -501,14 +501,14 @@ func TestTheClockIsRequired(t *testing.T) {
 			t.Fatal("NewService accepted a nil clock")
 		}
 	}()
-	execution.NewService(novoRepo(), &launcherFalso{}, &acessoFalso{}, &demandasFalsas{}, nil, execution.Config{})
+	execution.NewService(novoRepo(), &fakeLauncher{}, &fakeAccess{}, &fakeDemands{}, nil, execution.Config{})
 }
 
 func TestTheEndpointURLBelongsToTheDomain(t *testing.T) {
 	got := execution.EndpointURL("dev.dop.app", "5f3a9c21-0000-0000-0000-000000000000", "portal-frontend")
 	want := "https://portal-frontend--5f3a9c21.dev.dop.app"
 	if got != want {
-		t.Errorf("EndpointURL = %q; esperava %q", got, want)
+		t.Errorf("EndpointURL = %q; expected %q", got, want)
 	}
 	if execution.EndpointURL("", "d1", "app") != "" {
 		t.Error("with no ingress domain there is no URL to promise")
@@ -522,10 +522,10 @@ func TestTheEndpointURLBelongsToTheDomain(t *testing.T) {
 type cenario struct {
 	ctx      context.Context
 	svc      *execution.Service
-	repo     *repoFalso
-	launcher *launcherFalso
-	access   *acessoFalso
-	demands  *demandasFalsas
+	repo     *fakeRepo
+	launcher *fakeLauncher
+	access   *fakeAccess
+	demands  *fakeDemands
 	clock    *relogioFixo
 }
 
@@ -533,12 +533,12 @@ func novoCenario(t *testing.T) *cenario {
 	t.Helper()
 	c := &cenario{
 		ctx: ctxutil.Into(context.Background(), ctxutil.Call{
-			RequestID: "req-1", AccountID: "conta-a", ActorID: "u1", ActorKind: ctxutil.ActorUser,
+			RequestID: "req-1", AccountID: "account-a", ActorID: "u1", ActorKind: ctxutil.ActorUser,
 		}),
 		repo:     novoRepo(),
-		launcher: &launcherFalso{tiers: []ports.IsolationTier{ports.TierNamespace, ports.TierKernelEmulated}},
-		access:   &acessoFalso{papel: identity.RoleDeveloper},
-		demands:  &demandasFalsas{dono: map[string]string{"demanda-1": "conta-a"}},
+		launcher: &fakeLauncher{tiers: []ports.IsolationTier{ports.TierNamespace, ports.TierKernelEmulated}},
+		access:   &fakeAccess{papel: identity.RoleDeveloper},
+		demands:  &fakeDemands{owner: map[string]string{"demand-1": "account-a"}},
 		clock:    &relogioFixo{t: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)},
 	}
 	c.repo.agora = c.clock.Now
@@ -549,7 +549,7 @@ func novoCenario(t *testing.T) *cenario {
 
 func (c *cenario) provisionado(t *testing.T) *execution.Sandbox {
 	t.Helper()
-	sb, err := c.svc.Provision(c.ctx, "demanda-1", ports.TierNamespace, "")
+	sb, err := c.svc.Provision(c.ctx, "demand-1", ports.TierNamespace, "")
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
@@ -564,11 +564,11 @@ func (r *relogioFixo) Now() time.Time { return r.t.UTC() }
 
 // ── repository ───────────────────────────────────────────────────────────────
 
-type repoFalso struct {
+type fakeRepo struct {
 	mu sync.Mutex
 	// now comes from the service's SAME clock. A double that reads the wall
 	// clock reintroduces, in the test, exactly the dependency the Clock port
-	// existe para remover — e o teste passa ou falha conforme a hora do dia.
+	// existe para remover — e o teste passa ou failure conforme a hora do dia.
 	agora       func() time.Time
 	lines       map[string]*execution.Sandbox
 	seq         int
@@ -576,26 +576,26 @@ type repoFalso struct {
 	touches     int
 }
 
-func novoRepo() *repoFalso {
-	return &repoFalso{
+func novoRepo() *fakeRepo {
+	return &fakeRepo{
 		lines: map[string]*execution.Sandbox{},
 		agora: func() time.Time { return time.Now().UTC() },
 	}
 }
 
-func (r *repoFalso) total() int {
+func (r *fakeRepo) total() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.lines)
 }
 
-func (r *repoFalso) get(id string) *execution.Sandbox {
+func (r *fakeRepo) get(id string) *execution.Sandbox {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lines[id]
 }
 
-func (r *repoFalso) only(t *testing.T) *execution.Sandbox {
+func (r *fakeRepo) only(t *testing.T) *execution.Sandbox {
 	t.Helper()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -608,18 +608,18 @@ func (r *repoFalso) only(t *testing.T) *execution.Sandbox {
 	return nil
 }
 
-func (r *repoFalso) ByID(_ context.Context, accountID, id string) (*execution.Sandbox, error) {
+func (r *fakeRepo) ByID(_ context.Context, accountID, id string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.lines[id]
-	if !ok || s.AccountID != accountID { // toda consulta filtra por conta
+	if !ok || s.AccountID != accountID { // toda consulta filtra por account
 		return nil, nil
 	}
 	cp := *s
 	return &cp, nil
 }
 
-func (r *repoFalso) ByIdempotencyKey(_ context.Context, accountID, key string) (*execution.Sandbox, error) {
+func (r *fakeRepo) ByIdempotencyKey(_ context.Context, accountID, key string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range r.lines {
@@ -631,7 +631,7 @@ func (r *repoFalso) ByIdempotencyKey(_ context.Context, accountID, key string) (
 	return nil, nil
 }
 
-func (r *repoFalso) LiveByDemand(_ context.Context, accountID, demandID string) (*execution.Sandbox, error) {
+func (r *fakeRepo) LiveByDemand(_ context.Context, accountID, demandID string) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range r.lines {
@@ -643,7 +643,7 @@ func (r *repoFalso) LiveByDemand(_ context.Context, accountID, demandID string) 
 	return nil, nil
 }
 
-func (r *repoFalso) Create(_ context.Context, s *execution.Sandbox) (*execution.Sandbox, error) {
+func (r *fakeRepo) Create(_ context.Context, s *execution.Sandbox) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.seq++
@@ -655,7 +655,7 @@ func (r *repoFalso) Create(_ context.Context, s *execution.Sandbox) (*execution.
 	return &out, nil
 }
 
-func (r *repoFalso) MarkProvisioned(_ context.Context, accountID, id string, tier ports.IsolationTier, eps []execution.Endpoint) (*execution.Sandbox, error) {
+func (r *fakeRepo) MarkProvisioned(_ context.Context, accountID, id string, tier ports.IsolationTier, eps []execution.Endpoint) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.lines[id]
@@ -667,16 +667,16 @@ func (r *repoFalso) MarkProvisioned(_ context.Context, accountID, id string, tie
 	return &cp, nil
 }
 
-func (r *repoFalso) Transition(_ context.Context, accountID, id string, t execution.Transition) (*execution.Sandbox, error) {
+func (r *fakeRepo) Transition(_ context.Context, accountID, id string, t execution.Transition) (*execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.lines[id]
 	if !ok || s.AccountID != accountID {
 		return nil, errs.NotFound("sandbox")
 	}
-	// The double carries the SAME invariant as the database trigger: destroyed
-	// absorvente. Duplo mais permissivo que o real deixa passar o bug que o
-	// real one would block — in production, far from here.
+	// The double carries the SAME invariant as the database trigger: destroyed is
+	// absorbing. A double more permissive than the real thing lets through the bug
+	// the real one would block — in production, far from here.
 	if s.State.IsTerminal() && t.To != execution.StateDestroyed {
 		return nil, errs.Precondition("a destroyed sandbox does not resume")
 	}
@@ -686,7 +686,7 @@ func (r *repoFalso) Transition(_ context.Context, accountID, id string, t execut
 	return &cp, nil
 }
 
-func (r *repoFalso) TouchActivity(_ context.Context, accountID, id string) error {
+func (r *fakeRepo) TouchActivity(_ context.Context, accountID, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if s, ok := r.lines[id]; ok && s.AccountID == accountID {
@@ -695,7 +695,7 @@ func (r *repoFalso) TouchActivity(_ context.Context, accountID, id string) error
 	return nil
 }
 
-func (r *repoFalso) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([]string, error) {
+func (r *fakeRepo) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([]string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	corte := time.Duration(olderThanSeconds) * time.Second
@@ -711,7 +711,7 @@ func (r *repoFalso) AccountsWithIdle(_ context.Context, olderThanSeconds int) ([
 	return out, nil
 }
 
-func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSeconds int) ([]execution.Sandbox, error) {
+func (r *fakeRepo) ListIdle(_ context.Context, accountID string, olderThanSeconds int) ([]execution.Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	corte := time.Duration(olderThanSeconds) * time.Second
@@ -727,36 +727,36 @@ func (r *repoFalso) ListIdle(_ context.Context, accountID string, olderThanSecon
 
 // ── launcher ─────────────────────────────────────────────────────────────────
 
-type launcherFalso struct {
+type fakeLauncher struct {
 	falhasNoLaunch int
 	tiers          []ports.IsolationTier
-	delivers       ports.IsolationTier // vazio = delivers o que foi pedido
+	delivers       ports.IsolationTier // vazio = delivers o que foi request
 	gone           bool
 	lines          []ports.LogLine
 	launches       int
 	resumes        int
 	destroys       int
 	phases         map[string]ports.SandboxPhase
-	// execs guarda os comandos recebidos, e execSaida o que devolver. Comando
+	// execs guarda os commands recebidos, e execOutput o que devolver. Comando
 	// that fails is a RESULT on this port (guarantee 15), so the double has to
 	// know how to return a non-zero code without returning an error.
-	execs     []ports.ExecRequest
-	execSaida *ports.ExecResult
-	execErro  error
+	execs      []ports.ExecRequest
+	execOutput *ports.ExecResult
+	execErro   error
 }
 
-func (l *launcherFalso) tierEntregue(pedido ports.IsolationTier) ports.IsolationTier {
+func (l *fakeLauncher) tierEntregue(request ports.IsolationTier) ports.IsolationTier {
 	if l.delivers != "" {
 		return l.delivers
 	}
-	return pedido
+	return request
 }
 
-func (l *launcherFalso) SupportedTiers(context.Context) ([]ports.IsolationTier, error) {
+func (l *fakeLauncher) SupportedTiers(context.Context) ([]ports.IsolationTier, error) {
 	return l.tiers, nil
 }
 
-func (l *launcherFalso) Launch(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
+func (l *fakeLauncher) Launch(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	l.launches++
 	if l.falhasNoLaunch > 0 {
 		l.falhasNoLaunch--
@@ -769,14 +769,14 @@ func (l *launcherFalso) Launch(_ context.Context, spec ports.SandboxSpec) (*port
 	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
 }
 
-func (l *launcherFalso) Suspend(_ context.Context, h ports.SandboxHandle) error {
+func (l *fakeLauncher) Suspend(_ context.Context, h ports.SandboxHandle) error {
 	if l.phases != nil {
 		l.phases[h.ID] = ports.PhaseSuspended
 	}
 	return nil
 }
 
-func (l *launcherFalso) Resume(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
+func (l *fakeLauncher) Resume(_ context.Context, spec ports.SandboxSpec) (*ports.SandboxStatus, error) {
 	l.resumes++
 	if l.phases != nil {
 		l.phases[spec.ID] = ports.PhaseActive
@@ -784,13 +784,13 @@ func (l *launcherFalso) Resume(_ context.Context, spec ports.SandboxSpec) (*port
 	return &ports.SandboxStatus{Phase: ports.PhaseActive, Tier: l.tierEntregue(spec.Tier)}, nil
 }
 
-func (l *launcherFalso) Destroy(_ context.Context, h ports.SandboxHandle) error {
+func (l *fakeLauncher) Destroy(_ context.Context, h ports.SandboxHandle) error {
 	l.destroys++
 	delete(l.phases, h.ID)
 	return nil
 }
 
-func (l *launcherFalso) Describe(_ context.Context, h ports.SandboxHandle) (*ports.SandboxStatus, error) {
+func (l *fakeLauncher) Describe(_ context.Context, h ports.SandboxHandle) (*ports.SandboxStatus, error) {
 	if l.gone {
 		return nil, errs.NotFound("sandbox %s", h.ID)
 	}
@@ -801,7 +801,7 @@ func (l *launcherFalso) Describe(_ context.Context, h ports.SandboxHandle) (*por
 	return &ports.SandboxStatus{Phase: phase, Tier: ports.TierNamespace}, nil
 }
 
-func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
+func (l *fakeLauncher) Exec(_ context.Context, h ports.SandboxHandle, req ports.ExecRequest) (*ports.ExecResult, error) {
 	l.execs = append(l.execs, req)
 	if l.execErro != nil {
 		return nil, l.execErro
@@ -812,13 +812,13 @@ func (l *launcherFalso) Exec(_ context.Context, h ports.SandboxHandle, req ports
 		// allow.
 		return nil, errs.Precondition("sandbox %s is not active", h.ID)
 	}
-	if l.execSaida != nil {
-		return l.execSaida, nil
+	if l.execOutput != nil {
+		return l.execOutput, nil
 	}
 	return &ports.ExecResult{ExitCode: 0, Stdout: "ok\n"}, nil
 }
 
-func (l *launcherFalso) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.LogQuery, emit func(ports.LogLine) error) error {
+func (l *fakeLauncher) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.LogQuery, emit func(ports.LogLine) error) error {
 	for _, ln := range l.lines {
 		if err := emit(ln); err != nil {
 			return err
@@ -829,54 +829,54 @@ func (l *launcherFalso) Tail(_ context.Context, _ ports.SandboxHandle, _ ports.L
 
 // ── narrow ports into other domains ──────────────────────────────────────────
 
-type acessoFalso struct{ papel identity.Role }
+type fakeAccess struct{ papel identity.Role }
 
-func (a *acessoFalso) Authorize(_ context.Context, userID, accountID string) (*identity.Membership, error) {
+func (a *fakeAccess) Authorize(_ context.Context, userID, accountID string) (*identity.Membership, error) {
 	if userID == "" || accountID == "" {
 		return nil, errs.Permission("no membership")
 	}
 	return &identity.Membership{UserID: userID, AccountID: accountID, Role: a.papel}, nil
 }
 
-type demandasFalsas struct{ dono map[string]string }
+type fakeDemands struct{ owner map[string]string }
 
-func (d *demandasFalsas) DemandAccount(_ context.Context, demandID string) (string, error) {
-	acc, ok := d.dono[demandID]
+func (d *fakeDemands) DemandAccount(_ context.Context, demandID string) (string, error) {
+	acc, ok := d.owner[demandID]
 	if !ok {
-		return "", errs.NotFound("demanda")
+		return "", errs.NotFound("demand")
 	}
 	return acc, nil
 }
 
 // The scheduler is a SYSTEM actor and has no active account. The sweep visits
-// por conta, e cada visita continua acontecendo DENTRO de uma conta — o
+// account by account, and each visit still happens INSIDE an account — the
 // isolation is not loosened, only the visiting order is decided from outside.
 func TestTheSystemSweepCrossesAccountsWithoutLooseningIsolation(t *testing.T) {
 	repo := novoRepo()
-	launcher := &launcherFalso{tiers: []ports.IsolationTier{ports.TierNamespace}}
+	launcher := &fakeLauncher{tiers: []ports.IsolationTier{ports.TierNamespace}}
 	relogio := &relogioFixo{t: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)}
 
 	// Two accounts, each with one sandbox idle past the limit.
-	for _, conta := range []string{"acc-1", "acc-2"} {
-		id := "sb-" + conta
+	for _, account := range []string{"acc-1", "acc-2"} {
+		id := "sb-" + account
 		repo.lines[id] = &execution.Sandbox{
-			ID: id, AccountID: conta, State: execution.StateActive,
+			ID: id, AccountID: account, State: execution.StateActive,
 			LastActiveAt: relogio.t.Add(-2 * execution.IdleTimeout),
 		}
 	}
 
 	varredor := execution.NewSweeper(repo, launcher, relogio)
-	contas, suspensos, err := varredor.SweepAllAccounts(context.Background())
+	accounts, suspended, err := varredor.SweepAllAccounts(context.Background())
 	if err != nil {
-		t.Fatalf("varredura: %v", err)
+		t.Fatalf("sweep: %v", err)
 	}
-	if contas != 2 || suspensos != 2 {
-		t.Fatalf("esperava 2 contas e 2 suspensos, veio %d e %d", contas, suspensos)
+	if accounts != 2 || suspended != 2 {
+		t.Fatalf("expected 2 accounts and 2 suspended, got %d and %d", accounts, suspended)
 	}
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// RunCommand — a ponte por onde o agente AGE (spec do substrato §4).
+// RunCommand — the bridge through which the agent ACTS (substrate spec §4).
 //
 // The rule these tests protect is the port's guarantee 15, one floor up: the
 // error is the SUBSTRATE's; what the command did, including failing, is a result.
@@ -886,7 +886,7 @@ func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
 	c := novoCenario(t)
 	sb := c.provisionado(t)
 
-	res, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{
+	res, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{
 		Command: []string{"sh", "-c", "echo oi"},
 	})
 	if err != nil {
@@ -896,12 +896,12 @@ func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
 		t.Fatalf("exit code %d", res.ExitCode)
 	}
 	if len(c.launcher.execs) != 1 {
-		t.Fatalf("o substrato recebeu %d comando(s)", len(c.launcher.execs))
+		t.Fatalf("the substrate received %d command(s)", len(c.launcher.execs))
 	}
-	// O runtime de agente pergunta pela DEMANDA; quem resolve demanda → sandbox
-	// is this domain. The agent never sees a sandbox id.
-	if sb.DemandID != "demanda-1" {
-		t.Fatalf("sandbox da demanda errada: %+v", sb)
+	// The agent runtime asks by DEMAND; the one that resolves demand → sandbox is
+	// this domain. The agent never sees a sandbox id.
+	if sb.DemandID != "demand-1" {
+		t.Fatalf("sandbox da demand errada: %+v", sb)
 	}
 }
 
@@ -910,9 +910,9 @@ func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
 func TestRunCommandExitCodeIsNotAnError(t *testing.T) {
 	c := novoCenario(t)
 	c.provisionado(t)
-	c.launcher.execSaida = &ports.ExecResult{ExitCode: 3, Stderr: "reprovou"}
+	c.launcher.execOutput = &ports.ExecResult{ExitCode: 3, Stderr: "reprovou"}
 
-	res, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+	res, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 	if err != nil {
 		t.Fatalf("a non-zero code became a domain error: %v", err)
 	}
@@ -928,7 +928,7 @@ func TestRunCommandPostponesIdleSuspension(t *testing.T) {
 	sb := c.provisionado(t)
 	c.repo.touches = 0
 
-	if _, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}}); err != nil {
+	if _, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}}); err != nil {
 		t.Fatalf("RunCommand: %v", err)
 	}
 	if c.repo.touches == 0 {
@@ -938,11 +938,11 @@ func TestRunCommandPostponesIdleSuspension(t *testing.T) {
 }
 
 func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
-	t.Run("demanda_sem_sandbox", func(t *testing.T) {
+	t.Run("demand_with_no_sandbox", func(t *testing.T) {
 		c := novoCenario(t)
-		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindNotFound {
-			t.Fatalf("esperava KindNotFound, veio %v", err)
+			t.Fatalf("expected KindNotFound, got %v", err)
 		}
 	})
 
@@ -955,12 +955,12 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 		// A precondition, and never a made-up exit code: a substrate with no
 		// execution runs no command, and saying that is different from saying the
 		// comando falhou.
-		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindPrecondition {
-			t.Fatalf("esperava KindPrecondition, veio %v", err)
+			t.Fatalf("expected KindPrecondition, got %v", err)
 		}
 		if len(c.launcher.execs) != 0 {
-			t.Fatal("o comando foi para o substrato mesmo com o sandbox suspenso")
+			t.Fatal("the command went to the substrate even with the sandbox suspended")
 		}
 	})
 
@@ -968,33 +968,33 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 		c := novoCenario(t)
 		c.provisionado(t)
 		c.access.papel = identity.RoleViewer
-		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindPermission {
-			t.Fatalf("esperava KindPermission, veio %v", err)
+			t.Fatalf("expected KindPermission, got %v", err)
 		}
 	})
 
-	t.Run("comando_vazio", func(t *testing.T) {
+	t.Run("empty_command", func(t *testing.T) {
 		c := novoCenario(t)
 		c.provisionado(t)
-		_, err := c.svc.RunCommand(c.ctx, "demanda-1", ports.ExecRequest{})
+		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{})
 		if errs.KindOf(err) != errs.KindInvalid {
-			t.Fatalf("esperava KindInvalid, veio %v", err)
+			t.Fatalf("expected KindInvalid, got %v", err)
 		}
 	})
 
-	t.Run("sandbox_de_outra_conta", func(t *testing.T) {
+	t.Run("sandbox_of_another_account", func(t *testing.T) {
 		c := novoCenario(t)
 		c.provisionado(t)
 		outra := ctxutil.Into(context.Background(), ctxutil.Call{
-			AccountID: "conta-b", ActorID: "u2", ActorKind: ctxutil.ActorUser,
+			AccountID: "account-b", ActorID: "u2", ActorKind: ctxutil.ActorUser,
 		})
 		// Every query filters by account: account A's sandbox does not exist for
 		// account B, and the answer is the same as "does not exist" — the other
 		// would confirm the id is real.
-		_, err := c.svc.RunCommand(outra, "demanda-1", ports.ExecRequest{Command: []string{"x"}})
+		_, err := c.svc.RunCommand(outra, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindNotFound {
-			t.Fatalf("esperava KindNotFound, veio %v", err)
+			t.Fatalf("expected KindNotFound, got %v", err)
 		}
 	})
 }

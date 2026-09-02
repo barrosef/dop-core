@@ -87,21 +87,21 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Sandbox, err
 
 // ── provisionamento ──────────────────────────────────────────────────────────
 
-// Provision cria o sandbox da demanda.
+// Provision creates the demand's sandbox.
 //
 // The order of the checks is the rule, and the first one matters most:
 //
-//  1. o tier tem de vir DECLARADO. Sem ele, recusa — nunca um default;
+//  1. the tier has to arrive DECLARED. Without it, refuse — never a default;
 //  2. a repeat of the same idempotency key returns the same sandbox;
-//  3. a demanda precisa existir e ser da conta ativa;
-//  4. uma demanda ativa tem UM sandbox (spec §1);
+//  3. the demand has to exist and belong to the active account;
+//  4. an active demand has ONE sandbox (spec §1);
 //  5. the substrate has to OFFER the requested tier. If it does not, it refuses
-//     BEFORE writing any state — a refusal that provisions half is worse
-//     que recusa nenhuma.
+//     BEFORE writing any state — a refusal that provisions half is worse than
+//     refusing none.
 //
 // Only after that is the state written. Two transactions, each atomic with its
-// own event (ADR-0019): the first records the INTENT (provisioning), the
-// segunda registra o que o substrato ENTREGOU. Uma queda entre elas deixa a
+// own event (ADR-0019): the first records the INTENT (provisioning), the second
+// records what the substrate DELIVERED. A crash between them leaves the
 // row in provisioning — visible, reconcilable and with no invisible orphan
 // sandbox, which is exactly what a single transaction could not give: writing
 // after Launch would lose the trace of what already came up.
@@ -136,7 +136,7 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 		return nil, err
 	}
 	if owner != accountID {
-		return nil, errs.NotFound("demanda")
+		return nil, errs.NotFound("demand")
 	}
 
 	// One active demand, one sandbox. Returning what exists is the useful
@@ -152,8 +152,8 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 		}
 		// A row in provisioning is the trace of an attempt that did not finish —
 		// a crash between the two transactions. Returning it as it stands would hand
-		// ao cliente um sandbox pela metade que nunca mais seria consertado;
-		// resuming from there is what makes the second transaction genuinely idempotent.
+		// the client a half-built sandbox that would never be fixed; resuming from
+		// there is what makes the second transaction genuinely idempotent.
 		if live.State != StateProvisioning {
 			return live, nil
 		}
@@ -182,9 +182,9 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 	return s.finishProvision(ctx, accountID, created, tier)
 }
 
-// finishProvision executa a SEGUNDA metade do provisionamento: sobe o sandbox e
-// records what the substrate delivered. It lives apart because it is exactly
-// trecho que precisa ser refeito quando a primeira tentativa morreu no meio.
+// finishProvision runs the SECOND half of provisioning: it brings the sandbox up
+// and records what the substrate delivered. It lives apart because it is exactly
+// the stretch that has to be redone when the first attempt died halfway.
 func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
 	status, err := s.launcher.Launch(ctx, s.specFor(sb))
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *Service) finishProvision(ctx context.Context, accountID string, sb *San
 		_ = s.launcher.Destroy(ctx, sb.Handle())
 		_, _ = s.repo.Transition(ctx, accountID, sb.ID, DestroyTransition)
 		return nil, errs.Internal(
-			"o substrato entregou isolamento %q para um pedido de %q — sandbox descartado",
+			"the substrate delivered isolation %q for a request of %q — sandbox discarded",
 			status.Tier, tier)
 	}
 	return s.repo.MarkProvisioned(ctx, accountID, sb.ID, status.Tier,
@@ -309,7 +309,7 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 	if sb.State.IsTerminal() {
 		return nil, errs.Precondition(
 			"a destroyed sandbox does not resume — destruction takes the workspace with it; " +
-				"provisione um novo para a demanda")
+				"provision a new one for the demand")
 	}
 	if sb.State == StateActive {
 		if err := s.repo.TouchActivity(ctx, accountID, sb.ID); err != nil {
@@ -330,7 +330,7 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		// degradation coming in through the back door: the sandbox already existed,
 		// so nobody would recheck the tier.
 		return nil, errs.Internal(
-			"o substrato retomou o sandbox com isolamento %q, declarado como %q",
+			"the substrate resumed the sandbox with isolation %q, declared as %q",
 			status.Tier, sb.Tier)
 	}
 	resumed, err := s.repo.Transition(ctx, accountID, sb.ID, ResumeTransition)
@@ -347,9 +347,9 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 
 // Destroy is IRREVERSIBLE: it takes execution and workspace.
 //
-// Idempotent by state: destroying what was already destroyed returns true with
-// tocar em nada. Erro nesse caso seria hostil — quem repete a chamada quer o
-// same result, and the result is already there.
+// Idempotent by state: destroying what was already destroyed returns true
+// without touching anything. An error there would be hostile — whoever repeats
+// the call wants the same result, and the result is already there.
 func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 	accountID, _, role, err := s.caller(ctx)
 	if err != nil {
@@ -383,7 +383,7 @@ func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 // It queries the substrate when the sandbox is alive, and not only the database,
 // for a specific reason: each endpoint's state (running/stopped) is the demand's
 // inner compose, which changes without going through any RPC of ours. Reading
-// devolveria uma foto antiga com cara de verdade corrente.
+// only the row would return an old photograph with the face of current truth.
 func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	accountID, _, _, err := s.caller(ctx)
 	if err != nil {
@@ -402,7 +402,7 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 		if errs.KindOf(err) == errs.KindNotFound {
 			// A real divergence: the row says it exists, the substrate does not have
 			// it. Somebody deleted the namespace from outside, or Launch never finished.
-			// Dizer "ativo" aqui seria mentir para o cockpit.
+			// Saying "active" here would be lying to the cockpit.
 			return nil, errs.Precondition(
 				"sandbox %s no longer exists in the substrate (recorded state: %s); "+
 					"destrua-o e provisione outro", sb.ID, sb.State)
@@ -418,30 +418,32 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 
 // ── command execution ────────────────────────────────────────────────────────
 
-// RunCommand roda um comando no sandbox VIVO da demanda.
+// RunCommand runs a command in the demand's LIVE sandbox.
 //
 // This is how the agent acts (ADR-0023 + substrate spec §4): the agent runtime
 // asks by DEMAND, which is its vocabulary, and this domain resolves demand →
 // sandbox → substrate. The runtime never sees a sandbox id, never sees
-// `ports.SandboxLauncher` e nunca escolhe onde o comando roda.
+// `ports.SandboxLauncher` and never chooses where the command runs.
 //
 // Three decisions that are not obvious:
 //
 //  1. THE ERROR IS THE SUBSTRATE'S ALONE. A command that exits non-zero, blows
 //     its deadline or has its output cut comes back in `ExecResult` with a nil
 //     error — it is the port's guarantee 15, propagated intact. The agent HAS to
-//     teste reprovou para consertar; devolver isso como erro tiraria dele a
-//     the only information that solves the problem;
+//     read the output of the test that failed in order to fix it; returning that
+//     as an error would take from it the only information that solves the
+//     problem;
 //
 //  2. AGENT WORK IS ACTIVITY. The touch postpones idle suspension
-//     (spec §3). Sem ele, o varredor de economia derrubaria o sandbox debaixo
-//     of an agent that is precisely working in it — and the symptom would be a
+//     (spec §3). Without it, the saving sweeper would drop the sandbox from
+//     under an agent that is precisely working in it — and the symptom would be a
 //     tool loop failing on the next turn with "sandbox suspended", with nothing
 //     explaining why;
 //
 //  3. A VIEWER DOES NOT RUN COMMANDS. Running a command in the sandbox is
 //     writing into the demand's workspace and spending the time of a machine the
-//     linha que separa viewer de quem provisiona.
+//     account pays for — it is the line that separates a viewer from whoever
+//     provisions.
 func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.ExecRequest) (*ports.ExecResult, error) {
 	accountID, _, role, err := s.caller(ctx)
 	if err != nil {
@@ -462,9 +464,9 @@ func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.Exe
 		return nil, err
 	}
 	if sb == nil {
-		// Demanda sem sandbox e demanda de outra conta saem iguais, pelo mesmo
-		// motivo de `load`: a segunda resposta confirmaria que o id existe.
-		return nil, errs.NotFound("sandbox da demanda %s", demandID)
+		// A demand with no sandbox and a demand of another account come out the
+		// same, for `load`'s reason: the second answer would confirm the id exists.
+		return nil, errs.NotFound("sandbox of demand %s", demandID)
 	}
 	if sb.State != StateActive {
 		return nil, errs.Precondition(
@@ -492,11 +494,11 @@ const streamTailLines = 500
 // servidor descobre que o cliente sumiu.
 type Emitter func(LogLine) error
 
-// StreamLogs segue os logs do sandbox enquanto o cliente estiver ouvindo.
+// StreamLogs follows the sandbox's logs for as long as the client is listening.
 //
 // A connected dev is ACTIVITY: the touch below postpones idle suspension.
 // Without it, the saving sweeper would drop the sandbox from under whoever is
-// justamente olhando para ele (spec §3).
+// precisely looking at it (spec §3).
 //
 // A suspended sandbox has NO logs, and that is an explicit refusal rather than
 // an empty stream: suspension erases the execution, and what each substrate
@@ -599,12 +601,12 @@ func NewSweeper(repo Repository, launcher ports.SandboxLauncher, clock ports.Clo
 //
 // The scheduler has no active account — and all the rest of this domain requires
 // one. The way out is to visit account by account: `AccountsWithIdle` says WHICH
-// varrer, e cada varredura acontece com aquela conta no contexto, pelo mesmo
-// path a user call would take. Isolation is not loosened; what changes is who
+// ones to sweep, and each sweep happens with that account in the context, down
+// the same path a user call would take. Isolation is not loosened; what changes is who
 // decides the visiting order.
 //
 // An error in one account does not interrupt the others: one account's idle
-// deve ficar aceso porque a conta anterior tem um problema.
+// sandbox must not stay lit because the previous account has a problem.
 func (s *Service) SweepAllAccounts(ctx context.Context) (contas, suspensos int, err error) {
 	ids, err := s.repo.AccountsWithIdle(ctx, int(IdleTimeout.Seconds()))
 	if err != nil {
