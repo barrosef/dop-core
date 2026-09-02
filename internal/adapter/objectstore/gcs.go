@@ -1,12 +1,14 @@
-// Adaptador de ObjectStore sobre a API do Google Cloud Storage.
+// An ObjectStore adapter over the Google Cloud Storage API.
 //
-// Serve produção (GCS/Firebase Storage) E ambiente local (emulador do Firebase)
-// — mesmo protocolo, endpoint diferente. É por isso que o MinIO saiu do desenho
-// (ADR-0020): local e produção compartilham semântica, incluindo URL assinada.
+// It serves production (GCS/Firebase Storage) AND the local environment (the
+// Firebase emulator) — the same protocol, a different endpoint. That is why
+// MinIO left the design (ADR-0020): local and production share the semantics,
+// signed URLs included.
 //
-// Ponte de variáveis, a armadilha que custa caro: o SDK do Cloud Storage lê
-// STORAGE_EMULATOR_HOST; o Firebase CLI expõe FIREBASE_STORAGE_EMULATOR_HOST.
-// Resolve-se no boot — sem isso, upload local vai para o bucket REAL.
+// The variable bridge, the trap that costs dearly: the Cloud Storage SDK reads
+// STORAGE_EMULATOR_HOST; the Firebase CLI exposes
+// FIREBASE_STORAGE_EMULATOR_HOST. It is resolved at boot — without that, a local
+// upload goes to the REAL bucket.
 package objectstore
 
 import (
@@ -26,7 +28,7 @@ import (
 
 type GCS struct {
 	client   *http.Client
-	endpoint string // vazio = produção
+	endpoint string // empty = production
 	token    string
 }
 
@@ -36,7 +38,7 @@ type GCSConfig struct {
 	Client   *http.Client
 }
 
-// ResolveEmulatorHost faz a ponte entre as duas variáveis. Chamar no boot.
+// ResolveEmulatorHost bridges the two variables. Call it at boot.
 func ResolveEmulatorHost() string {
 	if h := os.Getenv("STORAGE_EMULATOR_HOST"); h != "" {
 		return normalizeHost(h)
@@ -68,11 +70,12 @@ func NewGCS(cfg GCSConfig) *GCS {
 	if ep == "" {
 		ep = "https://storage.googleapis.com"
 	}
-	// normalizeHost também aqui, e não só em ResolveEmulatorHost: a convenção
-	// do Firebase é host:porta SEM esquema, e é essa forma que chega por
-	// configuração (wire.go lê STORAGE_EMULATOR_HOST direto para cfg.Endpoint).
-	// Sem isto o url.Parse falha com "first path segment cannot contain colon"
-	// — e só na PRIMEIRA gravação, com o processo verde até lá.
+	// normalizeHost here too, and not only in ResolveEmulatorHost: Firebase's
+	// convention is host:port WITHOUT a scheme, and that is the shape that
+	// arrives through configuration (wire.go reads STORAGE_EMULATOR_HOST
+	// straight into cfg.Endpoint). Without this, url.Parse fails with "first
+	// path segment cannot contain colon" — and only on the FIRST write, with the
+	// process green until then.
 	return &GCS{client: c, endpoint: normalizeHost(ep), token: cfg.Token}
 }
 
@@ -96,11 +99,11 @@ func (g *GCS) Put(ctx context.Context, ref ports.ObjectRef, content []byte, cont
 	g.auth(req)
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao gravar objeto")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to write the object")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return errs.Internal("armazenamento recusou a escrita (HTTP %d)", resp.StatusCode)
+		return errs.Internal("storage refused the write (HTTP %d)", resp.StatusCode)
 	}
 	return nil
 }
@@ -112,14 +115,14 @@ func (g *GCS) Get(ctx context.Context, ref ports.ObjectRef) ([]byte, error) {
 	g.auth(req)
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao ler objeto")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to read the object")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, errs.NotFound("objeto %s/%s", ref.Bucket, ref.Key)
+		return nil, errs.NotFound("object %s/%s", ref.Bucket, ref.Key)
 	}
 	if resp.StatusCode >= 300 {
-		return nil, errs.Internal("armazenamento recusou a leitura (HTTP %d)", resp.StatusCode)
+		return nil, errs.Internal("storage refused the read (HTTP %d)", resp.StatusCode)
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -131,11 +134,11 @@ func (g *GCS) Delete(ctx context.Context, ref ports.ObjectRef) error {
 	g.auth(req)
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao remover objeto")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to remove the object")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotFound {
-		return errs.Internal("armazenamento recusou a remoção (HTTP %d)", resp.StatusCode)
+		return errs.Internal("storage refused the removal (HTTP %d)", resp.StatusCode)
 	}
 	return nil
 }
@@ -147,11 +150,11 @@ func (g *GCS) Stat(ctx context.Context, ref ports.ObjectRef) (*ports.ObjectMeta,
 	g.auth(req)
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao consultar objeto")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to stat the object")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, errs.NotFound("objeto %s/%s", ref.Bucket, ref.Key)
+		return nil, errs.NotFound("object %s/%s", ref.Bucket, ref.Key)
 	}
 	var out struct {
 		Size        string `json:"size"`
@@ -159,7 +162,7 @@ func (g *GCS) Stat(ctx context.Context, ref ports.ObjectRef) (*ports.ObjectMeta,
 		Updated     string `json:"updated"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "metadados ilegíveis")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable metadata")
 	}
 	m := &ports.ObjectMeta{ContentType: out.ContentType}
 	fmt.Sscanf(out.Size, "%d", &m.Size)
@@ -169,10 +172,10 @@ func (g *GCS) Stat(ctx context.Context, ref ports.ObjectRef) (*ports.ObjectMeta,
 	return m, nil
 }
 
-// SignedPutURL / SignedGetURL: contra o emulador não há assinatura — devolve a
-// URL direta, que é o comportamento correto localmente. Em produção, a
-// assinatura V4 exige credencial de service account (a implementar quando o
-// Terraform provisionar a SA).
+// SignedPutURL / SignedGetURL: against the emulator there is no signature — it
+// returns the direct URL, which is the correct behaviour locally. In production,
+// the V4 signature requires a service-account credential (to be implemented once
+// Terraform provisions the SA).
 func (g *GCS) SignedPutURL(_ context.Context, ref ports.ObjectRef, _ time.Duration) (string, error) {
 	return fmt.Sprintf("%s/upload/storage/v1/b/%s/o?uploadType=media&name=%s",
 		g.endpoint, url.PathEscape(ref.Bucket), url.QueryEscape(ref.Key)), nil

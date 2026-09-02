@@ -1,9 +1,9 @@
-// Adaptador de EventBus sobre NATS JetStream (ADR-0019).
+// An EventBus adapter over NATS JetStream (ADR-0019).
 //
-// Escolha: leve (um container), roda idêntico em k3s e GKE, persistente, com
-// consumer groups, DLQ e replay. Kafka seria caminhão para a nossa carga;
-// Pub/Sub amarraria ao GCP — fica como segundo adaptador quando alguém quiser
-// gerenciado.
+// The choice: lightweight (one container), runs identically on k3s and GKE,
+// persistent, with consumer groups, a DLQ and replay. Kafka would be a truck for
+// our load; Pub/Sub would tie us to GCP — it stays as a second adapter for
+// whoever wants a managed one.
 package eventbus
 
 import (
@@ -23,15 +23,16 @@ import (
 const (
 	StreamName    = "DOP"
 	StreamSubject = "dop.>"
-	// Após este número de tentativas a mensagem vai para a DLQ em vez de
-	// bloquear a fila para sempre.
+	// After this many attempts the message goes to the DLQ instead of blocking
+	// the queue forever.
 	MaxDeliver = 5
 )
 
-// Envelope é o FORMATO DE FIO do evento: o que o relay publica e o que o
-// consumidor recebe. Explícito de propósito — antes ele era implícito e o
-// consumidor tentava desserializar em ports.Event, cujo Payload []byte espera
-// base64; o envelope tem payload como OBJETO. Silenciava toda entrega.
+// Envelope is the event's WIRE FORMAT: what the relay publishes and what the
+// consumer receives. Explicit on purpose — before, it was implicit and the
+// consumer tried to deserialize into ports.Event, whose Payload []byte expects
+// base64; the envelope has the payload as an OBJECT. It silenced every
+// delivery.
 type Envelope struct {
 	ID          string          `json:"id"`
 	AccountID   string          `json:"account_id"`
@@ -54,12 +55,12 @@ func NewNATS(ctx context.Context, url string) (*NATS, error) {
 		nats.ReconnectWait(2*time.Second),
 	)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao conectar no NATS")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to connect to NATS")
 	}
 	js, err := jetstream.New(conn)
 	if err != nil {
 		conn.Close()
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao abrir JetStream")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to open JetStream")
 	}
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:      StreamName,
@@ -71,7 +72,7 @@ func NewNATS(ctx context.Context, url string) (*NATS, error) {
 	})
 	if err != nil {
 		conn.Close()
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao criar o stream")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to create the stream")
 	}
 	return &NATS{conn: conn, js: js, stream: stream}, nil
 }
@@ -79,29 +80,29 @@ func NewNATS(ctx context.Context, url string) (*NATS, error) {
 func (n *NATS) Publish(ctx context.Context, e ports.Event) error {
 	payload := e.Payload
 	if len(payload) == 0 {
-		// Sem envelope pronto (quem publica direto, sem passar pelo outbox):
-		// monta um. Aqui havia json.Marshal(e) — que é o MESMO bug que o
-		// Envelope existe para matar, só do lado do publicador: ports.Event
-		// serializa Payload []byte em base64 e com nomes de campo que o
-		// consumidor não sabe ler, então AccountID, AggregateID e OccurredAt
-		// chegavam vazios do outro lado, sem erro nenhum.
-		payload = envelopeDe(e)
+		// With no ready envelope (whoever publishes directly, without going
+		// through the outbox): build one. There used to be a json.Marshal(e)
+		// here — which is the SAME bug the Envelope exists to kill, only on the
+		// publisher's side: ports.Event serializes Payload []byte in base64 and
+		// with field names the consumer cannot read, so AccountID, AggregateID
+		// and OccurredAt arrived empty on the other side, with no error at all.
+		payload = envelopeOf(e)
 	}
-	// MsgId dá desduplicação no lado do broker: o relay pode republicar sem
-	// gerar entrega dupla dentro da janela de dedup do JetStream.
+	// MsgId gives deduplication on the broker's side: the relay can republish
+	// without producing a double delivery within JetStream's dedup window.
 	_, err := n.js.PublishMsg(ctx, &nats.Msg{
 		Subject: e.Type,
 		Data:    payload,
 		Header:  nats.Header{jetstream.MsgIDHeader: []string{e.ID}},
 	})
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao publicar no NATS")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to publish to NATS")
 	}
 	return nil
 }
 
-// Subscribe cria um consumidor durável. O handler DEVE ser idempotente: a
-// entrega é ao-menos-uma-vez.
+// Subscribe creates a durable consumer. The handler MUST be idempotent:
+// delivery is at-least-once.
 func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects []string, h ports.Handler) error {
 	if stream == "" {
 		stream = StreamName
@@ -115,20 +116,21 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		BackOff:        []time.Duration{time.Second, 5 * time.Second, 15 * time.Second, time.Minute},
 	})
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao criar consumidor %q", durable)
+		return errs.Wrap(errs.KindUnavailable, err, "failed to create consumer %q", durable)
 	}
 
 	log := logging.From(ctx).With("consumer", durable)
 	_, err = cons.Consume(func(msg jetstream.Msg) {
 		var env Envelope
 		if err := json.Unmarshal(msg.Data(), &env); err != nil {
-			// Mensagem ilegível nunca melhora com retry — descarta com registro.
-			log.Error("evento ilegível, descartado", "error", err, "subject", msg.Subject())
+			// An unreadable message never improves with a retry — discard it
+			// with a record.
+			log.Error("unreadable event, discarded", "error", err, "subject", msg.Subject())
 			_ = msg.Term()
 			return
 		}
-		// O handler recebe os campos já desembrulhados; Payload carrega o
-		// envelope inteiro, para quem quiser o dado cru.
+		// The handler receives the fields already unwrapped; Payload carries the
+		// whole envelope, for whoever wants the raw data.
 		e := ports.Event{
 			ID:          env.ID,
 			AccountID:   env.AccountID,
@@ -141,13 +143,13 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		if err := h(ctx, e); err != nil {
 			md, _ := msg.Metadata()
 			if md != nil && md.NumDelivered >= MaxDeliver {
-				log.Error("evento esgotou as tentativas, indo para a DLQ",
+				log.Error("event exhausted its attempts, going to the DLQ",
 					"error", err, "type", e.Type, "event_id", e.ID,
 					"attempts", md.NumDelivered)
 				_ = msg.Term()
 				return
 			}
-			log.Warn("falha ao processar evento, será reentregue",
+			log.Warn("failed to process the event, it will be redelivered",
 				"error", err, "type", e.Type, "event_id", e.ID)
 			_ = msg.Nak()
 			return
@@ -155,7 +157,7 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		_ = msg.Ack()
 	})
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao consumir %q", durable)
+		return errs.Wrap(errs.KindUnavailable, err, "failed to consume %q", durable)
 	}
 	return nil
 }
@@ -174,6 +176,6 @@ func StreamInfo(ctx context.Context, n *NATS) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("stream=%s msgs=%d bytes=%d consumidores=%d",
+	return fmt.Sprintf("stream=%s msgs=%d bytes=%d consumers=%d",
 		info.Config.Name, info.State.Msgs, info.State.Bytes, info.State.Consumers), nil
 }

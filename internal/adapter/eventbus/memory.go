@@ -1,19 +1,19 @@
-// Adaptador de EventBus em memória — o par do NATS pela porta.
+// An in-memory EventBus adapter — NATS's pair through the port.
 //
-// Existe por dois motivos, nesta ordem: (1) provar a porta, que com um
-// adaptador só é palpite (ADR-0001); (2) deixar o núcleo rodar num processo
-// único — teste de caso de uso e modo demonstração — sem broker no caminho.
+// It exists for two reasons, in this order: (1) to prove the port, which with a
+// single adapter is guesswork (ADR-0001); (2) to let the core run in a single
+// process — use-case tests and demo mode — with no broker in the way.
 //
-// O que ele NÃO é: um mock. Ele entrega de verdade, em goroutine, com retentativa
-// com backoff, teto de tentativas e descarte de mensagem ilegível, porque é
-// exatamente isso que o JetStream faz. Um duplo que entregasse síncrono e
-// perfeito esconderia os bugs que só aparecem com entrega assíncrona.
+// What it is NOT: a mock. It really delivers, in a goroutine, with backoff
+// retries, an attempt cap and discarding of unreadable messages, because that is
+// exactly what JetStream does. A double that delivered synchronously and
+// perfectly would hide the bugs that only show up with asynchronous delivery.
 //
-// A armadilha que este arquivo repete de propósito: o que trafega é o ENVELOPE
-// (ver nats.go). Publish carrega os BYTES de e.Payload sem recodificar e o
-// assinante recebe esses mesmos bytes. Reserializar ports.Event aqui traria de
-// volta o bug que custou caro — Payload []byte vira base64 no JSON e o outro
-// lado descarta tudo, em silêncio.
+// The trap this file repeats on purpose: what travels is the ENVELOPE (see
+// nats.go). Publish carries e.Payload's BYTES without re-encoding and the
+// subscriber receives those same bytes. Re-serializing ports.Event here would
+// bring back the bug that cost dearly — a Payload []byte becomes base64 in JSON
+// and the other side discards everything, in silence.
 package eventbus
 
 import (
@@ -29,141 +29,141 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// retencaoMemoria limita o histórico guardado para assinantes que chegam depois.
+// memoryRetention limits the history kept for subscribers that arrive later.
 //
-// O stream do JetStream retém 30 dias; aqui reter tudo seria vazamento de
-// memória em processo longo. O número é generoso para o uso real (worker que
-// sobe depois do relay) e finito para o processo sobreviver.
-const retencaoMemoria = 1024
+// JetStream's stream retains 30 days; retaining everything here would be a
+// memory leak in a long-running process. The number is generous for real use (a
+// worker that comes up after the relay) and finite so the process survives.
+const memoryRetention = 1024
 
-// backoffMemoria é a escada de reentrega. Mais curta que a do NATS de
-// propósito: sem rede no caminho, esperar um segundo só faria teste lento.
-// A porta não promete tempo de reentrega — promete QUE reentrega.
-var backoffMemoria = []time.Duration{
+// memoryBackoff is the redelivery ladder. Shorter than NATS's on purpose: with
+// no network in the way, waiting a second would only make tests slow. The port
+// does not promise a redelivery time — it promises THAT it redelivers.
+var memoryBackoff = []time.Duration{
 	5 * time.Millisecond, 25 * time.Millisecond, 100 * time.Millisecond, 500 * time.Millisecond,
 }
 
 type Memory struct {
-	mu         sync.Mutex
-	fechado    bool
-	historico  []entrega
-	assinantes []*assinaturaMem
-	wg         sync.WaitGroup
+	mu          sync.Mutex
+	closed      bool
+	history     []delivery
+	subscribers []*memSubscription
+	wg          sync.WaitGroup
 }
 
 func NewMemory() *Memory { return &Memory{} }
 
-// entrega é uma mensagem no fio: assunto + bytes crus, mais o contador de
-// tentativas. Nada de ports.Event aqui — o que trafega é byte.
-type entrega struct {
-	assunto   string
-	dados     []byte
-	tentativa int
+// delivery is a message on the wire: subject + raw bytes, plus the attempt
+// counter. No ports.Event here — what travels is bytes.
+type delivery struct {
+	subject string
+	data    []byte
+	attempt int
 }
 
-type assinaturaMem struct {
+type memSubscription struct {
 	durable  string
-	assuntos []string
+	subjects []string
 	handler  ports.Handler
-	fila     *filaMem
+	queue    *memQueue
 	log      *slog.Logger
 	ctx      context.Context
 }
 
 func (m *Memory) Publish(_ context.Context, e ports.Event) error {
 	if strings.TrimSpace(e.Type) == "" {
-		return errs.Invalid("evento sem tipo: não há assunto para publicar")
+		return errs.Invalid("event with no type: there is no subject to publish to")
 	}
-	dados := e.Payload
-	if len(dados) == 0 {
-		// Mesmo fallback do nats.go, e pela mesma razão: quem publica sem
-		// envelope pronto recebe um envelope montado aqui — nunca um
-		// json.Marshal(ports.Event), cujo Payload []byte sairia em base64 e com
-		// nomes de campo que o consumidor não sabe ler.
-		dados = envelopeDe(e)
+	data := e.Payload
+	if len(data) == 0 {
+		// The same fallback as nats.go, and for the same reason: whoever
+		// publishes without a ready envelope gets an envelope assembled here —
+		// never a json.Marshal(ports.Event), whose Payload []byte would come out
+		// in base64 and with field names the consumer cannot read.
+		data = envelopeOf(e)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.fechado {
-		return errs.New(errs.KindUnavailable, "barramento em memória já encerrado")
+	if m.closed {
+		return errs.New(errs.KindUnavailable, "in-memory bus already closed")
 	}
-	msg := entrega{assunto: e.Type, dados: dados}
-	m.historico = append(m.historico, msg)
-	if len(m.historico) > retencaoMemoria {
-		m.historico = m.historico[len(m.historico)-retencaoMemoria:]
+	msg := delivery{subject: e.Type, data: data}
+	m.history = append(m.history, msg)
+	if len(m.history) > memoryRetention {
+		m.history = m.history[len(m.history)-memoryRetention:]
 	}
-	for _, a := range m.assinantes {
-		if casaAssuntos(a.assuntos, msg.assunto) {
-			a.fila.enfileira(msg)
+	for _, a := range m.subscribers {
+		if matchesAny(a.subjects, msg.subject) {
+			a.queue.push(msg)
 		}
 	}
 	return nil
 }
 
-// Subscribe entrega o retido ANTES do novo, como o consumidor durável do
-// JetStream faz. Sem isso, o worker que sobe depois do relay perderia
-// silenciosamente tudo o que já estava publicado — e a espinha de eventos só
-// funcionaria com a ordem de boot certa, que é a definição de frágil.
+// Subscribe delivers what was retained BEFORE the new, as JetStream's durable
+// consumer does. Without it, a worker that comes up after the relay would
+// silently lose everything already published — and the event spine would only
+// work with the right boot order, which is the definition of fragile.
 func (m *Memory) Subscribe(ctx context.Context, stream, durable string, subjects []string, h ports.Handler) error {
 	if stream != "" && stream != StreamName {
 		return errs.NotFound("stream %q", stream)
 	}
 	if h == nil {
-		return errs.Invalid("assinatura sem handler")
+		return errs.Invalid("subscription with no handler")
 	}
 
 	m.mu.Lock()
-	if m.fechado {
+	if m.closed {
 		m.mu.Unlock()
-		return errs.New(errs.KindUnavailable, "barramento em memória já encerrado")
+		return errs.New(errs.KindUnavailable, "in-memory bus already closed")
 	}
-	a := &assinaturaMem{
+	a := &memSubscription{
 		durable:  durable,
-		assuntos: append([]string(nil), subjects...),
+		subjects: append([]string(nil), subjects...),
 		handler:  h,
-		fila:     novaFila(),
+		queue:    newMemQueue(),
 		log:      logging.From(ctx).With("consumer", durable),
 		ctx:      ctx,
 	}
-	// Snapshot do histórico sob o MESMO lock do Publish: é o que impede uma
-	// publicação concorrente de ser entregue duas vezes ou nenhuma.
-	for _, msg := range m.historico {
-		if casaAssuntos(a.assuntos, msg.assunto) {
-			a.fila.enfileira(msg)
+	// A snapshot of the history under the SAME lock as Publish: it is what stops
+	// a concurrent publication from being delivered twice or not at all.
+	for _, msg := range m.history {
+		if matchesAny(a.subjects, msg.subject) {
+			a.queue.push(msg)
 		}
 	}
-	m.assinantes = append(m.assinantes, a)
+	m.subscribers = append(m.subscribers, a)
 	m.wg.Add(1)
 	m.mu.Unlock()
 
 	go func() {
 		defer m.wg.Done()
-		a.consome()
+		a.consume()
 	}()
 	return nil
 }
 
 func (m *Memory) Close() error {
 	m.mu.Lock()
-	if m.fechado {
+	if m.closed {
 		m.mu.Unlock()
 		return nil
 	}
-	m.fechado = true
-	assinantes := m.assinantes
+	m.closed = true
+	subscribers := m.subscribers
 	m.mu.Unlock()
 
-	for _, a := range assinantes {
-		a.fila.fecha()
+	for _, a := range subscribers {
+		a.queue.close()
 	}
 	m.wg.Wait()
 	return nil
 }
 
-func (a *assinaturaMem) consome() {
+func (a *memSubscription) consume() {
 	for {
-		msg, ok := a.fila.retira()
+		msg, ok := a.queue.pop()
 		if !ok {
 			return
 		}
@@ -171,11 +171,11 @@ func (a *assinaturaMem) consome() {
 			return
 		}
 		var env Envelope
-		if err := json.Unmarshal(msg.dados, &env); err != nil {
-			// Ilegível nunca melhora com retentativa: descarta com registro,
-			// como o Term() do NATS. Uma mensagem venenosa não pode travar a
-			// fila para sempre.
-			a.log.Error("evento ilegível, descartado", "error", err, "subject", msg.assunto)
+		if err := json.Unmarshal(msg.data, &env); err != nil {
+			// Unreadable never improves with a retry: discard it with a record,
+			// like NATS's Term(). A poison message must not block the queue
+			// forever.
+			a.log.Error("unreadable event, discarded", "error", err, "subject", msg.subject)
 			continue
 		}
 		e := ports.Event{
@@ -184,60 +184,60 @@ func (a *assinaturaMem) consome() {
 			Aggregate:   env.Aggregate,
 			AggregateID: env.AggregateID,
 			Type:        env.Type,
-			Payload:     msg.dados, // bytes IDÊNTICOS aos publicados
+			Payload:     msg.data, // bytes IDENTICAL to the ones published
 			OccurredAt:  env.OccurredAt,
 		}
 		if err := a.handler(a.ctx, e); err != nil {
-			msg.tentativa++
-			if msg.tentativa >= MaxDeliver {
-				a.log.Error("evento esgotou as tentativas, indo para a DLQ",
-					"error", err, "type", e.Type, "event_id", e.ID, "attempts", msg.tentativa)
+			msg.attempt++
+			if msg.attempt >= MaxDeliver {
+				a.log.Error("event exhausted its attempts, going to the DLQ",
+					"error", err, "type", e.Type, "event_id", e.ID, "attempts", msg.attempt)
 				continue
 			}
-			a.log.Warn("falha ao processar evento, será reentregue",
+			a.log.Warn("failed to process the event, it will be redelivered",
 				"error", err, "type", e.Type, "event_id", e.ID)
-			// Reagenda fora da fila: enquanto esta mensagem espera o backoff,
-			// as outras continuam andando (é o efeito do Nak no JetStream).
-			espera := backoffMemoria[min(msg.tentativa-1, len(backoffMemoria)-1)]
-			reagendada := msg
-			time.AfterFunc(espera, func() { a.fila.enfileira(reagendada) })
+			// Rescheduled outside the queue: while this message waits out the
+			// backoff, the others keep moving (it is Nak's effect in JetStream).
+			wait := memoryBackoff[min(msg.attempt-1, len(memoryBackoff)-1)]
+			rescheduled := msg
+			time.AfterFunc(wait, func() { a.queue.push(rescheduled) })
 			continue
 		}
 	}
 }
 
-// envelopeDe monta o formato de fio a partir do evento — usado só quando o
-// publicador não trouxe envelope pronto.
-func envelopeDe(e ports.Event) []byte {
-	ocorrido := e.OccurredAt
-	if ocorrido.IsZero() {
-		ocorrido = time.Now().UTC()
+// envelopeOf builds the wire format from the event — used only when the
+// publisher did not bring a ready envelope.
+func envelopeOf(e ports.Event) []byte {
+	occurred := e.OccurredAt
+	if occurred.IsZero() {
+		occurred = time.Now().UTC()
 	}
 	b, _ := json.Marshal(Envelope{
 		ID: e.ID, AccountID: e.AccountID, Aggregate: e.Aggregate,
-		AggregateID: e.AggregateID, Type: e.Type, OccurredAt: ocorrido,
+		AggregateID: e.AggregateID, Type: e.Type, OccurredAt: occurred,
 	})
 	return b
 }
 
-// casaAssuntos aplica a semântica de wildcard do NATS: "*" casa UM token,
-// ">" casa a cauda (ao menos um token). Lista vazia casa tudo, como
-// FilterSubjects vazio no JetStream.
-func casaAssuntos(padroes []string, assunto string) bool {
-	if len(padroes) == 0 {
+// matchesAny applies NATS's wildcard semantics: "*" matches ONE token, ">"
+// matches the tail (at least one token). An empty list matches everything, like
+// empty FilterSubjects in JetStream.
+func matchesAny(patterns []string, subject string) bool {
+	if len(patterns) == 0 {
 		return true
 	}
-	for _, p := range padroes {
-		if casaAssunto(p, assunto) {
+	for _, p := range patterns {
+		if matches(p, subject) {
 			return true
 		}
 	}
 	return false
 }
 
-func casaAssunto(padrao, assunto string) bool {
-	p := strings.Split(padrao, ".")
-	a := strings.Split(assunto, ".")
+func matches(pattern, subject string) bool {
+	p := strings.Split(pattern, ".")
+	a := strings.Split(subject, ".")
 	for i, tok := range p {
 		if tok == ">" {
 			return len(a) > i
@@ -252,52 +252,52 @@ func casaAssunto(padrao, assunto string) bool {
 	return len(p) == len(a)
 }
 
-// filaMem é uma fila ilimitada com sinal.
+// memQueue is an unbounded queue with a signal.
 //
-// Canal com buffer fixo não serve: Publish enfileira segurando o lock do
-// barramento, e um buffer cheio travaria o publicador — no NATS, publicar
-// nunca espera o consumidor.
-type filaMem struct {
-	mu      sync.Mutex
-	cond    *sync.Cond
-	itens   []entrega
-	fechada bool
+// A channel with a fixed buffer does not do: Publish enqueues while holding the
+// bus's lock, and a full buffer would block the publisher — in NATS, publishing
+// never waits for the consumer.
+type memQueue struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	items  []delivery
+	closed bool
 }
 
-func novaFila() *filaMem {
-	q := &filaMem{}
+func newMemQueue() *memQueue {
+	q := &memQueue{}
 	q.cond = sync.NewCond(&q.mu)
 	return q
 }
 
-func (q *filaMem) enfileira(e entrega) {
+func (q *memQueue) push(e delivery) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.fechada {
+	if q.closed {
 		return
 	}
-	q.itens = append(q.itens, e)
+	q.items = append(q.items, e)
 	q.cond.Signal()
 }
 
-func (q *filaMem) retira() (entrega, bool) {
+func (q *memQueue) pop() (delivery, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for len(q.itens) == 0 && !q.fechada {
+	for len(q.items) == 0 && !q.closed {
 		q.cond.Wait()
 	}
-	if len(q.itens) == 0 {
-		return entrega{}, false
+	if len(q.items) == 0 {
+		return delivery{}, false
 	}
-	e := q.itens[0]
-	q.itens = q.itens[1:]
+	e := q.items[0]
+	q.items = q.items[1:]
 	return e, true
 }
 
-func (q *filaMem) fecha() {
+func (q *memQueue) close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.fechada = true
+	q.closed = true
 	q.cond.Broadcast()
 }
 

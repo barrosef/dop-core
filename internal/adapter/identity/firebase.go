@@ -1,22 +1,22 @@
-// Adaptador de IdentityProvider sobre o Firebase Authentication.
+// An IdentityProvider adapter over Firebase Authentication.
 //
-// A fronteira que a ADR-0001 protege: claims de Firebase NÃO cruzam para o
-// domínio. Verifica-se o token aqui e devolve-se um Principal normalizado — é o
-// que permite trocar por Keycloak, Zitadel ou Ory sem tocar no domínio.
+// The frontier ADR-0001 protects: Firebase claims do NOT cross into the domain.
+// The token is verified here and a normalized Principal is returned — it is what
+// allows swapping in Keycloak, Zitadel or Ory without touching the domain.
 //
-// A verificação usa as MESMAS primitivas do adaptador OIDC (parseJWT, keySet,
-// registeredClaims.validate, ver oidc.go). O que muda é só de onde vem a chave
-// pública e o formato dela: o Google publica CERTIFICADOS X.509 por `kid` em
-// vez de JWKS, para os tokens do Secure Token Service.
+// The verification uses the SAME primitives as the OIDC adapter (parseJWT,
+// keySet, registeredClaims.validate, see oidc.go). All that changes is where the
+// public key comes from and its format: Google publishes X.509 CERTIFICATES by
+// `kid` instead of a JWKS, for Secure Token Service tokens.
 //
-// Sobre o EMULADOR (FIREBASE_AUTH_EMULATOR_HOST): ele emite tokens com
-// "alg":"none" — sem assinatura nenhuma. Isso é comportamento do emulador, não
-// do Firebase real. Neste modo a verificação de assinatura é PULADA, e só ela:
-// emissor, audiência, expiração, nbf e sujeito continuam sendo checados, e a
-// normalização é idêntica, de modo que o domínio vê exatamente a mesma coisa nos
-// dois ambientes. O modo é ligado por variável de ambiente e nunca por conteúdo
-// do token — token que pede para não ser verificado é exatamente o que um
-// atacante mandaria.
+// About the EMULATOR (FIREBASE_AUTH_EMULATOR_HOST): it issues tokens with
+// "alg":"none" — no signature at all. That is the emulator's behaviour, not real
+// Firebase's. In this mode the signature verification is SKIPPED, and only that:
+// the issuer, the audience, expiry, nbf and subject are still checked, and the
+// normalization is identical, so the domain sees exactly the same thing in both
+// environments. The mode is turned on by an environment variable and never by
+// the token's content — a token asking not to be verified is exactly what an
+// attacker would send.
 package identity
 
 import (
@@ -34,25 +34,26 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// googleSecureTokenCerts é onde o Google publica as chaves que assinam ID token
-// do Firebase. É endpoint de CERTIFICADO X.509 (kid → PEM), não JWKS: o
-// documento JWKS do Google (`/oauth2/v3/certs`) serve os tokens do Google
-// Sign-In, que são outros. Apontar para o errado dá "chave desconhecida" em
-// todo login — falha silenciosa e cara de achar.
+// googleSecureTokenCerts is where Google publishes the keys that sign Firebase
+// ID tokens. It is an X.509 CERTIFICATE endpoint (kid → PEM), not a JWKS:
+// Google's JWKS document (`/oauth2/v3/certs`) serves Google Sign-In tokens,
+// which are different ones. Pointing at the wrong one gives "unknown key" on
+// every login — a silent failure and an expensive one to find.
 const googleSecureTokenCerts = "https://www.googleapis.com/robots/v1/metadata/x509/securetoken@system.gserviceaccount.com"
 
-// firebaseIssuerPrefix + projectID é o `iss` que todo ID token do Firebase
-// carrega, emulador incluído.
+// firebaseIssuerPrefix + projectID is the `iss` every Firebase ID token
+// carries, the emulator included.
 const firebaseIssuerPrefix = "https://securetoken.google.com/"
 
 type FirebaseConfig struct {
 	ProjectID string
-	// CertsURL existe para a suíte de contrato poder servir certificados locais
-	// e exercitar a verificação de assinatura DE VERDADE, sem internet e sem
-	// depender do emulador (que não assina nada). Vazio = o endpoint do Google.
+	// CertsURL exists so the contract suite can serve local certificates and
+	// exercise the signature verification FOR REAL, with no internet and with no
+	// dependency on the emulator (which signs nothing). Empty = Google's
+	// endpoint.
 	CertsURL string
-	// EmulatorHost vazio faz o adaptador ler FIREBASE_AUTH_EMULATOR_HOST, que é
-	// o que o composition root já configura.
+	// An empty EmulatorHost makes the adapter read FIREBASE_AUTH_EMULATOR_HOST,
+	// which is what the composition root already configures.
 	EmulatorHost   string
 	HTTPClient     *http.Client
 	ClockSkew      time.Duration
@@ -70,7 +71,7 @@ type Firebase struct {
 	keys        *keySet
 }
 
-// NewFirebase é a forma que o composition root usa (internal/app/wire.go).
+// NewFirebase is the form the composition root uses (internal/app/wire.go).
 func NewFirebase(projectID string) *Firebase {
 	return NewFirebaseFrom(FirebaseConfig{ProjectID: projectID})
 }
@@ -109,7 +110,7 @@ func NewFirebaseFrom(cfg FirebaseConfig) *Firebase {
 
 func (f *Firebase) UsingEmulator() bool { return f.emulatorURL != "" }
 
-// fetchCerts lê o mapa kid → certificado PEM e extrai a chave pública RSA.
+// fetchCerts reads the kid → PEM certificate map and extracts the RSA public key.
 func (f *Firebase) fetchCerts(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	var raw map[string]string
 	if err := getJSON(ctx, f.client, f.certsURL, &raw); err != nil {
@@ -125,25 +126,25 @@ func (f *Firebase) fetchCerts(ctx context.Context) (map[string]*rsa.PublicKey, e
 		if err != nil {
 			continue
 		}
-		// A validade do certificado NÃO é checada aqui de propósito: o que
-		// interessa é a chave pública que o Google publica AGORA, e o Google
-		// retira do endpoint a chave que aposentou. Rejeitar por data só
-		// adicionaria uma segunda fonte de "ninguém entra mais".
+		// The certificate's validity is NOT checked here, on purpose: what
+		// matters is the public key Google publishes NOW, and Google removes the
+		// key it retired from the endpoint. Rejecting by date would only add a
+		// second source of "nobody gets in any more".
 		if pub, ok := cert.PublicKey.(*rsa.PublicKey); ok && pub.N.BitLen() >= 2048 {
 			out[kid] = pub
 		}
 	}
 	if len(out) == 0 {
-		return nil, errs.New(errs.KindUnavailable, "nenhum certificado de assinatura utilizável no endpoint do Google")
+		return nil, errs.New(errs.KindUnavailable, "no usable signing certificate at Google's endpoint")
 	}
 	return out, nil
 }
 
 type firebaseClaims struct {
 	registeredClaims
-	// UserID é o nome antigo do sujeito nos tokens do Firebase; o emulador manda
-	// os dois. Continua aqui como reserva, e nunca substitui a checagem de
-	// sujeito da garantia 3.
+	// UserID is the old name of the subject in Firebase tokens; the emulator
+	// sends both. It stays here as a fallback, and it never replaces guarantee
+	// 3's subject check.
 	UserID        string   `json:"user_id"`
 	Email         string   `json:"email"`
 	EmailVerified flexBool `json:"email_verified"`
@@ -156,13 +157,13 @@ type firebaseClaims struct {
 }
 
 func (f *Firebase) VerifyToken(ctx context.Context, raw string) (*ports.Principal, error) {
-	// Sem projeto configurado não há emissor nem audiência para comparar, e
-	// aceitar o token assim mesmo seria aceitar token de QUALQUER projeto do
-	// Firebase — que é conta de terceiro entrando como usuário nosso. Falha
-	// fechada, e como indisponibilidade: o defeito é da instalação, não de quem
-	// está chamando (garantia 7).
+	// With no project configured there is no issuer and no audience to compare
+	// against, and accepting the token anyway would mean accepting a token from
+	// ANY Firebase project — which is a third party's account coming in as a
+	// user of ours. It fails closed, and as an unavailability: the defect is the
+	// installation's, not the caller's (guarantee 7).
 	if f.projectID == "" {
-		return nil, errs.New(errs.KindUnavailable, "adaptador de identidade sem projeto configurado")
+		return nil, errs.New(errs.KindUnavailable, "identity adapter with no project configured")
 	}
 	tok, err := parseJWT(raw)
 	if err != nil {
@@ -179,7 +180,7 @@ func (f *Firebase) VerifyToken(ctx context.Context, raw string) (*ports.Principa
 	}
 	var c firebaseClaims
 	if err := json.Unmarshal(tok.payload, &c); err != nil {
-		return nil, errs.New(errs.KindUnauthorized, "claims do token ilegíveis")
+		return nil, errs.New(errs.KindUnauthorized, "unreadable token claims")
 	}
 	if c.Sub == "" {
 		c.Sub = c.UserID
@@ -187,12 +188,13 @@ func (f *Firebase) VerifyToken(ctx context.Context, raw string) (*ports.Principa
 	if err := c.validate(f.now(), f.skew, firebaseIssuerPrefix+f.projectID, f.projectID); err != nil {
 		return nil, err
 	}
-	// firebase.identities traz os provedores VINCULADOS e sign_in_provider o que
-	// foi usado agora. Os dois viram a mesma lista normalizada: para o domínio a
-	// pergunta é "por onde esta pessoa entra", e a diferença entre as duas
-	// coisas não existe do outro lado da porta (garantia 6).
-	// A ordem é fixada com sort porque a iteração de mapa em Go é aleatória, e a
-	// garantia 9 promete o MESMO resultado para o mesmo token.
+	// firebase.identities carries the LINKED providers and sign_in_provider the
+	// one used now. Both become the same normalized list: for the domain the
+	// question is "where does this person come in from", and the difference
+	// between the two does not exist on the other side of the port
+	// (guarantee 6).
+	// The order is pinned with sort because Go's map iteration is random, and
+	// guarantee 9 promises the SAME result for the same token.
 	names := make([]string, 0, len(c.Firebase.Identities)+1)
 	for k := range c.Firebase.Identities {
 		names = append(names, k)
