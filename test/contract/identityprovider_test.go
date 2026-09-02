@@ -22,54 +22,54 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// Os DOIS adaptadores de IdentityProvider passam pela mesma suíte, e sem
-// infraestrutura externa: cada um roda contra um emissor de mentira que assina
-// DE VERDADE, com um par RSA gerado no próprio teste.
+// BOTH IdentityProvider adapters go through the same suite, and with no
+// external infrastructure: each runs against a fake issuer that signs FOR REAL,
+// with an RSA pair generated in the test itself.
 //
-// Isso é deliberado, e é a resposta à armadilha do emulador do Firebase: ele
-// emite tokens com "alg":"none", então uma suíte que só o exercitasse não
-// provaria nada sobre verificação de assinatura — a parte cuja falha entrega a
-// conta de qualquer usuário. Aqui o adaptador do Firebase roda no modo de
-// PRODUÇÃO (sem emulador), buscando certificado X.509 de um endpoint local no
-// mesmo formato do Google. O emulador de verdade é exercitado à parte, sob a tag
-// `integration`, e lá os casos de assinatura aparecem como SKIP com aviso.
+// That is deliberate, and it is the answer to the Firebase emulator's trap: it
+// issues tokens with "alg":"none", so a suite that only exercised it would prove
+// nothing about signature verification — the part whose failure hands over any
+// user's account. Here the Firebase adapter runs in PRODUCTION mode (no
+// emulator), fetching X.509 certificates from a local endpoint in Google's same
+// format. The real emulator is exercised separately, under the `integration`
+// tag, and there the signature cases show up as SKIPs with a warning.
 func TestIdentityProviderContract(t *testing.T) {
 	contract.IdentityProviderSuite(t, "oidc", func(t *testing.T) contract.IdentityEnv {
 		return novoAmbienteOIDC(t)
 	})
-	contract.IdentityProviderSuite(t, "firebase_producao", func(t *testing.T) contract.IdentityEnv {
-		return novoAmbienteFirebaseLocal(t)
+	contract.IdentityProviderSuite(t, "firebase_production", func(t *testing.T) contract.IdentityEnv {
+		return newLocalFirebaseEnv(t)
 	})
 }
 
-// minRefreshDeTeste é o freio de rebusca de chave nos adaptadores sob teste.
-// Curto porque o teste de rotação precisa esperá-lo; longo o bastante para que
-// as asserções de "não rebuscou" caibam dentro dele com folga.
-const minRefreshDeTeste = 300 * time.Millisecond
+// testMinRefresh is the key re-fetch brake in the adapters under test. Short
+// because the rotation test has to wait it out; long enough for the "it did not
+// re-fetch" assertions to fit inside it comfortably.
+const testMinRefresh = 300 * time.Millisecond
 
-// ───────────────────────── chaves de teste ─────────────────────────
+// ───────────────────────── test keys ─────────────────────────
 
-// Gerar RSA de 2048 bits custa dezenas de milissegundos, e a suíte cria um
-// ambiente por subteste. Três chaves geradas uma vez cobrem tudo: a corrente, a
-// da rotação e a intrusa.
+// Generating a 2048-bit RSA key costs tens of milliseconds, and the suite
+// creates one environment per subtest. Three keys generated once cover
+// everything: the current one, the rotation's and the intruder's.
 var (
 	chavesUmaVez sync.Once
-	chaveA       *rsa.PrivateKey // corrente
-	chaveB       *rsa.PrivateKey // depois da rotação
-	chaveIntrusa *rsa.PrivateKey // nunca publicada pelo emissor
+	keyA       *rsa.PrivateKey // corrente
+	keyB       *rsa.PrivateKey // after the rotation
+	intruderKey *rsa.PrivateKey // never published by the issuer
 )
 
 func chavesDeTeste(t *testing.T) {
 	t.Helper()
 	chavesUmaVez.Do(func() {
 		var err error
-		if chaveA, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+		if keyA, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
 			panic(err)
 		}
-		if chaveB, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+		if keyB, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
 			panic(err)
 		}
-		if chaveIntrusa, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+		if intruderKey, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
 			panic(err)
 		}
 	})
@@ -79,7 +79,7 @@ func chavesDeTeste(t *testing.T) {
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
-func objetoB64(t *testing.T, v any) string {
+func objectB64(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -88,24 +88,24 @@ func objetoB64(t *testing.T, v any) string {
 	return b64(b)
 }
 
-// assina monta o token conforme a spec. É aqui que moram os ataques que a suíte
-// manda contra os adaptadores.
-func assina(t *testing.T, s contract.TokenSpec, claims map[string]any) string {
+// sign builds the token according to the spec. It is here that the attacks the
+// suite sends against the adapters live.
+func sign(t *testing.T, s contract.TokenSpec, claims map[string]any) string {
 	t.Helper()
 	chavesDeTeste(t)
 
 	switch {
 	case s.Unsigned:
-		// Exatamente o que o emulador do Firebase emite.
-		h := objetoB64(t, map[string]any{"alg": "none", "typ": "JWT"})
-		return h + "." + objetoB64(t, claims) + "."
+		// Exactly what the Firebase emulator issues.
+		h := objectB64(t, map[string]any{"alg": "none", "typ": "JWT"})
+		return h + "." + objectB64(t, claims) + "."
 
 	case s.Symmetric:
-		// Confusão de algoritmo: o atacante troca RS256 por HS256 e usa como
-		// "segredo" a chave PÚBLICA, que ele também tem.
-		h := objetoB64(t, map[string]any{"alg": "HS256", "typ": "JWT", "kid": "chave-a"})
-		assinado := h + "." + objetoB64(t, claims)
-		pub, err := x509.MarshalPKIXPublicKey(&chaveA.PublicKey)
+		// Algorithm confusion: the attacker swaps RS256 for HS256 and uses the
+		// PUBLIC key, which they also have, as the "secret".
+		h := objectB64(t, map[string]any{"alg": "HS256", "typ": "JWT", "kid": "key-a"})
+		assinado := h + "." + objectB64(t, claims)
+		pub, err := x509.MarshalPKIXPublicKey(&keyA.PublicKey)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,21 +114,21 @@ func assina(t *testing.T, s contract.TokenSpec, claims map[string]any) string {
 		return assinado + "." + b64(mac.Sum(nil))
 	}
 
-	chave, kid := chaveA, "chave-a"
+	key, kid := keyA, "key-a"
 	if s.WrongKey {
-		chave, kid = chaveIntrusa, "chave-intrusa"
+		key, kid = intruderKey, "key-intrusa"
 	}
-	h := objetoB64(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": kid})
-	assinado := h + "." + objetoB64(t, claims)
-	soma := sha256.Sum256([]byte(assinado))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, chave, crypto.SHA256, soma[:])
+	h := objectB64(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": kid})
+	assinado := h + "." + objectB64(t, claims)
+	sum := sha256.Sum256([]byte(assinado))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
 	if err != nil {
 		t.Fatalf("assinando token de teste: %v", err)
 	}
 	return assinado + "." + b64(sig)
 }
 
-// claimsBase preenche o que é igual em qualquer emissor.
+// claimsBase fills in what is the same in any issuer.
 func claimsBase(s contract.TokenSpec, iss, aud string) map[string]any {
 	agora := time.Now()
 	c := map[string]any{}
@@ -176,13 +176,13 @@ func claimsBase(s contract.TokenSpec, iss, aud string) map[string]any {
 
 // ───────────────────────── emissor OIDC de mentira ─────────────────────────
 
-// emissorOIDC serve /.well-known/openid-configuration e um JWKS, contando as
-// buscas de chave. É o mínimo para exercitar descoberta, cache e rotação sem
-// subir um Keycloak.
-type emissorOIDC struct {
+// oidcIssuer serves /.well-known/openid-configuration and a JWKS, counting the
+// key fetches. It is the minimum needed to exercise discovery, caching and
+// rotation without bringing up a Keycloak.
+type oidcIssuer struct {
 	srv     *httptest.Server
 	mu      sync.Mutex
-	chave   *rsa.PrivateKey
+	key   *rsa.PrivateKey
 	kid     string
 	buscas  int
 	fechado bool
@@ -193,7 +193,7 @@ const audienciaOIDC = "dop-core"
 func novoAmbienteOIDC(t *testing.T) contract.IdentityEnv {
 	t.Helper()
 	chavesDeTeste(t)
-	e := &emissorOIDC{chave: chaveA, kid: "chave-a"}
+	e := &oidcIssuer{key: keyA, kid: "key-a"}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +205,7 @@ func novoAmbienteOIDC(t *testing.T) contract.IdentityEnv {
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
 		e.mu.Lock()
 		e.buscas++
-		pub := e.chave.PublicKey
+		pub := e.key.PublicKey
 		kid := e.kid
 		e.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -225,26 +225,26 @@ func novoAmbienteOIDC(t *testing.T) contract.IdentityEnv {
 	idp := identity.NewOIDC(identity.OIDCConfig{
 		Issuer:         e.srv.URL,
 		Audience:       audienciaOIDC,
-		KeysMinRefresh: minRefreshDeTeste,
+		KeysMinRefresh: testMinRefresh,
 	})
 
 	return contract.IdentityEnv{
 		Provider: idp,
 		Mint: func(t *testing.T, s contract.TokenSpec) (string, bool) {
 			c := claimsBase(s, e.srv.URL, audienciaOIDC)
-			// O vocabulário do OIDC para "como entrou" é `amr`.
+			// OIDC's vocabulary for "how they signed in" is `amr`.
 			if len(s.Providers) > 0 {
 				c["amr"] = s.Providers
 			}
-			// A rotação troca a chave do emissor; o token novo tem de sair
-			// assinado por ela.
+			// The rotation swaps the issuer's key; the new token has to come out
+			// signed by it.
 			e.mu.Lock()
-			rotacionada := e.chave != chaveA
+			rotated := e.key != keyA
 			e.mu.Unlock()
-			if rotacionada && !s.WrongKey && !s.Unsigned && !s.Symmetric {
-				return assinaCom(t, chaveB, "chave-b", c), true
+			if rotated && !s.WrongKey && !s.Unsigned && !s.Symmetric {
+				return signWith(t, keyB, "key-b", c), true
 			}
-			return assina(t, s, c), true
+			return sign(t, s, c), true
 		},
 		Fetches: func() int {
 			e.mu.Lock()
@@ -254,83 +254,84 @@ func novoAmbienteOIDC(t *testing.T) contract.IdentityEnv {
 		Rotate: func(t *testing.T) {
 			e.mu.Lock()
 			defer e.mu.Unlock()
-			e.chave, e.kid = chaveB, "chave-b"
+			e.key, e.kid = keyB, "key-b"
 		},
-		MinRefresh: minRefreshDeTeste,
+		MinRefresh: testMinRefresh,
 		IssuerDown: func(t *testing.T) { e.srv.Close() },
 	}
 }
 
-func assinaCom(t *testing.T, chave *rsa.PrivateKey, kid string, claims map[string]any) string {
+func signWith(t *testing.T, key *rsa.PrivateKey, kid string, claims map[string]any) string {
 	t.Helper()
-	h := objetoB64(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": kid})
-	assinado := h + "." + objetoB64(t, claims)
-	soma := sha256.Sum256([]byte(assinado))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, chave, crypto.SHA256, soma[:])
+	h := objectB64(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": kid})
+	assinado := h + "." + objectB64(t, claims)
+	sum := sha256.Sum256([]byte(assinado))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
 	if err != nil {
 		t.Fatalf("assinando token de teste: %v", err)
 	}
 	return assinado + "." + b64(sig)
 }
 
-// ───────────────────────── Firebase em modo de produção ─────────────────────────
+// ───────────────────────── Firebase in production mode ──────────────────────────
 
-const projetoDeTeste = "dop-teste"
+const testProject = "dop-teste"
 
-// novoAmbienteFirebaseLocal roda o adaptador do Firebase com verificação de
-// assinatura LIGADA, servindo os certificados de um endpoint local no mesmo
-// formato do Google (kid → certificado X.509 em PEM).
-func novoAmbienteFirebaseLocal(t *testing.T) contract.IdentityEnv {
+// newLocalFirebaseEnv runs the Firebase adapter with signature verification ON,
+// serving the certificates from a local endpoint in Google's same format
+// (kid → an X.509 certificate in PEM).
+func newLocalFirebaseEnv(t *testing.T) contract.IdentityEnv {
 	t.Helper()
 	chavesDeTeste(t)
 
-	// O adaptador lê FIREBASE_AUTH_EMULATOR_HOST do ambiente. Se a máquina de
-	// quem roda os testes tiver a variável exportada, o adaptador entraria em
-	// modo emulador e PULARIA a verificação de assinatura — e este teste
-	// passaria verde sem verificar nada. Zerar a variável aqui é o que impede
-	// que o ambiente do desenvolvedor desligue a garantia mais importante.
+	// The adapter reads FIREBASE_AUTH_EMULATOR_HOST from the environment. If the
+	// machine running the tests has the variable exported, the adapter would
+	// enter emulator mode and SKIP the signature verification — and this test
+	// would pass green verifying nothing. Zeroing the variable here is what
+	// stops the developer's environment from switching off the most important
+	// guarantee.
 	t.Setenv("FIREBASE_AUTH_EMULATOR_HOST", "")
 
-	e := &emissorOIDC{chave: chaveA, kid: "chave-a"}
+	e := &oidcIssuer{key: keyA, kid: "key-a"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/certs", func(w http.ResponseWriter, r *http.Request) {
 		e.mu.Lock()
 		e.buscas++
-		chave, kid := e.chave, e.kid
+		key, kid := e.key, e.kid
 		e.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{kid: certificadoPEM(t, chave)})
+		_ = json.NewEncoder(w).Encode(map[string]string{kid: pemCertificate(t, key)})
 	})
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)
 
 	idp := identity.NewFirebaseFrom(identity.FirebaseConfig{
-		ProjectID:      projetoDeTeste,
+		ProjectID:      testProject,
 		CertsURL:       e.srv.URL + "/certs",
-		KeysMinRefresh: minRefreshDeTeste,
+		KeysMinRefresh: testMinRefresh,
 	})
 	if idp.UsingEmulator() {
-		t.Fatal("o adaptador entrou em modo emulador: a verificação de assinatura estaria desligada")
+		t.Fatal("the adapter entered emulator mode: the signature verification would be off")
 	}
 
 	return contract.IdentityEnv{
 		Provider: idp,
 		Mint: func(t *testing.T, s contract.TokenSpec) (string, bool) {
-			c := claimsBase(s, "https://securetoken.google.com/"+projetoDeTeste, projetoDeTeste)
+			c := claimsBase(s, "https://securetoken.google.com/"+testProject, testProject)
 			if s.Subject != "" {
 				c["user_id"] = s.Subject
 			}
-			// O vocabulário do Firebase para "como entrou".
+			// Firebase's vocabulary for "how they signed in".
 			if len(s.Providers) > 0 {
 				c["firebase"] = map[string]any{"sign_in_provider": s.Providers[0]}
 			}
 			e.mu.Lock()
-			rotacionada := e.chave != chaveA
+			rotated := e.key != keyA
 			e.mu.Unlock()
-			if rotacionada && !s.WrongKey && !s.Unsigned && !s.Symmetric {
-				return assinaCom(t, chaveB, "chave-b", c), true
+			if rotated && !s.WrongKey && !s.Unsigned && !s.Symmetric {
+				return signWith(t, keyB, "key-b", c), true
 			}
-			return assina(t, s, c), true
+			return sign(t, s, c), true
 		},
 		Fetches: func() int {
 			e.mu.Lock()
@@ -340,17 +341,17 @@ func novoAmbienteFirebaseLocal(t *testing.T) contract.IdentityEnv {
 		Rotate: func(t *testing.T) {
 			e.mu.Lock()
 			defer e.mu.Unlock()
-			e.chave, e.kid = chaveB, "chave-b"
+			e.key, e.kid = keyB, "key-b"
 		},
-		MinRefresh: minRefreshDeTeste,
+		MinRefresh: testMinRefresh,
 		IssuerDown: func(t *testing.T) { e.srv.Close() },
 	}
 }
 
-// certificadoPEM embrulha a chave pública num certificado autoassinado, porque é
-// nesse formato que o Google publica as chaves do Secure Token Service — e é o
-// formato que o adaptador precisa saber ler.
-func certificadoPEM(t *testing.T, chave *rsa.PrivateKey) string {
+// pemCertificate wraps the public key in a self-signed certificate, because that
+// is the format in which Google publishes the Secure Token Service's keys — and
+// it is the format the adapter has to know how to read.
+func pemCertificate(t *testing.T, key *rsa.PrivateKey) string {
 	t.Helper()
 	tpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
@@ -358,7 +359,7 @@ func certificadoPEM(t *testing.T, chave *rsa.PrivateKey) string {
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &chave.PublicKey, chave)
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
 	if err != nil {
 		t.Fatalf("gerando certificado de teste: %v", err)
 	}

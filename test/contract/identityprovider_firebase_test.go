@@ -1,30 +1,30 @@
 //go:build integration
 
-// A MESMA suíte de contrato, agora contra o emulador do Firebase Auth de verdade.
+// The SAME contract suite, now against the real Firebase Auth emulator.
 //
 //	go test ./test/contract/ -tags=integration -run Identity -v
 //
-// O emulador local do k3d responde em http://auth.localtest.me:8080 pelo
-// Ingress; FIREBASE_AUTH_EMULATOR_HOST aponta para outro.
+// The local k3d emulator answers at http://auth.localtest.me:8080 through the
+// Ingress; FIREBASE_AUTH_EMULATOR_HOST points somewhere else.
 //
-// ATENÇÃO — a armadilha que este arquivo existe para não cair:
+// WARNING — the trap this file exists in order not to fall into:
 //
-// o emulador emite tokens com "alg":"none", SEM assinatura. Isso é
-// comportamento do emulador, não do Firebase real, e significa que uma suíte que
-// só rodasse aqui passaria verde sem exercitar uma única linha de verificação de
-// assinatura — justamente a parte cuja falha entrega a conta de qualquer usuário
-// a quem souber montar um JSON. Por isso:
+// the emulator issues tokens with "alg":"none", WITH NO signature. That is the
+// emulator's behaviour, not real Firebase's, and it means a suite that only ran
+// here would pass green without exercising a single line of signature
+// verification — precisely the part whose failure hands over any user's account
+// to whoever can assemble a JSON. Hence:
 //
-//   - o ambiente declara Unsigned, e os casos de assinatura aparecem como SKIP
-//     com aviso, em vez de passarem em silêncio;
-//   - a cobertura de assinatura do MESMO adaptador vem de
-//     identityprovider_test.go, que roda sempre, com o adaptador em modo de
-//     produção e certificados X.509 servidos localmente.
+//   - the environment declares Unsigned, and the signature cases show up as
+//     SKIPs with a warning, instead of passing in silence;
+//   - the SAME adapter's signature coverage comes from
+//     identityprovider_test.go, which always runs, with the adapter in
+//     production mode and X.509 certificates served locally.
 //
-// O que ESTE arquivo prova, e o outro não pode provar: que o adaptador aceita o
-// token que o emulador REALMENTE emite, com o formato de claim que o Firebase
-// realmente usa. Foi divergência entre "o que eu acho que o provedor manda" e "o
-// que ele manda" que já custou uma tarde de todo mundo.
+// What THIS file proves, and the other cannot: that the adapter accepts the
+// token the emulator REALLY issues, with the claim format Firebase really uses.
+// It was a divergence between "what I think the provider sends" and "what it
+// sends" that once cost everybody an afternoon.
 package contract_test
 
 import (
@@ -55,80 +55,81 @@ func projetoDoEmulador() string {
 	return "dop-local"
 }
 
-func exigeEmulador(t *testing.T) (host, projeto string) {
+func exigeEmulador(t *testing.T) (host, project string) {
 	t.Helper()
-	host, projeto = emuladorHost(), projetoDoEmulador()
-	url := fmt.Sprintf("http://%s/emulator/v1/projects/%s/config", host, projeto)
+	host, project = emuladorHost(), projetoDoEmulador()
+	url := fmt.Sprintf("http://%s/emulator/v1/projects/%s/config", host, project)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Skipf("emulador do Firebase Auth indisponível em %s: %v — suba o ambiente local "+
+		t.Skipf("Firebase Auth emulator unavailable at %s: %v — bring the local environment up "+
 			"(Ingress do k3d) ou aponte FIREBASE_AUTH_EMULATOR_HOST", host, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		t.Skipf("o emulador em %s respondeu HTTP %d para o projeto %q — projeto errado "+
-			"ou emulador de outra instalação", host, resp.StatusCode, projeto)
+		t.Skipf("the emulator at %s answered HTTP %d for project %q — the wrong project "+
+			"or another installation's emulator", host, resp.StatusCode, project)
 	}
-	return host, projeto
+	return host, project
 }
 
 func TestIdentityProviderContractFirebaseEmulador(t *testing.T) {
-	host, projeto := exigeEmulador(t)
-	t.Logf("emulador em %s, projeto %q — tokens SEM assinatura (alg:none)", host, projeto)
+	host, project := exigeEmulador(t)
+	t.Logf("emulator at %s, project %q — tokens WITH NO signature (alg:none)", host, project)
 
 	contract.IdentityProviderSuite(t, "firebase_emulador", func(t *testing.T) contract.IdentityEnv {
 		idp := identity.NewFirebaseFrom(identity.FirebaseConfig{
-			ProjectID:    projeto,
+			ProjectID:    project,
 			EmulatorHost: host,
 		})
 		if !idp.UsingEmulator() {
-			t.Fatal("o adaptador não entrou em modo emulador: o token do emulador seria recusado")
+			t.Fatal("the adapter did not enter emulator mode: the emulator's token would be refused")
 		}
 		return contract.IdentityEnv{
 			Provider: idp,
 			Unsigned: true,
-			UnsignedWhy: "o emulador do Firebase Auth emite tokens com alg:none; " +
-				"a assinatura é coberta em TestIdentityProviderContract/firebase_producao",
+			UnsignedWhy: "the Firebase Auth emulator issues tokens with alg:none; " +
+				"the signature is covered in TestIdentityProviderContract/firebase_production",
 			Mint: func(t *testing.T, s contract.TokenSpec) (string, bool) {
-				// Nada de assinatura para fabricar: o emulador não assina, e é
-				// exatamente por isso que estes casos não são verificáveis aqui.
+				// No signature to fabricate: the emulator does not sign, and that
+				// is exactly why these cases are not verifiable here.
 				if s.WrongKey || s.Symmetric {
 					return "", false
 				}
-				c := claimsBase(s, "https://securetoken.google.com/"+projeto, projeto)
+				c := claimsBase(s, "https://securetoken.google.com/"+project, project)
 				if s.Subject != "" {
 					c["user_id"] = s.Subject
 				}
 				if len(s.Providers) > 0 {
 					c["firebase"] = map[string]any{"sign_in_provider": s.Providers[0]}
 				}
-				cab := objetoB64(t, map[string]any{"alg": "none", "typ": "JWT"})
-				return cab + "." + objetoB64(t, c) + ".", true
+				cab := objectB64(t, map[string]any{"alg": "none", "typ": "JWT"})
+				return cab + "." + objectB64(t, c) + ".", true
 			},
 		}
 	})
 }
 
-// TestIdentityProviderFirebaseTokenRealDoEmulador é o complemento da suíte: em
-// vez de um token que a suíte montou, um token que o emulador EMITIU.
+// TestIdentityProviderFirebaseRealEmulatorToken is the suite's complement:
+// instead of a token the suite assembled, a token the emulator ISSUED.
 //
-// É o que fecha a distância entre o formato que este adaptador espera e o que o
-// provedor de fato manda — inclusive o detalhe de o emulador preencher `user_id`
-// e `sub`, e de `firebase.identities` vir junto do `sign_in_provider`.
-func TestIdentityProviderFirebaseTokenRealDoEmulador(t *testing.T) {
-	host, projeto := exigeEmulador(t)
+// It is what closes the distance between the format this adapter expects and
+// what the provider actually sends — the detail of the emulator filling in both
+// `user_id` and `sub` included, and of `firebase.identities` coming along with
+// `sign_in_provider`.
+func TestIdentityProviderFirebaseRealEmulatorToken(t *testing.T) {
+	host, project := exigeEmulador(t)
 
-	email := fmt.Sprintf("contrato-%d@example.com", time.Now().UnixNano())
+	email := fmt.Sprintf("contract-%d@example.com", time.Now().UnixNano())
 	corpo, _ := json.Marshal(map[string]any{
 		"email":             email,
 		"password":          "senha-de-teste-do-contrato",
 		"returnSecureToken": true,
 	})
-	url := fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signUp?key=chave-falsa-do-emulador", host)
+	url := fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-emulator-key", host)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -136,7 +137,7 @@ func TestIdentityProviderFirebaseTokenRealDoEmulador(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Skipf("não foi possível criar usuário no emulador: %v", err)
+		t.Skipf("could not create a user in the emulator: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out struct {
@@ -144,13 +145,13 @@ func TestIdentityProviderFirebaseTokenRealDoEmulador(t *testing.T) {
 		LocalID string `json:"localId"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.IDToken == "" {
-		t.Skipf("o emulador não devolveu idToken (HTTP %d): %v", resp.StatusCode, err)
+		t.Skipf("the emulator did not return an idToken (HTTP %d): %v", resp.StatusCode, err)
 	}
 
-	idp := identity.NewFirebaseFrom(identity.FirebaseConfig{ProjectID: projeto, EmulatorHost: host})
+	idp := identity.NewFirebaseFrom(identity.FirebaseConfig{ProjectID: project, EmulatorHost: host})
 	p, err := idp.VerifyToken(context.Background(), out.IDToken)
 	if err != nil {
-		t.Fatalf("token EMITIDO pelo emulador foi recusado pelo adaptador: %v", err)
+		t.Fatalf("a token ISSUED by the emulator was refused by the adapter: %v", err)
 	}
 	if p.Subject != out.LocalID {
 		t.Errorf("Subject %q não é o localId %q que o emulador criou", p.Subject, out.LocalID)
