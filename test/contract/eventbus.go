@@ -33,7 +33,7 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			c := newCollector()
 			subscribe(t, bus, subject, c.handler)
 
-			data := envelopeJSON(uniqueEventID(), subject, `{"quantity":42,"text":"acentuação"}` // non-ASCII on purpose)
+			data := envelopeJSON(uniqueEventID(), subject, `{"quantity":42,"text":"acentuação"}`)
 			publish(t, bus, subject, data)
 
 			c.waitFor(t, 1, "the published event never arrived")
@@ -127,7 +127,7 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 
 			c := newCollector()
 			subscribe(t, bus, subject, c.handler)
-			c.waitFor(t, 1, "o evento publicado antes da assinatura se perdeu — "+
+			c.waitFor(t, 1, "the event published before the subscription was lost — "+
 				"a espinha de events dependeria da ordem de boot")
 			if got := c.events()[0].ID; got != id {
 				t.Fatalf("another event arrived: %q != %q", got, id)
