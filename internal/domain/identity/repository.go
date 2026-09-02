@@ -36,4 +36,9 @@ type Repository interface {
 	InviteByID(ctx context.Context, id string) (*Invite, error)
 	AcceptInvite(ctx context.Context, inviteID, userID string) (*Membership, error)
 	RevokeInvite(ctx context.Context, accountID, inviteID string) (*Invite, error)
+	// InvitesOfAccount lists what was sent, so that "did I invite them?" is a
+	// screen and not a support ticket. Revoked and accepted ones come too — the
+	// list is a history, and a list that only shows the pending ones cannot
+	// answer "what happened to the invite I sent yesterday?".
+	InvitesOfAccount(ctx context.Context, accountID string) ([]Invite, error)
 }

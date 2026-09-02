@@ -127,6 +127,39 @@ func (s *IdentityServer) RevokeInvite(ctx context.Context, req *dopv1.RevokeInvi
 	return inviteToProto(inv), nil
 }
 
+func (s *IdentityServer) ListInvites(ctx context.Context, _ *dopv1.ListInvitesRequest) (*dopv1.ListInvitesResponse, error) {
+	invites, err := s.svc.ListInvites(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dopv1.Invite, 0, len(invites))
+	for i := range invites {
+		out = append(out, inviteToProto(&invites[i]))
+	}
+	return &dopv1.ListInvitesResponse{Invites: out}, nil
+}
+
+func (s *IdentityServer) GetInvite(ctx context.Context, req *dopv1.GetInviteRequest) (*dopv1.InvitePreview, error) {
+	p, err := s.svc.GetInvite(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	status := map[identity.InviteStatus]dopv1.Invite_Status{
+		identity.InvitePending:  dopv1.Invite_STATUS_PENDING,
+		identity.InviteAccepted: dopv1.Invite_STATUS_ACCEPTED,
+		identity.InviteExpired:  dopv1.Invite_STATUS_EXPIRED,
+		identity.InviteRevoked:  dopv1.Invite_STATUS_REVOKED,
+	}[p.Status]
+	return &dopv1.InvitePreview{
+		Id:          p.ID,
+		AccountName: p.AccountName,
+		Role:        roleToProto(p.Role),
+		Status:      status,
+		ExpiresAt:   timestamppb.New(p.ExpiresAt),
+		Usable:      p.Usable,
+	}, nil
+}
+
 func (s *IdentityServer) UpdateMembership(ctx context.Context, req *dopv1.UpdateMembershipRequest) (*dopv1.Membership, error) {
 	m, err := s.svc.UpdateMembershipRole(ctx, req.GetMembershipId(), roleFromProto(req.GetRole()))
 	if err != nil {

@@ -376,6 +376,73 @@ func (s *Service) AcceptInvite(ctx context.Context, inviteID, userID string) (*M
 	return s.repo.AcceptInvite(ctx, inv.ID, userID)
 }
 
+// ListInvites returns the active account's invites. It requires the role that
+// can manage members: the list carries the addresses of people who were
+// invited, and that is not public inside the account.
+func (s *Service) ListInvites(ctx context.Context) ([]Invite, error) {
+	call, _ := ctxutil.From(ctx)
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := s.Authorize(ctx, call.ActorID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !actor.Role.CanManageMembers() {
+		return nil, errs.Permission("only an owner or admin may see the invites").
+			WithCode(KeyOnlyAdminsInvite, nil)
+	}
+	return s.repo.InvitesOfAccount(ctx, accountID)
+}
+
+// InvitePreview is what whoever OPENS the link sees, before accepting.
+//
+// It does NOT carry the invitee's email. Whoever finds the link must not learn
+// an address from it — that would turn it back into the oracle that taking the
+// token out was meant to end (ADR-0026).
+type InvitePreview struct {
+	ID          string
+	AccountName string
+	Role        Role
+	Status      InviteStatus
+	ExpiresAt   time.Time
+	Usable      bool
+}
+
+// GetInvite is the ONE identity operation that does not require an active
+// account: whoever opens the link may not be a member of anything yet — that is
+// the point of an invite.
+//
+// It requires a SESSION all the same. Without one, an id found in a log would
+// tell a stranger that an account named X invited somebody as an admin.
+func (s *Service) GetInvite(ctx context.Context, inviteID string) (*InvitePreview, error) {
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "reading an invite requires a session").
+			WithCode(KeyInviteNeedsSession, nil)
+	}
+	inv, err := s.repo.InviteByID(ctx, inviteID)
+	if err != nil {
+		return nil, err
+	}
+	if inv == nil {
+		return nil, errs.NotFound("invite")
+	}
+	acct, err := s.repo.AccountByID(ctx, inv.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	return &InvitePreview{
+		ID:          inv.ID,
+		AccountName: acct.DisplayName,
+		Role:        inv.Role,
+		Status:      inv.Status,
+		ExpiresAt:   inv.ExpiresAt,
+		Usable:      inv.IsUsable(s.now()),
+	}, nil
+}
+
 func (s *Service) RevokeInvite(ctx context.Context, inviteID string) (*Invite, error) {
 	call, _ := ctxutil.From(ctx)
 	accountID, err := ctxutil.MustAccount(ctx)

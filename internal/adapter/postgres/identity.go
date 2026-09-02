@@ -294,6 +294,37 @@ func (r *IdentityRepo) InviteByID(ctx context.Context, id string) (*identity.Inv
 	return &inv, nil
 }
 
+// InvitesOfAccount lists the account's invites — the history, not only what is
+// pending: "what happened to the invite I sent yesterday?" is answered by a
+// revoked or an accepted row, and a list that hid them would send the person to
+// support.
+func (r *IdentityRepo) InvitesOfAccount(ctx context.Context, accountID string) ([]identity.Invite, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, account_id, email, role, grants, status, invited_by, expires_at, created_at
+		  FROM invites WHERE account_id = $1
+		 ORDER BY created_at DESC`, accountID)
+	if err != nil {
+		return nil, Translate(err, "invites")
+	}
+	defer rows.Close()
+
+	out := []identity.Invite{}
+	for rows.Next() {
+		var inv identity.Invite
+		var role, status string
+		var grants []byte
+		var invitedBy *string
+		if err := rows.Scan(&inv.ID, &inv.AccountID, &inv.Email, &role, &grants, &status,
+			&invitedBy, &inv.ExpiresAt, &inv.CreatedAt); err != nil {
+			return nil, Translate(err, "invites")
+		}
+		inv.Role, inv.Status, inv.InvitedBy = identity.Role(role), identity.InviteStatus(status), deref(invitedBy)
+		_ = json.Unmarshal(grants, &inv.Grants)
+		out = append(out, inv)
+	}
+	return out, Translate(rows.Err(), "invites")
+}
+
 // AcceptInvite creates the membership, applies the grants composed in the invite
 // and marks the invite — all in one transaction.
 func (r *IdentityRepo) AcceptInvite(ctx context.Context, inviteID, userID string) (*identity.Membership, error) {

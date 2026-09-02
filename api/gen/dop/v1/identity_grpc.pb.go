@@ -29,6 +29,8 @@ const (
 	IdentityService_AcceptInvite_FullMethodName     = "/dop.v1.IdentityService/AcceptInvite"
 	IdentityService_RevokeInvite_FullMethodName     = "/dop.v1.IdentityService/RevokeInvite"
 	IdentityService_UpdateMembership_FullMethodName = "/dop.v1.IdentityService/UpdateMembership"
+	IdentityService_ListInvites_FullMethodName      = "/dop.v1.IdentityService/ListInvites"
+	IdentityService_GetInvite_FullMethodName        = "/dop.v1.IdentityService/GetInvite"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -47,6 +49,11 @@ type IdentityServiceClient interface {
 	AcceptInvite(ctx context.Context, in *AcceptInviteRequest, opts ...grpc.CallOption) (*Membership, error)
 	RevokeInvite(ctx context.Context, in *RevokeInviteRequest, opts ...grpc.CallOption) (*Invite, error)
 	UpdateMembership(ctx context.Context, in *UpdateMembershipRequest, opts ...grpc.CallOption) (*Membership, error)
+	ListInvites(ctx context.Context, in *ListInvitesRequest, opts ...grpc.CallOption) (*ListInvitesResponse, error)
+	// GetInvite is the ONE identity RPC that does not require an active account:
+	// whoever opens the link may not be a member of anything yet — that is the
+	// point of an invite. It requires a session all the same.
+	GetInvite(ctx context.Context, in *GetInviteRequest, opts ...grpc.CallOption) (*InvitePreview, error)
 }
 
 type identityServiceClient struct {
@@ -157,6 +164,26 @@ func (c *identityServiceClient) UpdateMembership(ctx context.Context, in *Update
 	return out, nil
 }
 
+func (c *identityServiceClient) ListInvites(ctx context.Context, in *ListInvitesRequest, opts ...grpc.CallOption) (*ListInvitesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInvitesResponse)
+	err := c.cc.Invoke(ctx, IdentityService_ListInvites_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) GetInvite(ctx context.Context, in *GetInviteRequest, opts ...grpc.CallOption) (*InvitePreview, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvitePreview)
+	err := c.cc.Invoke(ctx, IdentityService_GetInvite_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
@@ -173,6 +200,11 @@ type IdentityServiceServer interface {
 	AcceptInvite(context.Context, *AcceptInviteRequest) (*Membership, error)
 	RevokeInvite(context.Context, *RevokeInviteRequest) (*Invite, error)
 	UpdateMembership(context.Context, *UpdateMembershipRequest) (*Membership, error)
+	ListInvites(context.Context, *ListInvitesRequest) (*ListInvitesResponse, error)
+	// GetInvite is the ONE identity RPC that does not require an active account:
+	// whoever opens the link may not be a member of anything yet — that is the
+	// point of an invite. It requires a session all the same.
+	GetInvite(context.Context, *GetInviteRequest) (*InvitePreview, error)
 	mustEmbedUnimplementedIdentityServiceServer()
 }
 
@@ -212,6 +244,12 @@ func (UnimplementedIdentityServiceServer) RevokeInvite(context.Context, *RevokeI
 }
 func (UnimplementedIdentityServiceServer) UpdateMembership(context.Context, *UpdateMembershipRequest) (*Membership, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateMembership not implemented")
+}
+func (UnimplementedIdentityServiceServer) ListInvites(context.Context, *ListInvitesRequest) (*ListInvitesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInvites not implemented")
+}
+func (UnimplementedIdentityServiceServer) GetInvite(context.Context, *GetInviteRequest) (*InvitePreview, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInvite not implemented")
 }
 func (UnimplementedIdentityServiceServer) mustEmbedUnimplementedIdentityServiceServer() {}
 func (UnimplementedIdentityServiceServer) testEmbeddedByValue()                         {}
@@ -414,6 +452,42 @@ func _IdentityService_UpdateMembership_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_ListInvites_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInvitesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).ListInvites(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_ListInvites_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).ListInvites(ctx, req.(*ListInvitesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_GetInvite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInviteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).GetInvite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_GetInvite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).GetInvite(ctx, req.(*GetInviteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityService_ServiceDesc is the grpc.ServiceDesc for IdentityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -460,6 +534,14 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateMembership",
 			Handler:    _IdentityService_UpdateMembership_Handler,
+		},
+		{
+			MethodName: "ListInvites",
+			Handler:    _IdentityService_ListInvites_Handler,
+		},
+		{
+			MethodName: "GetInvite",
+			Handler:    _IdentityService_GetInvite_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

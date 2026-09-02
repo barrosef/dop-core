@@ -82,6 +82,27 @@ service IdentityService {
   rpc AcceptInvite   (AcceptInviteRequest)   returns (Membership);
   rpc RevokeInvite   (RevokeInviteRequest)   returns (Invite);
   rpc UpdateMembership(UpdateMembershipRequest) returns (Membership);
+  rpc ListInvites    (ListInvitesRequest)    returns (ListInvitesResponse);
+  // GetInvite is the ONE identity RPC that does not require an active account:
+  // whoever opens the link may not be a member of anything yet — that is the
+  // point of an invite. It requires a session all the same.
+  rpc GetInvite      (GetInviteRequest)      returns (InvitePreview);
+}
+
+message ListInvitesRequest  { CallContext ctx = 1; }
+message ListInvitesResponse { repeated Invite invites = 1; }
+
+message GetInviteRequest { CallContext ctx = 1; string id = 2; }
+
+// What whoever OPENS the link sees. It does NOT carry the invitee's e-mail:
+// whoever finds the link must not learn an address from it (ADR-0026).
+message InvitePreview {
+  string id           = 1;
+  string account_name = 2;
+  Role   role         = 3;
+  Invite.Status status = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool usable = 6;
 }
 
 message GetUserRequest    { CallContext ctx = 1; string id = 2; }

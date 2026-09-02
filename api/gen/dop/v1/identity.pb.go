@@ -595,6 +595,232 @@ func (x *ResourceGrantSpec) GetLevel() string {
 	return ""
 }
 
+type ListInvitesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInvitesRequest) Reset() {
+	*x = ListInvitesRequest{}
+	mi := &file_dop_v1_identity_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInvitesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInvitesRequest) ProtoMessage() {}
+
+func (x *ListInvitesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInvitesRequest.ProtoReflect.Descriptor instead.
+func (*ListInvitesRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListInvitesRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+type ListInvitesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invites       []*Invite              `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInvitesResponse) Reset() {
+	*x = ListInvitesResponse{}
+	mi := &file_dop_v1_identity_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInvitesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInvitesResponse) ProtoMessage() {}
+
+func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInvitesResponse.ProtoReflect.Descriptor instead.
+func (*ListInvitesResponse) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListInvitesResponse) GetInvites() []*Invite {
+	if x != nil {
+		return x.Invites
+	}
+	return nil
+}
+
+type GetInviteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetInviteRequest) Reset() {
+	*x = GetInviteRequest{}
+	mi := &file_dop_v1_identity_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetInviteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInviteRequest) ProtoMessage() {}
+
+func (x *GetInviteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInviteRequest.ProtoReflect.Descriptor instead.
+func (*GetInviteRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetInviteRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *GetInviteRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// What whoever OPENS the link sees. It does NOT carry the invitee's e-mail:
+// whoever finds the link must not learn an address from it (ADR-0026).
+type InvitePreview struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AccountName   string                 `protobuf:"bytes,2,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
+	Role          Role                   `protobuf:"varint,3,opt,name=role,proto3,enum=dop.v1.Role" json:"role,omitempty"`
+	Status        Invite_Status          `protobuf:"varint,4,opt,name=status,proto3,enum=dop.v1.Invite_Status" json:"status,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Usable        bool                   `protobuf:"varint,6,opt,name=usable,proto3" json:"usable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvitePreview) Reset() {
+	*x = InvitePreview{}
+	mi := &file_dop_v1_identity_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvitePreview) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvitePreview) ProtoMessage() {}
+
+func (x *InvitePreview) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvitePreview.ProtoReflect.Descriptor instead.
+func (*InvitePreview) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *InvitePreview) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *InvitePreview) GetAccountName() string {
+	if x != nil {
+		return x.AccountName
+	}
+	return ""
+}
+
+func (x *InvitePreview) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *InvitePreview) GetStatus() Invite_Status {
+	if x != nil {
+		return x.Status
+	}
+	return Invite_STATUS_UNSPECIFIED
+}
+
+func (x *InvitePreview) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *InvitePreview) GetUsable() bool {
+	if x != nil {
+		return x.Usable
+	}
+	return false
+}
+
 type GetUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
@@ -605,7 +831,7 @@ type GetUserRequest struct {
 
 func (x *GetUserRequest) Reset() {
 	*x = GetUserRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[5]
+	mi := &file_dop_v1_identity_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +843,7 @@ func (x *GetUserRequest) String() string {
 func (*GetUserRequest) ProtoMessage() {}
 
 func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[5]
+	mi := &file_dop_v1_identity_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +856,7 @@ func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserRequest.ProtoReflect.Descriptor instead.
 func (*GetUserRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{5}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetUserRequest) GetCtx() *CallContext {
@@ -664,7 +890,7 @@ type EnsureUserRequest struct {
 
 func (x *EnsureUserRequest) Reset() {
 	*x = EnsureUserRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[6]
+	mi := &file_dop_v1_identity_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +902,7 @@ func (x *EnsureUserRequest) String() string {
 func (*EnsureUserRequest) ProtoMessage() {}
 
 func (x *EnsureUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[6]
+	mi := &file_dop_v1_identity_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +915,7 @@ func (x *EnsureUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnsureUserRequest.ProtoReflect.Descriptor instead.
 func (*EnsureUserRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{6}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EnsureUserRequest) GetSubject() string {
@@ -751,7 +977,7 @@ type ListAccountsRequest struct {
 
 func (x *ListAccountsRequest) Reset() {
 	*x = ListAccountsRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[7]
+	mi := &file_dop_v1_identity_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -763,7 +989,7 @@ func (x *ListAccountsRequest) String() string {
 func (*ListAccountsRequest) ProtoMessage() {}
 
 func (x *ListAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[7]
+	mi := &file_dop_v1_identity_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -776,7 +1002,7 @@ func (x *ListAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountsRequest.ProtoReflect.Descriptor instead.
 func (*ListAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{7}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListAccountsRequest) GetCtx() *CallContext {
@@ -802,7 +1028,7 @@ type ListAccountsResponse struct {
 
 func (x *ListAccountsResponse) Reset() {
 	*x = ListAccountsResponse{}
-	mi := &file_dop_v1_identity_proto_msgTypes[8]
+	mi := &file_dop_v1_identity_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -814,7 +1040,7 @@ func (x *ListAccountsResponse) String() string {
 func (*ListAccountsResponse) ProtoMessage() {}
 
 func (x *ListAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[8]
+	mi := &file_dop_v1_identity_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -827,7 +1053,7 @@ func (x *ListAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccountsResponse.ProtoReflect.Descriptor instead.
 func (*ListAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{8}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListAccountsResponse) GetAccounts() []*Account {
@@ -847,7 +1073,7 @@ type GetAccountRequest struct {
 
 func (x *GetAccountRequest) Reset() {
 	*x = GetAccountRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[9]
+	mi := &file_dop_v1_identity_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -859,7 +1085,7 @@ func (x *GetAccountRequest) String() string {
 func (*GetAccountRequest) ProtoMessage() {}
 
 func (x *GetAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[9]
+	mi := &file_dop_v1_identity_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -872,7 +1098,7 @@ func (x *GetAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{9}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetAccountRequest) GetCtx() *CallContext {
@@ -903,7 +1129,7 @@ type CreateAccountRequest struct {
 
 func (x *CreateAccountRequest) Reset() {
 	*x = CreateAccountRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[10]
+	mi := &file_dop_v1_identity_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +1141,7 @@ func (x *CreateAccountRequest) String() string {
 func (*CreateAccountRequest) ProtoMessage() {}
 
 func (x *CreateAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[10]
+	mi := &file_dop_v1_identity_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +1154,7 @@ func (x *CreateAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAccountRequest.ProtoReflect.Descriptor instead.
 func (*CreateAccountRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{10}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateAccountRequest) GetCtx() *CallContext {
@@ -983,7 +1209,7 @@ type ListMembershipsRequest struct {
 
 func (x *ListMembershipsRequest) Reset() {
 	*x = ListMembershipsRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[11]
+	mi := &file_dop_v1_identity_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -995,7 +1221,7 @@ func (x *ListMembershipsRequest) String() string {
 func (*ListMembershipsRequest) ProtoMessage() {}
 
 func (x *ListMembershipsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[11]
+	mi := &file_dop_v1_identity_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1008,7 +1234,7 @@ func (x *ListMembershipsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembershipsRequest.ProtoReflect.Descriptor instead.
 func (*ListMembershipsRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{11}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListMembershipsRequest) GetCtx() *CallContext {
@@ -1034,7 +1260,7 @@ type ListMembershipsResponse struct {
 
 func (x *ListMembershipsResponse) Reset() {
 	*x = ListMembershipsResponse{}
-	mi := &file_dop_v1_identity_proto_msgTypes[12]
+	mi := &file_dop_v1_identity_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +1272,7 @@ func (x *ListMembershipsResponse) String() string {
 func (*ListMembershipsResponse) ProtoMessage() {}
 
 func (x *ListMembershipsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[12]
+	mi := &file_dop_v1_identity_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +1285,7 @@ func (x *ListMembershipsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembershipsResponse.ProtoReflect.Descriptor instead.
 func (*ListMembershipsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{12}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListMembershipsResponse) GetMemberships() []*Membership {
@@ -1082,7 +1308,7 @@ type CreateInviteRequest struct {
 
 func (x *CreateInviteRequest) Reset() {
 	*x = CreateInviteRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[13]
+	mi := &file_dop_v1_identity_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1320,7 @@ func (x *CreateInviteRequest) String() string {
 func (*CreateInviteRequest) ProtoMessage() {}
 
 func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[13]
+	mi := &file_dop_v1_identity_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1333,7 @@ func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteRequest.ProtoReflect.Descriptor instead.
 func (*CreateInviteRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{13}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateInviteRequest) GetCtx() *CallContext {
@@ -1160,7 +1386,7 @@ type AcceptInviteRequest struct {
 
 func (x *AcceptInviteRequest) Reset() {
 	*x = AcceptInviteRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[14]
+	mi := &file_dop_v1_identity_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1172,7 +1398,7 @@ func (x *AcceptInviteRequest) String() string {
 func (*AcceptInviteRequest) ProtoMessage() {}
 
 func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[14]
+	mi := &file_dop_v1_identity_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1185,7 +1411,7 @@ func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInviteRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInviteRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{14}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AcceptInviteRequest) GetCtx() *CallContext {
@@ -1219,7 +1445,7 @@ type RevokeInviteRequest struct {
 
 func (x *RevokeInviteRequest) Reset() {
 	*x = RevokeInviteRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[15]
+	mi := &file_dop_v1_identity_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1231,7 +1457,7 @@ func (x *RevokeInviteRequest) String() string {
 func (*RevokeInviteRequest) ProtoMessage() {}
 
 func (x *RevokeInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[15]
+	mi := &file_dop_v1_identity_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1244,7 +1470,7 @@ func (x *RevokeInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeInviteRequest.ProtoReflect.Descriptor instead.
 func (*RevokeInviteRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{15}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RevokeInviteRequest) GetCtx() *CallContext {
@@ -1273,7 +1499,7 @@ type UpdateMembershipRequest struct {
 
 func (x *UpdateMembershipRequest) Reset() {
 	*x = UpdateMembershipRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[16]
+	mi := &file_dop_v1_identity_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1285,7 +1511,7 @@ func (x *UpdateMembershipRequest) String() string {
 func (*UpdateMembershipRequest) ProtoMessage() {}
 
 func (x *UpdateMembershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[16]
+	mi := &file_dop_v1_identity_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1298,7 +1524,7 @@ func (x *UpdateMembershipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMembershipRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMembershipRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{16}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateMembershipRequest) GetCtx() *CallContext {
@@ -1382,7 +1608,22 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x0eSTATUS_REVOKED\x10\x04\"Z\n" +
 	"\x11ResourceGrantSpec\x12/\n" +
 	"\bresource\x18\x01 \x01(\v2\x13.dop.v1.ResourceRefR\bresource\x12\x14\n" +
-	"\x05level\x18\x02 \x01(\tR\x05level\"G\n" +
+	"\x05level\x18\x02 \x01(\tR\x05level\";\n" +
+	"\x12ListInvitesRequest\x12%\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\"?\n" +
+	"\x13ListInvitesResponse\x12(\n" +
+	"\ainvites\x18\x01 \x03(\v2\x0e.dop.v1.InviteR\ainvites\"I\n" +
+	"\x10GetInviteRequest\x12%\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"\xe6\x01\n" +
+	"\rInvitePreview\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\faccount_name\x18\x02 \x01(\tR\vaccountName\x12 \n" +
+	"\x04role\x18\x03 \x01(\x0e2\f.dop.v1.RoleR\x04role\x12-\n" +
+	"\x06status\x18\x04 \x01(\x0e2\x15.dop.v1.Invite.StatusR\x06status\x129\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x16\n" +
+	"\x06usable\x18\x06 \x01(\bR\x06usable\"G\n" +
 	"\x0eGetUserRequest\x12%\n" +
 	"\x03ctx\x18\x01 \x01(\v2\x13.dop.v1.CallContextR\x03ctx\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"\xe2\x01\n" +
@@ -1440,7 +1681,7 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_ADMIN\x10\x02\x12\x12\n" +
 	"\x0eROLE_DEVELOPER\x10\x03\x12\x0f\n" +
-	"\vROLE_VIEWER\x10\x042\x96\x05\n" +
+	"\vROLE_VIEWER\x10\x042\x9c\x06\n" +
 	"\x0fIdentityService\x12/\n" +
 	"\aGetUser\x12\x16.dop.v1.GetUserRequest\x1a\f.dop.v1.User\x125\n" +
 	"\n" +
@@ -1453,7 +1694,9 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\fCreateInvite\x12\x1b.dop.v1.CreateInviteRequest\x1a\x0e.dop.v1.Invite\x12?\n" +
 	"\fAcceptInvite\x12\x1b.dop.v1.AcceptInviteRequest\x1a\x12.dop.v1.Membership\x12;\n" +
 	"\fRevokeInvite\x12\x1b.dop.v1.RevokeInviteRequest\x1a\x0e.dop.v1.Invite\x12G\n" +
-	"\x10UpdateMembership\x12\x1f.dop.v1.UpdateMembershipRequest\x1a\x12.dop.v1.MembershipB\x93\x01\n" +
+	"\x10UpdateMembership\x12\x1f.dop.v1.UpdateMembershipRequest\x1a\x12.dop.v1.Membership\x12F\n" +
+	"\vListInvites\x12\x1a.dop.v1.ListInvitesRequest\x1a\x1b.dop.v1.ListInvitesResponse\x12<\n" +
+	"\tGetInvite\x12\x18.dop.v1.GetInviteRequest\x1a\x15.dop.v1.InvitePreviewB\x93\x01\n" +
 	"\n" +
 	"com.dop.v1B\rIdentityProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
@@ -1470,7 +1713,7 @@ func file_dop_v1_identity_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dop_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_dop_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_dop_v1_identity_proto_goTypes = []any{
 	(Role)(0),                       // 0: dop.v1.Role
 	(Account_Kind)(0),               // 1: dop.v1.Account.Kind
@@ -1480,83 +1723,97 @@ var file_dop_v1_identity_proto_goTypes = []any{
 	(*Membership)(nil),              // 5: dop.v1.Membership
 	(*Invite)(nil),                  // 6: dop.v1.Invite
 	(*ResourceGrantSpec)(nil),       // 7: dop.v1.ResourceGrantSpec
-	(*GetUserRequest)(nil),          // 8: dop.v1.GetUserRequest
-	(*EnsureUserRequest)(nil),       // 9: dop.v1.EnsureUserRequest
-	(*ListAccountsRequest)(nil),     // 10: dop.v1.ListAccountsRequest
-	(*ListAccountsResponse)(nil),    // 11: dop.v1.ListAccountsResponse
-	(*GetAccountRequest)(nil),       // 12: dop.v1.GetAccountRequest
-	(*CreateAccountRequest)(nil),    // 13: dop.v1.CreateAccountRequest
-	(*ListMembershipsRequest)(nil),  // 14: dop.v1.ListMembershipsRequest
-	(*ListMembershipsResponse)(nil), // 15: dop.v1.ListMembershipsResponse
-	(*CreateInviteRequest)(nil),     // 16: dop.v1.CreateInviteRequest
-	(*AcceptInviteRequest)(nil),     // 17: dop.v1.AcceptInviteRequest
-	(*RevokeInviteRequest)(nil),     // 18: dop.v1.RevokeInviteRequest
-	(*UpdateMembershipRequest)(nil), // 19: dop.v1.UpdateMembershipRequest
-	(*AuditStamp)(nil),              // 20: dop.v1.AuditStamp
-	(*UserRef)(nil),                 // 21: dop.v1.UserRef
-	(*AccountRef)(nil),              // 22: dop.v1.AccountRef
-	(*timestamppb.Timestamp)(nil),   // 23: google.protobuf.Timestamp
-	(*ResourceRef)(nil),             // 24: dop.v1.ResourceRef
-	(*CallContext)(nil),             // 25: dop.v1.CallContext
+	(*ListInvitesRequest)(nil),      // 8: dop.v1.ListInvitesRequest
+	(*ListInvitesResponse)(nil),     // 9: dop.v1.ListInvitesResponse
+	(*GetInviteRequest)(nil),        // 10: dop.v1.GetInviteRequest
+	(*InvitePreview)(nil),           // 11: dop.v1.InvitePreview
+	(*GetUserRequest)(nil),          // 12: dop.v1.GetUserRequest
+	(*EnsureUserRequest)(nil),       // 13: dop.v1.EnsureUserRequest
+	(*ListAccountsRequest)(nil),     // 14: dop.v1.ListAccountsRequest
+	(*ListAccountsResponse)(nil),    // 15: dop.v1.ListAccountsResponse
+	(*GetAccountRequest)(nil),       // 16: dop.v1.GetAccountRequest
+	(*CreateAccountRequest)(nil),    // 17: dop.v1.CreateAccountRequest
+	(*ListMembershipsRequest)(nil),  // 18: dop.v1.ListMembershipsRequest
+	(*ListMembershipsResponse)(nil), // 19: dop.v1.ListMembershipsResponse
+	(*CreateInviteRequest)(nil),     // 20: dop.v1.CreateInviteRequest
+	(*AcceptInviteRequest)(nil),     // 21: dop.v1.AcceptInviteRequest
+	(*RevokeInviteRequest)(nil),     // 22: dop.v1.RevokeInviteRequest
+	(*UpdateMembershipRequest)(nil), // 23: dop.v1.UpdateMembershipRequest
+	(*AuditStamp)(nil),              // 24: dop.v1.AuditStamp
+	(*UserRef)(nil),                 // 25: dop.v1.UserRef
+	(*AccountRef)(nil),              // 26: dop.v1.AccountRef
+	(*timestamppb.Timestamp)(nil),   // 27: google.protobuf.Timestamp
+	(*ResourceRef)(nil),             // 28: dop.v1.ResourceRef
+	(*CallContext)(nil),             // 29: dop.v1.CallContext
 }
 var file_dop_v1_identity_proto_depIdxs = []int32{
-	20, // 0: dop.v1.User.audit:type_name -> dop.v1.AuditStamp
+	24, // 0: dop.v1.User.audit:type_name -> dop.v1.AuditStamp
 	1,  // 1: dop.v1.Account.kind:type_name -> dop.v1.Account.Kind
-	20, // 2: dop.v1.Account.audit:type_name -> dop.v1.AuditStamp
-	21, // 3: dop.v1.Membership.user:type_name -> dop.v1.UserRef
-	22, // 4: dop.v1.Membership.account:type_name -> dop.v1.AccountRef
+	24, // 2: dop.v1.Account.audit:type_name -> dop.v1.AuditStamp
+	25, // 3: dop.v1.Membership.user:type_name -> dop.v1.UserRef
+	26, // 4: dop.v1.Membership.account:type_name -> dop.v1.AccountRef
 	0,  // 5: dop.v1.Membership.role:type_name -> dop.v1.Role
-	20, // 6: dop.v1.Membership.audit:type_name -> dop.v1.AuditStamp
-	22, // 7: dop.v1.Invite.account:type_name -> dop.v1.AccountRef
+	24, // 6: dop.v1.Membership.audit:type_name -> dop.v1.AuditStamp
+	26, // 7: dop.v1.Invite.account:type_name -> dop.v1.AccountRef
 	0,  // 8: dop.v1.Invite.role:type_name -> dop.v1.Role
 	7,  // 9: dop.v1.Invite.grants:type_name -> dop.v1.ResourceGrantSpec
 	2,  // 10: dop.v1.Invite.status:type_name -> dop.v1.Invite.Status
-	23, // 11: dop.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	20, // 12: dop.v1.Invite.audit:type_name -> dop.v1.AuditStamp
-	24, // 13: dop.v1.ResourceGrantSpec.resource:type_name -> dop.v1.ResourceRef
-	25, // 14: dop.v1.GetUserRequest.ctx:type_name -> dop.v1.CallContext
-	25, // 15: dop.v1.ListAccountsRequest.ctx:type_name -> dop.v1.CallContext
-	21, // 16: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
-	4,  // 17: dop.v1.ListAccountsResponse.accounts:type_name -> dop.v1.Account
-	25, // 18: dop.v1.GetAccountRequest.ctx:type_name -> dop.v1.CallContext
-	25, // 19: dop.v1.CreateAccountRequest.ctx:type_name -> dop.v1.CallContext
-	1,  // 20: dop.v1.CreateAccountRequest.kind:type_name -> dop.v1.Account.Kind
-	25, // 21: dop.v1.ListMembershipsRequest.ctx:type_name -> dop.v1.CallContext
-	22, // 22: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
-	5,  // 23: dop.v1.ListMembershipsResponse.memberships:type_name -> dop.v1.Membership
-	25, // 24: dop.v1.CreateInviteRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 25: dop.v1.CreateInviteRequest.role:type_name -> dop.v1.Role
-	7,  // 26: dop.v1.CreateInviteRequest.grants:type_name -> dop.v1.ResourceGrantSpec
-	25, // 27: dop.v1.AcceptInviteRequest.ctx:type_name -> dop.v1.CallContext
-	25, // 28: dop.v1.RevokeInviteRequest.ctx:type_name -> dop.v1.CallContext
-	25, // 29: dop.v1.UpdateMembershipRequest.ctx:type_name -> dop.v1.CallContext
-	0,  // 30: dop.v1.UpdateMembershipRequest.role:type_name -> dop.v1.Role
-	7,  // 31: dop.v1.UpdateMembershipRequest.grants:type_name -> dop.v1.ResourceGrantSpec
-	8,  // 32: dop.v1.IdentityService.GetUser:input_type -> dop.v1.GetUserRequest
-	9,  // 33: dop.v1.IdentityService.EnsureUser:input_type -> dop.v1.EnsureUserRequest
-	10, // 34: dop.v1.IdentityService.ListAccounts:input_type -> dop.v1.ListAccountsRequest
-	12, // 35: dop.v1.IdentityService.GetAccount:input_type -> dop.v1.GetAccountRequest
-	13, // 36: dop.v1.IdentityService.CreateAccount:input_type -> dop.v1.CreateAccountRequest
-	14, // 37: dop.v1.IdentityService.ListMemberships:input_type -> dop.v1.ListMembershipsRequest
-	16, // 38: dop.v1.IdentityService.CreateInvite:input_type -> dop.v1.CreateInviteRequest
-	17, // 39: dop.v1.IdentityService.AcceptInvite:input_type -> dop.v1.AcceptInviteRequest
-	18, // 40: dop.v1.IdentityService.RevokeInvite:input_type -> dop.v1.RevokeInviteRequest
-	19, // 41: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
-	3,  // 42: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
-	3,  // 43: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
-	11, // 44: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
-	4,  // 45: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
-	4,  // 46: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
-	15, // 47: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
-	6,  // 48: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
-	5,  // 49: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
-	6,  // 50: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
-	5,  // 51: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
-	42, // [42:52] is the sub-list for method output_type
-	32, // [32:42] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	27, // 11: dop.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	24, // 12: dop.v1.Invite.audit:type_name -> dop.v1.AuditStamp
+	28, // 13: dop.v1.ResourceGrantSpec.resource:type_name -> dop.v1.ResourceRef
+	29, // 14: dop.v1.ListInvitesRequest.ctx:type_name -> dop.v1.CallContext
+	6,  // 15: dop.v1.ListInvitesResponse.invites:type_name -> dop.v1.Invite
+	29, // 16: dop.v1.GetInviteRequest.ctx:type_name -> dop.v1.CallContext
+	0,  // 17: dop.v1.InvitePreview.role:type_name -> dop.v1.Role
+	2,  // 18: dop.v1.InvitePreview.status:type_name -> dop.v1.Invite.Status
+	27, // 19: dop.v1.InvitePreview.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 20: dop.v1.GetUserRequest.ctx:type_name -> dop.v1.CallContext
+	29, // 21: dop.v1.ListAccountsRequest.ctx:type_name -> dop.v1.CallContext
+	25, // 22: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
+	4,  // 23: dop.v1.ListAccountsResponse.accounts:type_name -> dop.v1.Account
+	29, // 24: dop.v1.GetAccountRequest.ctx:type_name -> dop.v1.CallContext
+	29, // 25: dop.v1.CreateAccountRequest.ctx:type_name -> dop.v1.CallContext
+	1,  // 26: dop.v1.CreateAccountRequest.kind:type_name -> dop.v1.Account.Kind
+	29, // 27: dop.v1.ListMembershipsRequest.ctx:type_name -> dop.v1.CallContext
+	26, // 28: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
+	5,  // 29: dop.v1.ListMembershipsResponse.memberships:type_name -> dop.v1.Membership
+	29, // 30: dop.v1.CreateInviteRequest.ctx:type_name -> dop.v1.CallContext
+	0,  // 31: dop.v1.CreateInviteRequest.role:type_name -> dop.v1.Role
+	7,  // 32: dop.v1.CreateInviteRequest.grants:type_name -> dop.v1.ResourceGrantSpec
+	29, // 33: dop.v1.AcceptInviteRequest.ctx:type_name -> dop.v1.CallContext
+	29, // 34: dop.v1.RevokeInviteRequest.ctx:type_name -> dop.v1.CallContext
+	29, // 35: dop.v1.UpdateMembershipRequest.ctx:type_name -> dop.v1.CallContext
+	0,  // 36: dop.v1.UpdateMembershipRequest.role:type_name -> dop.v1.Role
+	7,  // 37: dop.v1.UpdateMembershipRequest.grants:type_name -> dop.v1.ResourceGrantSpec
+	12, // 38: dop.v1.IdentityService.GetUser:input_type -> dop.v1.GetUserRequest
+	13, // 39: dop.v1.IdentityService.EnsureUser:input_type -> dop.v1.EnsureUserRequest
+	14, // 40: dop.v1.IdentityService.ListAccounts:input_type -> dop.v1.ListAccountsRequest
+	16, // 41: dop.v1.IdentityService.GetAccount:input_type -> dop.v1.GetAccountRequest
+	17, // 42: dop.v1.IdentityService.CreateAccount:input_type -> dop.v1.CreateAccountRequest
+	18, // 43: dop.v1.IdentityService.ListMemberships:input_type -> dop.v1.ListMembershipsRequest
+	20, // 44: dop.v1.IdentityService.CreateInvite:input_type -> dop.v1.CreateInviteRequest
+	21, // 45: dop.v1.IdentityService.AcceptInvite:input_type -> dop.v1.AcceptInviteRequest
+	22, // 46: dop.v1.IdentityService.RevokeInvite:input_type -> dop.v1.RevokeInviteRequest
+	23, // 47: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
+	8,  // 48: dop.v1.IdentityService.ListInvites:input_type -> dop.v1.ListInvitesRequest
+	10, // 49: dop.v1.IdentityService.GetInvite:input_type -> dop.v1.GetInviteRequest
+	3,  // 50: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
+	3,  // 51: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
+	15, // 52: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
+	4,  // 53: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
+	4,  // 54: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
+	19, // 55: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
+	6,  // 56: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
+	5,  // 57: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
+	6,  // 58: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
+	5,  // 59: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
+	9,  // 60: dop.v1.IdentityService.ListInvites:output_type -> dop.v1.ListInvitesResponse
+	11, // 61: dop.v1.IdentityService.GetInvite:output_type -> dop.v1.InvitePreview
+	50, // [50:62] is the sub-list for method output_type
+	38, // [38:50] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_identity_proto_init() }
@@ -1571,7 +1828,7 @@ func file_dop_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_identity_proto_rawDesc), len(file_dop_v1_identity_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

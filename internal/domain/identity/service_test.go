@@ -2,6 +2,7 @@ package identity_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -213,6 +214,16 @@ func (f *fakeRepo) AcceptInvite(_ context.Context, inviteID, userID string) (*id
 	f.accepted = append(f.accepted, inviteID+"/"+userID)
 	return &identity.Membership{ID: f.id("mem"), UserID: userID}, nil
 }
+func (f *fakeRepo) InvitesOfAccount(_ context.Context, accountID string) ([]identity.Invite, error) {
+	out := []identity.Invite{}
+	for _, inv := range f.invites {
+		if inv.AccountID == accountID {
+			out = append(out, *inv)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) RevokeInvite(context.Context, string, string) (*identity.Invite, error) {
 	return nil, nil
 }
@@ -566,5 +577,88 @@ func TestWithNoGateWiredTheDomainWorksOnItsOwn(t *testing.T) {
 
 	if _, err := svc.CreateInvite(ctx, "new@dop.local", identity.RoleDeveloper, nil); err != nil {
 		t.Fatalf("with no gate it refused: %v", err)
+	}
+}
+
+// ── the invite's path (P-32) ────────────────────────────────────────────────
+
+func TestTheInvitePreviewDoesNotRevealTheInvitee(t *testing.T) {
+	// Whoever finds the link must not learn an address from it — that would turn
+	// it back into the oracle taking the token out was meant to end (ADR-0026).
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	owner, acct, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-owner", Email: "owner@acme.test", EmailVerified: true})
+	ownerCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: owner.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+	inv, err := svc.CreateInvite(ownerCtx, "invitee@acme.test", identity.RoleDeveloper, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A stranger, with a session and no membership in that account.
+	other, _, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-other", Email: "other@x.test", EmailVerified: true})
+	otherCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: other.ID, ActorKind: ctxutil.ActorUser})
+
+	p, err := svc.GetInvite(otherCtx, inv.ID)
+	if err != nil {
+		t.Fatalf("the preview requires no active account: %v", err)
+	}
+	if p.AccountName == "" || !p.Usable {
+		t.Errorf("the preview says nothing useful: %+v", p)
+	}
+	// The struct has no field for it, and the test is what keeps it that way:
+	// a field added tomorrow "just for convenience" fails here.
+	if strings.Contains(fmt.Sprintf("%+v", *p), "invitee@acme.test") {
+		t.Error("the preview leaked the invitee's e-mail")
+	}
+}
+
+func TestReadingAnInviteRequiresASession(t *testing.T) {
+	// Without it, an id found in a log would tell a stranger that an account
+	// named X invited somebody as an admin.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	owner, acct, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-owner", Email: "owner@acme.test", EmailVerified: true})
+	ownerCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: owner.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+	inv, _ := svc.CreateInvite(ownerCtx, "invitee@acme.test", identity.RoleDeveloper, nil)
+
+	_, err := svc.GetInvite(context.Background(), inv.ID)
+	if errs.KindOf(err) != errs.KindUnauthorized {
+		t.Fatalf("with no session it gave %v (%s)", err, errs.KindOf(err))
+	}
+}
+
+func TestOnlyWhoManagesMembersSeesTheInvites(t *testing.T) {
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	owner, acct, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-owner", Email: "owner@acme.test", EmailVerified: true})
+	ownerCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: owner.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+	if _, err := svc.CreateInvite(ownerCtx, "invitee@acme.test", identity.RoleDeveloper, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := svc.ListInvites(ownerCtx)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("the owner saw %d invites (err=%v)", len(list), err)
+	}
+
+	// A developer does not: the list carries the addresses of people who were
+	// invited, and that is not public inside the account.
+	dev, _, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-dev", Email: "dev@acme.test", EmailVerified: true})
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-dev", UserID: dev.ID, AccountID: acct.ID, Role: identity.RoleDeveloper})
+	devCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: dev.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+
+	if _, err := svc.ListInvites(devCtx); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("a developer saw the invites: %v", err)
 	}
 }
