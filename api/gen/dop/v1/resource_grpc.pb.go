@@ -40,7 +40,7 @@ type ResourceServiceClient interface {
 	DeleteResource(ctx context.Context, in *DeleteResourceRequest, opts ...grpc.CallOption) (*DeleteResourceResponse, error)
 	GrantResource(ctx context.Context, in *GrantResourceRequest, opts ...grpc.CallOption) (*ResourceGrant, error)
 	RevokeGrant(ctx context.Context, in *RevokeGrantRequest, opts ...grpc.CallOption) (*RevokeGrantResponse, error)
-	// Credencial é escrita no SecretStore; o valor nunca volta numa leitura.
+	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(ctx context.Context, in *SetCredentialRequest, opts ...grpc.CallOption) (*SetCredentialResponse, error)
 }
 
@@ -143,7 +143,7 @@ type ResourceServiceServer interface {
 	DeleteResource(context.Context, *DeleteResourceRequest) (*DeleteResourceResponse, error)
 	GrantResource(context.Context, *GrantResourceRequest) (*ResourceGrant, error)
 	RevokeGrant(context.Context, *RevokeGrantRequest) (*RevokeGrantResponse, error)
-	// Credencial é escrita no SecretStore; o valor nunca volta numa leitura.
+	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(context.Context, *SetCredentialRequest) (*SetCredentialResponse, error)
 	mustEmbedUnimplementedResourceServiceServer()
 }

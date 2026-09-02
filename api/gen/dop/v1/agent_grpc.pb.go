@@ -26,8 +26,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AgentServiceClient interface {
-	// Executa UM turno. O próximo é decisão de quem chamou — é assim que o
-	// orçamento consegue interromper ENTRE turnos, e não no meio de um.
+	// Runs ONE turn. The next one is the caller's decision — it is how the
+	// budget manages to interrupt BETWEEN turns, and not in the middle of one.
 	RunTurn(ctx context.Context, in *RunTurnRequest, opts ...grpc.CallOption) (*TurnOutcome, error)
 }
 
@@ -53,8 +53,8 @@ func (c *agentServiceClient) RunTurn(ctx context.Context, in *RunTurnRequest, op
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 type AgentServiceServer interface {
-	// Executa UM turno. O próximo é decisão de quem chamou — é assim que o
-	// orçamento consegue interromper ENTRE turnos, e não no meio de um.
+	// Runs ONE turn. The next one is the caller's decision — it is how the
+	// budget manages to interrupt BETWEEN turns, and not in the middle of one.
 	RunTurn(context.Context, *RunTurnRequest) (*TurnOutcome, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }

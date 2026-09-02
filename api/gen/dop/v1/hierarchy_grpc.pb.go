@@ -42,7 +42,7 @@ type HierarchyServiceClient interface {
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...grpc.CallOption) (*Project, error)
-	// Árvore do cockpit em uma chamada.
+	// The cockpit's tree in one call.
 	GetTree(ctx context.Context, in *GetTreeRequest, opts ...grpc.CallOption) (*GetTreeResponse, error)
 }
 
@@ -156,7 +156,7 @@ type HierarchyServiceServer interface {
 	GetProject(context.Context, *GetProjectRequest) (*Project, error)
 	CreateProject(context.Context, *CreateProjectRequest) (*Project, error)
 	UpdateProject(context.Context, *UpdateProjectRequest) (*Project, error)
-	// Árvore do cockpit em uma chamada.
+	// The cockpit's tree in one call.
 	GetTree(context.Context, *GetTreeRequest) (*GetTreeResponse, error)
 	mustEmbedUnimplementedHierarchyServiceServer()
 }

@@ -18,7 +18,7 @@ message Project {
   WorkspaceRef workspace = 2;
   string       name      = 3;
   string       description = 4;
-  // Recursos anexados: repos, task manager, fluxo git, workflow, skills.
+  // Attached resources: repos, task manager, git flow, workflow, skills.
   repeated ProjectRepo  repos        = 5;
   ProjectTaskManager    task_manager = 6;
   repeated ResourceRef  resources    = 7;
@@ -26,7 +26,7 @@ message Project {
   AuditStamp   audit     = 9;
 }
 
-// Provider é do REPOSITÓRIO, não do projeto (ADR-0013).
+// The provider belongs to the REPOSITORY, not to the project (ADR-0013).
 message ProjectRepo {
   string      id           = 1;
   ResourceRef integration  = 2;
@@ -38,9 +38,9 @@ message ProjectRepo {
 
 message ProjectTaskManager {
   ResourceRef integration       = 1;
-  string      external_space_id = 2;   // espaço do provedor (nunca "workspace" nu)
+  string      external_space_id = 2;   // the provider's space (never a bare "workspace")
   string      external_project_id = 3;
-  repeated string card_types    = 4;   // dinâmicos, vindos do provedor
+  repeated string card_types    = 4;   // dynamic, coming from the provider
 }
 
 service HierarchyService {
@@ -52,7 +52,7 @@ service HierarchyService {
   rpc GetProject     (GetProjectRequest)     returns (Project);
   rpc CreateProject  (CreateProjectRequest)  returns (Project);
   rpc UpdateProject  (UpdateProjectRequest)  returns (Project);
-  // Árvore do cockpit em uma chamada.
+  // The cockpit's tree in one call.
   rpc GetTree        (GetTreeRequest)        returns (GetTreeResponse);
 }
 

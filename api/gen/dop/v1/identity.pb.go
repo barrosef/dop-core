@@ -269,12 +269,12 @@ type Account struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Kind        Account_Kind           `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.Account_Kind" json:"kind,omitempty"`
-	Handle      string                 `protobuf:"bytes,3,opt,name=handle,proto3" json:"handle,omitempty"` // único na plataforma; PF e PJ dividem o namespace
+	Handle      string                 `protobuf:"bytes,3,opt,name=handle,proto3" json:"handle,omitempty"` // unique on the platform; personal and organization accounts share the namespace
 	DisplayName string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// Organização
-	LegalId        string      `protobuf:"bytes,10,opt,name=legal_id,json=legalId,proto3" json:"legal_id,omitempty"` // CNPJ
+	// Organization
+	LegalId        string      `protobuf:"bytes,10,opt,name=legal_id,json=legalId,proto3" json:"legal_id,omitempty"` // the company's registration number
 	LegalName      string      `protobuf:"bytes,11,opt,name=legal_name,json=legalName,proto3" json:"legal_name,omitempty"`
-	VerifiedDomain string      `protobuf:"bytes,12,opt,name=verified_domain,json=verifiedDomain,proto3" json:"verified_domain,omitempty"` // vazio = não verificada
+	VerifiedDomain string      `protobuf:"bytes,12,opt,name=verified_domain,json=verifiedDomain,proto3" json:"verified_domain,omitempty"` // empty = not verified
 	Audit          *AuditStamp `protobuf:"bytes,20,opt,name=audit,proto3" json:"audit,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -448,7 +448,7 @@ type Invite struct {
 	Account *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	Email   string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
 	Role    Role                   `protobuf:"varint,4,opt,name=role,proto3,enum=dop.v1.Role" json:"role,omitempty"`
-	// Concessões compostas NO CONVITE — sem defaults (ADR-0013)
+	// Grants composed IN THE INVITE — with no defaults (ADR-0013)
 	Grants        []*ResourceGrantSpec   `protobuf:"bytes,5,rep,name=grants,proto3" json:"grants,omitempty"`
 	Status        Invite_Status          `protobuf:"varint,6,opt,name=status,proto3,enum=dop.v1.Invite_Status" json:"status,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
@@ -649,8 +649,8 @@ func (x *GetUserRequest) GetId() string {
 
 type EnsureUserRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Principal normalizado vindo do IdentityProvider — claims de Firebase
-	// não cruzam esta fronteira (ADR-0001).
+	// A normalized Principal coming from the IdentityProvider — Firebase claims
+	// do not cross this frontier (ADR-0001).
 	Subject        string `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
 	Email          string `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	EmailVerified  bool   `protobuf:"varint,3,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
@@ -1145,10 +1145,10 @@ func (x *CreateInviteRequest) GetIdempotencyKey() string {
 	return ""
 }
 
-// O aceite endereça o convite pelo id — NÃO por segredo. O id sozinho não
-// concede nada: o servidor exige que o e-mail verificado da sessão seja o do
-// convite. Um cliente antigo que mandar o token aqui simplesmente não acha a
-// linha, que é a falha correta.
+// Acceptance addresses the invite by its id — NOT by a secret. The id alone
+// grants nothing: the server requires the session's verified email to be the
+// invite's. An old client sending the token here simply does not find the row,
+// which is the correct failure.
 type AcceptInviteRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`

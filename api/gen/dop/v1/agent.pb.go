@@ -21,24 +21,24 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// A decisão de roteamento que valeu neste turno, com a justificativa INTEIRA.
-// Sem ela ninguém audita "por que esta demanda rodou no modelo caro?"
+// The routing decision that applied on this turn, with the WHOLE justification.
+// Without it nobody audits "why did this demand run on the expensive model?"
 // (ADR-0011 §3).
 type TurnRouting struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	TaskKind string                 `protobuf:"bytes,1,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"` // mechanical | investigation | implementation | critic
-	// A CLASSE, e não só o nome. Ela existe aqui porque a fronteira de rede a
-	// comia: o consumidor que precisasse dela tinha de reconstruí-la a partir do
-	// nome do modelo, e adivinhar errado trocava o modelo em silêncio.
+	// The CLASS, and not only the name. It exists here because the network
+	// boundary used to eat it: a consumer that needed it had to rebuild it from
+	// the model's name, and guessing wrong swapped the model in silence.
 	ModelClass string `protobuf:"bytes,2,opt,name=model_class,json=modelClass,proto3" json:"model_class,omitempty"` // cheap | medium | strong
 	Model      string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	Effort     string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"` // pedido:   low | medium | high | xhigh | max
-	// O effort REALMENTE aplicado. Pode ser MENOR que o pedido quando o
-	// fornecedor não tem os cinco níveis (ADR-0022 D4) — e em trabalho crítico
-	// (ADR-0007) essa diferença é decisão de produto, não detalhe.
+	Effort     string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"` // requested: low | medium | high | xhigh | max
+	// The effort ACTUALLY applied. It may be LOWER than the one requested when
+	// the provider does not have the five levels (ADR-0022 D4) — and on critical
+	// work (ADR-0007) that difference is a product decision, not a detail.
 	EffortApplied string `protobuf:"bytes,5,opt,name=effort_applied,json=effortApplied,proto3" json:"effort_applied,omitempty"`
 	Reason        string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	// A ficha da thread (ADR-0010 §2) venceu o roteador.
+	// The thread's card (ADR-0010 §2) beat the router.
 	FromAgentCard bool `protobuf:"varint,7,opt,name=from_agent_card,json=fromAgentCard,proto3" json:"from_agent_card,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -123,11 +123,11 @@ func (x *TurnRouting) GetFromAgentCard() bool {
 	return false
 }
 
-// O consumo do turno, com as quatro parcelas DISJUNTAS (ADR-0022 D2).
+// The turn's consumption, with the four parts DISJOINT (ADR-0022 D2).
 //
-// Disjuntas é o contrato: input_tokens NÃO inclui o que veio do cache. Provedor
-// que reporta de forma inclusiva é normalizado pelo adaptador — somar campos
-// inclusivos inflaria a medição da ADR-0011 sem nada falhar.
+// Disjoint is the contract: input_tokens does NOT include what came from cache.
+// A provider that reports inclusively is normalized by the adapter — summing
+// inclusive fields would inflate ADR-0011's measurement with nothing failing.
 type TurnUsage struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	InputTokens         int64                  `protobuf:"varint,1,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
@@ -135,13 +135,14 @@ type TurnUsage struct {
 	CacheReadTokens     int64                  `protobuf:"varint,3,opt,name=cache_read_tokens,json=cacheReadTokens,proto3" json:"cache_read_tokens,omitempty"`
 	CacheCreationTokens int64                  `protobuf:"varint,4,opt,name=cache_creation_tokens,json=cacheCreationTokens,proto3" json:"cache_creation_tokens,omitempty"`
 	Cost                *Money                 `protobuf:"bytes,5,opt,name=cost,proto3" json:"cost,omitempty"`
-	// Falso = o provedor NÃO reporta criação de cache. O zero acima significa
-	// então "não dá para saber", nunca "nada foi escrito" (ADR-0022 D1). Sem este
-	// campo, quem lê a telemetria não tem como distinguir os dois.
+	// False = the provider does NOT report cache creation. The zero above then
+	// means "it cannot be known", never "nothing was written" (ADR-0022 D1).
+	// Without this field, whoever reads the telemetry has no way to tell the two
+	// apart.
 	CacheCreationKnown bool `protobuf:"varint,6,opt,name=cache_creation_known,json=cacheCreationKnown,proto3" json:"cache_creation_known,omitempty"`
-	// Falso = não há tabela de preço para este modelo. O custo fica zerado por
-	// AUSÊNCIA de tabela, não por ter sido de graça — orçamento alimentado com
-	// zeros é a ficção que a ADR-0011 §2 existe para impedir.
+	// False = there is no price table for this model. The cost stays at zero for
+	// LACK of a table, not because it was free — a budget fed with zeros is the
+	// fiction ADR-0011 §2 exists to prevent.
 	CostKnown     bool `protobuf:"varint,7,opt,name=cost_known,json=costKnown,proto3" json:"cost_known,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -284,28 +285,30 @@ type TurnOutcome struct {
 	ThreadId string                 `protobuf:"bytes,2,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	Provider string                 `protobuf:"bytes,3,opt,name=provider,proto3" json:"provider,omitempty"`
 	Routing  *TurnRouting           `protobuf:"bytes,4,opt,name=routing,proto3" json:"routing,omitempty"`
-	// A fala do agente, já como texto para gente ler.
+	// The agent's utterance, already as text for people to read.
 	Reply string `protobuf:"bytes,5,opt,name=reply,proto3" json:"reply,omitempty"`
-	// As mensagens publicadas na thread, na ordem em que entraram. A primeira é
-	// a do humano: a pergunta entra ANTES da chamada ao modelo, para que a
-	// conversa mostre o que foi perguntado mesmo se o fornecedor cair.
+	// The messages published on the thread, in the order they entered. The first
+	// is the human's: the question goes in BEFORE the model call, so the
+	// conversation shows what was asked even if the provider goes down.
 	MessageIds []string `protobuf:"bytes,6,rep,name=message_ids,json=messageIds,proto3" json:"message_ids,omitempty"`
 	Concluded  bool     `protobuf:"varint,7,opt,name=concluded,proto3" json:"concluded,omitempty"`
-	// Presente somente quando concluiu: concluir EXIGE publicar achado, e achado
-	// vazio publicado seria o registro durável de nada.
+	// Present only when it concluded: concluding REQUIRES publishing a finding,
+	// and an empty published finding would be the durable record of nothing.
 	Finding *TurnFinding `protobuf:"bytes,8,opt,name=finding,proto3" json:"finding,omitempty"`
 	Usage   *TurnUsage   `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`
-	// O pacote de contexto veio TRUNCADO por orçamento de tokens (ADR-0012). O
-	// aviso também entra na thread — contexto truncado que não aparece na
-	// conversa é a origem de uma conclusão errada que ninguém explica depois.
+	// The context package came TRUNCATED by token budget (ADR-0012). The warning
+	// also enters the thread — a truncation that does not show up in the
+	// conversation is the origin of a wrong conclusion nobody explains
+	// afterwards.
 	ContextTruncated bool `protobuf:"varint,10,opt,name=context_truncated,json=contextTruncated,proto3" json:"context_truncated,omitempty"`
-	// Orçamento estourado: a demanda PAUSA e vira item de decisão (ADR-0011 §2).
-	// O turno que já rodou é entregue inteiro; o próximo é que não sai.
+	// A blown budget: the demand PAUSES and becomes a decision item
+	// (ADR-0011 §2). The turn that already ran is delivered whole; it is the next
+	// one that does not go out.
 	Paused  bool      `protobuf:"varint,11,opt,name=paused,proto3" json:"paused,omitempty"`
 	Notice  string    `protobuf:"bytes,12,opt,name=notice,proto3" json:"notice,omitempty"`
 	Budgets []*Budget `protobuf:"bytes,13,rep,name=budgets,proto3" json:"budgets,omitempty"`
-	// Avisos legíveis: effort rebaixado, resposta cortada, conclusão recusada,
-	// criação de cache não reportada.
+	// Readable warnings: effort downgraded, reply cut, conclusion refused, cache
+	// creation not reported.
 	Warnings      []string `protobuf:"bytes,14,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -445,24 +448,25 @@ type RunTurnRequest struct {
 	DemandId string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
 	ThreadId string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	Text     string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
-	// Vocabulário ABERTO: o roteador trata o desconhecido caindo no caro e DIZ
-	// que caiu. Vazio é que não passa — sem tipo de trabalho não há decisão a
-	// auditar.
+	// An OPEN vocabulary: the router handles the unknown by falling back to the
+	// expensive option and SAYING that it did. Empty is what does not pass — with
+	// no kind of work there is no decision to audit.
 	TaskKind string `protobuf:"bytes,5,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"`
-	// O recurso de categoria `agent` (ADR-0013) que atende este turno. Vazio = o
-	// provedor da conta, e só quando ele é ÚNICO: com dois, escolher por conta
-	// própria trocaria fornecedor, preço e cache no meio da demanda.
+	// The `agent`-category resource (ADR-0013) that serves this turn. Empty = the
+	// account's provider, and only when there is a SINGLE one: with two, choosing
+	// on our own would swap provider, price and cache in the middle of the
+	// demand.
 	ResourceId string `protobuf:"bytes,6,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	// Intervenção do OPERADOR, vinda da caixa de atenção. Entra pelo canal de
-	// autoridade do fornecedor, NUNCA como texto de usuário (ADR-0022 D3):
-	// achatar os dois papéis é o caminho clássico de injeção de prompt.
+	// The OPERATOR's intervention, coming from the attention box. It enters
+	// through the provider's authority channel, NEVER as user text (ADR-0022 D3):
+	// flattening the two roles is the classic prompt-injection path.
 	OperatorNote    string `protobuf:"bytes,7,opt,name=operator_note,json=operatorNote,proto3" json:"operator_note,omitempty"`
 	MaxOutputTokens int32  `protobuf:"varint,8,opt,name=max_output_tokens,json=maxOutputTokens,proto3" json:"max_output_tokens,omitempty"`
-	// OBRIGATÓRIA. As cinco escritas do turno (mensagem de entrada, aviso,
-	// consumo, resposta, achado) derivam dela, de modo que repetir a requisição
-	// repete ZERO efeitos. Gerar uma aqui transformaria um retry de rede em
-	// consumo em dobro — e duplicata de consumo não colide com nada, entraria
-	// como gasto legítimo (ADR-0011).
+	// MANDATORY. The turn's five writes (inbound message, warning, consumption,
+	// reply, finding) derive from it, so that repeating the request repeats ZERO
+	// effects. Generating one here would turn a network retry into double
+	// consumption — and a duplicate consumption collides with nothing, it would
+	// enter as legitimate spend (ADR-0011).
 	IdempotencyKey string `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

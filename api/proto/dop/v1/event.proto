@@ -5,20 +5,22 @@ import "dop/v1/common.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// O log de eventos é a VERDADE (ADR-0006). Dossiê, timeline e caixa de atenção
-// são projeções dele. Este contrato existe para que o cockpit não precise ficar
-// perguntando "mudou alguma coisa?" de segundo em segundo: o núcleo empurra o
-// evento assim que ele acontece, e a projeção do lado do BFF acompanha.
+// The event log is the TRUTH (ADR-0006). The dossier, the timeline and the
+// attention box are projections of it. This contract exists so the cockpit does
+// not have to keep asking "did anything change?" second by second: the core
+// pushes the event as soon as it happens, and the projection on the BFF's side
+// follows along.
 
-// EventEnvelope é o evento como ele sai do log — os MESMOS campos da tabela
-// `events` e de ports.Event, sem vocabulário novo. O que muda é só a forma do
-// payload: aqui ele é Struct, porque o consumidor lê JSON e não deve precisar
-// desserializar bytes opacos para saber o que aconteceu.
+// EventEnvelope is the event as it comes out of the log — the SAME fields as the
+// `events` table and ports.Event, with no new vocabulary. All that changes is
+// the payload's shape: here it is a Struct, because the consumer reads JSON and
+// must not have to deserialize opaque bytes to learn what happened.
 message EventEnvelope {
   string     id           = 1;
-  // Referência tipada em vez de id nu: tenant nunca é string anônima (ADR-0017).
-  // Evento sem conta (`identity.user.ensured`, migração 0003) NÃO é transmitido
-  // a ninguém, então este campo está sempre preenchido no fio.
+  // A typed reference instead of a bare id: a tenant is never an anonymous
+  // string (ADR-0017). An event with no account (`identity.user.ensured`,
+  // migration 0003) is NOT transmitted to anyone, so this field is always filled
+  // in on the wire.
   AccountRef account      = 2;
   string     aggregate    = 3;   // demand, project, workspace, resource...
   string     aggregate_id = 4;
@@ -27,26 +29,28 @@ message EventEnvelope {
   google.protobuf.Timestamp occurred_at = 7;
 }
 
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 service EventService {
-  // Watch entrega os eventos da conta conforme acontecem.
+  // Watch delivers the account's events as they happen.
   rpc WatchEvents (WatchEventsRequest) returns (stream EventEnvelope);
 }
 
 message WatchEventsRequest {
   CallContext ctx = 1;
 
-  // Filtros opcionais. Vazio = tudo o que a conta produzir. Existem para que a
-  // caixa de atenção não precise receber (e descartar) o log inteiro.
+  // Optional filters. Empty = everything the account produces. They exist so
+  // the attention box does not have to receive (and discard) the whole log.
   repeated string aggregate = 2;   // demand, project
   repeated string types     = 3;   // dop.hierarchy.project.created
 
-  // Cursor de replay: o ÚLTIMO evento que o cliente já processou. O servidor
-  // drena do log tudo que veio depois dele e só então emenda no fluxo ao vivo,
-  // sem buraco e sem duplicata. Vazio = só o que vier daqui pra frente.
+  // The replay cursor: the LAST event the client has already processed. The
+  // server drains from the log everything that came after it and only then
+  // splices into the live stream, with no gap and no duplicate. Empty = only
+  // what comes from now on.
   //
-  // É string, e não timestamp, porque o id é o que o cliente já tem em mãos
-  // (veio no envelope anterior) e porque `occurred_at` sozinho não desempata
-  // eventos do mesmo instante.
+  // It is a string, and not a timestamp, because the id is what the client
+  // already has in hand (it came in the previous envelope) and because
+  // `occurred_at` alone does not break ties between events of the same
+  // instant.
   string since_event_id = 4;
 }

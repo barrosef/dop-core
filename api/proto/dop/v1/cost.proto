@@ -4,7 +4,8 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// Medição desde o primeiro dia; com BYO muda quem paga, não como se mede (ADR-0011).
+// Measurement from day one; with BYO what changes is who pays, not how it is
+// measured (ADR-0011).
 message UsageEvent {
   string    id        = 1;
   DemandRef demand    = 2;
@@ -12,7 +13,7 @@ message UsageEvent {
   string    model     = 4;
   int64     input_tokens  = 5;
   int64     output_tokens = 6;
-  int64     cache_read_tokens     = 7;  // zerado em prefixo estável = ALERTA
+  int64     cache_read_tokens     = 7;  // zero on a stable prefix = AN ALERT
   int64     cache_creation_tokens = 8;
   Money     cost      = 9;
   google.protobuf.Timestamp at = 10;
@@ -23,12 +24,13 @@ message Budget {
   string scope_id = 2;
   int64  limit_micros = 3;
   int64  spent_micros = 4;
-  // A moeda viaja SEMPRE junto do valor. Micros sem moeda é número sem
-  // unidade, e a borda estava tendo que inventar ou deixar em branco.
+  // The currency ALWAYS travels with the value. Micros with no currency is a
+  // number with no unit, and the edge was having to invent one or leave it
+  // blank.
   string currency = 5;
 }
 
-// tarefa → (modelo, effort). Rascunho, calibra com telemetria (P-7).
+// task → (model, effort). A draft, calibrated with telemetry (P-7).
 message RoutingDecision {
   string task_kind = 1;   // mechanical | investigation | implementation | critic
   string model     = 2;

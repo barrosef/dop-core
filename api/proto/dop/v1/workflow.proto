@@ -3,8 +3,8 @@ package dop.v1;
 
 import "dop/v1/common.proto";
 
-// Tipo semântico da etapa: decide o renderizador na tela e o comportamento
-// do agente. Vocabulário da plataforma; composição é livre (ADR-0014).
+// The stage's semantic type: it decides the renderer on the screen and the
+// agent's behaviour. The platform's vocabulary; composition is free (ADR-0014).
 enum StageType {
   STAGE_TYPE_UNSPECIFIED     = 0;
   STAGE_TYPE_CONTEXT         = 1;
@@ -35,11 +35,11 @@ enum Gate {
 
 message StageSpec {
   string       key       = 1;
-  string       name      = 2;   // livre, do autor
+  string       name      = 2;   // free, the author's
   StageType    type      = 3;
   repeated ArtifactKind artifacts = 4;
   Gate         gate      = 5;
-  repeated string subtypes = 6;  // ex.: teste → aaa, e2e, integracao
+  repeated string subtypes = 6;  // e.g.: test → aaa, e2e, integration
 }
 
 message Flow {
@@ -47,42 +47,41 @@ message Flow {
   string    name    = 2;
   string    description = 3;
   int32     version = 4;
-  // Escopo dono na cadeia: platform | account | workspace | project | demand
+  // The owning scope in the chain: platform | account | workspace | project | demand
   string    owner_scope = 5;
   string    owner_id    = 6;
   repeated StageSpec stages = 7;
   AuditStamp audit    = 8;
 }
 
-// Resultado da cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda.
-// StageOrigin diz DE ONDE cada etapa veio na resolução.
+// The result of the chain platform ◁ account ◁ workspace ◁ project ◁ demand.
+// StageOrigin says WHERE each stage came from in the resolution.
 //
-// Sem isso, ninguém consegue depurar por que uma demanda seguiu um fluxo que
-// ninguém lembra de ter escrito — e a herança de cinco níveis torna isso comum,
-// não excepcional.
+// Without it, nobody can debug why a demand followed a flow nobody remembers
+// writing — and five-level inheritance makes that common, not exceptional.
 message StageOrigin {
-  string key   = 1;  // a chave da etapa, como aparece em Flow.stages
+  string key   = 1;  // the stage's key, as it appears in Flow.stages
   string scope = 2;  // platform | account | workspace | project | demand
   string scope_id = 3;
 }
 
 message EffectiveFlow {
   Flow   flow          = 1;
-  // Rastro legível, para log e mensagem de erro: "projeto ◂ workspace ◂ conta".
+  // A readable trail, for logs and error messages: "project ◂ workspace ◂ account".
   string resolved_from = 2;
-  // Os níveis que CONTRIBUÍRAM, do mais específico para o mais geral.
+  // The levels that CONTRIBUTED, from the most specific to the most general.
   repeated ScopeRef contributors = 3;
-  // A procedência POR ETAPA, na mesma ordem de flow.stages.
+  // The provenance PER STAGE, in flow.stages' same order.
   //
-  // Existe porque `resolved_from` é uma frase, e a borda estava tendo que
-  // fazer parsing dela para marcar "herdado da conta" na linha da etapa.
-  // Contrato que obriga o consumidor a interpretar texto é contrato que
-  // quebra quando alguém melhora a redação.
+  // It exists because `resolved_from` is a sentence, and the edge was having to
+  // parse it to mark "inherited from the account" on the stage's line. A
+  // contract that forces the consumer to interpret text is a contract that
+  // breaks when somebody improves the wording.
   repeated StageOrigin origins = 4;
 }
 
-// ScopeRef endereça um nível da hierarquia. `id` é vazio no catálogo da
-// plataforma, que não pertence a conta nenhuma.
+// ScopeRef addresses one level of the hierarchy. `id` is empty in the
+// platform's catalog, which belongs to no account.
 message ScopeRef {
   string scope = 1;
   string id    = 2;
@@ -92,7 +91,7 @@ service WorkflowService {
   rpc ListFlows     (ListFlowsRequest)     returns (ListFlowsResponse);
   rpc GetFlow       (GetFlowRequest)       returns (Flow);
   rpc CreateFlow    (CreateFlowRequest)    returns (Flow);
-  rpc UpdateFlow    (UpdateFlowRequest)    returns (Flow);   // gera versão nova
+  rpc UpdateFlow    (UpdateFlowRequest)    returns (Flow);   // generates a new version
   rpc ValidateFlow  (ValidateFlowRequest)  returns (ValidateFlowResponse);
   rpc ResolveFlow   (ResolveFlowRequest)   returns (EffectiveFlow);
   rpc PromoteFlow   (PromoteFlowRequest)   returns (Flow);
@@ -107,7 +106,7 @@ message ValidateFlowRequest  { CallContext ctx = 1; Flow flow = 2; }
 message ValidateFlowResponse {
   bool valid = 1;
   repeated string errors   = 2;
-  repeated string warnings = 3;  // ex.: fluxo sem etapa spec
+  repeated string warnings = 3;  // e.g.: a flow with no spec stage
 }
 message ResolveFlowRequest { CallContext ctx = 1; string scope = 2; string scope_id = 3; }
 message PromoteFlowRequest { CallContext ctx = 1; string flow_id = 2; string target_scope = 3; string target_id = 4; }

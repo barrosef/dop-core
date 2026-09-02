@@ -4,50 +4,52 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "dop/v1/cost.proto";
 
-// Execução de turno de agente — o runtime vive no NÚCLEO (ADR-0023).
+// Agent turn execution — the runtime lives in the CORE (ADR-0023).
 //
-// A credencial do provedor NÃO aparece neste contrato, em campo nenhum, em
-// nenhuma direção. É o ponto inteiro da decisão: ela é lida do cofre e usada no
-// mesmo processo, e a borda pede um turno sem nunca ter tido acesso à chave.
+// The provider's credential does NOT appear in this contract, in any field, in
+// any direction. It is the entire point of the decision: it is read from the
+// vault and used in the same process, and the edge asks for a turn without ever
+// having had access to the key.
 
-// A decisão de roteamento que valeu neste turno, com a justificativa INTEIRA.
-// Sem ela ninguém audita "por que esta demanda rodou no modelo caro?"
+// The routing decision that applied on this turn, with the WHOLE justification.
+// Without it nobody audits "why did this demand run on the expensive model?"
 // (ADR-0011 §3).
 message TurnRouting {
   string task_kind = 1;   // mechanical | investigation | implementation | critic
-  // A CLASSE, e não só o nome. Ela existe aqui porque a fronteira de rede a
-  // comia: o consumidor que precisasse dela tinha de reconstruí-la a partir do
-  // nome do modelo, e adivinhar errado trocava o modelo em silêncio.
+  // The CLASS, and not only the name. It exists here because the network
+  // boundary used to eat it: a consumer that needed it had to rebuild it from
+  // the model's name, and guessing wrong swapped the model in silence.
   string model_class = 2;   // cheap | medium | strong
   string model       = 3;
-  string effort      = 4;   // pedido:   low | medium | high | xhigh | max
-  // O effort REALMENTE aplicado. Pode ser MENOR que o pedido quando o
-  // fornecedor não tem os cinco níveis (ADR-0022 D4) — e em trabalho crítico
-  // (ADR-0007) essa diferença é decisão de produto, não detalhe.
+  string effort      = 4;   // requested: low | medium | high | xhigh | max
+  // The effort ACTUALLY applied. It may be LOWER than the one requested when
+  // the provider does not have the five levels (ADR-0022 D4) — and on critical
+  // work (ADR-0007) that difference is a product decision, not a detail.
   string effort_applied = 5;
   string reason         = 6;
-  // A ficha da thread (ADR-0010 §2) venceu o roteador.
+  // The thread's card (ADR-0010 §2) beat the router.
   bool from_agent_card  = 7;
 }
 
-// O consumo do turno, com as quatro parcelas DISJUNTAS (ADR-0022 D2).
+// The turn's consumption, with the four parts DISJOINT (ADR-0022 D2).
 //
-// Disjuntas é o contrato: input_tokens NÃO inclui o que veio do cache. Provedor
-// que reporta de forma inclusiva é normalizado pelo adaptador — somar campos
-// inclusivos inflaria a medição da ADR-0011 sem nada falhar.
+// Disjoint is the contract: input_tokens does NOT include what came from cache.
+// A provider that reports inclusively is normalized by the adapter — summing
+// inclusive fields would inflate ADR-0011's measurement with nothing failing.
 message TurnUsage {
   int64 input_tokens          = 1;
   int64 output_tokens         = 2;
   int64 cache_read_tokens     = 3;
   int64 cache_creation_tokens = 4;
   Money cost                  = 5;
-  // Falso = o provedor NÃO reporta criação de cache. O zero acima significa
-  // então "não dá para saber", nunca "nada foi escrito" (ADR-0022 D1). Sem este
-  // campo, quem lê a telemetria não tem como distinguir os dois.
+  // False = the provider does NOT report cache creation. The zero above then
+  // means "it cannot be known", never "nothing was written" (ADR-0022 D1).
+  // Without this field, whoever reads the telemetry has no way to tell the two
+  // apart.
   bool cache_creation_known = 6;
-  // Falso = não há tabela de preço para este modelo. O custo fica zerado por
-  // AUSÊNCIA de tabela, não por ter sido de graça — orçamento alimentado com
-  // zeros é a ficção que a ADR-0011 §2 existe para impedir.
+  // False = there is no price table for this model. The cost stays at zero for
+  // LACK of a table, not because it was free — a budget fed with zeros is the
+  // fiction ADR-0011 §2 exists to prevent.
   bool cost_known = 7;
 }
 
@@ -61,34 +63,36 @@ message TurnOutcome {
   string    thread_id = 2;
   string    provider  = 3;
   TurnRouting routing = 4;
-  // A fala do agente, já como texto para gente ler.
+  // The agent's utterance, already as text for people to read.
   string reply = 5;
-  // As mensagens publicadas na thread, na ordem em que entraram. A primeira é
-  // a do humano: a pergunta entra ANTES da chamada ao modelo, para que a
-  // conversa mostre o que foi perguntado mesmo se o fornecedor cair.
+  // The messages published on the thread, in the order they entered. The first
+  // is the human's: the question goes in BEFORE the model call, so the
+  // conversation shows what was asked even if the provider goes down.
   repeated string message_ids = 6;
   bool concluded = 7;
-  // Presente somente quando concluiu: concluir EXIGE publicar achado, e achado
-  // vazio publicado seria o registro durável de nada.
+  // Present only when it concluded: concluding REQUIRES publishing a finding,
+  // and an empty published finding would be the durable record of nothing.
   TurnFinding finding = 8;
   TurnUsage   usage   = 9;
-  // O pacote de contexto veio TRUNCADO por orçamento de tokens (ADR-0012). O
-  // aviso também entra na thread — contexto truncado que não aparece na
-  // conversa é a origem de uma conclusão errada que ninguém explica depois.
+  // The context package came TRUNCATED by token budget (ADR-0012). The warning
+  // also enters the thread — a truncation that does not show up in the
+  // conversation is the origin of a wrong conclusion nobody explains
+  // afterwards.
   bool context_truncated = 10;
-  // Orçamento estourado: a demanda PAUSA e vira item de decisão (ADR-0011 §2).
-  // O turno que já rodou é entregue inteiro; o próximo é que não sai.
+  // A blown budget: the demand PAUSES and becomes a decision item
+  // (ADR-0011 §2). The turn that already ran is delivered whole; it is the next
+  // one that does not go out.
   bool   paused = 11;
   string notice = 12;
   repeated Budget budgets = 13;
-  // Avisos legíveis: effort rebaixado, resposta cortada, conclusão recusada,
-  // criação de cache não reportada.
+  // Readable warnings: effort downgraded, reply cut, conclusion refused, cache
+  // creation not reported.
   repeated string warnings = 14;
 }
 
 service AgentService {
-  // Executa UM turno. O próximo é decisão de quem chamou — é assim que o
-  // orçamento consegue interromper ENTRE turnos, e não no meio de um.
+  // Runs ONE turn. The next one is the caller's decision — it is how the
+  // budget manages to interrupt BETWEEN turns, and not in the middle of one.
   rpc RunTurn(RunTurnRequest) returns (TurnOutcome);
 }
 
@@ -97,23 +101,24 @@ message RunTurnRequest {
   string      demand_id = 2;
   string      thread_id = 3;
   string      text      = 4;
-  // Vocabulário ABERTO: o roteador trata o desconhecido caindo no caro e DIZ
-  // que caiu. Vazio é que não passa — sem tipo de trabalho não há decisão a
-  // auditar.
+  // An OPEN vocabulary: the router handles the unknown by falling back to the
+  // expensive option and SAYING that it did. Empty is what does not pass — with
+  // no kind of work there is no decision to audit.
   string task_kind = 5;
-  // O recurso de categoria `agent` (ADR-0013) que atende este turno. Vazio = o
-  // provedor da conta, e só quando ele é ÚNICO: com dois, escolher por conta
-  // própria trocaria fornecedor, preço e cache no meio da demanda.
+  // The `agent`-category resource (ADR-0013) that serves this turn. Empty = the
+  // account's provider, and only when there is a SINGLE one: with two, choosing
+  // on our own would swap provider, price and cache in the middle of the
+  // demand.
   string resource_id = 6;
-  // Intervenção do OPERADOR, vinda da caixa de atenção. Entra pelo canal de
-  // autoridade do fornecedor, NUNCA como texto de usuário (ADR-0022 D3):
-  // achatar os dois papéis é o caminho clássico de injeção de prompt.
+  // The OPERATOR's intervention, coming from the attention box. It enters
+  // through the provider's authority channel, NEVER as user text (ADR-0022 D3):
+  // flattening the two roles is the classic prompt-injection path.
   string operator_note     = 7;
   int32  max_output_tokens = 8;
-  // OBRIGATÓRIA. As cinco escritas do turno (mensagem de entrada, aviso,
-  // consumo, resposta, achado) derivam dela, de modo que repetir a requisição
-  // repete ZERO efeitos. Gerar uma aqui transformaria um retry de rede em
-  // consumo em dobro — e duplicata de consumo não colide com nada, entraria
-  // como gasto legítimo (ADR-0011).
+  // MANDATORY. The turn's five writes (inbound message, warning, consumption,
+  // reply, finding) derive from it, so that repeating the request repeats ZERO
+  // effects. Generating one here would turn a network retry into double
+  // consumption — and a duplicate consumption collides with nothing, it would
+  // enter as legitimate spend (ADR-0011).
   string idempotency_key = 9;
 }

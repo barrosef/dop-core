@@ -26,9 +26,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 type EventServiceClient interface {
-	// Watch entrega os eventos da conta conforme acontecem.
+	// Watch delivers the account's events as they happen.
 	WatchEvents(ctx context.Context, in *WatchEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventEnvelope], error)
 }
 
@@ -63,9 +63,9 @@ type EventService_WatchEventsClient = grpc.ServerStreamingClient[EventEnvelope]
 // All implementations must embed UnimplementedEventServiceServer
 // for forward compatibility.
 //
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 type EventServiceServer interface {
-	// Watch entrega os eventos da conta conforme acontecem.
+	// Watch delivers the account's events as they happen.
 	WatchEvents(*WatchEventsRequest, grpc.ServerStreamingServer[EventEnvelope]) error
 	mustEmbedUnimplementedEventServiceServer()
 }

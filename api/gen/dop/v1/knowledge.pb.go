@@ -26,9 +26,9 @@ type KnowledgeArtifact_Kind int32
 
 const (
 	KnowledgeArtifact_KIND_UNSPECIFIED KnowledgeArtifact_Kind = 0
-	KnowledgeArtifact_KIND_RULE        KnowledgeArtifact_Kind = 1 // convenções que o agente obedece
-	KnowledgeArtifact_KIND_INDEX       KnowledgeArtifact_Kind = 2 // mapa do código
-	KnowledgeArtifact_KIND_MEMORY      KnowledgeArtifact_Kind = 3 // achados e lições de demandas passadas
+	KnowledgeArtifact_KIND_RULE        KnowledgeArtifact_Kind = 1 // conventions the agent obeys
+	KnowledgeArtifact_KIND_INDEX       KnowledgeArtifact_Kind = 2 // the code's map
+	KnowledgeArtifact_KIND_MEMORY      KnowledgeArtifact_Kind = 3 // findings and lessons from past demands
 )
 
 // Enum value maps for KnowledgeArtifact_Kind.
@@ -74,7 +74,7 @@ func (KnowledgeArtifact_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{0, 0}
 }
 
-// Base de conhecimento do projeto em três camadas (ADR-0009).
+// The project's knowledge base in three layers (ADR-0009).
 type KnowledgeArtifact struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -82,7 +82,7 @@ type KnowledgeArtifact struct {
 	Kind          KnowledgeArtifact_Kind `protobuf:"varint,3,opt,name=kind,proto3,enum=dop.v1.KnowledgeArtifact_Kind" json:"kind,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Version       int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
-	ObjectRef     string                 `protobuf:"bytes,6,opt,name=object_ref,json=objectRef,proto3" json:"object_ref,omitempty"` // conteúdo no ObjectStore
+	ObjectRef     string                 `protobuf:"bytes,6,opt,name=object_ref,json=objectRef,proto3" json:"object_ref,omitempty"` // the content in the ObjectStore
 	Meta          *structpb.Struct       `protobuf:"bytes,7,opt,name=meta,proto3" json:"meta,omitempty"`
 	Audit         *AuditStamp            `protobuf:"bytes,8,opt,name=audit,proto3" json:"audit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -175,7 +175,7 @@ func (x *KnowledgeArtifact) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Bagagem montada por demanda — cresce com a DEMANDA, não com o projeto.
+// Luggage assembled per demand — it grows with the DEMAND, not with the project.
 type ContextPackage struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Demand          *DemandRef             `protobuf:"bytes,1,opt,name=demand,proto3" json:"demand,omitempty"`
@@ -183,11 +183,11 @@ type ContextPackage struct {
 	Index           []*KnowledgeArtifact   `protobuf:"bytes,3,rep,name=index,proto3" json:"index,omitempty"`
 	Memories        []*KnowledgeArtifact   `protobuf:"bytes,4,rep,name=memories,proto3" json:"memories,omitempty"`
 	Findings        []*Finding             `protobuf:"bytes,5,rep,name=findings,proto3" json:"findings,omitempty"`
-	EstimatedTokens int32                  `protobuf:"varint,6,opt,name=estimated_tokens,json=estimatedTokens,proto3" json:"estimated_tokens,omitempty"` // medido por token counting na montagem
-	// Quanto ficou de FORA por orçamento, por camada. É informação de primeira
-	// classe (ADR-0012): sem ela a tela não tem como dizer "o contexto foi
-	// truncado", e finge que coube tudo — que é a forma mais cara de mentir para
-	// quem está decidindo se o agente tem o que precisa.
+	EstimatedTokens int32                  `protobuf:"varint,6,opt,name=estimated_tokens,json=estimatedTokens,proto3" json:"estimated_tokens,omitempty"` // measured by token counting at assembly time
+	// How much was left OUT for budget, per layer. It is first-class information
+	// (ADR-0012): without it the screen has no way to say "the context was
+	// truncated", and pretends everything fitted — which is the most expensive way
+	// of lying to whoever is deciding whether the agent has what it needs.
 	Dropped       map[string]int32 `protobuf:"bytes,7,rep,name=dropped,proto3" json:"dropped,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

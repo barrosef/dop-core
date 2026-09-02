@@ -27,10 +27,10 @@ message Demand {
   ProjectRef project      = 2;
   string     external_key = 3;   // SUOPT-1315
   string     title        = 4;
-  string     card_type    = 5;   // dinâmico, do provedor
+  string     card_type    = 5;   // dynamic, from the provider
   string     provider_status = 6;
   DopStatus  dop_status   = 7;
-  // Versão do fluxo CONGELADA ao iniciar (ADR-0014).
+  // The flow's version FROZEN when it starts (ADR-0014).
   string     flow_id      = 8;
   int32      flow_version = 9;
   repeated DemandStage stages = 10;
@@ -52,26 +52,27 @@ message Artifact {
   string       id        = 1;
   ArtifactKind kind      = 2;
   string       name      = 3;
-  string       object_ref = 4;  // ponteiro no ObjectStore
+  string       object_ref = 4;  // a pointer into the ObjectStore
   int32        version   = 5;
   AuditStamp   audit     = 6;
 }
 
-// Uma thread por agente — o dev conversa sem misturar timelines (ADR-0010).
+// One thread per agent — the developer talks without mixing timelines
+// (ADR-0010).
 message Thread {
   string   id      = 1;
   DemandRef demand = 2;
-  string   key     = 3;   // principal, forense-db, logs
+  string   key     = 3;   // main, db-forensics, logs
   AgentCard card   = 4;
-  bool     blocked = 5;   // pergunta pendente → caixa de atenção
+  bool     blocked = 5;   // a pending question → the attention box
   AuditStamp audit = 6;
 }
 
-// Ficha do agente: propósito, ferramentas, modelo e orçamento.
+// The agent's card: purpose, tools, model and budget.
 message AgentCard {
   string   purpose   = 1;
-  repeated string tools = 2;   // MCPs e skills concedidos
-  string   model     = 3;      // do cardápio das integrações de agente
+  repeated string tools = 2;   // the granted MCPs and skills
+  string   model     = 3;      // from the agent integrations' menu
   string   effort    = 4;      // low | medium | high | xhigh | max
   int64    budget_micros = 5;
 }
@@ -84,7 +85,8 @@ message Message {
   google.protobuf.Timestamp at = 5;
 }
 
-// Conclusão publicada por um agente — vira contexto dos irmãos e memória.
+// A conclusion published by an agent — it becomes its siblings' context and
+// memory.
 message Finding {
   string   id        = 1;
   DemandRef demand   = 2;
@@ -97,22 +99,23 @@ message Finding {
 service DemandService {
   rpc ListDemands  (ListDemandsRequest)  returns (ListDemandsResponse);
   rpc GetDemand    (GetDemandRequest)    returns (Demand);
-  rpc StartDemand  (StartDemandRequest)  returns (Demand);   // resolve e congela o fluxo
+  rpc StartDemand  (StartDemandRequest)  returns (Demand);   // resolves and freezes the flow
   rpc AdvanceStage (AdvanceStageRequest) returns (DemandStage);
   rpc DecideGate   (DecideGateRequest)   returns (DemandStage);
   rpc ListThreads  (ListThreadsRequest)  returns (ListThreadsResponse);
-  rpc CreateThread (CreateThreadRequest) returns (Thread);   // lançar subagente
+  rpc CreateThread (CreateThreadRequest) returns (Thread);   // launch a subagent
   rpc PostMessage  (PostMessageRequest)  returns (Message);
   rpc PublishFinding(PublishFindingRequest) returns (Finding);
-  // Os achados JÁ publicados na demanda.
+  // The findings ALREADY published on the demand.
   //
-  // A leitura existia só no domínio Go, e a borda ficava sem como mostrar o
-  // quadro de achados — que é o que impede um agente (ou um humano) de refazer
-  // investigação que outro já concluiu (ADR-0009). Ler pelo pacote de contexto
-  // não serve: aquele é truncado por orçamento de tokens e a montagem grava um
-  // evento de medição, então abrir uma tela viraria linha de custo.
+  // The read existed only in the Go domain, and the edge had no way to show the
+  // board of findings — which is what stops an agent (or a human) from redoing
+  // an investigation another has already concluded (ADR-0009). Reading through
+  // the context package does not do: that one is truncated by token budget and
+  // its assembly records a measurement event, so opening a screen would become a
+  // cost line.
   rpc ListFindings (ListFindingsRequest) returns (ListFindingsResponse);
-  // Streaming: o BFF converte em SSE (ADR-0017).
+  // Streaming: the BFF converts it into SSE (ADR-0017).
   rpc WatchDemand  (WatchDemandRequest)  returns (stream DemandEvent);
 }
 
@@ -129,7 +132,7 @@ message PostMessageRequest  { CallContext ctx = 1; string thread_id = 2; string 
 message ListFindingsRequest {
   CallContext ctx = 1;
   string demand_id = 2;
-  // Vazio traz os achados da demanda inteira; preenchido, os de uma thread.
+  // Empty brings the whole demand's findings; filled in, one thread's.
   string thread_id = 3;
   PageRequest page = 4;
 }

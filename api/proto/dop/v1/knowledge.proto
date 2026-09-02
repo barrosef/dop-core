@@ -5,37 +5,37 @@ import "dop/v1/common.proto";
 import "dop/v1/demand.proto";
 import "google/protobuf/struct.proto";
 
-// Base de conhecimento do projeto em três camadas (ADR-0009).
+// The project's knowledge base in three layers (ADR-0009).
 message KnowledgeArtifact {
   enum Kind {
     KIND_UNSPECIFIED = 0;
-    KIND_RULE        = 1;   // convenções que o agente obedece
-    KIND_INDEX       = 2;   // mapa do código
-    KIND_MEMORY      = 3;   // achados e lições de demandas passadas
+    KIND_RULE        = 1;   // conventions the agent obeys
+    KIND_INDEX       = 2;   // the code's map
+    KIND_MEMORY      = 3;   // findings and lessons from past demands
   }
   string     id      = 1;
   ProjectRef project = 2;
   Kind       kind    = 3;
   string     name    = 4;
   int32      version = 5;
-  string     object_ref = 6;   // conteúdo no ObjectStore
+  string     object_ref = 6;   // the content in the ObjectStore
   google.protobuf.Struct meta = 7;
   AuditStamp audit   = 8;
 }
 
-// Bagagem montada por demanda — cresce com a DEMANDA, não com o projeto.
+// Luggage assembled per demand — it grows with the DEMAND, not with the project.
 message ContextPackage {
   DemandRef demand = 1;
   repeated string rules = 2;
   repeated KnowledgeArtifact index    = 3;
   repeated KnowledgeArtifact memories = 4;
   repeated Finding findings = 5;
-  int32  estimated_tokens = 6;   // medido por token counting na montagem
+  int32  estimated_tokens = 6;   // measured by token counting at assembly time
 
-  // Quanto ficou de FORA por orçamento, por camada. É informação de primeira
-  // classe (ADR-0012): sem ela a tela não tem como dizer "o contexto foi
-  // truncado", e finge que coube tudo — que é a forma mais cara de mentir para
-  // quem está decidindo se o agente tem o que precisa.
+  // How much was left OUT for budget, per layer. It is first-class information
+  // (ADR-0012): without it the screen has no way to say "the context was
+  // truncated", and pretends everything fitted — which is the most expensive way
+  // of lying to whoever is deciding whether the agent has what it needs.
   map<string, int32> dropped = 7;
 }
 

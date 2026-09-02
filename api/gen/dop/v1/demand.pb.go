@@ -139,10 +139,10 @@ type Demand struct {
 	Project        *ProjectRef            `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	ExternalKey    string                 `protobuf:"bytes,3,opt,name=external_key,json=externalKey,proto3" json:"external_key,omitempty"` // SUOPT-1315
 	Title          string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
-	CardType       string                 `protobuf:"bytes,5,opt,name=card_type,json=cardType,proto3" json:"card_type,omitempty"` // dinâmico, do provedor
+	CardType       string                 `protobuf:"bytes,5,opt,name=card_type,json=cardType,proto3" json:"card_type,omitempty"` // dynamic, from the provider
 	ProviderStatus string                 `protobuf:"bytes,6,opt,name=provider_status,json=providerStatus,proto3" json:"provider_status,omitempty"`
 	DopStatus      DopStatus              `protobuf:"varint,7,opt,name=dop_status,json=dopStatus,proto3,enum=dop.v1.DopStatus" json:"dop_status,omitempty"`
-	// Versão do fluxo CONGELADA ao iniciar (ADR-0014).
+	// The flow's version FROZEN when it starts (ADR-0014).
 	FlowId        string         `protobuf:"bytes,8,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
 	FlowVersion   int32          `protobuf:"varint,9,opt,name=flow_version,json=flowVersion,proto3" json:"flow_version,omitempty"`
 	Stages        []*DemandStage `protobuf:"bytes,10,rep,name=stages,proto3" json:"stages,omitempty"`
@@ -363,7 +363,7 @@ type Artifact struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Kind          ArtifactKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=dop.v1.ArtifactKind" json:"kind,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	ObjectRef     string                 `protobuf:"bytes,4,opt,name=object_ref,json=objectRef,proto3" json:"object_ref,omitempty"` // ponteiro no ObjectStore
+	ObjectRef     string                 `protobuf:"bytes,4,opt,name=object_ref,json=objectRef,proto3" json:"object_ref,omitempty"` // a pointer into the ObjectStore
 	Version       int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
 	Audit         *AuditStamp            `protobuf:"bytes,6,opt,name=audit,proto3" json:"audit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -442,14 +442,15 @@ func (x *Artifact) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Uma thread por agente — o dev conversa sem misturar timelines (ADR-0010).
+// One thread per agent — the developer talks without mixing timelines
+// (ADR-0010).
 type Thread struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Demand        *DemandRef             `protobuf:"bytes,2,opt,name=demand,proto3" json:"demand,omitempty"`
-	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"` // principal, forense-db, logs
+	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"` // main, db-forensics, logs
 	Card          *AgentCard             `protobuf:"bytes,4,opt,name=card,proto3" json:"card,omitempty"`
-	Blocked       bool                   `protobuf:"varint,5,opt,name=blocked,proto3" json:"blocked,omitempty"` // pergunta pendente → caixa de atenção
+	Blocked       bool                   `protobuf:"varint,5,opt,name=blocked,proto3" json:"blocked,omitempty"` // a pending question → the attention box
 	Audit         *AuditStamp            `protobuf:"bytes,6,opt,name=audit,proto3" json:"audit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -527,12 +528,12 @@ func (x *Thread) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Ficha do agente: propósito, ferramentas, modelo e orçamento.
+// The agent's card: purpose, tools, model and budget.
 type AgentCard struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Purpose       string                 `protobuf:"bytes,1,opt,name=purpose,proto3" json:"purpose,omitempty"`
-	Tools         []string               `protobuf:"bytes,2,rep,name=tools,proto3" json:"tools,omitempty"`   // MCPs e skills concedidos
-	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`   // do cardápio das integrações de agente
+	Tools         []string               `protobuf:"bytes,2,rep,name=tools,proto3" json:"tools,omitempty"`   // the granted MCPs and skills
+	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`   // from the agent integrations' menu
 	Effort        string                 `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"` // low | medium | high | xhigh | max
 	BudgetMicros  int64                  `protobuf:"varint,5,opt,name=budget_micros,json=budgetMicros,proto3" json:"budget_micros,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -680,7 +681,8 @@ func (x *Message) GetAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// Conclusão publicada por um agente — vira contexto dos irmãos e memória.
+// A conclusion published by an agent — it becomes its siblings' context and
+// memory.
 type Finding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1401,7 +1403,7 @@ type ListFindingsRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Ctx      *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
-	// Vazio traz os achados da demanda inteira; preenchido, os de uma thread.
+	// Empty brings the whole demand's findings; filled in, one thread's.
 	ThreadId      string       `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
 	Page          *PageRequest `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields

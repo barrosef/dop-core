@@ -84,7 +84,7 @@ type Directive_Kind int32
 
 const (
 	Directive_KIND_UNSPECIFIED    Directive_Kind = 0
-	Directive_KIND_CHERRY_PICK    Directive_Kind = 1 // "1 faz cherry-pick da 0 quando ela commitar"
+	Directive_KIND_CHERRY_PICK    Directive_Kind = 1 // "1 cherry-picks from 0 when 0 commits"
 	Directive_KIND_MERGE_ORDER    Directive_Kind = 2
 	Directive_KIND_FILE_PARTITION Directive_Kind = 3
 	Directive_KIND_CROSS_VERIFY   Directive_Kind = 4
@@ -311,7 +311,8 @@ func (x *Reviewer) GetStatus() string {
 	return ""
 }
 
-// Fila por repositório: rebase → re-verificação → merge, um por vez (ADR-0008).
+// A queue per repository: rebase → re-verification → merge, one at a time
+// (ADR-0008).
 type MergeQueueEntry struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -319,7 +320,7 @@ type MergeQueueEntry struct {
 	Demand           *DemandRef             `protobuf:"bytes,3,opt,name=demand,proto3" json:"demand,omitempty"`
 	Position         int32                  `protobuf:"varint,4,opt,name=position,proto3" json:"position,omitempty"`
 	State            MergeQueueEntry_State  `protobuf:"varint,5,opt,name=state,proto3,enum=dop.v1.MergeQueueEntry_State" json:"state,omitempty"`
-	OverlappingFiles []string               `protobuf:"bytes,6,rep,name=overlapping_files,json=overlappingFiles,proto3" json:"overlapping_files,omitempty"` // detecção do techlead
+	OverlappingFiles []string               `protobuf:"bytes,6,rep,name=overlapping_files,json=overlappingFiles,proto3" json:"overlapping_files,omitempty"` // the tech lead's detection
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -396,7 +397,8 @@ func (x *MergeQueueEntry) GetOverlappingFiles() []string {
 	return nil
 }
 
-// Decisão do dev sobre uma transversal, aplicada pelos agentes (ADR-0015).
+// The developer's decision about a cross-cutting concern, applied by the agents
+// (ADR-0015).
 type Directive struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

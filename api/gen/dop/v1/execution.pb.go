@@ -22,14 +22,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Declarado, nunca presumido — o cliente vê o que recebeu (spec do substrato §2).
+// Declared, never presumed — the client sees what they got (substrate spec §2).
 type IsolationTier int32
 
 const (
 	IsolationTier_ISOLATION_TIER_UNSPECIFIED     IsolationTier = 0
 	IsolationTier_ISOLATION_TIER_HARDWARE        IsolationTier = 1 // Kata/Firecracker — microVM
 	IsolationTier_ISOLATION_TIER_KERNEL_EMULATED IsolationTier = 2 // gVisor / Edera
-	IsolationTier_ISOLATION_TIER_NAMESPACE       IsolationTier = 3 // container com securityContext estrito
+	IsolationTier_ISOLATION_TIER_NAMESPACE       IsolationTier = 3 // a container with a strict securityContext
 )
 
 // Enum value maps for IsolationTier.
@@ -233,7 +233,7 @@ func (x *Sandbox) GetAudit() *AuditStamp {
 type SandboxEndpoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // portal-frontend, portal-backend, mysql
-	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`   // ingress da demanda
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`   // the demand's ingress
 	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
 	State         string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // running | stopped
 	unknownFields protoimpl.UnknownFields
@@ -302,7 +302,7 @@ type ProvisionSandboxRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Ctx            *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	DemandId       string                 `protobuf:"bytes,2,opt,name=demand_id,json=demandId,proto3" json:"demand_id,omitempty"`
-	MinTier        IsolationTier          `protobuf:"varint,3,opt,name=min_tier,json=minTier,proto3,enum=dop.v1.IsolationTier" json:"min_tier,omitempty"` // política da conta; violação = RECUSA, não degrada
+	MinTier        IsolationTier          `protobuf:"varint,3,opt,name=min_tier,json=minTier,proto3,enum=dop.v1.IsolationTier" json:"min_tier,omitempty"` // the account's policy; a violation is a REFUSAL, it does not degrade
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -624,7 +624,7 @@ type StreamLogsRequest struct {
 	SandboxId     string                 `protobuf:"bytes,2,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
 	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"` // app | test | infra
 	Service       string                 `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"`
-	TestType      string                 `protobuf:"bytes,5,opt,name=test_type,json=testType,proto3" json:"test_type,omitempty"` // aaa | e2e | integracao
+	TestType      string                 `protobuf:"bytes,5,opt,name=test_type,json=testType,proto3" json:"test_type,omitempty"` // aaa | e2e | integration
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

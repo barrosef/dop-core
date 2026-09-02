@@ -21,8 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Tipo semântico da etapa: decide o renderizador na tela e o comportamento
-// do agente. Vocabulário da plataforma; composição é livre (ADR-0014).
+// The stage's semantic type: it decides the renderer on the screen and the
+// agent's behaviour. The platform's vocabulary; composition is free (ADR-0014).
 type StageType int32
 
 const (
@@ -203,11 +203,11 @@ func (Gate) EnumDescriptor() ([]byte, []int) {
 type StageSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // livre, do autor
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // free, the author's
 	Type          StageType              `protobuf:"varint,3,opt,name=type,proto3,enum=dop.v1.StageType" json:"type,omitempty"`
 	Artifacts     []ArtifactKind         `protobuf:"varint,4,rep,packed,name=artifacts,proto3,enum=dop.v1.ArtifactKind" json:"artifacts,omitempty"`
 	Gate          Gate                   `protobuf:"varint,5,opt,name=gate,proto3,enum=dop.v1.Gate" json:"gate,omitempty"`
-	Subtypes      []string               `protobuf:"bytes,6,rep,name=subtypes,proto3" json:"subtypes,omitempty"` // ex.: teste → aaa, e2e, integracao
+	Subtypes      []string               `protobuf:"bytes,6,rep,name=subtypes,proto3" json:"subtypes,omitempty"` // e.g.: test → aaa, e2e, integration
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -290,7 +290,7 @@ type Flow struct {
 	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Version     int32                  `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
-	// Escopo dono na cadeia: platform | account | workspace | project | demand
+	// The owning scope in the chain: platform | account | workspace | project | demand
 	OwnerScope    string       `protobuf:"bytes,5,opt,name=owner_scope,json=ownerScope,proto3" json:"owner_scope,omitempty"`
 	OwnerId       string       `protobuf:"bytes,6,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	Stages        []*StageSpec `protobuf:"bytes,7,rep,name=stages,proto3" json:"stages,omitempty"`
@@ -385,15 +385,14 @@ func (x *Flow) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Resultado da cadeia plataforma ◁ conta ◁ workspace ◁ projeto ◁ demanda.
-// StageOrigin diz DE ONDE cada etapa veio na resolução.
+// The result of the chain platform ◁ account ◁ workspace ◁ project ◁ demand.
+// StageOrigin says WHERE each stage came from in the resolution.
 //
-// Sem isso, ninguém consegue depurar por que uma demanda seguiu um fluxo que
-// ninguém lembra de ter escrito — e a herança de cinco níveis torna isso comum,
-// não excepcional.
+// Without it, nobody can debug why a demand followed a flow nobody remembers
+// writing — and five-level inheritance makes that common, not exceptional.
 type StageOrigin struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`     // a chave da etapa, como aparece em Flow.stages
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`     // the stage's key, as it appears in Flow.stages
 	Scope         string                 `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"` // platform | account | workspace | project | demand
 	ScopeId       string                 `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -454,16 +453,16 @@ func (x *StageOrigin) GetScopeId() string {
 type EffectiveFlow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Flow  *Flow                  `protobuf:"bytes,1,opt,name=flow,proto3" json:"flow,omitempty"`
-	// Rastro legível, para log e mensagem de erro: "projeto ◂ workspace ◂ conta".
+	// A readable trail, for logs and error messages: "project ◂ workspace ◂ account".
 	ResolvedFrom string `protobuf:"bytes,2,opt,name=resolved_from,json=resolvedFrom,proto3" json:"resolved_from,omitempty"`
-	// Os níveis que CONTRIBUÍRAM, do mais específico para o mais geral.
+	// The levels that CONTRIBUTED, from the most specific to the most general.
 	Contributors []*ScopeRef `protobuf:"bytes,3,rep,name=contributors,proto3" json:"contributors,omitempty"`
-	// A procedência POR ETAPA, na mesma ordem de flow.stages.
+	// The provenance PER STAGE, in flow.stages' same order.
 	//
-	// Existe porque `resolved_from` é uma frase, e a borda estava tendo que
-	// fazer parsing dela para marcar "herdado da conta" na linha da etapa.
-	// Contrato que obriga o consumidor a interpretar texto é contrato que
-	// quebra quando alguém melhora a redação.
+	// It exists because `resolved_from` is a sentence, and the edge was having to
+	// parse it to mark "inherited from the account" on the stage's line. A
+	// contract that forces the consumer to interpret text is a contract that
+	// breaks when somebody improves the wording.
 	Origins       []*StageOrigin `protobuf:"bytes,4,rep,name=origins,proto3" json:"origins,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -527,8 +526,8 @@ func (x *EffectiveFlow) GetOrigins() []*StageOrigin {
 	return nil
 }
 
-// ScopeRef endereça um nível da hierarquia. `id` é vazio no catálogo da
-// plataforma, que não pertence a conta nenhuma.
+// ScopeRef addresses one level of the hierarchy. `id` is empty in the
+// platform's catalog, which belongs to no account.
 type ScopeRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -905,7 +904,7 @@ type ValidateFlowResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
 	Errors        []string               `protobuf:"bytes,2,rep,name=errors,proto3" json:"errors,omitempty"`
-	Warnings      []string               `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"` // ex.: fluxo sem etapa spec
+	Warnings      []string               `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"` // e.g.: a flow with no spec stage
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -119,7 +119,7 @@ type Project struct {
 	Workspace   *WorkspaceRef          `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	// Recursos anexados: repos, task manager, fluxo git, workflow, skills.
+	// Attached resources: repos, task manager, git flow, workflow, skills.
 	Repos         []*ProjectRepo      `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
 	TaskManager   *ProjectTaskManager `protobuf:"bytes,6,opt,name=task_manager,json=taskManager,proto3" json:"task_manager,omitempty"`
 	Resources     []*ResourceRef      `protobuf:"bytes,7,rep,name=resources,proto3" json:"resources,omitempty"`
@@ -222,7 +222,7 @@ func (x *Project) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Provider é do REPOSITÓRIO, não do projeto (ADR-0013).
+// The provider belongs to the REPOSITORY, not to the project (ADR-0013).
 type ProjectRepo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -310,9 +310,9 @@ func (x *ProjectRepo) GetPrTargets() []string {
 type ProjectTaskManager struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Integration       *ResourceRef           `protobuf:"bytes,1,opt,name=integration,proto3" json:"integration,omitempty"`
-	ExternalSpaceId   string                 `protobuf:"bytes,2,opt,name=external_space_id,json=externalSpaceId,proto3" json:"external_space_id,omitempty"` // espaço do provedor (nunca "workspace" nu)
+	ExternalSpaceId   string                 `protobuf:"bytes,2,opt,name=external_space_id,json=externalSpaceId,proto3" json:"external_space_id,omitempty"` // the provider's space (never a bare "workspace")
 	ExternalProjectId string                 `protobuf:"bytes,3,opt,name=external_project_id,json=externalProjectId,proto3" json:"external_project_id,omitempty"`
-	CardTypes         []string               `protobuf:"bytes,4,rep,name=card_types,json=cardTypes,proto3" json:"card_types,omitempty"` // dinâmicos, vindos do provedor
+	CardTypes         []string               `protobuf:"bytes,4,rep,name=card_types,json=cardTypes,proto3" json:"card_types,omitempty"` // dynamic, coming from the provider
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }

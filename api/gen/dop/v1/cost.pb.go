@@ -22,7 +22,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Medição desde o primeiro dia; com BYO muda quem paga, não como se mede (ADR-0011).
+// Measurement from day one; with BYO what changes is who pays, not how it is
+// measured (ADR-0011).
 type UsageEvent struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -31,7 +32,7 @@ type UsageEvent struct {
 	Model               string                 `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
 	InputTokens         int64                  `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
 	OutputTokens        int64                  `protobuf:"varint,6,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
-	CacheReadTokens     int64                  `protobuf:"varint,7,opt,name=cache_read_tokens,json=cacheReadTokens,proto3" json:"cache_read_tokens,omitempty"` // zerado em prefixo estável = ALERTA
+	CacheReadTokens     int64                  `protobuf:"varint,7,opt,name=cache_read_tokens,json=cacheReadTokens,proto3" json:"cache_read_tokens,omitempty"` // zero on a stable prefix = AN ALERT
 	CacheCreationTokens int64                  `protobuf:"varint,8,opt,name=cache_creation_tokens,json=cacheCreationTokens,proto3" json:"cache_creation_tokens,omitempty"`
 	Cost                *Money                 `protobuf:"bytes,9,opt,name=cost,proto3" json:"cost,omitempty"`
 	At                  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=at,proto3" json:"at,omitempty"`
@@ -145,8 +146,9 @@ type Budget struct {
 	ScopeId     string                 `protobuf:"bytes,2,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
 	LimitMicros int64                  `protobuf:"varint,3,opt,name=limit_micros,json=limitMicros,proto3" json:"limit_micros,omitempty"`
 	SpentMicros int64                  `protobuf:"varint,4,opt,name=spent_micros,json=spentMicros,proto3" json:"spent_micros,omitempty"`
-	// A moeda viaja SEMPRE junto do valor. Micros sem moeda é número sem
-	// unidade, e a borda estava tendo que inventar ou deixar em branco.
+	// The currency ALWAYS travels with the value. Micros with no currency is a
+	// number with no unit, and the edge was having to invent one or leave it
+	// blank.
 	Currency      string `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -217,7 +219,7 @@ func (x *Budget) GetCurrency() string {
 	return ""
 }
 
-// tarefa → (modelo, effort). Rascunho, calibra com telemetria (P-7).
+// task → (model, effort). A draft, calibrated with telemetry (P-7).
 type RoutingDecision struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskKind      string                 `protobuf:"bytes,1,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"` // mechanical | investigation | implementation | critic

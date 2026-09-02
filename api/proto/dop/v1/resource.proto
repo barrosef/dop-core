@@ -4,7 +4,7 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/struct.proto";
 
-// Recurso é a unidade de posse e compartilhamento da conta (ADR-0013).
+// A resource is the account's unit of ownership and sharing (ADR-0013).
 message Resource {
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -19,12 +19,12 @@ message Resource {
   string     name    = 4;
   int32      version = 5;
   google.protobuf.Struct config = 6;
-  // Ponteiro opaco ao SecretStore — NUNCA o segredo (ADR-0001).
+  // An opaque pointer into the SecretStore — NEVER the secret (ADR-0001).
   string     credential_ref = 7;
   AuditStamp audit   = 8;
 }
 
-// Detalhe das integrações (único kind com credencial).
+// The integrations' detail (the only kind with a credential).
 message IntegrationSpec {
   enum Category {
     CATEGORY_UNSPECIFIED = 0;
@@ -34,7 +34,7 @@ message IntegrationSpec {
   }
   enum AuthMethod {
     AUTH_METHOD_UNSPECIFIED = 0;
-    AUTH_METHOD_OAUTH_APP   = 1;   // credencial de organização — preferida em PJ
+    AUTH_METHOD_OAUTH_APP   = 1;   // an organization credential — preferred for companies
     AUTH_METHOD_OAUTH_USER  = 2;
     AUTH_METHOD_TOKEN       = 3;
     AUTH_METHOD_SSH_KEY     = 4;
@@ -69,7 +69,7 @@ service ResourceService {
   rpc DeleteResource (DeleteResourceRequest) returns (DeleteResourceResponse);
   rpc GrantResource  (GrantResourceRequest)  returns (ResourceGrant);
   rpc RevokeGrant    (RevokeGrantRequest)    returns (RevokeGrantResponse);
-  // Credencial é escrita no SecretStore; o valor nunca volta numa leitura.
+  // The credential is written to the SecretStore; the value never comes back on a read.
   rpc SetCredential  (SetCredentialRequest)  returns (SetCredentialResponse);
 }
 

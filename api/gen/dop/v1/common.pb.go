@@ -77,7 +77,7 @@ func (ActorRef_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_common_proto_rawDescGZIP(), []int{6, 0}
 }
 
-// Referências tipadas — tenant nunca é string anônima (ADR-0017).
+// Typed references — a tenant is never an anonymous string (ADR-0017).
 type AccountRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -342,12 +342,12 @@ func (x *ResourceRef) GetId() string {
 	return ""
 }
 
-// Quem executou uma ação — humano, agente ou o próprio sistema.
+// Who performed an action — a human, an agent or the system itself.
 type ActorRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          ActorRef_Kind          `protobuf:"varint,1,opt,name=kind,proto3,enum=dop.v1.ActorRef_Kind" json:"kind,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`     // user_id, thread_id do agente, ou nome do componente
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"` // rótulo legível
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`     // user_id, the agent's thread_id, or the component's name
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"` // readable label
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -403,11 +403,11 @@ func (x *ActorRef) GetName() string {
 	return ""
 }
 
-// Contexto obrigatório de toda chamada: quem, em qual conta.
-// A borda preenche; o domínio confia (ADR-0016).
+// The mandatory context of every call: who, in which account.
+// The edge fills it in; the domain trusts it (ADR-0016).
 type CallContext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Account       *AccountRef            `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"` // conta ativa — requisição sem ela é inválida
+	Account       *AccountRef            `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"` // the active account — a request without it is invalid
 	Actor         *ActorRef              `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

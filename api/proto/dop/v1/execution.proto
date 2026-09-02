@@ -4,12 +4,12 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// Declarado, nunca presumido — o cliente vê o que recebeu (spec do substrato §2).
+// Declared, never presumed — the client sees what they got (substrate spec §2).
 enum IsolationTier {
   ISOLATION_TIER_UNSPECIFIED    = 0;
   ISOLATION_TIER_HARDWARE       = 1;  // Kata/Firecracker — microVM
   ISOLATION_TIER_KERNEL_EMULATED= 2;  // gVisor / Edera
-  ISOLATION_TIER_NAMESPACE      = 3;  // container com securityContext estrito
+  ISOLATION_TIER_NAMESPACE      = 3;  // a container with a strict securityContext
 }
 
 message Sandbox {
@@ -32,7 +32,7 @@ message Sandbox {
 
 message SandboxEndpoint {
   string name = 1;   // portal-frontend, portal-backend, mysql
-  string url  = 2;   // ingress da demanda
+  string url  = 2;   // the demand's ingress
   int32  port = 3;
   string state = 4;  // running | stopped
 }
@@ -49,7 +49,7 @@ service ExecutionService {
 message ProvisionSandboxRequest {
   CallContext   ctx = 1;
   string        demand_id = 2;
-  IsolationTier min_tier  = 3;   // política da conta; violação = RECUSA, não degrada
+  IsolationTier min_tier  = 3;   // the account's policy; a violation is a REFUSAL, it does not degrade
   string idempotency_key  = 4;
 }
 message SuspendSandboxRequest  { CallContext ctx = 1; string id = 2; }
@@ -62,7 +62,7 @@ message StreamLogsRequest {
   string sandbox_id = 2;
   string source     = 3;  // app | test | infra
   string service    = 4;
-  string test_type  = 5;  // aaa | e2e | integracao
+  string test_type  = 5;  // aaa | e2e | integration
 }
 message LogLine {
   string source  = 1;

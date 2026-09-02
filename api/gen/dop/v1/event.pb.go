@@ -23,16 +23,17 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// EventEnvelope é o evento como ele sai do log — os MESMOS campos da tabela
-// `events` e de ports.Event, sem vocabulário novo. O que muda é só a forma do
-// payload: aqui ele é Struct, porque o consumidor lê JSON e não deve precisar
-// desserializar bytes opacos para saber o que aconteceu.
+// EventEnvelope is the event as it comes out of the log — the SAME fields as the
+// `events` table and ports.Event, with no new vocabulary. All that changes is
+// the payload's shape: here it is a Struct, because the consumer reads JSON and
+// must not have to deserialize opaque bytes to learn what happened.
 type EventEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Referência tipada em vez de id nu: tenant nunca é string anônima (ADR-0017).
-	// Evento sem conta (`identity.user.ensured`, migração 0003) NÃO é transmitido
-	// a ninguém, então este campo está sempre preenchido no fio.
+	// A typed reference instead of a bare id: a tenant is never an anonymous
+	// string (ADR-0017). An event with no account (`identity.user.ensured`,
+	// migration 0003) is NOT transmitted to anyone, so this field is always filled
+	// in on the wire.
 	Account       *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	Aggregate     string                 `protobuf:"bytes,3,opt,name=aggregate,proto3" json:"aggregate,omitempty"` // demand, project, workspace, resource...
 	AggregateId   string                 `protobuf:"bytes,4,opt,name=aggregate_id,json=aggregateId,proto3" json:"aggregate_id,omitempty"`
@@ -125,17 +126,19 @@ func (x *EventEnvelope) GetOccurredAt() *timestamppb.Timestamp {
 type WatchEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
-	// Filtros opcionais. Vazio = tudo o que a conta produzir. Existem para que a
-	// caixa de atenção não precise receber (e descartar) o log inteiro.
+	// Optional filters. Empty = everything the account produces. They exist so
+	// the attention box does not have to receive (and discard) the whole log.
 	Aggregate []string `protobuf:"bytes,2,rep,name=aggregate,proto3" json:"aggregate,omitempty"` // demand, project
 	Types     []string `protobuf:"bytes,3,rep,name=types,proto3" json:"types,omitempty"`         // dop.hierarchy.project.created
-	// Cursor de replay: o ÚLTIMO evento que o cliente já processou. O servidor
-	// drena do log tudo que veio depois dele e só então emenda no fluxo ao vivo,
-	// sem buraco e sem duplicata. Vazio = só o que vier daqui pra frente.
+	// The replay cursor: the LAST event the client has already processed. The
+	// server drains from the log everything that came after it and only then
+	// splices into the live stream, with no gap and no duplicate. Empty = only
+	// what comes from now on.
 	//
-	// É string, e não timestamp, porque o id é o que o cliente já tem em mãos
-	// (veio no envelope anterior) e porque `occurred_at` sozinho não desempata
-	// eventos do mesmo instante.
+	// It is a string, and not a timestamp, because the id is what the client
+	// already has in hand (it came in the previous envelope) and because
+	// `occurred_at` alone does not break ties between events of the same
+	// instant.
 	SinceEventId  string `protobuf:"bytes,4,opt,name=since_event_id,json=sinceEventId,proto3" json:"since_event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

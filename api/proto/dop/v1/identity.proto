@@ -21,12 +21,12 @@ message Account {
   }
   string id           = 1;
   Kind   kind         = 2;
-  string handle       = 3;   // único na plataforma; PF e PJ dividem o namespace
+  string handle       = 3;   // unique on the platform; personal and organization accounts share the namespace
   string display_name = 4;
-  // Organização
-  string legal_id        = 10;  // CNPJ
+  // Organization
+  string legal_id        = 10;  // the company's registration number
   string legal_name      = 11;
-  string verified_domain = 12;  // vazio = não verificada
+  string verified_domain = 12;  // empty = not verified
   AuditStamp audit       = 20;
 }
 
@@ -58,7 +58,7 @@ message Invite {
   AccountRef account    = 2;
   string     email      = 3;
   Role       role       = 4;
-  // Concessões compostas NO CONVITE — sem defaults (ADR-0013)
+  // Grants composed IN THE INVITE — with no defaults (ADR-0013)
   repeated ResourceGrantSpec grants = 5;
   Status     status     = 6;
   google.protobuf.Timestamp expires_at = 7;
@@ -70,10 +70,10 @@ message ResourceGrantSpec {
   string      level    = 2;  // use | manage
 }
 
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 service IdentityService {
   rpc GetUser        (GetUserRequest)        returns (User);
-  rpc EnsureUser     (EnsureUserRequest)     returns (User);        // idempotente: 1º login
+  rpc EnsureUser     (EnsureUserRequest)     returns (User);        // idempotent: the first login
   rpc ListAccounts   (ListAccountsRequest)   returns (ListAccountsResponse);
   rpc GetAccount     (GetAccountRequest)     returns (Account);
   rpc CreateAccount  (CreateAccountRequest)  returns (Account);
@@ -86,8 +86,8 @@ service IdentityService {
 
 message GetUserRequest    { CallContext ctx = 1; string id = 2; }
 message EnsureUserRequest {
-  // Principal normalizado vindo do IdentityProvider — claims de Firebase
-  // não cruzam esta fronteira (ADR-0001).
+  // A normalized Principal coming from the IdentityProvider — Firebase claims
+  // do not cross this frontier (ADR-0001).
   string subject        = 1;
   string email          = 2;
   bool   email_verified = 3;
@@ -116,10 +116,10 @@ message CreateInviteRequest {
   repeated ResourceGrantSpec grants = 4;
   string idempotency_key = 5;
 }
-// O aceite endereça o convite pelo id — NÃO por segredo. O id sozinho não
-// concede nada: o servidor exige que o e-mail verificado da sessão seja o do
-// convite. Um cliente antigo que mandar o token aqui simplesmente não acha a
-// linha, que é a falha correta.
+// Acceptance addresses the invite by its id — NOT by a secret. The id alone
+// grants nothing: the server requires the session's verified email to be the
+// invite's. An old client sending the token here simply does not find the row,
+// which is the correct failure.
 message AcceptInviteRequest { CallContext ctx = 1; string invite_id = 2; string idempotency_key = 3; }
 message RevokeInviteRequest { CallContext ctx = 1; string id = 2; }
 message UpdateMembershipRequest {

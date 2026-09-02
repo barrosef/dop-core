@@ -22,25 +22,28 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Kind é a natureza do item, e é ela que determina o impacto na ordenação.
+// Kind is the item's nature, and it is what determines the impact on the
+// ordering.
 type AttentionItem_Kind int32
 
 const (
 	AttentionItem_KIND_UNSPECIFIED AttentionItem_Kind = 0
-	// Thread bloqueada esperando resposta do humano (ADR-0010).
+	// A thread blocked waiting for the human's answer (ADR-0010).
 	AttentionItem_KIND_THREAD_BLOCKED AttentionItem_Kind = 1
-	// Etapa parada num portão humano — spec aguardando aprovação.
+	// A stage stopped at a human gate — a spec awaiting approval.
 	AttentionItem_KIND_GATE_PENDING AttentionItem_Kind = 2
-	// PR aguardando revisão, com a evidência junto (ADR-0007).
+	// A PR awaiting review, with the evidence alongside (ADR-0007).
 	AttentionItem_KIND_PR_REVIEW AttentionItem_Kind = 3
-	// Conflito que a fila de merge escalou para decisão humana (ADR-0008).
+	// A conflict the merge queue escalated to a human decision (ADR-0008).
 	AttentionItem_KIND_MERGE_CONFLICT AttentionItem_Kind = 4
-	// Transversal detectada pelo techlead, com opções e recomendação prontas
-	// (ADR-0015). NÃO pausa a demanda que já está andando.
+	// A cross-cutting concern detected by the tech lead, with options and a
+	// recommendation ready (ADR-0015). It does NOT pause the demand already in
+	// motion.
 	AttentionItem_KIND_DIRECTIVE AttentionItem_Kind = 5
-	// Demanda pausada por estouro de orçamento (ADR-0011).
+	// A demand paused by a blown budget (ADR-0011).
 	AttentionItem_KIND_BUDGET_EXCEEDED AttentionItem_Kind = 6
-	// Integração da conta quebrada — o trabalho para até alguém reconectar.
+	// A broken account integration — the work stops until somebody reconnects
+	// it.
 	AttentionItem_KIND_INTEGRATION_BROKEN AttentionItem_Kind = 7
 )
 
@@ -149,24 +152,26 @@ type AttentionItem struct {
 	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Account *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	Kind    AttentionItem_Kind     `protobuf:"varint,3,opt,name=kind,proto3,enum=dop.v1.AttentionItem_Kind" json:"kind,omitempty"`
-	// Onde clicar leva. `target_kind` diz o que é (thread, stage, pull_request,
-	// directive, demand, resource) e `target_id` qual — o cockpit resolve a rota.
-	// Guardar a rota pronta aqui amarraria o backend ao desenho da tela.
+	// Where clicking leads. `target_kind` says what it is (thread, stage,
+	// pull_request, directive, demand, resource) and `target_id` says which one —
+	// the cockpit resolves the route. Storing the ready-made route here would tie
+	// the backend to the screen's design.
 	TargetKind string `protobuf:"bytes,4,opt,name=target_kind,json=targetKind,proto3" json:"target_kind,omitempty"`
 	TargetId   string `protobuf:"bytes,5,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	// A demanda a que o item pertence, quando pertence a alguma: é por ela que a
-	// caixa agrupa. Vazia em item de conta (integração quebrada, por exemplo).
+	// The demand the item belongs to, when it belongs to one: it is what the box
+	// groups by. Empty on an account item (a broken integration, for example).
 	Demand  *DemandRef `protobuf:"bytes,6,opt,name=demand,proto3" json:"demand,omitempty"`
 	Title   string     `protobuf:"bytes,7,opt,name=title,proto3" json:"title,omitempty"`
 	Summary string     `protobuf:"bytes,8,opt,name=summary,proto3" json:"summary,omitempty"`
-	// Priority é DERIVADA (impacto do tipo, depois idade), nunca informada por
-	// quem emite o evento — senão cada domínio decidiria a própria urgência e a
-	// fila deixaria de ter uma ordem só. Menor número = mais urgente.
+	// Priority is DERIVED (the kind's impact, then age), never provided by
+	// whoever emits the event — otherwise each domain would decide its own urgency
+	// and the queue would stop having a single order. A lower number = more
+	// urgent.
 	Priority int32                  `protobuf:"varint,9,opt,name=priority,proto3" json:"priority,omitempty"`
 	OpenedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=opened_at,json=openedAt,proto3" json:"opened_at,omitempty"`
-	// Preenchido quando o fato que abriu o item foi resolvido. Item resolvido sai
-	// da caixa mas PERMANECE na projeção: é dele que sai quanto tempo o dev levou
-	// para responder.
+	// Filled in when the fact that opened the item was resolved. A resolved item
+	// leaves the box but STAYS in the projection: it is where how long the
+	// developer took to answer comes from.
 	ResolvedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -282,10 +287,10 @@ func (x *AttentionItem) GetResolvedAt() *timestamppb.Timestamp {
 type ListAttentionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
-	// Vazio = só os abertos, que é o caso da caixa. Resolvidos entram por
-	// pedido explícito, para histórico.
+	// Empty = only the open ones, which is the box's case. Resolved ones come in
+	// by explicit request, for history.
 	IncludeResolved bool `protobuf:"varint,2,opt,name=include_resolved,json=includeResolved,proto3" json:"include_resolved,omitempty"`
-	// Filtro opcional por demanda — a visão de uma demanda só.
+	// An optional filter by demand — a single demand's view.
 	Demand        *DemandRef   `protobuf:"bytes,3,opt,name=demand,proto3" json:"demand,omitempty"`
 	Page          *PageRequest `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -354,8 +359,9 @@ type ListAttentionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Items []*AttentionItem       `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	Page  *PageResponse          `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
-	// Quantos itens ABERTOS existem na conta, independente da página. É o número
-	// do badge; contar a página daria um badge que muda ao paginar.
+	// How many OPEN items exist in the account, regardless of the page. It is the
+	// badge's number; counting the page would give a badge that changes as you
+	// page.
 	OpenTotal     int32 `protobuf:"varint,3,opt,name=open_total,json=openTotal,proto3" json:"open_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -415,8 +421,8 @@ func (x *ListAttentionResponse) GetOpenTotal() int32 {
 type WatchAttentionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
-	// Cursor de retomada, como em WatchEvents: o cliente que caiu volta de onde
-	// parou em vez de recomeçar ou perder item.
+	// The resumption cursor, as in WatchEvents: a client that dropped comes back
+	// from where it stopped instead of starting over or losing an item.
 	SinceEventId  string `protobuf:"bytes,2,opt,name=since_event_id,json=sinceEventId,proto3" json:"since_event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -466,18 +472,18 @@ func (x *WatchAttentionRequest) GetSinceEventId() string {
 	return ""
 }
 
-// AttentionUpdate é a mudança, não a fila inteira: reenviar a caixa toda a cada
-// alteração desperdiçaria banda e faria a tela piscar.
+// AttentionUpdate is the change, not the whole queue: resending the entire box
+// on every alteration would waste bandwidth and make the screen flicker.
 type AttentionUpdate struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Change AttentionUpdate_Change `protobuf:"varint,1,opt,name=change,proto3,enum=dop.v1.AttentionUpdate_Change" json:"change,omitempty"`
 	Item   *AttentionItem         `protobuf:"bytes,2,opt,name=item,proto3" json:"item,omitempty"`
-	// O evento do LOG que gerou este aviso.
+	// The LOG event that generated this notice.
 	//
-	// É o cursor de retomada: sem ele o cliente recebe o aviso e não tem o que
-	// devolver em `since_event_id` numa reconexão. O id do ITEM não serve —
-	// ele não é posição no log, e mandá-lo de volta como cursor pede ao núcleo
-	// uma coisa que não existe.
+	// It is the resumption cursor: without it the client receives the notice and
+	// has nothing to send back in `since_event_id` on a reconnection. The ITEM's
+	// id does not do — it is not a position in the log, and sending it back as a
+	// cursor asks the core for something that does not exist.
 	EventId       string `protobuf:"bytes,3,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

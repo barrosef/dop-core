@@ -35,7 +35,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 type IdentityServiceClient interface {
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*User, error)
 	EnsureUser(ctx context.Context, in *EnsureUserRequest, opts ...grpc.CallOption) (*User, error)
@@ -161,7 +161,7 @@ func (c *identityServiceClient) UpdateMembership(ctx context.Context, in *Update
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
 //
-// ── serviço ─────────────────────────────────────────────────────
+// ── service ─────────────────────────────────────────────────────
 type IdentityServiceServer interface {
 	GetUser(context.Context, *GetUserRequest) (*User, error)
 	EnsureUser(context.Context, *EnsureUserRequest) (*User, error)

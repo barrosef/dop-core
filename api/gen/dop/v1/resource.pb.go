@@ -133,7 +133,7 @@ type IntegrationSpec_AuthMethod int32
 
 const (
 	IntegrationSpec_AUTH_METHOD_UNSPECIFIED IntegrationSpec_AuthMethod = 0
-	IntegrationSpec_AUTH_METHOD_OAUTH_APP   IntegrationSpec_AuthMethod = 1 // credencial de organização — preferida em PJ
+	IntegrationSpec_AUTH_METHOD_OAUTH_APP   IntegrationSpec_AuthMethod = 1 // an organization credential — preferred for companies
 	IntegrationSpec_AUTH_METHOD_OAUTH_USER  IntegrationSpec_AuthMethod = 2
 	IntegrationSpec_AUTH_METHOD_TOKEN       IntegrationSpec_AuthMethod = 3
 	IntegrationSpec_AUTH_METHOD_SSH_KEY     IntegrationSpec_AuthMethod = 4
@@ -239,7 +239,7 @@ func (IntegrationSpec_Status) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{1, 2}
 }
 
-// Recurso é a unidade de posse e compartilhamento da conta (ADR-0013).
+// A resource is the account's unit of ownership and sharing (ADR-0013).
 type Resource struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -248,7 +248,7 @@ type Resource struct {
 	Name    string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Version int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
 	Config  *structpb.Struct       `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
-	// Ponteiro opaco ao SecretStore — NUNCA o segredo (ADR-0001).
+	// An opaque pointer into the SecretStore — NEVER the secret (ADR-0001).
 	CredentialRef string      `protobuf:"bytes,7,opt,name=credential_ref,json=credentialRef,proto3" json:"credential_ref,omitempty"`
 	Audit         *AuditStamp `protobuf:"bytes,8,opt,name=audit,proto3" json:"audit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -341,7 +341,7 @@ func (x *Resource) GetAudit() *AuditStamp {
 	return nil
 }
 
-// Detalhe das integrações (único kind com credencial).
+// The integrations' detail (the only kind with a credential).
 type IntegrationSpec struct {
 	state         protoimpl.MessageState     `protogen:"open.v1"`
 	Category      IntegrationSpec_Category   `protobuf:"varint,1,opt,name=category,proto3,enum=dop.v1.IntegrationSpec_Category" json:"category,omitempty"`

@@ -3,7 +3,7 @@ package dop.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// Referências tipadas — tenant nunca é string anônima (ADR-0017).
+// Typed references — a tenant is never an anonymous string (ADR-0017).
 message AccountRef   { string id = 1; }
 message WorkspaceRef { string id = 1; }
 message ProjectRef   { string id = 1; }
@@ -11,7 +11,7 @@ message DemandRef    { string id = 1; }
 message UserRef      { string id = 1; }
 message ResourceRef  { string id = 1; }
 
-// Quem executou uma ação — humano, agente ou o próprio sistema.
+// Who performed an action — a human, an agent or the system itself.
 message ActorRef {
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -21,14 +21,14 @@ message ActorRef {
     KIND_SYSTEM      = 4;
   }
   Kind   kind = 1;
-  string id   = 2;   // user_id, thread_id do agente, ou nome do componente
-  string name = 3;   // rótulo legível
+  string id   = 2;   // user_id, the agent's thread_id, or the component's name
+  string name = 3;   // readable label
 }
 
-// Contexto obrigatório de toda chamada: quem, em qual conta.
-// A borda preenche; o domínio confia (ADR-0016).
+// The mandatory context of every call: who, in which account.
+// The edge fills it in; the domain trusts it (ADR-0016).
 message CallContext {
-  AccountRef account = 1;   // conta ativa — requisição sem ela é inválida
+  AccountRef account = 1;   // the active account — a request without it is invalid
   ActorRef   actor   = 2;
 }
 
