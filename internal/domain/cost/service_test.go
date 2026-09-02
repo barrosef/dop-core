@@ -16,7 +16,7 @@ import (
 
 const (
 	accountA = "11111111-1111-1111-1111-111111111111"
-	demandaA = "22222222-2222-2222-2222-222222222222"
+	demandA  = "22222222-2222-2222-2222-222222222222"
 )
 
 var instant = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
@@ -59,7 +59,7 @@ func (r *memRepo) scopesOf(u *cost.UsageEvent) []cost.Budget {
 	return out
 }
 
-func (r *memRepo) linha(b cost.Budget) *cost.Budget {
+func (r *memRepo) row(b cost.Budget) *cost.Budget {
 	k := chaveOrc(b.AccountID, b.Scope, b.ScopeID)
 	if cur, ok := r.budgets[k]; ok {
 		return cur
@@ -81,7 +81,7 @@ func (r *memRepo) RecordUsage(_ context.Context, u *cost.UsageEvent, key string)
 		res.Duplicate = true
 		res.Usage = stored
 		for _, e := range r.scopesOf(stored) {
-			cur := *r.linha(e)
+			cur := *r.row(e)
 			res.Budgets = append(res.Budgets, cost.BudgetState{Before: cur, After: cur})
 		}
 		return res, nil
@@ -94,10 +94,10 @@ func (r *memRepo) RecordUsage(_ context.Context, u *cost.UsageEvent, key string)
 	res.Usage = &stored
 
 	for _, e := range r.scopesOf(u) {
-		linha := r.linha(e)
-		antes := *linha
-		linha.SpentMicros += u.CostMicros
-		res.Budgets = append(res.Budgets, cost.BudgetState{Before: antes, After: *linha})
+		row := r.row(e)
+		before := *row
+		row.SpentMicros += u.CostMicros
+		res.Budgets = append(res.Budgets, cost.BudgetState{Before: before, After: *row})
 	}
 	return res, nil
 }
@@ -106,7 +106,7 @@ func (r *memRepo) BudgetOf(_ context.Context, accountID string, s cost.Scope, id
 	if r.failure != nil {
 		return nil, r.failure
 	}
-	b := *r.linha(cost.Budget{AccountID: accountID, Scope: s, ScopeID: id})
+	b := *r.row(cost.Budget{AccountID: accountID, Scope: s, ScopeID: id})
 	return &b, nil
 }
 
@@ -114,11 +114,11 @@ func (r *memRepo) SetBudget(_ context.Context, b *cost.Budget) (*cost.BudgetStat
 	if r.failure != nil {
 		return nil, r.failure
 	}
-	linha := r.linha(*b)
-	antes := *linha
-	linha.LimitMicros = b.LimitMicros // acumulado PRESERVADO
-	linha.UpdatedAt = b.UpdatedAt
-	return &cost.BudgetState{Before: antes, After: *linha}, nil
+	row := r.row(*b)
+	before := *row
+	row.LimitMicros = b.LimitMicros // the accumulated total PRESERVED
+	row.UpdatedAt = b.UpdatedAt
+	return &cost.BudgetState{Before: before, After: *row}, nil
 }
 
 func (r *memRepo) Summarize(_ context.Context, accountID string, s cost.Scope, id string,
@@ -165,9 +165,9 @@ func novoServico(r *memRepo) *cost.Service {
 	return cost.NewService(r, fixedClock{t: instant}, nil)
 }
 
-func usoDe(micros cost.Micros) cost.UsageEvent {
+func usageOf(micros cost.Micros) cost.UsageEvent {
 	return cost.UsageEvent{
-		DemandID: demandaA, ThreadID: "th-1", Model: "claude-opus",
+		DemandID: demandA, ThreadID: "th-1", Model: "claude-opus",
 		InputTokens: 1000, OutputTokens: 200, CacheReadTokens: 8000,
 		CostMicros: micros, At: instant,
 	}
@@ -182,7 +182,7 @@ func TestResentRecordUsageDoesNotCountTwice(t *testing.T) {
 	svc := novoServico(repo)
 	ctx := ctxConta()
 
-	primeira, err := svc.RecordUsage(ctx, usoDe(500_000), "key-1")
+	primeira, err := svc.RecordUsage(ctx, usageOf(500_000), "key-1")
 	if err != nil {
 		t.Fatalf("the first record failed: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestResentRecordUsageDoesNotCountTwice(t *testing.T) {
 
 	// Mesma chamada, reenviada — retentativa de rede, redelivery do broker,
 	// impatient client. Any of the three would double the budget without this.
-	segunda, err := svc.RecordUsage(ctx, usoDe(500_000), "key-1")
+	segunda, err := svc.RecordUsage(ctx, usageOf(500_000), "key-1")
 	if err != nil {
 		t.Fatalf("the resend failed (it should be accepted as a repeat): %v", err)
 	}
@@ -213,7 +213,7 @@ func TestResentRecordUsageDoesNotCountTwice(t *testing.T) {
 	}
 
 	// A DIFFERENT key is different consumption — the guard must not become a gag.
-	if _, err := svc.RecordUsage(ctx, usoDe(500_000), "key-2"); err != nil {
+	if _, err := svc.RecordUsage(ctx, usageOf(500_000), "key-2"); err != nil {
 		t.Fatalf("the second legitimate consumption failed: %v", err)
 	}
 	b, _ = svc.GetBudget(ctx, cost.ScopeAccount, "")
@@ -226,7 +226,7 @@ func TestRecordUsageRequiresAnIdempotencyKey(t *testing.T) {
 	svc := novoServico(novoRepo())
 	// With no key the duplicate collides with nothing: it would enter as legitimate
 	// consumption and the budget would become fiction. Refusing is the decision.
-	_, err := svc.RecordUsage(ctxConta(), usoDe(1), "   ")
+	_, err := svc.RecordUsage(ctxConta(), usageOf(1), "   ")
 	if err == nil {
 		t.Fatal("a record with no idempotency key should be refused")
 	}
@@ -237,7 +237,7 @@ func TestRecordUsageRequiresAnIdempotencyKey(t *testing.T) {
 
 func TestRecordUsageRequiresAnActiveAccount(t *testing.T) {
 	svc := novoServico(novoRepo())
-	if _, err := svc.RecordUsage(context.Background(), usoDe(1), "k"); err == nil {
+	if _, err := svc.RecordUsage(context.Background(), usageOf(1), "k"); err == nil {
 		t.Fatal("a record with no active account should be refused")
 	}
 }
@@ -245,7 +245,7 @@ func TestRecordUsageRequiresAnActiveAccount(t *testing.T) {
 func TestRecordUsageIgnoresTheAccountInTheBody(t *testing.T) {
 	repo := novoRepo()
 	svc := novoServico(repo)
-	u := usoDe(10)
+	u := usageOf(10)
 	u.AccountID = "account-do-vizinho"
 	if _, err := svc.RecordUsage(ctxConta(), u, "k"); err != nil {
 		t.Fatalf("the record failed: %v", err)
@@ -265,13 +265,13 @@ func TestABudgetOverrunPausesInsteadOfKilling(t *testing.T) {
 	ctx := ctxConta()
 
 	if _, err := svc.SetBudget(ctx, cost.Budget{
-		Scope: cost.ScopeDemand, ScopeID: demandaA, LimitMicros: 1_000_000,
+		Scope: cost.ScopeDemand, ScopeID: demandA, LimitMicros: 1_000_000,
 	}); err != nil {
 		t.Fatalf("setting the ceiling failed: %v", err)
 	}
 
-	// Consumo abaixo do cap: nada acontece.
-	dentro, err := svc.RecordUsage(ctx, usoDe(400_000), "k1")
+	// Consumption below the cap: nothing happens.
+	dentro, err := svc.RecordUsage(ctx, usageOf(400_000), "k1")
 	if err != nil {
 		t.Fatalf("a record within the cap failed: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestABudgetOverrunPausesInsteadOfKilling(t *testing.T) {
 
 	// Usage that crosses the cap: the write STILL COUNTS and the warning comes
 	// with it. An error here would lose the measurement exactly when it matters most.
-	estoura, err := svc.RecordUsage(ctx, usoDe(700_000), "k2")
+	estoura, err := svc.RecordUsage(ctx, usageOf(700_000), "k2")
 	if err != nil {
 		t.Fatalf("an overrun must NOT fail the write — work in progress does not die in silence: %v", err)
 	}
@@ -294,15 +294,15 @@ func TestABudgetOverrunPausesInsteadOfKilling(t *testing.T) {
 
 	// And work in progress keeps recording: pausing is the decision of whoever
 	// consumes the event, not a refusal from this write.
-	depois, err := svc.RecordUsage(ctx, usoDe(100_000), "k3")
+	after, err := svc.RecordUsage(ctx, usageOf(100_000), "k3")
 	if err != nil {
 		t.Fatalf("recording after the overrun failed — that would be killing instead of pausing: %v", err)
 	}
-	if !depois.BudgetExceeded {
+	if !after.BudgetExceeded {
 		t.Error("the overrun warning has to persist while the budget is exceeded")
 	}
 
-	b, _ := svc.GetBudget(ctx, cost.ScopeDemand, demandaA)
+	b, _ := svc.GetBudget(ctx, cost.ScopeDemand, demandA)
 	if b.SpentMicros != 1_200_000 {
 		t.Errorf("spend = %d, want 1200000 — no write may have been lost", b.SpentMicros)
 	}
@@ -316,20 +316,20 @@ func TestACeilingLoweredBelowTheSpendOverruns(t *testing.T) {
 	svc := novoServico(repo)
 	ctx := ctxConta()
 
-	if _, err := svc.RecordUsage(ctx, usoDe(900_000), "k1"); err != nil {
+	if _, err := svc.RecordUsage(ctx, usageOf(900_000), "k1"); err != nil {
 		t.Fatalf("the record failed: %v", err)
 	}
 	// An operator closes the tap on a demand that is burning money.
-	antes := cost.Budget{AccountID: accountA, Scope: cost.ScopeDemand, ScopeID: demandaA,
+	before := cost.Budget{AccountID: accountA, Scope: cost.ScopeDemand, ScopeID: demandA,
 		LimitMicros: 0, SpentMicros: 900_000}
-	depois := antes
-	depois.LimitMicros = 500_000
-	if !cost.NewlyExceeded(antes, depois) {
+	after := before
+	after.LimitMicros = 500_000
+	if !cost.NewlyExceeded(before, after) {
 		t.Error("lowering the ceiling below the spend is as real an overrun as spending past it")
 	}
 
 	b, err := svc.SetBudget(ctx, cost.Budget{
-		Scope: cost.ScopeDemand, ScopeID: demandaA, LimitMicros: 500_000,
+		Scope: cost.ScopeDemand, ScopeID: demandA, LimitMicros: 500_000,
 	})
 	if err != nil {
 		t.Fatalf("lowering the cap failed: %v", err)
@@ -349,7 +349,7 @@ func TestAZeroLimitIsNoCeilingNotACeilingOfZero(t *testing.T) {
 
 	// A new account, with no budget defined: the first token must NOT be born
 	// exceeded, otherwise nothing works before somebody sets a ceiling.
-	out, err := svc.RecordUsage(ctx, usoDe(999_999_999), "k1")
+	out, err := svc.RecordUsage(ctx, usageOf(999_999_999), "k1")
 	if err != nil {
 		t.Fatalf("the record failed: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestTheRouterTableProducesADecisionWithAJustification(t *testing.T) {
 		{cost.TaskCritic, cost.ClassStrong, cost.EffortMax},
 	}
 	for _, c := range casos {
-		d, err := svc.RouteModel(ctx, c.kind, demandaA)
+		d, err := svc.RouteModel(ctx, c.kind, demandA)
 		if err != nil {
 			t.Fatalf("%s: routing failed: %v", c.kind, err)
 		}
@@ -496,7 +496,7 @@ func TestTheRouterIsATableInOnePlace(t *testing.T) {
 
 func TestTheCatalogueIsReplaceableWithoutTouchingThePolicy(t *testing.T) {
 	// The leading model name changes every six months (ADR-0001); the policy does
-	// pode mudar junto.
+	// may change with it.
 	r := cost.NewRouter(cost.ModelCatalog{
 		cost.ClassCheap:  "modelo-barato-do-fornecedor-x",
 		cost.ClassMedium: "modelo-medio-do-fornecedor-x",
@@ -530,7 +530,7 @@ func TestCacheHitRatioUsesTheWholePrompt(t *testing.T) {
 
 func TestTheSilentCacheInvalidatorAlert(t *testing.T) {
 	// A large prefix with NO cache read at all: somebody is paying 10× the
-	// mesmo prefixo (ADR-0012 §1).
+	// the same prefix (ADR-0012 §1).
 	suspeito := cost.UsageEvent{InputTokens: 50_000, CacheReadTokens: 0}
 	if !suspeito.SuspectCacheMiss() {
 		t.Error("a large prompt with no cache read should be suspicious")
@@ -552,11 +552,11 @@ func TestSummarizeDefaultsToTheCurrentMonth(t *testing.T) {
 	svc := novoServico(repo)
 	ctx := ctxConta()
 
-	if _, err := svc.RecordUsage(ctx, usoDe(250_000), "k1"); err != nil {
+	if _, err := svc.RecordUsage(ctx, usageOf(250_000), "k1"); err != nil {
 		t.Fatalf("the record failed: %v", err)
 	}
 	// Last month's consumption does not fall in the default window.
-	antigo := usoDe(999_000)
+	antigo := usageOf(999_000)
 	antigo.At = instant.AddDate(0, -1, 0)
 	if _, err := svc.RecordUsage(ctx, antigo, "k0"); err != nil {
 		t.Fatalf("the old record failed: %v", err)
@@ -584,20 +584,20 @@ func TestUsageValidation(t *testing.T) {
 	svc := novoServico(novoRepo())
 	ctx := ctxConta()
 
-	semModelo := usoDe(1)
+	semModelo := usageOf(1)
 	semModelo.Model = ""
 	if _, err := svc.RecordUsage(ctx, semModelo, "k1"); err == nil {
 		t.Error("usage with no model should be refused — without it there is no calibration")
 	}
 
-	negativo := usoDe(1)
+	negativo := usageOf(1)
 	negativo.InputTokens = -1
 	if _, err := svc.RecordUsage(ctx, negativo, "k2"); err == nil {
 		t.Error("a negative token count should be refused")
 	}
 
 	// A missing instant is filled in by the PORT's clock, never by time.Now.
-	semInstante := usoDe(1)
+	semInstante := usageOf(1)
 	semInstante.At = time.Time{}
 	out, err := svc.RecordUsage(ctx, semInstante, "k3")
 	if err != nil {

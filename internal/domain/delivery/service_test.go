@@ -23,7 +23,7 @@ type fixedClock struct{ t time.Time }
 
 func (r fixedClock) Now() time.Time { return r.t }
 
-var agora = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+var now = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
 const (
 	account = "acct-1"
@@ -150,7 +150,7 @@ func (f *fakeRepo) PullRequestOf(_ context.Context, accountID, demandID, repoID 
 func (f *fakeRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest, _ string) (*delivery.PullRequest, error) {
 	ev, _ := f.EvidenceFor(ctx, pr.AccountID, pr.DemandID, pr.RepoID, pr.HeadCommit)
 	if !ev.Green() {
-		return nil, errs.Precondition("sem green, sem PR: %s", ev.Reason())
+		return nil, errs.Precondition("no green, no PR: %s", ev.Reason())
 	}
 	pr.ID = f.id("pr")
 	f.prs = append(f.prs, *pr)
@@ -276,7 +276,7 @@ func cenario() (*delivery.Service, *fakeRepo, *fakeDemands) {
 		"dem-1": {ID: "dem-1", ProjectID: project, Active: true},
 		"dem-2": {ID: "dem-2", ProjectID: project, Active: true},
 	}}
-	return delivery.NewService(repo, dem, fixedClock{agora}, nil), repo, dem
+	return delivery.NewService(repo, dem, fixedClock{now}, nil), repo, dem
 }
 
 func comoAtor(id string) context.Context {
@@ -290,7 +290,7 @@ func run(demand, repoID, commit string, kind delivery.CheckKind, out delivery.Ou
 		DemandID: demand, RepoID: repoID, Commit: commit,
 		Kind: kind, Suite: string(kind) + "-suite", Outcome: out,
 		Total: 10, Passed: 10, SandboxID: "sbx-" + demand,
-		LogRef: "logs/" + demand + "/" + commit, EndedAt: agora,
+		LogRef: "logs/" + demand + "/" + commit, EndedAt: now,
 	}
 }
 
@@ -418,7 +418,7 @@ func TestEnqueueWithoutEvidenceOfGreenIsRefused(t *testing.T) {
 	svc, repo, _ := cenario()
 	ctx := comoAtor("ed")
 
-	// PR aberto com o commit green...
+	// A PR opened with the green commit...
 	green(t, svc, ctx, "dem-1", repo1, commit1)
 	pr := openPR(t, svc, ctx, "dem-1", repo1, commit1)
 
@@ -660,7 +660,7 @@ func diretrizExemplo() delivery.Directive {
 				Summary: "once 0 commits the contract, 1 cherry-picks and carries on",
 				Instructions: []delivery.Instruction{{
 					DemandID: "dem-1", Action: delivery.DirectiveCherryPick,
-					When:    "demand dem-0 commitou o contrato",
+					When:    "demand dem-0 committed the contract",
 					Payload: map[string]any{"from_demand": "dem-0"},
 				}},
 			},
@@ -758,7 +758,7 @@ func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 		t.Fatalf("decidir: %v", err)
 	}
 	if decided.Decision == nil || decided.Decision.DecidedBy != "ed" ||
-		decided.Decision.Rationale == "" || !decided.Decision.DecidedAt.Equal(agora) {
+		decided.Decision.Rationale == "" || !decided.Decision.DecidedAt.Equal(now) {
 		t.Fatalf("the decision has to record who, what and why: %+v", decided.Decision)
 	}
 	// Repeating the SAME decision is harmless; changing your mind needs a new directive.
@@ -796,7 +796,7 @@ func TestDecidingADirectiveDoesNotInterruptARunningDemand(t *testing.T) {
 		t.Fatalf("advancing: %v", err)
 	}
 
-	// O techlead detecta a transversal com a demand 0 e o dev decide.
+	// The techlead detects the cross-cutting situation with demand 0 and the dev decides.
 	d, err := svc.ProposeDirective(ctx, diretrizExemplo(), "idem-d1")
 	if err != nil {
 		t.Fatalf("propor directive: %v", err)
@@ -811,7 +811,7 @@ func TestDecidingADirectiveDoesNotInterruptARunningDemand(t *testing.T) {
 	if info, _ := dem.Demand(ctx, account, "dem-1"); !info.Active {
 		t.Error("the demand stopped because of an identified cross-cutting concern (ADR-0015 §5)")
 	}
-	// 2. A entry dela na queue continua exatamente onde estava.
+	// 2. Its entry in the queue stays exactly where it was.
 	alive, _ := repo.QueueEntryByID(ctx, account, entry.ID)
 	if alive.State != delivery.StateRebasing {
 		t.Errorf("the decision touched the demand's progress: state became %s", alive.State)

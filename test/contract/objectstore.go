@@ -28,7 +28,7 @@ func ObjectStoreSuite(t *testing.T, name string, newStore func(t *testing.T) (po
 		// A unique prefix per run: the bucket may be shared between runs (and
 		// between adapters) and test keys must not cross.
 		keyPrefix := func(t *testing.T) string {
-			return fmt.Sprintf("contrato/%d-%d/", time.Now().UnixNano(), keySeq.Add(1))
+			return fmt.Sprintf("contract/%d-%d/", time.Now().UnixNano(), keySeq.Add(1))
 		}
 
 		t.Run("1_immediate_read_after_write", func(t *testing.T) {
@@ -56,10 +56,10 @@ func ObjectStoreSuite(t *testing.T, name string, newStore func(t *testing.T) (po
 			t.Cleanup(func() { _ = s.Delete(context.Background(), ref) })
 
 			if err := s.Put(ctx, ref, []byte("an old version, much longer"), "text/plain"); err != nil {
-				t.Fatalf("1º Put: %v", err)
+				t.Fatalf("the 1st Put: %v", err)
 			}
-			if err := s.Put(ctx, ref, []byte("nova"), "text/plain"); err != nil {
-				t.Fatalf("2º Put: %v", err)
+			if err := s.Put(ctx, ref, []byte("new"), "text/plain"); err != nil {
+				t.Fatalf("the 2nd Put: %v", err)
 			}
 			got, err := s.Get(ctx, ref)
 			if err != nil {
@@ -67,15 +67,15 @@ func ObjectStoreSuite(t *testing.T, name string, newStore func(t *testing.T) (po
 			}
 			// The replacement is total: leftover old bytes mean a write over the
 			// top without truncating, which is silent corruption.
-			if string(got) != "nova" {
-				t.Fatalf("expected 'nova', got %q", got)
+			if string(got) != "new" {
+				t.Fatalf("expected 'new', got %q", got)
 			}
 			meta, err := s.Stat(ctx, ref)
 			if err != nil {
 				t.Fatalf("Stat: %v", err)
 			}
-			if meta.Size != 4 {
-				t.Fatalf("Stat.Size = %d, expected 4 — the size stayed on the old version", meta.Size)
+			if meta.Size != 3 {
+				t.Fatalf("Stat.Size = %d, expected 3 — the size stayed on the old version", meta.Size)
 			}
 		})
 
@@ -403,5 +403,5 @@ func ObjectStoreSuite(t *testing.T, name string, newStore func(t *testing.T) (po
 	})
 }
 
-// keySeq garante keyPrefix distinto mesmo dentro do mesmo nanossegundo.
+// keySeq guarantees a distinct keyPrefix even within the same nanosecond.
 var keySeq atomic.Int64

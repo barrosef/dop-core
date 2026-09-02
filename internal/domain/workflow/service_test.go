@@ -499,15 +499,15 @@ func TestAnIdenticalResendCreatesNoVersion(t *testing.T) {
 
 func TestRepeatedCreateWithTheSameKeyDoesNotDuplicate(t *testing.T) {
 	repo, svc, ctx := scenario(t)
-	primeiro, err := svc.Create(ctx, validFlow(), "k1")
+	first, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	segundo, err := svc.Create(ctx, validFlow(), "k1")
+	second, err := svc.Create(ctx, validFlow(), "k1")
 	if err != nil {
 		t.Fatalf("a repeat should return the same flow: %v", err)
 	}
-	if primeiro.ID != segundo.ID || len(repo.flows) != 1 {
+	if first.ID != second.ID || len(repo.flows) != 1 {
 		t.Errorf("the idempotency key did not prevent the twin flow: %d flows", len(repo.flows))
 	}
 }
@@ -643,7 +643,7 @@ func TestCreateRefusesAnInvalidFlow(t *testing.T) {
 		t.Fatalf("a flow with a cycle should give Invalid; err: %v", err)
 	}
 	if len(repo.flows) != 0 {
-		t.Error("nada pode ter sido gravado")
+		t.Error("nothing may have been written")
 	}
 }
 

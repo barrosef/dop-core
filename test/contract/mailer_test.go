@@ -212,13 +212,13 @@ func TestEachTemplateDeclaresTheKindItServes(t *testing.T) {
 		t.Fatalf("catalog: %v", err)
 	}
 	for _, spec := range catalogo {
-		marca := "dop-template: " + spec.Kind
+		marker := "dop-template: " + spec.Kind
 
 		// SendGrid: the HTML the script is going to publish.
-		if !contains(string(spec.HTML), marca) {
+		if !contains(string(spec.HTML), marker) {
 			t.Errorf("the SendGrid template of the %q notice (%s) does not declare %q: the index may "+
-				"estar apontando to o file de outro tipo, e quem receber vai ler a "+
-				"mensagem errada", spec.Kind, spec.File, marca)
+				"be pointing at the file of another kind, and whoever receives it will read "+
+				"the wrong message", spec.Kind, spec.File, marker)
 		}
 
 		// SMTP: the file the index associates with the SAME kind.
@@ -232,7 +232,7 @@ func TestEachTemplateDeclaresTheKindItServes(t *testing.T) {
 			t.Errorf("source de %q: %v", file, err)
 			continue
 		}
-		if !contains(source, marca) {
+		if !contains(source, marker) {
 			t.Errorf("SMTP's index associates the %q notice with file %q, and that file "+
 				"declares it serves another kind — the message goes out with the right label "+
 				"and the wrong content, which is worse than not going out", spec.Kind, file)

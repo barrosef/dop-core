@@ -107,11 +107,11 @@ CREATE OR REPLACE FUNCTION assert_flow_version_congelada() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     IF EXISTS (SELECT 1 FROM flows WHERE id = OLD.flow_id) THEN
-      RAISE EXCEPTION 'versão de fluxo não se apaga: a demanda que a congelou perderia o próprio histórico';
+      RAISE EXCEPTION 'a flow version is not deleted: the demand that froze it would lose its own history';
     END IF;
     RETURN OLD;
   END IF;
-  RAISE EXCEPTION 'versão de fluxo é imutável: alterar um fluxo GERA versão nova (ADR-0014 §4)';
+  RAISE EXCEPTION 'a flow version is immutable: changing a flow GENERATES a new version (ADR-0014 §4)';
 END $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER flow_versions_imutaveis

@@ -23,9 +23,9 @@ import (
 const smtpPassword = "r3l4y-password-DO-NOT-USE-9xQv7hJp"
 
 func TestMailerContractSMTP(t *testing.T) {
-	novo := func(t *testing.T, f contract.Failure, comServidor bool) (ports.Mailer, *contract.Inbox) {
+	newMailer := func(t *testing.T, f contract.Failure, withServer bool) (ports.Mailer, *contract.Inbox) {
 		addr, inbox := contract.NewSMTPDouble(t, f, smtpPassword)
-		if !comServidor {
+		if !withServer {
 			addr = "" // the local dry run: with no address, it prints instead of sending
 		}
 		return mailer.NewSMTP(mailer.SMTPConfig{
@@ -40,13 +40,13 @@ func TestMailerContractSMTP(t *testing.T) {
 	contract.MailerSuite(t, "smtp", contract.MailerHarness{
 		Secret: smtpPassword,
 		New: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
-			return novo(t, "", true)
+			return newMailer(t, "", true)
 		},
 		NewFailing: func(t *testing.T, f contract.Failure) (ports.Mailer, *contract.Inbox) {
-			return novo(t, f, true)
+			return newMailer(t, f, true)
 		},
 		NewDryRun: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
-			return novo(t, "", false)
+			return newMailer(t, "", false)
 		},
 	})
 }
@@ -64,10 +64,10 @@ func TestMailerSMTPRendersTheDataIntoTheBody(t *testing.T) {
 	_, err := m.Send(t.Context(), ports.Mail{
 		AccountID: "acct-1",
 		Kind:      string(notification.KindAttentionDigest),
-		To:        "dev@exemplo.test",
+		To:        "dev@example.test",
 		Data: map[string]any{
 			"total": 2,
-			"link":  "https://cockpit.exemplo.test/atencao",
+			"link":  "https://cockpit.example.test/attention",
 			"items": []map[string]any{
 				{"kind": "thread_blocked", "title": "An agent needs an answer", "summary": "thread 7"},
 				{"kind": "pr_review", "title": "PR aguardando revisão"},
@@ -86,7 +86,7 @@ func TestMailerSMTPRendersTheDataIntoTheBody(t *testing.T) {
 		"An agent needs an answer",
 		"PR aguardando revisão",
 		"thread 7",
-		"https://cockpit.exemplo.test/atencao",
+		"https://cockpit.example.test/attention",
 	} {
 		if !contains(body, want) {
 			t.Errorf("the rendered body does NOT contain %q — the email would go out saying "+
@@ -108,7 +108,7 @@ func TestMailerSMTPDigestSubjectCarriesTheNumber(t *testing.T) {
 	m := mailer.NewSMTP(mailer.SMTPConfig{Addr: addr})
 	if _, err := m.Send(t.Context(), ports.Mail{
 		AccountID: "acct-1", Kind: string(notification.KindAttentionDigest),
-		To: "dev@exemplo.test", Data: map[string]any{"total": 7},
+		To: "dev@example.test", Data: map[string]any{"total": 7},
 	}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}

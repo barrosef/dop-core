@@ -422,7 +422,7 @@ func (s *Service) PostMessage(ctx context.Context, threadID, text, idemKey strin
 	}, idemKey)
 }
 
-// SetThreadBlocked marca (ou desfaz) a pergunta pendente.
+// SetThreadBlocked marks (or clears) the pending question.
 //
 // It is what feeds the attention box: a blocked thread is a queue item, and
 // without that state the multi-agent model drowns the dev (spec §3, risk R-2).

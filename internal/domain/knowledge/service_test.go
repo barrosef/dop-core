@@ -26,9 +26,9 @@ import (
 func TestRuleInheritance(t *testing.T) {
 	rules := []knowledge.Artifact{
 		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "branches", Body: "rule da casa"},
-		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "segredos", Body: "nada em text puro"},
-		{Scope: knowledge.WorkspaceScope("a1", "w1"), Kind: knowledge.KindRule, Name: "testes", Body: "rule do workspace"},
-		{Scope: knowledge.ProjectScope("a1", "p1"), Kind: knowledge.KindRule, Name: "branches", Body: "rule do project"},
+		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "secrets", Body: "nothing in plain text"},
+		{Scope: knowledge.WorkspaceScope("a1", "w1"), Kind: knowledge.KindRule, Name: "tests", Body: "the workspace's rule"},
+		{Scope: knowledge.ProjectScope("a1", "p1"), Kind: knowledge.KindRule, Name: "branches", Body: "the project's rule"},
 		{Scope: knowledge.AccountScope("a1"), Kind: knowledge.KindRule, Name: "vazia", Body: "  "},
 	}
 	got := knowledge.ResolveRules(rules)
@@ -37,7 +37,7 @@ func TestRuleInheritance(t *testing.T) {
 	// replaces the account's), what was not replaced still applies, and the
 	// list comes out from specific to general — that is what makes the budget cut
 	// sacrifice the generic rule first.
-	want := []string{"rule do project", "rule do workspace", "nada em text puro"}
+	want := []string{"the project's rule", "the workspace's rule", "nothing in plain text"}
 	if len(got) != len(want) {
 		t.Fatalf("resolved rules = %v, want %v", got, want)
 	}
@@ -125,17 +125,17 @@ func TestSelectionIsDeterministic(t *testing.T) {
 	first := knowledge.SelectPackage(knowledge.Budget{}, cand)
 	// Entrada embaralhada, empate de score: o desempate por id tem de mandar.
 	cand.Memories[0], cand.Memories[1] = cand.Memories[1], cand.Memories[0]
-	segundo := knowledge.SelectPackage(knowledge.Budget{}, cand)
+	second := knowledge.SelectPackage(knowledge.Budget{}, cand)
 
 	if len(first.Memories) != 2 || first.Memories[0].ID != "m1" {
 		t.Fatalf("id tie-break not applied: %+v", first.Memories)
 	}
 	for i := range first.Memories {
-		if first.Memories[i].ID != segundo.Memories[i].ID {
+		if first.Memories[i].ID != second.Memories[i].ID {
 			t.Fatal("two assemblies of the same demand produced different orders")
 		}
 	}
-	if first.EstimatedTokens != segundo.EstimatedTokens {
+	if first.EstimatedTokens != second.EstimatedTokens {
 		t.Error("the package measurement is not deterministic")
 	}
 }
@@ -342,7 +342,7 @@ func TestALargeArtifactGoesToTheObjectStore(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", put.contentType, knowledge.ArtifactContentType)
 	}
 	if strings.HasPrefix(put.contentType, "application/json") {
-		t.Error("application/json trava o emulador local sem mensagem de err — ver P-13")
+		t.Error("application/json hangs the local emulator with no error message — see P-13")
 	}
 	// The key carries the account: one account's reference never coincides with
 	// another's, not even for the same artifact.
@@ -404,7 +404,7 @@ func TestAWriteCarriesAnIdempotencyKey(t *testing.T) {
 	if repo.idems[1].RequestHash != first {
 		t.Error("a mesma escrita produziu assinaturas diferentes")
 	}
-	in.Content = []byte("outro achado")
+	in.Content = []byte("another finding")
 	if _, err := svc.PutArtifact(ctxOf("a1"), in); err != nil {
 		t.Fatalf("the altered write failed: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestAWriteValidatesKindScopeAndContent(t *testing.T) {
 		relogioFixo{}, knowledge.Budget{})
 	casos := map[string]knowledge.PutInput{
 		"tipo desconhecido": {Kind: "diagrama", Name: "x", Content: []byte("c")},
-		"sem name":          {Kind: knowledge.KindMemory, Name: "  ", Content: []byte("c")},
+		"no name":           {Kind: knowledge.KindMemory, Name: "  ", Content: []byte("c")},
 		"no content":        {Kind: knowledge.KindMemory, Name: "x"},
 	}
 	for name, in := range casos {
@@ -446,7 +446,7 @@ func TestScopeIsDerivedFromWhatArrived(t *testing.T) {
 		t.Errorf("with no project the scope is the account's, got %q", noProject.Scope.Level)
 	}
 	comProjeto, err := svc.PutArtifact(ctxOf("a1"), knowledge.PutInput{
-		Kind: knowledge.KindRule, ProjectID: "p1", Name: "branches", Content: []byte("rule do project")})
+		Kind: knowledge.KindRule, ProjectID: "p1", Name: "branches", Content: []byte("the project's rule")})
 	if err != nil {
 		t.Fatalf("the write failed: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestReadIndexAndListRules(t *testing.T) {
 	repo := newFakeRepo()
 	repo.add(indexOf("a1", "p1", "dop-core", 30))
 	repo.add(rule("a1", "", "branches", "rule da casa"))
-	repo.add(rule("a1", "p1", "branches", "rule do project"))
+	repo.add(rule("a1", "p1", "branches", "the project's rule"))
 	repo.add(rule("a2", "p9", "branches", "rule de outra account"))
 
 	svc := knowledge.NewService(repo, newFakeStorage(), &demandasFalsas{}, nil,
@@ -489,7 +489,7 @@ func TestReadIndexAndListRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing the rules failed: %v", err)
 	}
-	if len(rules) != 1 || rules[0] != "rule do project" {
+	if len(rules) != 1 || rules[0] != "the project's rule" {
 		t.Errorf("inheritance resolved wrongly: %v", rules)
 	}
 	if _, err := svc.ListRules(ctxOf("a1"), ""); errs.KindOf(err) != errs.KindInvalid {
@@ -505,10 +505,10 @@ func TestTheServiceRefusesMissingRequiredPorts(t *testing.T) {
 		"no repository": func() {
 			knowledge.NewService(nil, newFakeStorage(), &demandasFalsas{}, nil, relogioFixo{}, knowledge.Budget{})
 		},
-		"sem ObjectStore": func() {
+		"no ObjectStore": func() {
 			knowledge.NewService(newFakeRepo(), nil, &demandasFalsas{}, nil, relogioFixo{}, knowledge.Budget{})
 		},
-		"sem demandas": func() {
+		"no demands": func() {
 			knowledge.NewService(newFakeRepo(), newFakeStorage(), nil, nil, relogioFixo{}, knowledge.Budget{})
 		},
 		"no clock": func() {
@@ -727,11 +727,11 @@ func (s *fakeStorage) Stat(_ context.Context, ref ports.ObjectRef) (*ports.Objec
 }
 
 func (s *fakeStorage) SignedPutURL(context.Context, ports.ObjectRef, time.Duration) (string, error) {
-	return "", errs.New(errs.KindUnavailable, "sem assinatura no double")
+	return "", errs.New(errs.KindUnavailable, "no signing in the double")
 }
 
 func (s *fakeStorage) SignedGetURL(context.Context, ports.ObjectRef, time.Duration) (string, error) {
-	return "", errs.New(errs.KindUnavailable, "sem assinatura no double")
+	return "", errs.New(errs.KindUnavailable, "no signing in the double")
 }
 
 // fakeEmbedder is DETERMINISTIC: the same text produces the same vector, always.

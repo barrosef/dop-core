@@ -168,7 +168,7 @@ func TestTheIdempotencyKeyDoesNotDuplicateASandbox(t *testing.T) {
 	}
 }
 
-// TestAnInterruptedProvisioningIsResumed cobre a queda entre as DUAS
+// TestAnInterruptedProvisioningIsResumed covers the crash between the TWO
 // transactions of provisioning: the row stayed in provisioning and the
 // substrate never came up. The repeat has to finish the job, not hand the client
 // half a sandbox nobody can fix afterwards.
@@ -237,8 +237,8 @@ func TestAViewerDoesNotProvision(t *testing.T) {
 
 func TestARequestWithNoActiveAccount(t *testing.T) {
 	f := novoCenario(t)
-	sem := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
-	if _, err := f.svc.Provision(sem, "demand-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindInvalid {
+	without := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "u1"})
+	if _, err := f.svc.Provision(without, "demand-1", ports.TierNamespace, ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a request with no active account is invalid by definition: %v", err)
 	}
 }
@@ -373,7 +373,7 @@ func TestShouldSuspendIsPure(t *testing.T) {
 	}
 	quase := execution.Sandbox{State: execution.StateActive, LastActiveAt: now.Add(-execution.IdleTimeout + time.Second)}
 	if quase.ShouldSuspend(now) {
-		t.Error("um segundo before do limit ele fica")
+		t.Error("one second before the limit it stays")
 	}
 	suspenso := execution.Sandbox{State: execution.StateSuspended, LastActiveAt: now.Add(-time.Hour)}
 	if suspenso.ShouldSuspend(now) {
@@ -408,17 +408,17 @@ func TestLineClassification(t *testing.T) {
 }
 
 func TestLogFilter(t *testing.T) {
-	linha := execution.LogLine{Source: execution.SourceTest, TestType: execution.TestE2E, Service: "backend"}
-	if !(execution.LogFilter{}).Matches(linha) {
+	line := execution.LogLine{Source: execution.SourceTest, TestType: execution.TestE2E, Service: "backend"}
+	if !(execution.LogFilter{}).Matches(line) {
 		t.Error("an empty filter asks for everything")
 	}
-	if !(execution.LogFilter{Source: execution.SourceTest}).Matches(linha) {
+	if !(execution.LogFilter{Source: execution.SourceTest}).Matches(line) {
 		t.Error("the same origin should match")
 	}
-	if (execution.LogFilter{Source: execution.SourceApp}).Matches(linha) {
+	if (execution.LogFilter{Source: execution.SourceApp}).Matches(line) {
 		t.Error("a different source does not match")
 	}
-	if (execution.LogFilter{TestType: execution.TestAAA}).Matches(linha) {
+	if (execution.LogFilter{TestType: execution.TestAAA}).Matches(line) {
 		t.Error("a different test type does not match")
 	}
 }
@@ -612,7 +612,7 @@ func (r *fakeRepo) ByID(_ context.Context, accountID, id string) (*execution.San
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.lines[id]
-	if !ok || s.AccountID != accountID { // toda consulta filtra por account
+	if !ok || s.AccountID != accountID { // every query filters by account
 		return nil, nil
 	}
 	cp := *s

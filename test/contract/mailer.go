@@ -377,7 +377,7 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 					defer wg.Done()
 					_, err := m.Send(ctx, ports.Mail{
 						AccountID: "acct-1", Kind: kinds[i%len(kinds)],
-						To:   fmt.Sprintf("dest-%d@exemplo.test", i),
+						To:   fmt.Sprintf("dest-%d@example.test", i),
 						Data: sampleData(),
 					})
 					errCh <- err
@@ -407,7 +407,7 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 			for i := 0; i < 2; i++ {
 				if _, err := m.Send(ctx, ports.Mail{
 					AccountID: "acct-1", Kind: kinds[0],
-					To: fmt.Sprintf("dest-%d@exemplo.test", i), Data: data,
+					To: fmt.Sprintf("dest-%d@example.test", i), Data: data,
 				}); err != nil {
 					t.Fatalf("envio %d: %v", i, err)
 				}
@@ -426,9 +426,9 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 func sampleData() map[string]any {
 	return map[string]any{
 		"account_id": "acct-1",
-		"email":      "convidado@exemplo.test",
+		"email":      "invitee@example.test",
 		"role":       "member",
-		"link":       "https://cockpit.exemplo.test/atencao",
+		"link":       "https://cockpit.example.test/attention",
 		"total":      2,
 		"items": []map[string]any{
 			{"kind": "thread_blocked", "title": "An agent needs an answer", "summary": "thread 7"},

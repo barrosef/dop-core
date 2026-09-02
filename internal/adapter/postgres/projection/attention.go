@@ -54,7 +54,7 @@ func (a *Attention) Handle(ctx context.Context, e ports.Event) error {
 	case d.Open != nil:
 		return a.abrir(ctx, *d.Open)
 	case d.Close != nil:
-		return a.fechar(ctx, env.AccountID, *d.Close, env.OccurredAt)
+		return a.close(ctx, env.AccountID, *d.Close, env.OccurredAt)
 	}
 	return nil
 }
@@ -80,7 +80,7 @@ func (a *Attention) abrir(ctx context.Context, it attention.Item) error {
 	return nil
 }
 
-func (a *Attention) fechar(ctx context.Context, accountID string, c attention.CloseSpec, quando time.Time) error {
+func (a *Attention) close(ctx context.Context, accountID string, c attention.CloseSpec, when time.Time) error {
 	// It closes by TARGET and only what is open: reprocessing the log must not
 	// touch the resolution instant already written, or else the response-time
 	// metric would change on every rebuild of the projection.
@@ -88,7 +88,7 @@ func (a *Attention) fechar(ctx context.Context, accountID string, c attention.Cl
 		UPDATE attention_items SET resolved_at = $5
 		 WHERE account_id = $1 AND kind = $2 AND target_kind = $3 AND target_id = $4
 		   AND resolved_at IS NULL`,
-		accountID, string(c.Kind), c.TargetKind, c.TargetID, quando)
+		accountID, string(c.Kind), c.TargetKind, c.TargetID, when)
 	if err != nil {
 		return err
 	}

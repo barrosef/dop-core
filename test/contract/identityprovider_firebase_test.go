@@ -126,7 +126,7 @@ func TestIdentityProviderFirebaseRealEmulatorToken(t *testing.T) {
 	email := fmt.Sprintf("contract-%d@example.com", time.Now().UnixNano())
 	corpo, _ := json.Marshal(map[string]any{
 		"email":             email,
-		"password":          "senha-de-teste-do-contrato",
+		"password":          "contract-test-password",
 		"returnSecureToken": true,
 	})
 	url := fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-emulator-key", host)

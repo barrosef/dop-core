@@ -319,7 +319,7 @@ var _ resource.Repository = (*fakeRepo)(nil)
 
 // fakeAccess is identity's narrow port: the role in the account and the nature
 // of the
-// account, nada mais.
+// account, nothing else.
 type fakeAccess struct {
 	account identity.Account
 	members map[string]identity.Role
@@ -546,14 +546,14 @@ func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 	ctx := asActor("owner")
 	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
 
-	segredo := []byte("ghp_token_super_secreto")
-	ref, err := svc.SetCredential(ctx, integ.ID, segredo)
+	secret := []byte("ghp_super_secret_token")
+	ref, err := svc.SetCredential(ctx, integ.ID, secret)
 	if err != nil {
 		t.Fatalf("SetCredential: %v", err)
 	}
 
 	// The reference is opaque: it does not carry the secret.
-	if ref == "" || strings.Contains(ref, string(segredo)) {
+	if ref == "" || strings.Contains(ref, string(secret)) {
 		t.Fatalf("the reference must not contain the secret: %q", ref)
 	}
 	// The row keeps the pointer, and only the pointer.
@@ -562,7 +562,7 @@ func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 		t.Errorf("the row should keep the reference, got %q", row.CredentialRef)
 	}
 	for _, v := range row.Config {
-		if s, ok := v.(string); ok && strings.Contains(s, string(segredo)) {
+		if s, ok := v.(string); ok && strings.Contains(s, string(secret)) {
 			t.Fatal("the secret leaked into the resource's config")
 		}
 	}
@@ -571,11 +571,11 @@ func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the vault: %v", err)
 	}
-	if !bytes.Equal(stored, segredo) {
+	if !bytes.Equal(stored, secret) {
 		t.Error("the vault should keep exactly the value that was sent")
 	}
 	// And the value never prints itself — not in a log, not in an error.
-	if got := ports.SecretValue(segredo).String(); got != "***" {
+	if got := ports.SecretValue(secret).String(); got != "***" {
 		t.Errorf("SecretValue must not print itself: %q", got)
 	}
 
@@ -620,7 +620,7 @@ func TestDeleteRemovesTheCredentialFromTheVault(t *testing.T) {
 	ctx := asActor("owner")
 
 	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
-	if _, err := svc.SetCredential(ctx, integ.ID, []byte("segredo")); err != nil {
+	if _, err := svc.SetCredential(ctx, integ.ID, []byte("secret")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Delete(ctx, integ.ID); err != nil {
@@ -649,7 +649,7 @@ func TestAPersonalAccountsResourceIsNotShareable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creation: %v", err)
 	}
-	if _, err := svc.Grant(ctx, skill.ID, "qualquer-outro", resource.LevelUse); err == nil ||
+	if _, err := svc.Grant(ctx, skill.ID, "any-other", resource.LevelUse); err == nil ||
 		errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("there is nobody to grant to in a personal account; error: %v", err)
 	}

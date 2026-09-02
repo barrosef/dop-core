@@ -73,7 +73,7 @@ CREATE INDEX sandboxes_ociosos_idx
 CREATE OR REPLACE FUNCTION assert_sandbox_destruicao_irreversivel() RETURNS trigger AS $$
 BEGIN
   IF OLD.state = 'destroyed' AND NEW.state <> 'destroyed' THEN
-    RAISE EXCEPTION 'sandbox destruído não retoma: a destruição levou o workspace junto';
+    RAISE EXCEPTION 'a destroyed sandbox does not resume: the destruction took the workspace with it';
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;

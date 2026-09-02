@@ -28,24 +28,24 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 	pkg := fullPackage()
 	card := agent.AgentCard{Purpose: "investigar", Tools: []string{"grep", "bash"}, BudgetMicros: 500}
 
-	primeiro := buildTurn(pkg, "principal", card, "primeira pergunta", "", 0)
-	segundo := buildTurn(pkg, "principal", card, "segunda pergunta, bem diferente",
-		"o operador manda parar", 0)
+	first := buildTurn(pkg, "main", card, "a first question", "", 0)
+	second := buildTurn(pkg, "main", card, "a second, quite different question",
+		"the operator says stop", 0)
 
-	if primeiro.StablePrefix != segundo.StablePrefix {
+	if first.StablePrefix != second.StablePrefix {
 		t.Fatalf("THE PREFIX CHANGED BETWEEN TURNS OF THE SAME THREAD — it is ADR-0012 §1's saving "+
 			"going away in silence.\nfirst:\n%s\nsecond:\n%s",
-			primeiro.StablePrefix, segundo.StablePrefix)
+			first.StablePrefix, second.StablePrefix)
 	}
-	if primeiro.Fingerprint() != segundo.Fingerprint() {
+	if first.Fingerprint() != second.Fingerprint() {
 		t.Fatal("Fingerprint diverged: it is of the prefix, and only of it")
 	}
 	// And the turn's text must NOT have slipped into the prefix — the error the
 	// separate field exists to prevent.
-	if strings.Contains(primeiro.StablePrefix, "primeira pergunta") {
+	if strings.Contains(first.StablePrefix, "a first question") {
 		t.Fatal("the turn's text entered the stable prefix")
 	}
-	if strings.Contains(segundo.StablePrefix, "o operador manda parar") {
+	if strings.Contains(second.StablePrefix, "the operator says stop") {
 		t.Fatal("the operator's intervention entered the stable prefix: it is VOLATILE, and " +
 			"rewriting the top of the prompt on every intervention is what ADR-0012 §1 avoids")
 	}
@@ -56,9 +56,9 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 func TestTheAssemblyIsDeterministic(t *testing.T) {
 	pkg := fullPackage()
 	card := agent.AgentCard{Purpose: "investigar", Tools: []string{"zsh", "grep", "bash", "curl"}}
-	base := buildTurn(pkg, "principal", card, "hi", "", 0)
+	base := buildTurn(pkg, "main", card, "hi", "", 0)
 	for i := 0; i < 50; i++ {
-		if outro := buildTurn(pkg, "principal", card, "hi", "", 0); outro.StablePrefix != base.StablePrefix {
+		if other := buildTurn(pkg, "main", card, "hi", "", 0); other.StablePrefix != base.StablePrefix {
 			t.Fatalf("non-deterministic prefix on attempt %d", i)
 		}
 	}
@@ -87,7 +87,7 @@ func TestToolsEnterTheThreadBrief(t *testing.T) {
 		t.Fatalf("the catalogue returned %d spec(s) and %d unknown", len(specs), len(unknown))
 	}
 
-	turn := agent.BuildTurn(agent.ContextPackage{}, "principal", card, "hi", "", 0, specs)
+	turn := agent.BuildTurn(agent.ContextPackage{}, "main", card, "hi", "", 0, specs)
 	if len(turn.Tools) != 1 || turn.Tools[0].Name != agent.ToolRunCommand {
 		t.Fatalf("the tools did not reach the turn: %+v", turn.Tools)
 	}
@@ -102,8 +102,8 @@ func TestToolsEnterTheThreadBrief(t *testing.T) {
 	}
 	// Determinism, which is prompt.go's layer 3 holding here too.
 	for i := 0; i < 20; i++ {
-		outro := agent.BuildTurn(agent.ContextPackage{}, "principal", card, "hi", "", 0, specs)
-		if outro.StablePrefix != turn.StablePrefix {
+		other := agent.BuildTurn(agent.ContextPackage{}, "main", card, "hi", "", 0, specs)
+		if other.StablePrefix != turn.StablePrefix {
 			t.Fatalf("the prefix with tools is not deterministic (attempt %d)", i)
 		}
 	}
@@ -112,7 +112,7 @@ func TestToolsEnterTheThreadBrief(t *testing.T) {
 // The core's order is PRIORITY, not a suggestion: sorting here would buy
 // stability at the price of undoing the curation (ADR-0009 §3).
 func TestTheCurationOrderIsPreserved(t *testing.T) {
-	p := buildTurn(fullPackage(), "principal", agent.AgentCard{}, "hi", "", 0)
+	p := buildTurn(fullPackage(), "main", agent.AgentCard{}, "hi", "", 0)
 	iSpecific := strings.Index(p.StablePrefix, "uphold the project standard")
 	iGeneric := strings.Index(p.StablePrefix, "open the PR against develop")
 	if iSpecific < 0 || iGeneric < 0 {
@@ -124,9 +124,9 @@ func TestTheCurationOrderIsPreserved(t *testing.T) {
 }
 
 // An empty block does not become an orphan heading — and the layout stays
-// contrato → ficha → contexto.
+// contract → card → context.
 func TestAnEmptyPackageProducesNoOrphanHeading(t *testing.T) {
-	p := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "hi", "", 0)
+	p := buildTurn(agent.ContextPackage{}, "main", agent.AgentCard{}, "hi", "", 0)
 	for _, title := range []string{"Project rules", "Repository index",
 		"Project memory", "Findings already published"} {
 		if strings.Contains(p.StablePrefix, title) {
@@ -144,7 +144,7 @@ func TestAnEmptyPackageProducesNoOrphanHeading(t *testing.T) {
 // An externalized artifact enters through its REFERENCE: omitting it would give
 // the impression there is no material at all.
 func TestArtefatoExternalizadoEntraPelaReferencia(t *testing.T) {
-	p := buildTurn(fullPackage(), "principal", agent.AgentCard{}, "hi", "", 0)
+	p := buildTurn(fullPackage(), "main", agent.AgentCard{}, "hi", "", 0)
 	if !strings.Contains(p.StablePrefix, "gs://artefatos/dop-api") {
 		t.Fatalf("the externalized artifact's reference disappeared:\n%s", p.StablePrefix)
 	}
@@ -153,7 +153,7 @@ func TestArtefatoExternalizadoEntraPelaReferencia(t *testing.T) {
 // The operator's intervention is VOLATILE, it comes AFTER the user's turn and it
 // has a role of its own — never `user` (D3).
 func TestTheOperatorInterventionHasItsOwnChannel(t *testing.T) {
-	p := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{},
+	p := buildTurn(agent.ContextPackage{}, "main", agent.AgentCard{},
 		"pergunta", "  pare de mexer no schema  ", 0)
 	if len(p.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(p.Messages))
@@ -166,27 +166,27 @@ func TestTheOperatorInterventionHasItsOwnChannel(t *testing.T) {
 	}
 	// A blank note does not become an empty message — which would go out as an
 	// operator instruction with no content, and the model would have to guess.
-	vazio := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{}, "hi", "   ", 0)
-	if len(vazio.Messages) != 1 {
-		t.Fatalf("nota em branco virou mensagem: %+v", vazio.Messages)
+	blank := buildTurn(agent.ContextPackage{}, "main", agent.AgentCard{}, "hi", "   ", 0)
+	if len(blank.Messages) != 1 {
+		t.Fatalf("nota em branco virou mensagem: %+v", blank.Messages)
 	}
 }
 
 // The two truncation warnings talk to different AUDIENCES, and both disappear
 // when there was no cut.
 func TestTruncationWarnings(t *testing.T) {
-	sem := agent.ContextPackage{}
-	if s := agent.TruncationNotice(sem); s != "" {
+	empty := agent.ContextPackage{}
+	if s := agent.TruncationNotice(empty); s != "" {
 		t.Fatalf("a warning in the thread with no truncation: %q", s)
 	}
-	if p := buildTurn(sem, "principal", agent.AgentCard{}, "hi", "", 0); strings.Contains(
+	if p := buildTurn(empty, "main", agent.AgentCard{}, "hi", "", 0); strings.Contains(
 		p.StablePrefix, "TRUNCADO") {
 		t.Fatal("a warning in the prefix with no truncation")
 	}
 
-	com := agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1, Index: 2, Memories: 3, Findings: 4}}
-	inThread := agent.TruncationNotice(com)
-	inPrefix := buildTurn(com, "principal", agent.AgentCard{}, "hi", "", 0).StablePrefix
+	withDrops := agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1, Index: 2, Memories: 3, Findings: 4}}
+	inThread := agent.TruncationNotice(withDrops)
+	inPrefix := buildTurn(withDrops, "main", agent.AgentCard{}, "hi", "", 0).StablePrefix
 	if !strings.Contains(inThread, "1 rule(s)") || !strings.Contains(inThread, "4 finding(s)") {
 		t.Fatalf("the thread warning does not say what was left out: %q", inThread)
 	}

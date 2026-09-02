@@ -96,10 +96,10 @@ func SecretStoreSuite(t *testing.T, name string, newStore func(t *testing.T) por
 			s := newStore(t)
 			ctx := context.Background()
 			_ = s.Put(ctx, refA, ports.SecretValue("antigo"))
-			_ = s.Put(ctx, refA, ports.SecretValue("novo"))
+			_ = s.Put(ctx, refA, ports.SecretValue("new"))
 			got, _ := s.Get(ctx, refA)
-			if string(got) != "novo" {
-				t.Fatalf("expected 'novo', got %q", got)
+			if string(got) != "new" {
+				t.Fatalf("expected 'new', got %q", got)
 			}
 		})
 

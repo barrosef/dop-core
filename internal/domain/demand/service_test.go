@@ -30,7 +30,7 @@ func TestStartFreezesTheFlow(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	if d.Flow.Version != 1 || len(d.Stages) != 3 {
-		t.Fatalf("congelou errado: v%d com %d etapas", d.Flow.Version, len(d.Stages))
+		t.Fatalf("it froze wrong: v%d with %d stages", d.Flow.Version, len(d.Stages))
 	}
 
 	// The catalogue's flow changes — a new version, different stages.
@@ -50,7 +50,7 @@ func TestStartFreezesTheFlow(t *testing.T) {
 		t.Errorf("stages rewritten by the new flow: %+v", keys(reloaded.Stages))
 	}
 	if reloaded.Flow.FrozenAt.IsZero() {
-		t.Error("snapshot sem instante de congelamento")
+		t.Error("a snapshot with no freezing instant")
 	}
 
 	// Restarting the SAME external key returns the demand as it stands:
@@ -107,7 +107,7 @@ func TestAnInvalidStageTransitionIsRefused(t *testing.T) {
 	_, err = svc.AdvanceStage(ctx, d.ID, "inexistente", demand.StageRunning, "")
 	requireInvalid(t, err, "inexistente")
 
-	// Status desconhecido (o UNSPECIFIED do contrato chega assim).
+	// An unknown status (the contract's UNSPECIFIED arrives like this).
 	_, err = svc.AdvanceStage(ctx, d.ID, "context", demand.StageStatus(""), "")
 	if errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("an empty status should be refused, got %v", err)

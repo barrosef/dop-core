@@ -362,7 +362,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
 				RepoExternalID: e.Repo, Branch: source, Onto: target})
 			if err == nil {
-				t.Fatalf("contexto cancelado e o rebase respondeu assim mesmo: %+v — "+
+				t.Fatalf("the context was cancelled and the rebase answered anyway: %+v — "+
 					"Conflicted=false would mean 'it did not conflict' when what happened "+
 					"was 'I do not know'", r)
 			}
@@ -469,7 +469,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			}
 			_, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
 				RepoExternalID: e.Repo, SourceBranch: "b", TargetBranch: "main",
-				ActorID: "outro-ator-qualquer"})
+				ActorID: "some-other-actor"})
 			errList = append(errList, err)
 
 			seen := 0
@@ -509,7 +509,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			p := conectar(t)
 			_, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
 				RepoExternalID: e.Repo, SourceBranch: "qualquer", TargetBranch: "main",
-				Title: "em nome de outro", ActorID: e.Actor + "-impostor"})
+				Title: "on somebody else's behalf", ActorID: e.Actor + "-impostor"})
 			if err == nil {
 				t.Fatal("a PR opened on behalf of an actor that is NOT the credential's: the PR " +
 					"would go out signed by whoever owns the borrowed token, and the " +

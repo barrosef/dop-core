@@ -103,7 +103,7 @@ var routingTable = []routingRule{
 		Kind: TaskInvestigation, Class: ClassMedium, Effort: EffortMedium,
 		Why: "subagent forensics reads a lot and concludes little; the medium class " +
 			"carries the volume without the strong class's price, and the finding is " +
-			"what goes back to the principal (ADR-0010)",
+			"what goes back to the main agent (ADR-0010)",
 	},
 	{
 		Kind: TaskImplementation, Class: ClassStrong, Effort: EffortHigh,

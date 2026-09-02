@@ -138,7 +138,7 @@ func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource,
 	case 0:
 		return nil, errs.Precondition(
 			"this account has no 'agent'-category integration (ADR-0013): " +
-				"conecte um provedor de agente antes de rodar um turno")
+				"connect an agent provider before running a turn")
 	case 1:
 		return &candidatos[0], nil
 	default:

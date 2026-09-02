@@ -168,7 +168,7 @@ BEGIN
   IF NEW.state = 'concluida' AND OLD.state IS DISTINCT FROM 'concluida' THEN
     IF NOT EXISTS (SELECT 1 FROM demand_findings f WHERE f.thread_id = NEW.id) THEN
       RAISE EXCEPTION
-        'a thread % não pode ser concluída sem achado publicado', NEW.key;
+        'thread % cannot be concluded with no published finding', NEW.key;
     END IF;
   END IF;
   RETURN NEW;

@@ -99,11 +99,11 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			bus := newBus(t)
 			base := uniqueSubject("filtro")
 			alvo := base + ".alvo"
-			outro := base + ".outro"
+			other := base + ".other"
 			c := newCollector()
 			subscribe(t, bus, base+".alvo.>", c.handler)
 
-			publish(t, bus, outro+".um", envelopeJSON(uniqueEventID(), outro+".um", `{}`))
+			publish(t, bus, other+".one", envelopeJSON(uniqueEventID(), other+".one", `{}`))
 			publish(t, bus, alvo+".um", envelopeJSON(uniqueEventID(), alvo+".um", `{}`))
 
 			c.waitFor(t, 1, "the event of the subscribed subject never arrived")
@@ -136,11 +136,11 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 
 		t.Run("5_a_handler_error_causes_a_redelivery", func(t *testing.T) {
 			bus := newBus(t)
-			subject := uniqueSubject("reentrega")
+			subject := uniqueSubject("redelivery")
 			var tentativas atomic.Int64
 			subscribe(t, bus, subject, func(_ context.Context, e ports.Event) error {
 				if tentativas.Add(1) == 1 {
-					return fmt.Errorf("falha proposital na primeira entrega")
+					return fmt.Errorf("a deliberate failure on the first delivery")
 				}
 				return nil
 			})
@@ -169,7 +169,7 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 
 		t.Run("7_an_unreadable_message_does_not_block_the_queue", func(t *testing.T) {
 			bus := newBus(t)
-			subject := uniqueSubject("veneno")
+			subject := uniqueSubject("poison")
 			c := newCollector()
 			subscribe(t, bus, subject, c.handler)
 
@@ -240,18 +240,18 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 
 // ── the suite's helpers ──────────────────────────────────────────────────────
 
-var eventoSeq atomic.Int64
+var eventSeq atomic.Int64
 
 // uniqueSubject returns a subject under "dop." (JetStream's stream only accepts
 // dop.>), unique per run: the stream is persistent and survives the test.
 func uniqueSubject(label string) string {
-	return fmt.Sprintf("dop.contrato.%s.%d-%d", label, time.Now().UnixNano(), eventoSeq.Add(1))
+	return fmt.Sprintf("dop.contract.%s.%d-%d", label, time.Now().UnixNano(), eventSeq.Add(1))
 }
 
 // uniqueEventID returns a fresh ID — JetStream deduplicates by ID within a
 // window, so reusing an ID would make the second event vanish "on its own".
 func uniqueEventID() string {
-	return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), eventoSeq.Add(1))
+	return fmt.Sprintf("evt-%d-%d", time.Now().UnixNano(), eventSeq.Add(1))
 }
 
 // nowJSON truncates to milliseconds: the instant has to survive JSON's RFC3339
@@ -260,7 +260,7 @@ func nowJSON() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
 func envelopeJSON(id, subject, payload string) []byte {
 	b, err := json.Marshal(eventbus.Envelope{
-		ID: id, AccountID: "acct-contrato", Aggregate: "contrato", AggregateID: "ag-" + id,
+		ID: id, AccountID: "acct-contract", Aggregate: "contract", AggregateID: "ag-" + id,
 		Type: subject, Payload: json.RawMessage(payload), OccurredAt: nowJSON(),
 	})
 	if err != nil {
@@ -271,7 +271,7 @@ func envelopeJSON(id, subject, payload string) []byte {
 
 func subscribe(t *testing.T, bus ports.EventBus, subject string, h ports.Handler) {
 	t.Helper()
-	durable := fmt.Sprintf("contrato-%d-%d", time.Now().UnixNano(), eventoSeq.Add(1))
+	durable := fmt.Sprintf("contract-%d-%d", time.Now().UnixNano(), eventSeq.Add(1))
 	if err := bus.Subscribe(context.Background(), "", durable, []string{subject}, h); err != nil {
 		t.Fatalf("Subscribe(%s): %v", subject, err)
 	}

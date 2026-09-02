@@ -405,7 +405,7 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 			// Saying "active" here would be lying to the cockpit.
 			return nil, errs.Precondition(
 				"sandbox %s no longer exists in the substrate (recorded state: %s); "+
-					"destrua-o e provisione outro", sb.ID, sb.State)
+					"destroy it and provision another", sb.ID, sb.State)
 		}
 		return nil, err
 	}

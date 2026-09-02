@@ -106,26 +106,26 @@ CREATE UNIQUE INDEX pull_requests_idem_idx
 -- business rule NO operation may violate does not live in the application
 -- alone.
 CREATE OR REPLACE FUNCTION assert_pr_tem_verde() RETURNS trigger AS $$
-DECLARE aceitacao int; critico int; vermelho int;
+DECLARE acceptance int; critic int; red int;
 BEGIN
   SELECT count(*) FILTER (WHERE kind = 'acceptance' AND outcome = 'passed'),
          count(*) FILTER (WHERE kind = 'critic'     AND outcome = 'passed'),
          count(*) FILTER (WHERE outcome <> 'passed')
-    INTO aceitacao, critico, vermelho
+    INTO acceptance, critic, red
     FROM verification_runs
    WHERE account_id = NEW.account_id
      AND demand_id  = NEW.demand_id
      AND repo_id    = NEW.repo_id
      AND commit_sha = NEW.head_commit;
 
-  IF aceitacao = 0 THEN
-    RAISE EXCEPTION 'sem verde, sem PR: nenhuma execução de aceitação aprovada para o commit %', NEW.head_commit;
+  IF acceptance = 0 THEN
+    RAISE EXCEPTION 'no green, no PR: no passed acceptance run for commit %', NEW.head_commit;
   END IF;
-  IF critico = 0 THEN
-    RAISE EXCEPTION 'sem verde, sem PR: falta o parecer do crítico para o commit %', NEW.head_commit;
+  IF critic = 0 THEN
+    RAISE EXCEPTION 'no green, no PR: the critic''s opinion for commit % is missing', NEW.head_commit;
   END IF;
-  IF vermelho > 0 THEN
-    RAISE EXCEPTION 'sem verde, sem PR: % execução(ões) não aprovadas no commit %', vermelho, NEW.head_commit;
+  IF red > 0 THEN
+    RAISE EXCEPTION 'no green, no PR: % run(s) not passed on commit %', red, NEW.head_commit;
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
@@ -231,7 +231,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(NEW.options) o WHERE o->>'key' = NEW.recommended
   ) THEN
-    RAISE EXCEPTION 'a recomendação % não está entre as opções da diretriz', NEW.recommended;
+    RAISE EXCEPTION 'the recommendation % is not among the directive''s options', NEW.recommended;
   END IF;
 
   FOR acao IN
@@ -242,7 +242,7 @@ BEGIN
     IF acao IS NULL OR acao NOT IN
        ('cherry_pick', 'merge_order', 'file_partition', 'cross_verify') THEN
       RAISE EXCEPTION
-        'instrução de diretriz fora do vocabulário de coordenação: % — diretriz coordena, nunca pausa demanda (ADR-0015)',
+        'a directive instruction outside the coordination vocabulary: % — a directive coordinates, it never pauses a demand (ADR-0015)',
         COALESCE(acao, '(vazia)');
     END IF;
   END LOOP;

@@ -199,7 +199,7 @@ type Thread struct {
 	ID        string
 	AccountID string
 	DemandID  string
-	Key       string // principal, db-forensics, logs
+	Key       string // main, db-forensics, logs
 	Card      AgentCard
 	State     ThreadState
 	CreatedBy string
@@ -414,11 +414,11 @@ func (t Thread) CheckPost() error {
 }
 
 // ValidateThreadKey: the key is the thread's address within the demand
-// (#principal, #db-forensics) — it has to be stable and typeable.
+// (#main, #db-forensics) — it has to be stable and typeable.
 func ValidateThreadKey(k string) error {
 	k = strings.TrimSpace(k)
 	if k == "" {
-		return errs.Invalid("a thread needs a key (e.g. principal, db-forensics)")
+		return errs.Invalid("a thread needs a key (e.g. main, db-forensics)")
 	}
 	if len(k) > 64 {
 		return errs.Invalid("a thread key may have at most 64 characters")

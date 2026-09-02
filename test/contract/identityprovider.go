@@ -169,11 +169,11 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			raw := mint(t, env, TokenSpec{
 				Subject: "s",
 				Expiry:  time.Now().Add(-2 * time.Hour),
-				Extra:   map[string]any{"segredo_do_token": secret},
+				Extra:   map[string]any{"token_secret": secret},
 			})
 			_, err := env.Provider.VerifyToken(ctx, raw)
 			if err == nil {
-				t.Fatal("token expirado foi aceito")
+				t.Fatal("an expired token was accepted")
 			}
 			// mustRefuse already compares against the token's parts; here the
 			// target is the decoded claim, which does not travel in base64 and
@@ -309,14 +309,14 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 				t.Skip("this adapter does no I/O to verify — nothing to cancel")
 			}
 			raw := mint(t, env, TokenSpec{Subject: "s"})
-			cancelado, cancel := context.WithCancel(context.Background())
+			cancelled, cancel := context.WithCancel(context.Background())
 			cancel()
-			_, err := env.Provider.VerifyToken(cancelado, raw)
+			_, err := env.Provider.VerifyToken(cancelled, raw)
 			if err == nil {
-				t.Fatal("contexto cancelado e o token foi verificado assim mesmo")
+				t.Fatal("the context was cancelled and the token was verified anyway")
 			}
 			if k := errs.KindOf(err); k != errs.KindUnavailable {
-				t.Fatalf("contexto cancelado virou %s: %v", k, err)
+				t.Fatalf("a cancelled context became %s: %v", k, err)
 			}
 		})
 
@@ -365,8 +365,8 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			// bring every login down.
 			env.Rotate(t)
 			time.Sleep(env.MinRefresh + 50*time.Millisecond)
-			novo := mint(t, env, TokenSpec{Subject: "s"})
-			if _, err := env.Provider.VerifyToken(ctx, novo); err != nil {
+			fresh := mint(t, env, TokenSpec{Subject: "s"})
+			if _, err := env.Provider.VerifyToken(ctx, fresh); err != nil {
 				t.Fatalf("after the key rotation nobody gets in any more: %v", err)
 			}
 			if n := env.Fetches(); n <= after {

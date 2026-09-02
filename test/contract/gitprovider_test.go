@@ -36,12 +36,12 @@ var branchSeq atomic.Int64
 // branches returns a new pair on every call. New on every call is a requirement
 // of the suite, not a convenience: with fixed names, the idempotency subtest
 // would find the PR left by the previous subtest and pass by accident.
-func branches(marca string) (string, string) {
+func branches(marker string) (string, string) {
 	n := branchSeq.Add(1)
-	if marca != "" {
-		marca = marca + "-"
+	if marker != "" {
+		marker = marker + "-"
 	}
-	return fmt.Sprintf("demanda/%s%d", marca, n), "main"
+	return fmt.Sprintf("demand/%s%d", marker, n), "main"
 }
 
 func TestGitProviderContractGitHub(t *testing.T) {

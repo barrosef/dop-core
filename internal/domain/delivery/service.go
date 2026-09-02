@@ -126,7 +126,7 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 		return nil, errs.Invalid("a PR with no head commit: there is nothing to verify")
 	}
 	if strings.TrimSpace(spec.SourceBranch) == "" {
-		return nil, errs.Invalid("PR sem branch de origem")
+		return nil, errs.Invalid("a PR with no source branch")
 	}
 	if _, err := s.demands.Demand(ctx, accountID, spec.DemandID); err != nil {
 		return nil, err
@@ -136,9 +136,9 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 	if err != nil {
 		return nil, err
 	}
-	if falta := ev.Missing(); len(falta) > 0 {
+	if missing := ev.Missing(); len(missing) > 0 {
 		return nil, errs.Precondition(
-			"sem verde, sem PR (ADR-0007): %s", strings.Join(falta, "; "))
+			"no green, no PR (ADR-0007): %s", strings.Join(missing, "; "))
 	}
 
 	target := spec.TargetBranch
@@ -148,7 +148,7 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 
 	// The PR is opened AT THE PROVIDER before being recorded here.
 	//
-	// A ordem importa: registrar primeiro deixaria a nossa base afirmando um PR
+	// The order matters: recording first would leave our database asserting a PR
 	// that does not exist, and it is our database the merge queue consults.
 	// Failing to open beats recording a lie.
 	if s.providers != nil {
@@ -256,13 +256,13 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 	if err != nil {
 		return nil, err
 	}
-	if falta := ev.Missing(); len(falta) > 0 {
+	if missing := ev.Missing(); len(missing) > 0 {
 		// FailedPrecondition, and not Invalid: the request is well formed; what
 		// is missing is a state of the world the caller can provide (run the
 		// acceptance, call the critic) and try again.
 		return nil, errs.Precondition(
 			"the merge queue refuses an entry with no evidence of green for commit %s (ADR-0007): %s",
-			short(pr.HeadCommit), strings.Join(falta, "; "))
+			short(pr.HeadCommit), strings.Join(missing, "; "))
 	}
 
 	entry := &MergeQueueEntry{

@@ -142,7 +142,7 @@ func TestApplyForAnInviteBuildsTheCompositeKey(t *testing.T) {
 	e := Event{
 		ID: "ev-1", AccountID: "account-1", Aggregate: "invite", AggregateID: "inv-1",
 		Type: EvInviteCreated, OccurredAt: time.Now(),
-		Payload: map[string]any{"email": "convidado@exemplo.test", "role": "member"},
+		Payload: map[string]any{"email": "invitee@example.test", "role": "member"},
 	}
 	cs := Apply(e, payloadEmail)
 	if len(cs) != 1 {
@@ -160,7 +160,7 @@ func TestApplyForAnInviteBuildsTheCompositeKey(t *testing.T) {
 	if c.Kind != KindInvite {
 		t.Fatalf("kind %q, expected %q", c.Kind, KindInvite)
 	}
-	if len(c.Recipients) != 1 || c.Recipients[0].Email != "convidado@exemplo.test" {
+	if len(c.Recipients) != 1 || c.Recipients[0].Email != "invitee@example.test" {
 		t.Fatalf("recipient: %+v — the invitee IS NOT YET A USER, and the only place "+
 			"their address exists is the payload", c.Recipients)
 	}

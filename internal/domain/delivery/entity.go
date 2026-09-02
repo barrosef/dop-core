@@ -140,7 +140,7 @@ type Evidence struct {
 // provide. "Precondition failed" without saying which precondition is the same
 // as not answering.
 func (e Evidence) Missing() []string {
-	var falta []string
+	var missing []string
 	if strings.TrimSpace(e.Commit) == "" {
 		return []string{"there is no commit to verify: the PR has to point at a commit"}
 	}
@@ -151,13 +151,13 @@ func (e Evidence) Missing() []string {
 		// is what caught the semantic break ADR-0008 describes: yesterday's green
 		// is not today's green.
 		if r.Commit != e.Commit {
-			falta = append(falta, fmt.Sprintf(
+			missing = append(missing, fmt.Sprintf(
 				"run %q belongs to commit %s, not to commit %s under review",
 				r.Suite, short(r.Commit), short(e.Commit)))
 			continue
 		}
 		if r.Outcome != OutcomePassed {
-			falta = append(falta, fmt.Sprintf(
+			missing = append(missing, fmt.Sprintf(
 				"run %q (%s) ended in %s", r.Suite, r.Kind, r.Outcome))
 			continue
 		}
@@ -169,14 +169,14 @@ func (e Evidence) Missing() []string {
 		}
 	}
 	if acceptance == 0 {
-		falta = append(falta, fmt.Sprintf(
+		missing = append(missing, fmt.Sprintf(
 			"no passed acceptance run for commit %s (ADR-0007 §1)", short(e.Commit)))
 	}
 	if critic == 0 {
-		falta = append(falta, fmt.Sprintf(
+		missing = append(missing, fmt.Sprintf(
 			"the critic's opinion for commit %s is missing (ADR-0007 §3)", short(e.Commit)))
 	}
-	return falta
+	return missing
 }
 
 // Green is the question ADR-0007 asks. The answer comes from the list of runs,
@@ -263,10 +263,10 @@ func (s QueueState) CanTransitionTo(n QueueState) bool {
 	case StateVerifying:
 		// A failed re-verification sends the PR back to the agent: the conflict
 		// here is semantic, not textual — it is exactly the case the queue exists
-		// pegar.
+		// to catch.
 		return n == StateMerged || n == StateConflict
 	case StateConflict:
-		return n == StateRebasing // resolvido, tenta de novo
+		return n == StateRebasing // resolved, it tries again
 	}
 	return false
 }
@@ -280,8 +280,8 @@ const DefaultPriority = 100
 // for the human to decide without archaeology (ADR-0008 §2).
 type ConflictReport struct {
 	Files      []string
-	BaseCommit string // contra qual `main` o rebase foi tentado
-	Attempts   int    // quantas vezes o agente tentou antes de escalar
+	BaseCommit string // which `main` the rebase was attempted against
+	Attempts   int    // how many times the agent tried before escalating
 	Detail     string
 	ReportedAt time.Time
 }
@@ -465,10 +465,10 @@ func (d Directive) Validate() error {
 		return errs.Invalid("a directive with no project")
 	}
 	if !ValidDirectiveKind(d.Kind) {
-		return errs.Invalid("tipo de diretriz desconhecido: %q", d.Kind)
+		return errs.Invalid("unknown directive kind: %q", d.Kind)
 	}
 	if strings.TrimSpace(d.Summary) == "" {
-		return errs.Invalid("diretriz sem enunciado da transversal detectada")
+		return errs.Invalid("a directive with no statement of the cross-cutting situation found")
 	}
 	if len(d.Options) < 2 {
 		return errs.Invalid("a directive needs at least two options: one option is an alarm, not a decision (ADR-0015 §3)")

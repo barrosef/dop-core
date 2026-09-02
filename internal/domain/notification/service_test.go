@@ -25,9 +25,9 @@ type fakeRepo struct {
 	tentativas map[string]int
 	settled    []Outcome
 	membros    []Recipient
-	maduros    []AttentionNotice
+	ripe       []AttentionNotice
 	contas     []string
-	corte      time.Time
+	cutoff     time.Time
 	erroClaim  error
 }
 
@@ -74,15 +74,15 @@ func (r *fakeRepo) Recipients(_ context.Context, _ string) ([]Recipient, error) 
 
 func (r *fakeRepo) AccountsWithRipeAttention(_ context.Context, _ string, _ Action,
 	olderThan time.Time, _ int) ([]string, error) {
-	r.corte = olderThan
+	r.cutoff = olderThan
 	return r.contas, nil
 }
 
 func (r *fakeRepo) RipeAttention(_ context.Context, accountID, _ string, _ Action,
 	olderThan time.Time, _, limit int) ([]AttentionNotice, error) {
-	r.corte = olderThan
+	r.cutoff = olderThan
 	var out []AttentionNotice
-	for _, n := range r.maduros {
+	for _, n := range r.ripe {
 		// The double applies the SAME predicate as the SQL: only what opened
 		// before the cutoff. Without that, the delay test would prove only that
 		// the service calls the repository, not that it computes the right
@@ -120,9 +120,9 @@ func (m *fakeMailer) Send(_ context.Context, mail ports.Mail) (*ports.MailReceip
 	return &ports.MailReceipt{State: estado, Provider: "fake", Reference: "ref-1"}, nil
 }
 
-type relogioFake struct{ t time.Time }
+type fakeClock struct{ t time.Time }
 
-func (r relogioFake) Now() time.Time { return r.t }
+func (r fakeClock) Now() time.Time { return r.t }
 
 // ── testes ──────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ func inviteEvent(id string) Event {
 		// there is no way to know that from here.
 		Payload: map[string]any{
 			"invite_id": "inv-1",
-			"email":     "convidado@exemplo.test",
+			"email":     "invitee@example.test",
 			"role":      "member",
 		},
 	}
@@ -155,7 +155,7 @@ func inviteEvent(id string) Event {
 
 func TestAnInviteBecomesAnEmail(t *testing.T) {
 	repo, mail := novoRepo(), &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{time.Now()},
+	s := NewService(repo, mail, fakeClock{time.Now()},
 		Config{BaseURL: "https://cockpit.test"})
 
 	if err := s.HandleEvent(context.Background(), inviteEvent("ev-1")); err != nil {
@@ -165,7 +165,7 @@ func TestAnInviteBecomesAnEmail(t *testing.T) {
 		t.Fatalf("expected 1 send, got %d", len(mail.sent))
 	}
 	m := mail.sent[0]
-	if m.Kind != string(KindInvite) || m.To != "convidado@exemplo.test" {
+	if m.Kind != string(KindInvite) || m.To != "invitee@example.test" {
 		t.Fatalf("mensagem errada: %+v", m)
 	}
 	// The link addresses THE INVITE, not the list: whoever receives it is not yet
@@ -181,7 +181,7 @@ func TestAnInviteBecomesAnEmail(t *testing.T) {
 // THE GUARANTEE WITH NO UNDO. JetStream delivery is at-least-once.
 func TestRedeliveryOfTheSameEventSendsNoSecondEmail(t *testing.T) {
 	repo, mail := novoRepo(), &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
+	s := NewService(repo, mail, fakeClock{time.Now()}, Config{})
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
@@ -200,7 +200,7 @@ func TestADifferentEventOfTheSameKindSendsAnotherEmail(t *testing.T) {
 	// INVITE would be worse than the duplicate — somebody invited would never
 	// know.
 	repo, mail := novoRepo(), &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
+	s := NewService(repo, mail, fakeClock{time.Now()}, Config{})
 	_ = s.HandleEvent(context.Background(), inviteEvent("ev-1"))
 	_ = s.HandleEvent(context.Background(), inviteEvent("ev-2"))
 	if len(mail.sent) != 2 {
@@ -212,7 +212,7 @@ func TestADifferentEventOfTheSameKindSendsAnotherEmail(t *testing.T) {
 func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 	repo := novoRepo()
 	mail := &fakeMailer{err: errs.New(errs.KindUnavailable, "fornecedor fora do ar")}
-	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
+	s := NewService(repo, mail, fakeClock{time.Now()}, Config{})
 	ctx := context.Background()
 
 	err := s.HandleEvent(ctx, inviteEvent("ev-1"))
@@ -239,7 +239,7 @@ func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 func TestExhaustedAttemptsStopResending(t *testing.T) {
 	repo := novoRepo()
 	mail := &fakeMailer{err: errors.New("caiu")}
-	s := NewService(repo, mail, relogioFake{time.Now()}, Config{MaxAttempts: 2})
+	s := NewService(repo, mail, fakeClock{time.Now()}, Config{MaxAttempts: 2})
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
@@ -255,7 +255,7 @@ func TestExhaustedAttemptsStopResending(t *testing.T) {
 func TestLocalRehearsalBecomesItsOwnStateInTheRecord(t *testing.T) {
 	repo := novoRepo()
 	mail := &fakeMailer{estado: ports.MailSentLocal}
-	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
+	s := NewService(repo, mail, fakeClock{time.Now()}, Config{})
 	_ = s.HandleEvent(context.Background(), inviteEvent("ev-1"))
 	if repo.settled[0].State != StateSentLocal {
 		t.Fatalf("state %q: the difference between 'we notified' and 'we pretended "+
@@ -267,7 +267,7 @@ func TestLocalRehearsalBecomesItsOwnStateInTheRecord(t *testing.T) {
 
 // ── o atraso do resumo ──────────────────────────────────────────────────────
 
-func itemMaduro(evento string, aberto time.Time) AttentionNotice {
+func ripeItem(evento string, aberto time.Time) AttentionNotice {
 	return AttentionNotice{
 		AccountID: "acct-1", EventID: evento, ItemID: "it-" + evento,
 		Kind: "thread_blocked", Title: "An agent needs an answer",
@@ -278,14 +278,14 @@ func itemMaduro(evento string, aberto time.Time) AttentionNotice {
 func TestATooFreshItemDoesNotBecomeAnEmail(t *testing.T) {
 	// The item opens, waits, and only becomes an email if it is still open.
 	// Whoever was in the cockpit has already handled it.
-	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	repo := novoRepo()
 	repo.contas = []string{"acct-1"}
-	repo.membros = []Recipient{{Email: "dev@exemplo.test"}}
-	repo.maduros = []AttentionNotice{itemMaduro("ev-novo", agora.Add(-5*time.Minute))}
+	repo.membros = []Recipient{{Email: "dev@example.test"}}
+	repo.ripe = []AttentionNotice{ripeItem("ev-new", now.Add(-5*time.Minute))}
 
 	mail := &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{agora}, Config{DigestDelay: 15 * time.Minute})
+	s := NewService(repo, mail, fakeClock{now}, Config{DigestDelay: 15 * time.Minute})
 
 	contas, avisos, err := s.SweepDigest(context.Background())
 	if err != nil {
@@ -296,20 +296,20 @@ func TestATooFreshItemDoesNotBecomeAnEmail(t *testing.T) {
 			"the delay exists so the trivial resolves itself",
 			contas, avisos, len(mail.sent))
 	}
-	if got := agora.Sub(repo.corte); got != 15*time.Minute {
+	if got := now.Sub(repo.cutoff); got != 15*time.Minute {
 		t.Fatalf("the cut-off was computed with a delay of %v, expected 15m", got)
 	}
 }
 
 func TestAMatureItemBecomesAnEmail(t *testing.T) {
-	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	repo := novoRepo()
 	repo.contas = []string{"acct-1"}
-	repo.membros = []Recipient{{Email: "dev@exemplo.test"}}
-	repo.maduros = []AttentionNotice{itemMaduro("ev-velho", agora.Add(-20*time.Minute))}
+	repo.membros = []Recipient{{Email: "dev@example.test"}}
+	repo.ripe = []AttentionNotice{ripeItem("ev-old", now.Add(-20*time.Minute))}
 
 	mail := &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{agora},
+	s := NewService(repo, mail, fakeClock{now},
 		Config{DigestDelay: 15 * time.Minute, BaseURL: "https://cockpit.test"})
 
 	if _, avisos, err := s.SweepDigest(context.Background()); err != nil || avisos != 1 {
@@ -333,17 +333,17 @@ func TestAMatureItemBecomesAnEmail(t *testing.T) {
 func TestManyItemsBecomeOneEmailWithOneClaimPerItem(t *testing.T) {
 	// "One email per item makes the inbox useless." But idempotency stays PER
 	// ITEM, otherwise a new item would reopen the old ones.
-	agora := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	velho := agora.Add(-30 * time.Minute)
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-30 * time.Minute)
 	repo := novoRepo()
 	repo.contas = []string{"acct-1"}
-	repo.membros = []Recipient{{Email: "dev@exemplo.test"}}
-	repo.maduros = []AttentionNotice{
-		itemMaduro("ev-1", velho), itemMaduro("ev-2", velho), itemMaduro("ev-3", velho),
+	repo.membros = []Recipient{{Email: "dev@example.test"}}
+	repo.ripe = []AttentionNotice{
+		ripeItem("ev-1", old), ripeItem("ev-2", old), ripeItem("ev-3", old),
 	}
 
 	mail := &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{agora}, Config{DigestDelay: 15 * time.Minute})
+	s := NewService(repo, mail, fakeClock{now}, Config{DigestDelay: 15 * time.Minute})
 	if _, _, err := s.SweepDigest(context.Background()); err != nil {
 		t.Fatalf("SweepDigest: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestManyItemsBecomeOneEmailWithOneClaimPerItem(t *testing.T) {
 		t.Fatalf("o corpo listou %d itens", len(itens))
 	}
 
-	// Segunda varredura: nada novo, e nenhum e-mail.
+	// A second sweep: nothing new, and no e-mail.
 	if _, avisos, _ := s.SweepDigest(context.Background()); avisos != 0 {
 		t.Fatalf("the second sweep reported %d item(s) again", avisos)
 	}
@@ -369,15 +369,15 @@ func TestManyItemsBecomeOneEmailWithOneClaimPerItem(t *testing.T) {
 
 func TestOneEmailPerRecipient(t *testing.T) {
 	// One message with everybody in copy would hand the account's address list
-	// conta a cada membro.
-	agora := time.Now().UTC()
+	// account to each member.
+	now := time.Now().UTC()
 	repo := novoRepo()
 	repo.contas = []string{"acct-1"}
-	repo.membros = []Recipient{{Email: "a@exemplo.test"}, {Email: "b@exemplo.test"}}
-	repo.maduros = []AttentionNotice{itemMaduro("ev-1", agora.Add(-time.Hour))}
+	repo.membros = []Recipient{{Email: "a@example.test"}, {Email: "b@example.test"}}
+	repo.ripe = []AttentionNotice{ripeItem("ev-1", now.Add(-time.Hour))}
 
 	mail := &fakeMailer{}
-	s := NewService(repo, mail, relogioFake{agora}, Config{})
+	s := NewService(repo, mail, fakeClock{now}, Config{})
 	if _, _, err := s.SweepDigest(context.Background()); err != nil {
 		t.Fatalf("SweepDigest: %v", err)
 	}
@@ -393,12 +393,12 @@ func TestAnAccountWithNoRecipientClaimsNothing(t *testing.T) {
 	// Claiming here would record "notified" for items nobody saw — and the day a
 	// member gained a verified address, they would start in debt to their own
 	// box.
-	agora := time.Now().UTC()
+	now := time.Now().UTC()
 	repo := novoRepo()
 	repo.contas = []string{"acct-1"}
-	repo.maduros = []AttentionNotice{itemMaduro("ev-1", agora.Add(-time.Hour))}
+	repo.ripe = []AttentionNotice{ripeItem("ev-1", now.Add(-time.Hour))}
 
-	s := NewService(repo, &fakeMailer{}, relogioFake{agora}, Config{})
+	s := NewService(repo, &fakeMailer{}, fakeClock{now}, Config{})
 	if _, avisos, err := s.SweepDigest(context.Background()); err != nil || avisos != 0 {
 		t.Fatalf("avisos=%d err=%v", avisos, err)
 	}
@@ -412,15 +412,15 @@ func TestTheSweepVisitsEachAccountWithThatAccountInContext(t *testing.T) {
 	// requires one. The way out is to visit account by account — isolation is not
 	// loosened, what changes is who
 	// decide a ordem de visita.
-	agora := time.Now().UTC()
+	now := time.Now().UTC()
 	repo := &repoEspiaDeConta{fakeRepo: novoRepo()}
 	repo.contas = []string{"acct-1", "acct-2"}
-	repo.membros = []Recipient{{Email: "dev@exemplo.test"}}
-	repo.maduros = []AttentionNotice{
-		{AccountID: "acct-1", EventID: "ev-1", Title: "a", OpenedAt: agora.Add(-time.Hour)},
-		{AccountID: "acct-2", EventID: "ev-2", Title: "b", OpenedAt: agora.Add(-time.Hour)},
+	repo.membros = []Recipient{{Email: "dev@example.test"}}
+	repo.ripe = []AttentionNotice{
+		{AccountID: "acct-1", EventID: "ev-1", Title: "a", OpenedAt: now.Add(-time.Hour)},
+		{AccountID: "acct-2", EventID: "ev-2", Title: "b", OpenedAt: now.Add(-time.Hour)},
 	}
-	s := NewService(repo, &fakeMailer{}, relogioFake{agora}, Config{})
+	s := NewService(repo, &fakeMailer{}, fakeClock{now}, Config{})
 	if _, _, err := s.SweepDigest(context.Background()); err != nil {
 		t.Fatalf("SweepDigest: %v", err)
 	}
@@ -451,16 +451,16 @@ func (r *repoEspiaDeConta) RipeAttention(ctx context.Context, accountID, rule st
 }
 
 func TestOneBrokenAccountDoesNotStopTheOthers(t *testing.T) {
-	agora := time.Now().UTC()
+	now := time.Now().UTC()
 	repo := novoRepo()
 	repo.contas = []string{"acct-1", "acct-2"}
-	repo.membros = []Recipient{{Email: "dev@exemplo.test"}}
-	repo.maduros = []AttentionNotice{
-		{AccountID: "acct-1", EventID: "ev-1", Title: "a", OpenedAt: agora.Add(-time.Hour)},
-		{AccountID: "acct-2", EventID: "ev-2", Title: "b", OpenedAt: agora.Add(-time.Hour)},
+	repo.membros = []Recipient{{Email: "dev@example.test"}}
+	repo.ripe = []AttentionNotice{
+		{AccountID: "acct-1", EventID: "ev-1", Title: "a", OpenedAt: now.Add(-time.Hour)},
+		{AccountID: "acct-2", EventID: "ev-2", Title: "b", OpenedAt: now.Add(-time.Hour)},
 	}
 	mail := &selectiveMailer{falhaPara: "ev-1"}
-	s := NewService(repo, mail, relogioFake{agora}, Config{})
+	s := NewService(repo, mail, fakeClock{now}, Config{})
 	contas, _, err := s.SweepDigest(context.Background())
 	if err != nil {
 		t.Fatalf("the whole sweep stopped because of one account: %v", err)

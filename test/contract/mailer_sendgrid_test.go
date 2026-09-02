@@ -44,10 +44,10 @@ func testIDs() map[string]string {
 
 func TestMailerContractSendGrid(t *testing.T) {
 	ids := testIDs()
-	novo := func(t *testing.T, f contract.Failure, comChave bool) (ports.Mailer, *contract.Inbox) {
+	newMailer := func(t *testing.T, f contract.Failure, withKey bool) (ports.Mailer, *contract.Inbox) {
 		url, inbox := contract.NewSendGridDouble(t, ids, f, sendGridKey)
 		key := sendGridKey
-		if !comChave {
+		if !withKey {
 			key = "" // ensaio local
 		}
 		return mailer.NewSendGrid(mailer.SendGridConfig{
@@ -62,13 +62,13 @@ func TestMailerContractSendGrid(t *testing.T) {
 	contract.MailerSuite(t, "sendgrid", contract.MailerHarness{
 		Secret: sendGridKey,
 		New: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
-			return novo(t, "", true)
+			return newMailer(t, "", true)
 		},
 		NewFailing: func(t *testing.T, f contract.Failure) (ports.Mailer, *contract.Inbox) {
-			return novo(t, f, true)
+			return newMailer(t, f, true)
 		},
 		NewDryRun: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
-			return novo(t, "", false)
+			return newMailer(t, "", false)
 		},
 	})
 }

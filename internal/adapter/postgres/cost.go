@@ -65,7 +65,7 @@ func (r *CostRepo) RecordUsage(ctx context.Context, u *cost.UsageEvent, idempote
 			// time and the budget AS IT IS — before = after, so nothing "has
 			// just blown", but whoever asked still learns whether it is
 			// blown.
-			return carregarRepeticao(ctx, tx, u, idempotencyKey, out)
+			return loadReplay(ctx, tx, u, idempotencyKey, out)
 		}
 		if err != nil {
 			return Translate(err, "usage key")
@@ -89,8 +89,8 @@ func (r *CostRepo) RecordUsage(ctx context.Context, u *cost.UsageEvent, idempote
 	return out, nil
 }
 
-// carregarRepeticao devolve o estado corrente sem escrever nada.
-func carregarRepeticao(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent,
+// loadReplay returns the current state without writing anything.
+func loadReplay(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent,
 	idempotencyKey string, out *cost.RecordResult) error {
 
 	out.Duplicate = true
@@ -221,10 +221,10 @@ func accumulate(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent) ([]cost.Budg
 			AccountID: u.AccountID, Scope: sc.scope, ScopeID: sc.id,
 			LimitMicros: cost.Micros(limit), Currency: currency, UpdatedAt: updatedAt,
 		}
-		antes, depois := base, base
-		antes.SpentMicros = cost.Micros(before)
-		depois.SpentMicros = cost.Micros(after)
-		out = append(out, cost.BudgetState{Before: antes, After: depois})
+		before_, after_ := base, base
+		before_.SpentMicros = cost.Micros(before)
+		after_.SpentMicros = cost.Micros(after)
+		out = append(out, cost.BudgetState{Before: before_, After: after_})
 	}
 	return out, nil
 }
@@ -352,19 +352,19 @@ func demandFilter(scope cost.Scope, scopeID string) any {
 // SetBudget writes the ceiling preserving the accumulated total, and returns
 // before/after.
 //
-// The `antes` CTE reads the OLD row: within the same command it sees the
+// The `previous` CTE reads the OLD row: within the same command it sees the
 // snapshot prior to the upsert, which is exactly what is needed to know whether
 // lowering the ceiling has just blown the budget.
 func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetState, error) {
 	var st cost.BudgetState
 
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		var limAntes, gastoAntes, limDepois, gastoDepois int64
+		var limitBefore, spentBefore, limitAfter, spentAfter int64
 		var currency string
 		var updatedAt time.Time
 
 		if err := tx.QueryRow(ctx, `
-			WITH antes AS (
+			WITH previous AS (
 			  SELECT limit_micros, spent_micros FROM cost_budgets
 			   WHERE account_id = $1 AND scope = $2 AND scope_id = $3
 			), upsert AS (
@@ -376,23 +376,23 @@ func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetS
 			         updated_at   = now()
 			  RETURNING limit_micros, spent_micros, currency, updated_at
 			)
-			SELECT COALESCE((SELECT limit_micros FROM antes), 0),
-			       COALESCE((SELECT spent_micros FROM antes), 0),
+			SELECT COALESCE((SELECT limit_micros FROM previous), 0),
+			       COALESCE((SELECT spent_micros FROM previous), 0),
 			       u.limit_micros, u.spent_micros, u.currency, u.updated_at
 			  FROM upsert u`,
 			b.AccountID, string(b.Scope), b.ScopeID, int64(b.LimitMicros), b.Currency,
-		).Scan(&limAntes, &gastoAntes, &limDepois, &gastoDepois, &currency, &updatedAt); err != nil {
+		).Scan(&limitBefore, &spentBefore, &limitAfter, &spentAfter, &currency, &updatedAt); err != nil {
 			return Translate(err, "budget")
 		}
 
 		st.Before = cost.Budget{
 			AccountID: b.AccountID, Scope: b.Scope, ScopeID: b.ScopeID,
-			LimitMicros: cost.Micros(limAntes), SpentMicros: cost.Micros(gastoAntes),
+			LimitMicros: cost.Micros(limitBefore), SpentMicros: cost.Micros(spentBefore),
 			Currency: currency,
 		}
 		st.After = cost.Budget{
 			AccountID: b.AccountID, Scope: b.Scope, ScopeID: b.ScopeID,
-			LimitMicros: cost.Micros(limDepois), SpentMicros: cost.Micros(gastoDepois),
+			LimitMicros: cost.Micros(limitAfter), SpentMicros: cost.Micros(spentAfter),
 			Currency: currency, UpdatedAt: updatedAt,
 		}
 
@@ -401,8 +401,8 @@ func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetS
 			Type: "dop.cost.budget.set",
 			Payload: mustJSON(map[string]any{
 				"scope": string(b.Scope), "scope_id": b.ScopeID,
-				"limit_micros": int64(limDepois), "previous_limit_micros": int64(limAntes),
-				"spent_micros": int64(gastoDepois), "currency": currency,
+				"limit_micros": int64(limitAfter), "previous_limit_micros": int64(limitBefore),
+				"spent_micros": int64(spentAfter), "currency": currency,
 			}),
 		}); err != nil {
 			return err

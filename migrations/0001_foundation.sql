@@ -66,7 +66,7 @@ BEGIN
      AND role = 'owner'
      AND (TG_OP <> 'DELETE' OR id <> OLD.id);
   IF owners = 0 THEN
-    RAISE EXCEPTION 'conta ficaria sem owner ativo';
+    RAISE EXCEPTION 'the account would be left with no active owner';
   END IF;
   RETURN COALESCE(NEW, OLD);
 END $$ LANGUAGE plpgsql;
