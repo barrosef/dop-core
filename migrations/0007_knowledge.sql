@@ -1,14 +1,15 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- Conhecimento: as três camadas da ADR-0009 em UMA tabela.
+-- Knowledge: ADR-0009's three layers in ONE table.
 --
--- Regra, índice e memória são a mesma coisa do ponto de vista do
--- armazenamento — texto versionado, com escopo e dono — e diferem no CICLO
--- (quem escreve, quando, e como é buscado). Três tabelas obrigariam a repetir
--- escopo, versão, isolamento por conta e o par body/object_ref três vezes, e a
--- montagem do pacote — que lê as três — viraria três consultas com o mesmo
--- WHERE. O tipo é coluna; o que muda por camada é o ÍNDICE, e é lá embaixo que
--- a diferença aparece.
+-- A rule, an index and a memory are the same thing from storage's point of
+-- view — versioned text, with a scope and an owner — and differ in their CYCLE
+-- (who writes them, when, and how they are searched). Three tables would force
+-- repeating the scope, the version, the per-account isolation and the
+-- body/object_ref pair three times, and assembling the package — which reads
+-- all three — would become three queries with the same WHERE. The kind is a
+-- column; what changes per layer is the INDEX, and it is down there that the
+-- difference shows up.
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE TYPE knowledge_kind  AS ENUM ('rule', 'index', 'memory');
@@ -18,41 +19,42 @@ CREATE TABLE knowledge_artifacts (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id   uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 
-  -- Escopo e herança: uma regra da conta vale para todo projeto dela, e um
-  -- projeto pode substituí-la por regra de MESMO NOME. Sem os três níveis, a
-  -- alternativa seria copiar a política da casa em cada projeto — que é como
-  -- base de conhecimento apodrece.
+  -- Scope and inheritance: an account's rule holds for every project of its
+  -- own, and a project may replace it with a rule of the SAME NAME. Without the
+  -- three levels, the alternative would be copying the house policy into every
+  -- project — which is how a knowledge base rots.
   scope        knowledge_scope NOT NULL,
   workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
   project_id   uuid REFERENCES projects(id) ON DELETE CASCADE,
-  -- Identidade do escopo em UMA coluna. Existe para que a unicidade e o
-  -- ON CONFLICT do upsert não dependam de um COALESCE repetido em toda query —
-  -- expressão duplicada é expressão que uma hora diverge.
+  -- The scope's identity in ONE column. It exists so the uniqueness and the
+  -- upsert's ON CONFLICT do not depend on a COALESCE repeated in every query —
+  -- a duplicated expression is an expression that eventually diverges.
   scope_id     uuid GENERATED ALWAYS AS (COALESCE(project_id, workspace_id, account_id)) STORED,
 
   kind         knowledge_kind NOT NULL,
-  -- name é a chave natural dentro do escopo. Para kind='index' ele é o NOME DO
-  -- REPOSITÓRIO: é assim que ReadIndex(projeto, repo) acha o mapa sem uma
-  -- coluna extra que só teria valor para um dos três tipos.
+  -- name is the natural key within the scope. For kind='index' it is the
+  -- REPOSITORY'S NAME: that is how ReadIndex(project, repo) finds the map
+  -- without an extra column that would only have a value for one of the three
+  -- kinds.
   name         text NOT NULL,
   version      int NOT NULL DEFAULT 1,
 
-  -- O conteúdo mora em UM dos dois, nunca nos dois:
-  --   body       — pequeno, no Postgres, porque é o que é indexável (vetor e
-  --                trigrama) e legível sem uma segunda viagem de rede;
-  --   object_ref — grande, no ObjectStore pela porta, com a linha guardando só
-  --                a referência. Um mapa de 4 MB dentro da linha transformaria
-  --                toda leitura desta tabela numa leitura de 4 MB.
+  -- The content lives in ONE of the two, never in both:
+  --   body       — small, in Postgres, because it is what is indexable (vector
+  --                and trigram) and readable without a second network round trip;
+  --   object_ref — large, in the ObjectStore through the port, with the row
+  --                keeping only the reference. A 4 MB map inside the row would
+  --                turn every read of this table into a 4 MB read.
   body         text NOT NULL DEFAULT '',
   object_ref   text NOT NULL DEFAULT '',
   size_bytes   int  NOT NULL DEFAULT 0,
-  -- Custo estimado em tokens, medido na ESCRITA. É o que permite ao orçamento
-  -- do pacote cortar sem abrir o conteúdo de cada candidato (ADR-0012).
+  -- The cost estimated in tokens, measured on WRITE. It is what lets the
+  -- package's budget cut without opening each candidate's content (ADR-0012).
   est_tokens   int  NOT NULL DEFAULT 0,
 
-  -- 1536 dimensões: o tamanho usual dos embeddings de texto de propósito geral.
-  -- Trocar de modelo implica migrar a coluna E reindexar toda a memória — os
-  -- vetores antigos não são comparáveis com os novos.
+  -- 1536 dimensions: the usual size of general-purpose text embeddings.
+  -- Changing model means migrating the column AND reindexing the whole memory —
+  -- the old vectors are not comparable with the new ones.
   embedding    vector(1536),
 
   meta         jsonb NOT NULL DEFAULT '{}',
@@ -64,49 +66,49 @@ CREATE TABLE knowledge_artifacts (
     (scope = 'account'   AND workspace_id IS NULL     AND project_id IS NULL) OR
     (scope = 'workspace' AND workspace_id IS NOT NULL AND project_id IS NULL) OR
     (scope = 'project'   AND workspace_id IS NULL     AND project_id IS NOT NULL)),
-  -- Conteúdo em dois lugares é conteúdo que diverge.
+  -- Content in two places is content that diverges.
   CONSTRAINT knowledge_conteudo_em_um_lugar CHECK (NOT (body <> '' AND object_ref <> '')),
-  -- Regra é texto que o agente lê INTEIRO, em todo pacote: não pode estar
-  -- atrás de uma referência que a montagem teria de ir buscar.
+  -- A rule is text the agent reads WHOLE, in every package: it cannot sit
+  -- behind a reference the assembly would have to go and fetch.
   CONSTRAINT knowledge_regra_e_inline CHECK (kind <> 'rule' OR object_ref = '')
 );
 
--- Identidade do artefato. É também o alvo do upsert: regravar o mesmo nome no
--- mesmo escopo BUMPA a versão em vez de criar linha duplicada.
+-- The artifact's identity. It is also the upsert's target: rewriting the same
+-- name in the same scope BUMPS the version instead of creating a duplicate row.
 CREATE UNIQUE INDEX knowledge_artifacts_ident_idx
   ON knowledge_artifacts (account_id, kind, scope_id, name);
 
--- Leitura por projeto (índice da demanda, memória do projeto). O account_id
--- vem primeiro em TODO índice porque vem primeiro em toda query: conhecimento
--- que vaza entre contas é o pior defeito possível nesta plataforma.
+-- Reading by project (the demand's index, the project's memory). account_id
+-- comes first in EVERY index because it comes first in every query: knowledge
+-- leaking between accounts is the worst possible defect in this platform.
 CREATE INDEX knowledge_artifacts_project_idx
   ON knowledge_artifacts (account_id, project_id, kind)
   WHERE project_id IS NOT NULL;
 
--- ── busca semântica na memória (pgvector) ───────────────────────────────────
+-- ── semantic search over the memory (pgvector) ──────────────────────────────
 --
--- HNSW e não IVFFlat, por uma razão que é deste domínio e não de benchmark:
--- o IVFFlat particiona o espaço em listas TREINADAS sobre os dados existentes,
--- e a base de conhecimento nasce VAZIA e cresce a cada demanda encerrada.
--- Listas construídas hoje seriam construídas sobre nada, e a recall cairia à
--- medida que a memória chegasse — exigindo REINDEX periódico que ninguém vai
--- lembrar de agendar. O HNSW constrói o grafo incrementalmente, sem treino, e
--- responde bem desde a primeira linha.
+-- HNSW and not IVFFlat, for a reason that belongs to this domain and not to a
+-- benchmark: IVFFlat partitions the space into lists TRAINED on the existing
+-- data, and the knowledge base is born EMPTY and grows with every demand that
+-- closes. Lists built today would be built on nothing, and recall would fall as
+-- the memory arrived — requiring a periodic REINDEX nobody will remember to
+-- schedule. HNSW builds the graph incrementally, with no training, and answers
+-- well from the very first row.
 --
--- O preço é real: mais memória e escrita mais lenta. Cabe aqui porque o perfil
--- é o oposto do caro — escreve-se memória no ENCERRAMENTO de uma demanda
--- (raro), e lê-se na montagem de todo pacote de contexto (constante).
+-- The price is real: more memory and slower writes. It fits here because the
+-- profile is the opposite of expensive — memory is written when a demand CLOSES
+-- (rare), and read when every context package is assembled (constant).
 --
--- Parcial em kind='memory': só a memória é buscada por similaridade. Regra e
--- índice são achados por identidade, e indexá-los custaria grafo maior para
--- responder pergunta que ninguém faz.
+-- Partial on kind='memory': only the memory is searched by similarity. A rule
+-- and an index are found by identity, and indexing them would cost a bigger
+-- graph to answer a question nobody asks.
 CREATE INDEX knowledge_artifacts_embedding_idx
   ON knowledge_artifacts USING hnsw (embedding vector_cosine_ops)
   WHERE kind = 'memory';
 
--- Caminho LEXICAL da mesma busca: é o que responde quando não há serviço de
--- embedding ligado. Trigrama sobre nome e corpo — pior que semântico, muito
--- melhor que devolver nada.
+-- The LEXICAL path of the same search: it is what answers when no embedding
+-- service is wired. A trigram over the name and the body — worse than semantic,
+-- much better than returning nothing.
 CREATE INDEX knowledge_artifacts_trgm_idx
   ON knowledge_artifacts USING gin ((name || ' ' || body) gin_trgm_ops)
   WHERE kind = 'memory';

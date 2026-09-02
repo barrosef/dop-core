@@ -1,9 +1,10 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- Fundação: identidade, posse, recursos, hierarquia — e a ESPINHA DE EVENTOS.
+-- Foundation: identity, ownership, resources, hierarchy — and the EVENT SPINE.
 --
--- Regra que atravessa o schema: toda tabela de domínio carrega account_id com
--- FK. Isolamento multi-tenant é constraint, não convenção de aplicação.
+-- The rule that crosses the whole schema: every domain table carries account_id
+-- with an FK. Multi-tenant isolation is a constraint, not an application
+-- convention.
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -11,10 +12,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS citext;
 
--- ── identidade e posse ──────────────────────────────────────────────────────
+-- ── identity and ownership ──────────────────────────────────────────────────
 CREATE TABLE users (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  subject        text NOT NULL UNIQUE,        -- do IdentityProvider, normalizado
+  subject        text NOT NULL UNIQUE,        -- from the IdentityProvider, normalized
   email          citext,
   email_verified boolean NOT NULL DEFAULT false,
   name           text,
@@ -30,12 +31,12 @@ CREATE TYPE account_kind AS ENUM ('personal', 'organization');
 CREATE TABLE accounts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   kind          account_kind NOT NULL,
-  -- PF e PJ dividem o mesmo espaço de nomes (ADR-0002)
+  -- Individuals and organizations share the same name space (ADR-0002)
   handle        text NOT NULL UNIQUE,
   display_name  text NOT NULL,
-  legal_id      text,                         -- CNPJ
+  legal_id      text,                         -- the company's registration number
   legal_name    text,
-  verified_domain text,                       -- NULL = não verificada
+  verified_domain text,                       -- NULL = not verified
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT org_tem_legal_id CHECK (kind <> 'organization' OR legal_id IS NOT NULL)
@@ -54,8 +55,8 @@ CREATE TABLE memberships (
 );
 CREATE INDEX memberships_account_idx ON memberships (account_id);
 
--- Invariante: toda conta tem ao menos um owner ativo. Verificado por trigger
--- porque é regra de negócio que NENHUMA operação pode violar (spec §5).
+-- Invariant: every account has at least one active owner. Checked by a trigger
+-- because it is a business rule NO operation may violate (spec §5).
 CREATE OR REPLACE FUNCTION assert_account_has_owner() RETURNS trigger AS $$
 DECLARE owners int;
 BEGIN
@@ -82,7 +83,7 @@ CREATE TABLE invites (
   account_id   uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   email        citext NOT NULL,
   role         member_role NOT NULL,
-  grants       jsonb NOT NULL DEFAULT '[]',   -- compostas NO CONVITE, sem default
+  grants       jsonb NOT NULL DEFAULT '[]',   -- composed IN THE INVITE, with no default
   token_hash   text NOT NULL UNIQUE,
   status       invite_status NOT NULL DEFAULT 'pending',
   invited_by   uuid REFERENCES users(id),
@@ -91,7 +92,7 @@ CREATE TABLE invites (
 );
 CREATE INDEX invites_account_idx ON invites (account_id, status);
 
--- ── recursos (ADR-0013) ─────────────────────────────────────────────────────
+-- ── resources (ADR-0013) ────────────────────────────────────────────────────
 CREATE TYPE resource_kind AS ENUM ('integration', 'skill', 'workflow', 'git_flow');
 
 CREATE TABLE resources (
@@ -101,7 +102,7 @@ CREATE TABLE resources (
   name           text NOT NULL,
   version        int NOT NULL DEFAULT 1,
   config         jsonb NOT NULL DEFAULT '{}',
-  -- ponteiro opaco ao SecretStore — o segredo NUNCA fica aqui
+  -- an opaque pointer into the SecretStore — the secret NEVER lives here
   credential_ref text,
   status         text NOT NULL DEFAULT 'active',
   created_by     uuid REFERENCES users(id),
@@ -121,7 +122,7 @@ CREATE TABLE resource_grants (
   UNIQUE (resource_id, user_id)
 );
 
--- ── hierarquia ──────────────────────────────────────────────────────────────
+-- ── hierarchy ───────────────────────────────────────────────────────────────
 CREATE TABLE workspaces (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -146,7 +147,8 @@ CREATE TABLE projects (
 );
 CREATE INDEX projects_workspace_idx ON projects (workspace_id);
 
--- Provider é do REPOSITÓRIO, não do projeto: GitHub e GitLab convivem.
+-- The provider belongs to the REPOSITORY, not to the project: GitHub and GitLab
+-- coexist.
 CREATE TABLE project_repos (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id     uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -165,10 +167,10 @@ CREATE TABLE project_resources (
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
--- A ESPINHA: log de eventos + outbox (ADR-0006 e ADR-0019)
+-- THE SPINE: the event log + the outbox (ADR-0006 and ADR-0019)
 --
--- A verdade é o log. Dossiê, timeline, auditoria, métricas e caixa de atenção
--- são PROJEÇÕES — leituras, nunca escritas próprias.
+-- The truth is the log. The dossier, the timeline, the audit trail, the metrics
+-- and the attention box are PROJECTIONS — reads, never writes of their own.
 -- ════════════════════════════════════════════════════════════════════════════
 CREATE TABLE events (
   id           uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -179,7 +181,7 @@ CREATE TABLE events (
   payload      jsonb NOT NULL DEFAULT '{}',
   actor_kind   text,
   actor_id     text,
-  -- credencial USADA na ação: é o que responde "quem autorizou este push?"
+  -- the credential USED in the action: it is what answers "who authorized this push?"
   credential_ref text,
   request_id   text,
   occurred_at  timestamptz NOT NULL DEFAULT now(),
@@ -190,7 +192,7 @@ CREATE INDEX events_aggregate_idx ON events (aggregate, aggregate_id, occurred_a
 CREATE INDEX events_account_idx   ON events (account_id, occurred_at DESC);
 CREATE INDEX events_type_idx      ON events (type, occurred_at DESC);
 
--- Partição corrente e a seguinte; o modo sched cria as próximas.
+-- The current partition and the next one; the sched mode creates the rest.
 CREATE TABLE events_2026_08 PARTITION OF events
   FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
 CREATE TABLE events_2026_09 PARTITION OF events
@@ -198,20 +200,21 @@ CREATE TABLE events_2026_09 PARTITION OF events
 CREATE TABLE events_2026_10 PARTITION OF events
   FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
 
--- Outbox: gravado na MESMA transação do estado. É o que dá atomicidade sem 2PC.
+-- Outbox: written in the SAME transaction as the state. It is what gives
+-- atomicity with no 2PC.
 CREATE TABLE outbox (
   event_id     uuid PRIMARY KEY,
   occurred_at  timestamptz NOT NULL,
-  subject      text NOT NULL,          -- assunto NATS derivado do tipo
+  subject      text NOT NULL,          -- the NATS subject derived from the type
   payload      jsonb NOT NULL,
-  published_at timestamptz,            -- NULL = pendente
+  published_at timestamptz,            -- NULL = pending
   attempts     int NOT NULL DEFAULT 0,
   last_error   text
 );
--- Índice parcial: o relay varre só o que falta publicar.
+-- A partial index: the relay only sweeps what is left to publish.
 CREATE INDEX outbox_pending_idx ON outbox (occurred_at) WHERE published_at IS NULL;
 
--- Idempotência: repetir uma escrita devolve a mesma resposta (ADR-0017).
+-- Idempotency: repeating a write returns the same answer (ADR-0017).
 CREATE TABLE idempotency (
   key          text PRIMARY KEY,
   request_hash text NOT NULL,

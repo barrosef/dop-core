@@ -1,18 +1,18 @@
 -- +goose Up
--- O vínculo do projeto com o gerenciador de tarefas merece tabela própria.
+-- The project's link to its task manager deserves a table of its own.
 --
--- Ele estava sendo empacotado em JSON dentro de projects.rules — funcionava,
--- mas escondia um relacionamento real: o projeto aponta para UMA integração de
--- task manager e para um espaço/projeto DENTRO dela. Sem FK, nada impedia
--- apontar para integração inexistente ou de outra conta.
+-- It was being packed into JSON inside projects.rules — it worked, but it hid a
+-- real relationship: the project points at ONE task manager integration and at
+-- a space/project INSIDE it. With no FK, nothing stopped it from pointing at a
+-- nonexistent integration or one of another account.
 --
--- Um projeto tem no máximo um task manager (PK no project_id).
+-- A project has at most one task manager (the PK is project_id).
 CREATE TABLE project_task_managers (
   project_id          uuid PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   integration_id      uuid NOT NULL REFERENCES resources(id),
   external_space_id   text NOT NULL,
   external_project_id text NOT NULL,
-  -- tipos de card vêm do provedor e são dinâmicos (ADR-0013)
+  -- card types come from the provider and are dynamic (ADR-0013)
   card_types          text[] NOT NULL DEFAULT '{}',
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
@@ -21,7 +21,7 @@ CREATE TABLE project_task_managers (
 CREATE INDEX project_task_managers_integration_idx
   ON project_task_managers (integration_id);
 
--- Migra o que já estiver no envelope JSON, se houver.
+-- Migrate whatever is already in the JSON envelope, if anything.
 INSERT INTO project_task_managers (project_id, integration_id, external_space_id, external_project_id, card_types)
 SELECT p.id,
        (p.rules->'task_manager'->>'integration_id')::uuid,
@@ -34,7 +34,7 @@ SELECT p.id,
    AND p.rules->'task_manager'->>'integration_id' IS NOT NULL
 ON CONFLICT (project_id) DO NOTHING;
 
--- rules volta a ser o que o nome diz: uma lista de regras.
+-- rules goes back to being what its name says: a list of rules.
 UPDATE projects
    SET rules = COALESCE(rules->'rules', '[]'::jsonb)
  WHERE jsonb_typeof(rules) = 'object';

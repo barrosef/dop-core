@@ -1,82 +1,82 @@
 -- +goose Up
--- Registro de ENVIO da comunicação (ADR-0025).
+-- The record of communication SENT (ADR-0025).
 --
--- Esta tabela não é uma fila e não é uma projeção: é o REGISTRO do que foi
--- disparado, com estado, no formato que o projeto irmão já provou útil
--- (`sent` / `sent_local` / `error`). Sem ele, "o convite não chegou" é uma
--- pergunta sem resposta — e-mail é a única parte da plataforma cujo resultado
--- acontece fora dela.
+-- This table is not a queue and it is not a projection: it is the RECORD of
+-- what was fired, with a state, in the shape the sibling project already proved
+-- useful (`sent` / `sent_local` / `error`). Without it, "the invite never
+-- arrived" is a question with no answer — e-mail is the only part of the
+-- platform whose outcome happens outside it.
 --
--- ── Por que a chave de idempotência é COMPOSTA ──────────────────────────────
+-- ── Why the idempotency key is COMPOSITE ────────────────────────────────────
 --
--- A caixa de atenção usa índice único por EVENTO, e funciona porque lá a
--- relação é 1:1. Aqui não é: com reação declarativa (P-29) um evento poderá
--- disparar N ações, e chave só pelo evento descartaria a segunda como
--- duplicata. Descarte por idempotência é SILENCIOSO por desenho — ninguém veria
--- o segundo aviso sumir. A chave nasce composta mesmo com uma ação só hoje,
--- porque trocar chave de idempotência depois é migrar dado vivo.
+-- The attention box uses a unique index per EVENT, and it works because there
+-- the relationship is 1:1. Here it is not: with declarative reaction (P-29) one
+-- event will be able to fire N actions, and a key on the event alone would
+-- discard the second as a duplicate. Discarding by idempotency is SILENT by
+-- design — nobody would see the second notice disappear. The key is born
+-- composite even with a single action today, because changing an idempotency
+-- key later means migrating live data.
 --
--- A chave é exatamente (evento, regra, ação), como a ADR escreveu. O
--- DESTINATÁRIO fica FORA dela de propósito: quem a ação endereça é decisão da
--- regra, e um resumo que hoje vai para dois membros e amanhã para três não pode
--- reenviar para os dois antigos por causa do terceiro.
+-- The key is exactly (event, rule, action), as the ADR wrote it. The RECIPIENT
+-- stays OUT of it on purpose: who the action addresses is the rule's decision,
+-- and a digest that goes to two members today and three tomorrow must not be
+-- resent to the old two because of the third.
 CREATE TABLE notification_deliveries (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id   uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 
-  -- ── a chave composta ──
-  -- Sem FK para `events`: a tabela de eventos é particionada por mês, e uma FK
-  -- para tabela particionada amarraria o descarte de partição antiga ao
-  -- registro de envio.
+  -- ── the composite key ──
+  -- No FK to `events`: the events table is partitioned by month, and an FK to a
+  -- partitioned table would tie dropping an old partition to the send record.
   event_id     uuid NOT NULL,
   rule_name    text NOT NULL,
   action_name  text NOT NULL,
 
-  -- kind é o TIPO da notificação no vocabulário do domínio (`invite`,
-  -- `attention_digest`). Quem traduz tipo em template é o adaptador — aqui ele
-  -- é registro, não roteamento.
+  -- kind is the notification's KIND in the domain's vocabulary (`invite`,
+  -- `attention_digest`). The one that translates a kind into a template is the
+  -- adapter — here it is a record, not routing.
   kind         text NOT NULL,
   channel      text NOT NULL DEFAULT 'email',
 
-  -- Os endereços que a ação atendeu. Array, e não linha por destinatário,
-  -- porque a unidade de idempotência é a AÇÃO: o resumo de um item é um envio
-  -- só, ainda que a conta tenha cinco membros.
+  -- The addresses the action served. An array, and not a row per recipient,
+  -- because the unit of idempotency is the ACTION: one item's digest is a
+  -- single send, even if the account has five members.
   recipients   text[] NOT NULL DEFAULT '{}',
 
-  -- pending: reservado, ainda sem desfecho. Linha parada em pending é anomalia
-  -- VISÍVEL (processo morreu entre o envio e o registro) — e de propósito ela
-  -- não é reenviada: e-mail duplicado não tem desfazer, e perder um aviso
-  -- registrado é menos grave do que mandar dois.
-  -- sent / sent_local / error: os três estados do projeto irmão.
+  -- pending: reserved, with no outcome yet. A row stuck in pending is a VISIBLE
+  -- anomaly (the process died between the send and the record) — and on purpose
+  -- it is not resent: a duplicate e-mail has no undo, and losing a recorded
+  -- notice is less serious than sending two.
+  -- sent / sent_local / error: the sibling project's three states.
   state        text NOT NULL DEFAULT 'pending'
                CHECK (state IN ('pending','sent','sent_local','error')),
   provider     text NOT NULL DEFAULT '',
   reference    text NOT NULL DEFAULT '',
-  -- Mensagem de falha. NUNCA carrega credencial: o adaptador redige antes de
-  -- devolver o erro, e é a suíte de contrato que prova isso.
+  -- The failure message. It NEVER carries a credential: the adapter redacts
+  -- before returning the error, and it is the contract suite that proves it.
   error        text NOT NULL DEFAULT '',
   attempts     int  NOT NULL DEFAULT 1,
 
-  -- batch_id junta as linhas cobertas por UMA mensagem. É o que permite o
-  -- resumo (N itens num e-mail) sem abrir mão de uma linha por (evento, regra,
-  -- ação): a idempotência continua por item, a mensagem continua sendo uma.
+  -- batch_id groups the rows covered by ONE message. It is what makes the
+  -- digest possible (N items in one e-mail) without giving up one row per
+  -- (event, rule, action): idempotency stays per item, the message stays one.
   batch_id     uuid,
 
   created_at   timestamptz NOT NULL DEFAULT now(),
   settled_at   timestamptz
 );
 
--- A GARANTIA. Reentrega do JetStream é ao-menos-uma-vez (ADR-0019); sem este
--- índice, o mesmo convite chega três vezes na caixa de quem foi convidado.
+-- THE GUARANTEE. JetStream's redelivery is at-least-once (ADR-0019); without
+-- this index, the same invite lands three times in the invitee's inbox.
 CREATE UNIQUE INDEX notification_deliveries_idem_idx
   ON notification_deliveries (event_id, rule_name, action_name);
 
--- A varredura do resumo pergunta "o que desta conta ainda não virou aviso".
+-- The digest's sweep asks "what of this account has not become a notice yet".
 CREATE INDEX notification_deliveries_conta_idx
   ON notification_deliveries (account_id, created_at DESC);
 
--- Reenvio só existe para o que FALHOU, e o índice parcial é o que torna essa
--- varredura barata quando quase tudo deu certo.
+-- A resend only exists for what FAILED, and the partial index is what makes
+-- that sweep cheap when nearly everything went right.
 CREATE INDEX notification_deliveries_falhas_idx
   ON notification_deliveries (state, created_at)
   WHERE state = 'error';

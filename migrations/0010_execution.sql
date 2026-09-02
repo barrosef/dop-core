@@ -1,14 +1,16 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- Substrato de execução: o sandbox onde a demanda roda.
+-- The execution substrate: the sandbox where the demand runs.
 --
--- Uma demanda ativa, um sandbox (spec do substrato §1). Duas coisas vivem
--- dentro dele — a EXECUÇÃO, efêmera, e o WORKSPACE, que é o trabalho. Suspender
--- derruba a primeira e preserva o segundo; destruir leva os dois e não volta.
--- Essa diferença é a razão de existir do trigger no fim deste arquivo.
+-- One active demand, one sandbox (the substrate spec §1). Two things live
+-- inside it — the EXECUTION, ephemeral, and the WORKSPACE, which is the work.
+-- Suspending drops the first and preserves the second; destroying takes both
+-- and does not come back. That difference is the reason the trigger at the end
+-- of this file exists.
 -- ════════════════════════════════════════════════════════════════════════════
 
--- Declarado, nunca presumido: são estes três, e a coluna nasce SEM DEFAULT.
+-- Declared, never presumed: it is these three, and the column is born WITH NO
+-- DEFAULT.
 CREATE TYPE isolation_tier AS ENUM ('hardware', 'kernel_emulated', 'namespace');
 
 CREATE TYPE sandbox_state AS ENUM ('provisioning', 'active', 'suspended', 'destroyed');
@@ -16,22 +18,22 @@ CREATE TYPE sandbox_state AS ENUM ('provisioning', 'active', 'suspended', 'destr
 CREATE TABLE sandboxes (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id     uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-  -- Sem FK para demands: a tabela de demandas nasce em outra migração, escrita
-  -- em paralelo. Quando ela existir, o vínculo é um ALTER de uma linha — e
-  -- inventar aqui uma tabela que não é minha criaria duas verdades sobre o que
-  -- é uma demanda.
+  -- No FK to demands: the demands table is born in another migration, written
+  -- in parallel. Once it exists, the link is a one-line ALTER — and inventing
+  -- here a table that is not mine would create two truths about what a demand
+  -- is.
   demand_id      uuid NOT NULL,
   state          sandbox_state NOT NULL DEFAULT 'provisioning',
-  -- SEM DEFAULT, e é o ponto inteiro desta coluna: isolationTier é DECLARADO,
-  -- nunca presumido. Um default aqui seria o banco escolhendo, em nome do
-  -- cliente, quanto isolamento a carga dele merece — e o erro dessa escolha só
-  -- apareceria no dia do incidente.
+  -- NO DEFAULT, and that is this column's entire point: the isolation tier is
+  -- DECLARED, never presumed. A default here would be the database choosing, on
+  -- the client's behalf, how much isolation their workload deserves — and that
+  -- choice's error would only show up on the day of the incident.
   tier           isolation_tier NOT NULL,
   namespace      text NOT NULL,
-  -- Portas publicadas pela pilha da demanda. jsonb porque a lista vem do
-  -- substrato e muda com o compose interno, sem migração.
+  -- The ports published by the demand's stack. jsonb because the list comes
+  -- from the substrate and changes with the inner compose, with no migration.
   endpoints      jsonb NOT NULL DEFAULT '[]',
-  -- Toda escrita carrega a chave: repetir a chamada não pode duplicar microVM.
+  -- Every write carries the key: repeating the call must not duplicate a microVM.
   idempotency_key text,
   last_active_at timestamptz NOT NULL DEFAULT now(),
   suspended_at   timestamptz,
@@ -43,28 +45,31 @@ CREATE TABLE sandboxes (
     CHECK (state <> 'destroyed' OR destroyed_at IS NOT NULL)
 );
 
--- Repetição da mesma chave resolve para o MESMO sandbox. Índice parcial porque
--- chamada sem chave (fluxo interno) não compete por unicidade.
+-- A repeat of the same key resolves to the SAME sandbox. A partial index
+-- because a call with no key (an internal flow) does not compete for
+-- uniqueness.
 CREATE UNIQUE INDEX sandboxes_idempotency_uniq
   ON sandboxes (account_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- Uma demanda ativa tem UM sandbox. Vivo é tudo que não é destruído: o
--- histórico de destruídos fica, e uma demanda pode ser reprovisionada depois.
+-- An active demand has ONE sandbox. Alive is everything that is not destroyed:
+-- the history of destroyed ones stays, and a demand may be reprovisioned
+-- later.
 CREATE UNIQUE INDEX sandboxes_demanda_viva_uniq
   ON sandboxes (demand_id) WHERE state <> 'destroyed';
 
 CREATE INDEX sandboxes_account_state_idx ON sandboxes (account_id, state);
 
--- Índice do varredor de economia: só os ativos interessam a ele.
+-- The saving sweeper's index: only the active ones matter to it.
 CREATE INDEX sandboxes_ociosos_idx
   ON sandboxes (last_active_at) WHERE state = 'active';
 
--- Invariante: destruído é ABSORVENTE.
+-- Invariant: destroyed is ABSORBING.
 --
--- Verificado por trigger, e não só no serviço, pela mesma razão do guarda de
--- owner da migração 0001: é regra que NENHUMA operação pode violar, nem por
--- caminho que ninguém previu. A destruição levou o workspace junto — ressuscitar
--- a linha faria o sistema afirmar que existe um trabalho que não existe mais.
+-- Checked by a trigger, and not only in the service, for the same reason as
+-- migration 0001's owner guard: it is a rule NO operation may violate, not even
+-- through a path nobody foresaw. The destruction took the workspace with it —
+-- resurrecting the row would make the system assert that work exists which no
+-- longer does.
 CREATE OR REPLACE FUNCTION assert_sandbox_destruicao_irreversivel() RETURNS trigger AS $$
 BEGIN
   IF OLD.state = 'destroyed' AND NEW.state <> 'destroyed' THEN

@@ -1,68 +1,72 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- A DEMANDA (ADR-0006, ADR-0010, ADR-0014)
+-- THE DEMAND (ADR-0006, ADR-0010, ADR-0014)
 --
--- Onde vivem os eventos da demanda: em `events`, a tabela que já existe.
+-- Where the demand's events live: in `events`, the table that already exists.
 --
--- A demanda é um log append-only e o estado é projeção dele (ADR-0006). O log
--- da plataforma inteira já é `events` — particionada por mês, com outbox, relay
--- e replay prontos. Dar à demanda um log próprio duplicaria mecanismo (segundo
--- outbox, segundo relay, segundo cursor), quebraria o WatchDemand — que reusa o
--- fan-out único do domínio `event` — e criaria dois passados possíveis para a
--- mesma pergunta de auditoria. Então: nenhuma tabela de evento aqui. Todo
--- evento da demanda entra em `events` com aggregate='demand' e
--- aggregate_id = id da demanda, INCLUSIVE mensagem de thread e achado; quem
--- precisa recortar por thread lê `payload->>'thread_id'`.
+-- A demand is an append-only log and its state is a projection of it
+-- (ADR-0006). The whole platform's log is already `events` — partitioned by
+-- month, with an outbox, a relay and replay ready. Giving the demand a log of
+-- its own would duplicate the machinery (a second outbox, a second relay, a
+-- second cursor), would break WatchDemand — which reuses the `event` domain's
+-- single fan-out — and would create two possible pasts for the same audit
+-- question. So: no event table here. Every demand event goes into `events` with
+-- aggregate='demand' and aggregate_id = the demand's id, INCLUDING a thread
+-- message and a finding; whoever needs to slice by thread reads
+-- `payload->>'thread_id'`.
 --
--- O que as tabelas abaixo guardam é o ESTADO PROJETADO — a leitura que a tela e
--- a máquina de etapas precisam ter em O(1), sem reler o log. Elas são gravadas
--- na MESMA transação do evento (ADR-0019), e não por consumidor assíncrono: a
--- decisão da próxima transição depende do estado corrente, e decidir sobre uma
--- projeção atrasada é decidir sobre o passado. Por isso não há projeção
--- assíncrona de demanda — haveria dois escritores para as mesmas linhas.
+-- What the tables below keep is the PROJECTED STATE — the read the screen and
+-- the stage machine need in O(1), without rereading the log. They are written
+-- in the SAME transaction as the event (ADR-0019), and not by an asynchronous
+-- consumer: the next transition's decision depends on the current state, and
+-- deciding on a stale projection is deciding on the past. That is why there is
+-- no asynchronous demand projection — there would be two writers for the same
+-- rows.
 --
--- Reconstrução: apagar estas tabelas e reprocessar `events` da conta, em ordem
--- de occurred_at, reconstrói tudo — cada payload carrega o delta completo
--- (`dop.demand.started` traz o snapshot do fluxo e as chaves das etapas;
--- `stage.advanced` e `gate.decided` trazem etapa, de/para e status resultante;
--- `thread.created` traz a ficha; `finding.published` traz o achado inteiro).
+-- Rebuilding: deleting these tables and reprocessing the account's `events`, in
+-- occurred_at order, rebuilds everything — each payload carries the complete
+-- delta (`dop.demand.started` brings the flow's snapshot and the stage keys;
+-- `stage.advanced` and `gate.decided` bring the stage, the from/to and the
+-- resulting status; `thread.created` brings the brief; `finding.published`
+-- brings the whole finding).
 --
--- Mensagem de thread NÃO tem tabela: ela é só evento. A leitura do histórico da
--- conversa é a projeção `timeline`, que já indexa (aggregate, aggregate_id,
--- occurred_at) — criar uma tabela de mensagens seria gravar o mesmo texto duas
--- vezes para servir uma consulta que já existe.
+-- A thread message has NO table: it is only an event. Reading the conversation's
+-- history is the `timeline` projection, which already indexes (aggregate,
+-- aggregate_id, occurred_at) — creating a message table would mean writing the
+-- same text twice to serve a query that already exists.
 -- ════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE demands (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id      uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   project_id      uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  -- a chave do card no provedor: SUOPT-1315
+  -- the card's key at the provider: SUOPT-1315
   external_key    text NOT NULL,
   title           text NOT NULL,
-  -- tipo de card e status do provedor são dinâmicos, do provedor (ADR-0013)
+  -- the card kind and the provider's status are dynamic, the provider's (ADR-0013)
   card_type       text NOT NULL DEFAULT '',
   provider_status text NOT NULL DEFAULT '',
   dop_status      text NOT NULL DEFAULT 'new'
                   CHECK (dop_status IN ('new','doing','done','delivered')),
 
-  -- ── o fluxo CONGELADO (ADR-0014 §4) ──
-  -- flow_id é text e NÃO tem FK de propósito: o snapshot precisa sobreviver ao
-  -- fluxo ser editado, promovido ou apagado. Uma FK com CASCADE apagaria a
-  -- demanda junto; uma FK com RESTRICT impediria a conta de limpar o catálogo.
-  -- O que dirige a demanda daqui em diante é flow_snapshot, não o fluxo vivo.
+  -- ── the FROZEN flow (ADR-0014 §4) ──
+  -- flow_id is text and has NO FK on purpose: the snapshot has to survive the
+  -- flow being edited, promoted or deleted. An FK with CASCADE would delete the
+  -- demand along with it; an FK with RESTRICT would stop the account from
+  -- cleaning up its catalogue. What drives the demand from here on is
+  -- flow_snapshot, not the live flow.
   flow_id         text NOT NULL DEFAULT '',
   flow_version    int  NOT NULL DEFAULT 0,
   flow_snapshot   jsonb NOT NULL DEFAULT '{}',
 
-  -- ator, não usuário: quem inicia pode ser humano, agente ou o sistema
-  -- (sincronização do task manager). Por isso text, sem FK para users.
+  -- an actor, not a user: whoever starts it may be a human, an agent or the
+  -- system (the task manager's sync). Hence text, with no FK to users.
   created_by      text NOT NULL DEFAULT '',
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
 
-  -- Uma demanda por card do provedor. É esta constraint que faz o StartDemand
-  -- repetido devolver a demanda existente em vez de congelar o fluxo de novo.
+  -- One demand per provider card. It is this constraint that makes a repeated
+  -- StartDemand return the existing demand instead of freezing the flow again.
   UNIQUE (project_id, external_key)
 );
 
@@ -70,14 +74,14 @@ CREATE INDEX demands_account_idx ON demands (account_id, created_at DESC);
 CREATE INDEX demands_project_idx ON demands (project_id, created_at DESC);
 CREATE INDEX demands_status_idx  ON demands (account_id, dop_status);
 
--- As etapas da demanda: instâncias do molde congelado. O molde continua em
--- flow_snapshot; aqui mora o PROGRESSO.
+-- The demand's stages: instances of the frozen mould. The mould stays in
+-- flow_snapshot; what lives here is the PROGRESS.
 CREATE TABLE demand_stages (
   demand_id     uuid NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
   account_id    uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   key           text NOT NULL,
   name          text NOT NULL DEFAULT '',
-  -- vocabulário FECHADO da plataforma: tipo novo é evolução, não dado
+  -- the platform's CLOSED vocabulary: a new kind is evolution, not data
   type          text NOT NULL
                 CHECK (type IN ('context','spec','plan','implementation','test',
                                 'human_validation','finalization','generic')),
@@ -88,7 +92,7 @@ CREATE TABLE demand_stages (
   artifacts     jsonb NOT NULL DEFAULT '[]',
   started_at    timestamptz,
   finished_at   timestamptz,
-  -- NULL = ninguém decidiu ainda; distinto de "reprovado"
+  -- NULL = nobody has decided yet; distinct from "rejected"
   gate_approved boolean,
   gate_comment  text NOT NULL DEFAULT '',
   PRIMARY KEY (demand_id, key)
@@ -97,40 +101,40 @@ CREATE TABLE demand_stages (
 CREATE UNIQUE INDEX demand_stages_position_uniq ON demand_stages (demand_id, position);
 CREATE INDEX demand_stages_account_idx ON demand_stages (account_id, status);
 
--- Uma thread por agente — o dev conversa sem misturar timelines (ADR-0010).
+-- One thread per agent — the dev talks without mixing timelines (ADR-0010).
 CREATE TABLE demand_threads (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id    uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   demand_id     uuid NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
-  key           text NOT NULL,          -- principal, forense-db, logs
-  -- ficha do subagente (ADR-0010 §2): sem ela, subagente é caixa-preta
+  key           text NOT NULL,          -- main, db-forensics, logs
+  -- the subagent's brief (ADR-0010 §2): without it, a subagent is a black box
   purpose       text NOT NULL DEFAULT '',
   tools         text[] NOT NULL DEFAULT '{}',
   model         text NOT NULL DEFAULT '',
   effort        text NOT NULL DEFAULT '',
   budget_micros bigint NOT NULL DEFAULT 0,
-  -- ciclo da thread: aberta → ativa → bloqueada → concluída
+  -- the thread's cycle: open → active → blocked → concluded
   state         text NOT NULL DEFAULT 'aberta'
                 CHECK (state IN ('aberta','ativa','bloqueada','concluida')),
   created_by    text NOT NULL DEFAULT '',
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (demand_id, key),
-  -- permite a FK composta do achado abaixo
+  -- makes the finding's composite FK below possible
   UNIQUE (id, demand_id)
 );
 
--- A consulta da caixa de atenção: threads bloqueadas da conta, mais velhas
--- primeiro. Índice parcial porque só o bloqueado interessa à fila.
+-- The attention box's query: the account's blocked threads, oldest first. A
+-- partial index because only what is blocked matters to the queue.
 CREATE INDEX demand_threads_blocked_idx ON demand_threads (account_id, updated_at)
   WHERE state = 'bloqueada';
 CREATE INDEX demand_threads_demand_idx ON demand_threads (demand_id);
 
--- O quadro de achados da demanda (ADR-0010 §4).
+-- The demand's board of findings (ADR-0010 §4).
 --
--- Achado é ESTADO, não só narrativa: é ele que destrava a conclusão da thread,
--- e essa decisão não pode depender da projeção assíncrona, que pode ainda não
--- ter visto a publicação de um segundo atrás.
+-- A finding is STATE, not only narrative: it is what unlocks the thread's
+-- conclusion, and that decision cannot depend on the asynchronous projection,
+-- which may not have seen a publication from a second ago.
 CREATE TABLE demand_findings (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -140,9 +144,10 @@ CREATE TABLE demand_findings (
   payload    jsonb NOT NULL DEFAULT '{}',
   created_by text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
-  -- FK COMPOSTA: garante no banco que a thread do achado é da MESMA demanda.
-  -- A demanda é a fronteira de segurança (ADR-0010 §6); achado cruzando
-  -- demanda seria vazamento de contexto, e isso é invariante, não validação.
+  -- A COMPOSITE FK: it guarantees in the database that the finding's thread
+  -- belongs to the SAME demand. The demand is the security boundary
+  -- (ADR-0010 §6); a finding crossing demands would be a context leak, and that
+  -- is an invariant, not a validation.
   FOREIGN KEY (thread_id, demand_id)
     REFERENCES demand_threads (id, demand_id) ON DELETE CASCADE
 );
@@ -151,12 +156,13 @@ CREATE INDEX demand_findings_demand_idx ON demand_findings (demand_id, created_a
 CREATE INDEX demand_findings_thread_idx ON demand_findings (thread_id);
 
 -- +goose StatementBegin
--- A thread não morre em silêncio.
+-- A thread does not die in silence.
 --
--- Concluir exige achado publicado (spec conversacao-e-atencao §1). A regra
--- também está no domínio, com mensagem melhor; aqui ela é INVARIANTE — nenhum
--- caminho, nem o que ninguém previu, encerra uma investigação sem deixar
--- registro durável. Mesmo padrão do "toda conta tem um owner ativo".
+-- Concluding requires a published finding (the conversation-and-attention spec
+-- §1). The rule is in the domain too, with a better message; here it is an
+-- INVARIANT — no path, not even one nobody foresaw, closes an investigation
+-- without leaving a durable record. The same pattern as "every account has an
+-- active owner".
 CREATE OR REPLACE FUNCTION demand_thread_requires_finding() RETURNS trigger AS $$
 BEGIN
   IF NEW.state = 'concluida' AND OLD.state IS DISTINCT FROM 'concluida' THEN
