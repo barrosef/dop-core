@@ -12,615 +12,619 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// GitProviderEnv é o que ESTE provedor oferece para a suíte trabalhar.
+// GitProviderEnv is what THIS provider offers for the suite to work with.
 //
-// Existe pelo mesmo motivo de SandboxEnv: o que muda entre GitHub e GitLab não
-// é comportamento — é o NOME das coisas. "org/repo" contra "grupo%2Fprojeto",
-// branch que conflita, repositório que o token não enxerga. Tudo o mais é da
-// suíte, para que os dois adaptadores sejam medidos com a MESMA régua.
+// It exists for SandboxEnv's same reason: what changes between GitHub and GitLab
+// is not behaviour — it is the NAME of things. "org/repo" against
+// "group%2Fproject", a branch that conflicts, a repository the token cannot see.
+// Everything else belongs to the suite, so both adapters are measured with the
+// SAME ruler.
 //
-// Campo de função vazio quer dizer "este ambiente não sabe produzir esse caso":
-// o subteste é PULADO com registro, nunca em silêncio. É a mesma disciplina do
-// `Mint` da suíte de identidade — contra um provedor de verdade não dá para
-// fabricar um conflito sob demanda sem empurrar commits, e mentir sobre a
-// cobertura é pior que admitir o buraco.
+// An empty function field means "this environment cannot produce that case": the
+// subtest is SKIPPED with a record, never in silence. It is the identity suite's
+// `Mint` discipline — against a real provider you cannot fabricate a conflict on
+// demand without pushing commits, and lying about the coverage is worse than
+// admitting the hole.
 type GitProviderEnv struct {
-	// Conectar monta uma conexão que fala pelo ator informado. Ator vazio =
-	// o ator padrão do ambiente.
-	Conectar func(t *testing.T, actorID string) delivery.GitProvider
+	// Connect builds a connection that speaks for the given actor. An empty
+	// actor = the environment's default actor.
+	Connect func(t *testing.T, actorID string) delivery.GitProvider
 
-	// Ator é o ator para quem a conexão padrão foi montada (garantia 14).
-	Ator string
+	// Actor is the actor the default connection was built for (guarantee 14).
+	Actor string
 
-	// TokenSentinela é o token EXATO que a conexão padrão carrega. A suíte
-	// varre toda saída de erro atrás dele (garantia 13). Vazio = a varredura é
-	// pulada com aviso GRITADO: é a garantia cuja falha custa a conta inteira.
-	TokenSentinela string
+	// SentinelToken is the EXACT token the default connection carries. The suite
+	// sweeps every error output looking for it (guarantee 13). Empty = the sweep
+	// is skipped with a SHOUTED warning: it is the guarantee whose failure costs
+	// the whole account.
+	SentinelToken string
 
-	// ConectarSemCredencial monta uma conexão com token inválido — o caso do
-	// KindUnauthorized da garantia 11.
-	ConectarSemCredencial func(t *testing.T) delivery.GitProvider
+	// ConnectWithoutCredential builds a connection with an invalid token — the
+	// KindUnauthorized case of guarantee 11.
+	ConnectWithoutCredential func(t *testing.T) delivery.GitProvider
 
-	// Repo é o repositório onde a suíte abre e mergeia PRs.
+	// Repo is the repository where the suite opens and merges PRs.
 	Repo string
-	// RepoInvisivel não existe, ou existe e o token não alcança. Os dois casos
-	// precisam sair como KindNotFound (garantia 12).
-	RepoInvisivel string
+	// InvisibleRepo does not exist, or exists and the token cannot reach it.
+	// Both cases have to come out as KindNotFound (guarantee 12).
+	InvisibleRepo string
 
-	// RepoComFilaNativa e RepoSemFilaNativa são repositórios cuja resposta de
-	// HasNativeQueue é CONHECIDA. Vazio = subteste pulado.
-	RepoComFilaNativa string
-	RepoSemFilaNativa string
-	// RepoFilaIlegivel é o repositório sobre o qual o adaptador NÃO consegue
-	// olhar (sem permissão, recurso de plano ausente). É o caso da garantia 15:
-	// precisa sair ERRO, nunca `false`.
-	RepoFilaIlegivel string
+	// RepoWithNativeQueue and RepoWithoutNativeQueue are repositories whose
+	// HasNativeQueue answer is KNOWN. Empty = the subtest is skipped.
+	RepoWithNativeQueue string
+	RepoWithoutNativeQueue string
+	// RepoWithUnreadableQueue is the repository the adapter CANNOT look at (no
+	// permission, a plan feature absent). It is guarantee 15's case: it has to
+	// come out as an ERROR, never as `false`.
+	RepoWithUnreadableQueue string
 
-	// Par devolve um par (origem, destino) NOVO a cada chamada, que integra
-	// limpo. Novo a cada chamada é obrigatório: contra um provedor real a
-	// segunda execução da suíte encontraria o PR da primeira, e o subteste de
-	// idempotência passaria por acidente.
-	Par func(t *testing.T) (origem, destino string)
-	// ParConflitante devolve um par que o provedor RECUSA por conflito.
-	ParConflitante func(t *testing.T) (origem, destino string)
-	// ParBloqueado devolve um par cujo merge é recusado por motivo que NÃO é
-	// conflito — pipeline rodando, aprovação faltando (garantia 8).
-	ParBloqueado func(t *testing.T) (origem, destino string)
-	// ParSemCommits devolve um par cuja origem não existe ou não tem nada a
-	// integrar: o caso em que abrir PR precisa FALHAR, e falhar com erro (não
-	// com um PR de ExternalID vazio).
-	ParSemCommits func(t *testing.T) (origem, destino string)
+	// Pair returns a NEW (source, target) pair on every call, one that
+	// integrates cleanly. New on every call is mandatory: against a real
+	// provider the suite's second run would find the first run's PR, and the
+	// idempotency subtest would pass by accident.
+	Pair func(t *testing.T) (origem, target string)
+	// ConflictingPair returns a pair the provider REFUSES over a conflict.
+	ConflictingPair func(t *testing.T) (origem, target string)
+	// BlockedPair returns a pair whose merge is refused for a reason that is NOT
+	// a conflict — a running pipeline, a missing approval (guarantee 8).
+	BlockedPair func(t *testing.T) (origem, target string)
+	// PairWithNoCommits returns a pair whose source does not exist or has
+	// nothing to integrate: the case where opening a PR has to FAIL, and fail
+	// with an error (not with a PR whose ExternalID is empty).
+	PairWithNoCommits func(t *testing.T) (origem, target string)
 
-	// Espera é quanto tolerar num rebase assíncrono.
-	Espera time.Duration
+	// Wait is how long to tolerate an asynchronous rebase.
+	Wait time.Duration
 }
 
-// GitProviderSuite verifica as dezessete garantias documentadas na porta delivery.GitProvider.
+// GitProviderSuite verifies the seventeen guarantees documented on the
+// delivery.GitProvider port.
 //
-// Disciplina da ADR-0001: uma porta com um adaptador só é palpite. GitHub e
-// GitLab não têm UMA linha em comum — número de PR contra iid de MR, `merged`
-// contra `state`, 422 contra 409 para o mesmo fato — e é só passando os dois por
-// esta suíte que "trocar de provedor é fiação" deixa de ser promessa.
+// ADR-0001's discipline: a port with a single adapter is guesswork. GitHub and
+// GitLab do not have ONE line in common — a PR number against an MR iid,
+// `merged` against `state`, 422 against 409 for the same fact — and it is only
+// by putting both through this suite that "changing provider is wiring" stops
+// being a promise.
 func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProviderEnv) {
 	t.Run(name, func(t *testing.T) {
 		e := env(t)
-		if e.Espera <= 0 {
-			e.Espera = 2 * time.Minute
+		if e.Wait <= 0 {
+			e.Wait = 2 * time.Minute
 		}
 		conectar := func(t *testing.T) delivery.GitProvider {
 			t.Helper()
-			return e.Conectar(t, e.Ator)
+			return e.Connect(t, e.Actor)
 		}
 
-		// ── garantia 1 e 2: conflito é DADO, com Detail ──────────────────────
+		// ── guarantees 1 and 2: a conflict is DATA, with a Detail ───────────
 
-		t.Run("1_rebase_conflitado_e_dado_nao_erro", func(t *testing.T) {
-			if e.ParConflitante == nil {
-				t.Skip("este ambiente não sabe fabricar conflito — caso não verificável aqui")
+		t.Run("1_a_conflicted_rebase_is_data_not_an_error", func(t *testing.T) {
+			if e.ConflictingPair == nil {
+				t.Skip("this environment cannot fabricate a conflict — the case is not verifiable here")
 			}
 			p := conectar(t)
-			origem, destino := e.ParConflitante(t)
-			ctx, cancel := context.WithTimeout(context.Background(), e.Espera)
+			origem, target := e.ConflictingPair(t)
+			ctx, cancel := context.WithTimeout(context.Background(), e.Wait)
 			defer cancel()
 
-			// O PR PRECISA existir antes — e isso não é cerimônia do teste, é
-			// uma descoberta sobre os dois provedores. Nenhum dos dois oferece
-			// "rebase de branch": o GitHub reaplica o branch de um PR (por
-			// GraphQL) e o GitLab reaplica o branch de um MR (por rota REST),
-			// SEMPRE sobre o destino daquele PR/MR. `RebaseSpec` parece uma
-			// operação de git e não é.
-			abrirParaRebase(t, p, e, origem, destino)
+			// The PR MUST exist first — and that is not test ceremony, it is a
+			// discovery about both providers. Neither offers a "branch rebase":
+			// GitHub reapplies a PR's branch (through GraphQL) and GitLab
+			// reapplies an MR's branch (through a REST route), ALWAYS on top of
+			// that PR/MR's target. `RebaseSpec` looks like a git operation and
+			// is not.
+			openForRebase(t, p, e, origem, target)
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: destino})
+				RepoExternalID: e.Repo, Branch: origem, Onto: target})
 			if err != nil {
-				t.Fatalf("CONFLITO VIROU ERRO: o fluxo da ADR-0008 §2 depende de "+
-					"conflito chegar como dado para virar tarefa do agente e item da "+
-					"caixa de atenção; erro vira retry de infra e some: %v", err)
+				t.Fatalf("A CONFLICT BECAME AN ERROR: ADR-0008 §2's flow depends on the "+
+					"conflict arriving as data so it can become the agent's task and an "+
+					"attention-box item; an error becomes an infra retry and disappears: %v", err)
 			}
 			if !r.Conflicted {
-				t.Fatalf("o provedor recusou a reaplicação e o resultado veio limpo: %+v", r)
+				t.Fatalf("the provider refused the reapplication and the result came back clean: %+v", r)
 			}
-			// Garantia 2: Files é best-effort (nenhum dos dois provedores publica
-			// a lista), mas Detail é obrigatório — é o que a caixa de atenção
-			// mostra para o humano decidir sem arqueologia.
+			// Guarantee 2: Files is best-effort (neither provider publishes the
+			// list), but Detail is mandatory — it is what the attention box shows
+			// for the human to decide without archaeology.
 			if strings.TrimSpace(r.Detail) == "" {
-				t.Error("conflito sem Detail: a caixa de atenção receberia um alarme vazio")
+				t.Error("a conflict with no Detail: the attention box would receive an empty alarm")
 			}
 			if len(r.Files) > 0 {
-				t.Logf("este provedor informou %d arquivo(s) em conflito: %v", len(r.Files), r.Files)
+				t.Logf("this provider reported %d conflicted file(s): %v", len(r.Files), r.Files)
 			} else {
-				t.Log("nenhum arquivo listado — esperado: a lista não sai da API pública " +
-					"de PR/MR de nenhum dos dois provedores (garantia 2)")
+				t.Log("no file listed — as expected: the list does not come out of either " +
+					"provider's public PR/MR API (guarantee 2)")
 			}
 		})
 
-		t.Run("1b_rebase_limpo_traz_os_dois_commits", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("1b_a_clean_rebase_brings_both_commits", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
-			ctx, cancel := context.WithTimeout(context.Background(), e.Espera)
+			origem, target := e.Pair(t)
+			ctx, cancel := context.WithTimeout(context.Background(), e.Wait)
 			defer cancel()
-			abrirParaRebase(t, p, e, origem, destino)
+			openForRebase(t, p, e, origem, target)
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: destino})
+				RepoExternalID: e.Repo, Branch: origem, Onto: target})
 			if err != nil {
 				t.Fatalf("Rebase: %v", err)
 			}
 			if r.Conflicted {
-				t.Fatalf("par que integra limpo veio como conflito: %+v", r)
+				t.Fatalf("a pair that integrates cleanly came back as a conflict: %+v", r)
 			}
-			// HeadCommit é o que a fila re-verifica na posição seguinte
-			// (ADR-0008 §1). Sem ele o "verde é sempre sobre um estado do
-			// código" perde o estado.
+			// HeadCommit is what the queue re-verifies in the next position
+			// (ADR-0008 §1). Without it, "green is always about a state of the
+			// code" loses the state.
 			if strings.TrimSpace(r.HeadCommit) == "" {
-				t.Error("rebase limpo sem HeadCommit: a fila não teria sobre qual commit re-verificar")
+				t.Error("a clean rebase with no HeadCommit: the queue would have no commit to re-verify on")
 			}
 		})
 
 		// ── garantias 3, 4 e 5: abrir PR ────────────────────────────────────
 
-		t.Run("3_abrir_pr_e_idempotente_por_branch", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("3_opening_a_pr_is_idempotent_per_branch", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
+			origem, target := e.Pair(t)
 			ctx := context.Background()
 
 			spec := delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
 				Title:   "demanda 1: primeira tentativa",
-				Body:    "aceitação: 12/12; crítico: aprovado; trace: dop://t/1",
-				ActorID: e.Ator,
+				Body:    "acceptance: 12/12; critic: approved; trace: dop://t/1",
+				ActorID: e.Actor,
 			}
-			primeiro, err := p.OpenPullRequest(ctx, spec)
+			first, err := p.OpenPullRequest(ctx, spec)
 			if err != nil {
 				t.Fatalf("1ª abertura: %v", err)
 			}
 
-			// Garantia 4: título e corpo DIFERENTES na segunda chamada. Se a
-			// idempotência fosse "sobrescreve", o pacote de evidência da
-			// ADR-0007 §4 seria trocado por um retry de rede.
-			spec.Title = "demanda 1: retry depois de um timeout"
-			spec.Body = "corpo diferente, que NÃO pode substituir o pacote de evidência"
-			segundo, err := p.OpenPullRequest(ctx, spec)
+			// Guarantee 4: a DIFFERENT title and body on the second call. If the
+			// idempotency were "it overwrites", ADR-0007 §4's evidence package
+			// would be traded for a network retry.
+			spec.Title = "demand 1: a retry after a timeout"
+			spec.Body = "a different body, which must NOT replace the evidence package"
+			second, err := p.OpenPullRequest(ctx, spec)
 			if err != nil {
-				t.Fatalf("REABERTURA VIROU ERRO: um timeout de rede numa frota de "+
-					"agentes viraria item de atenção sobre um PR que foi aberto com "+
+				t.Fatalf("REOPENING BECAME AN ERROR: a network timeout in a fleet of "+
+					"agents would become an attention item about a PR that was opened "+
 					"sucesso: %v", err)
 			}
-			if primeiro.ExternalID != segundo.ExternalID {
-				t.Fatalf("DOIS PRs PARA O MESMO BRANCH: %q e %q",
-					primeiro.ExternalID, segundo.ExternalID)
+			if first.ExternalID != second.ExternalID {
+				t.Fatalf("TWO PRs FOR THE SAME BRANCH: %q and %q",
+					first.ExternalID, second.ExternalID)
 			}
-			if primeiro.URL != segundo.URL {
-				t.Errorf("mesma identidade, URLs diferentes: %q e %q", primeiro.URL, segundo.URL)
+			if first.URL != second.URL {
+				t.Errorf("mesma identidade, URLs diferentes: %q e %q", first.URL, second.URL)
 			}
-			// Garantia 4, a metade observável pela porta: o PR devolvido é o
-			// que já existia, com a data de criação original. A outra metade —
-			// "nenhum pedido de atualização foi enviado" — só é observável do
-			// lado do adaptador, e está no teste do duplo local.
-			if !primeiro.CreatedAt.Equal(segundo.CreatedAt) {
-				t.Errorf("o PR foi recriado ou reescrito: criado em %v, depois em %v",
-					primeiro.CreatedAt, segundo.CreatedAt)
+			// Guarantee 4, the half observable through the port: the PR returned
+			// is the one that already existed, with the original creation date.
+			// The other half — "no update request was sent" — is only observable
+			// on the adapter's side, and it is in the local double's test.
+			if !first.CreatedAt.Equal(second.CreatedAt) {
+				t.Errorf("the PR was recreated or rewritten: created at %v, then at %v",
+					first.CreatedAt, second.CreatedAt)
 			}
 		})
 
-		t.Run("5_pr_devolvido_tem_identidade", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("5_the_returned_pr_has_an_identity", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
+			origem, target := e.Pair(t)
 			pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-				Title: "identidade", Body: "evidência", ActorID: e.Ator})
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				Title: "identity", Body: "evidence", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
 			}
 			if strings.TrimSpace(pr.ExternalID) == "" {
-				t.Error("PR sem ExternalID: é o que Merge recebe depois — sem ele o PR " +
-					"aberto não tem como ser mergeado pela fila")
+				t.Error("a PR with no ExternalID: it is what Merge receives later — without " +
+					"it the opened PR has no way of being merged by the queue")
 			}
 			if strings.TrimSpace(pr.URL) == "" {
-				t.Error("PR sem URL: é o único endereço que o humano da caixa de atenção abre")
+				t.Error("a PR with no URL: it is the only address the human in the attention box opens")
 			}
-			if pr.TargetBranch != destino {
-				t.Errorf("destino divergente: pedi %q, veio %q", destino, pr.TargetBranch)
+			if pr.TargetBranch != target {
+				t.Errorf("divergent target: I asked for %q, got %q", target, pr.TargetBranch)
 			}
 			if pr.CreatedAt.IsZero() {
-				t.Error("PR sem data de criação")
+				t.Error("a PR with no creation date")
 			}
 		})
 
-		t.Run("5b_pr_sem_o_que_integrar_falha_com_erro", func(t *testing.T) {
-			if e.ParSemCommits == nil {
-				t.Skip("este ambiente não sabe fabricar um branch sem nada a integrar")
+		t.Run("5b_a_pr_with_nothing_to_integrate_fails_with_an_error", func(t *testing.T) {
+			if e.PairWithNoCommits == nil {
+				t.Skip("this environment cannot fabricate a branch with nothing to integrate")
 			}
 			p := conectar(t)
-			origem, destino := e.ParSemCommits(t)
+			origem, target := e.PairWithNoCommits(t)
 			pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-				Title: "sem commits", ActorID: e.Ator})
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				Title: "no commits", ActorID: e.Actor})
 			if err == nil {
-				t.Fatalf("PR aberto sobre branch que não existe ou não tem o que integrar: %+v", pr)
+				t.Fatalf("a PR opened on a branch that does not exist or has nothing to integrate: %+v", pr)
 			}
-			// O ponto NÃO é o Kind, é a ausência de meio-termo: a porta não
-			// pode devolver ProviderPR vazio com erro nil (o espelho da
-			// garantia 8 de ObjectStore sobre SignedPutURL).
+			// The point is NOT the Kind, it is the absence of a middle ground:
+			// the port must not return an empty ProviderPR with a nil error (the
+			// mirror of ObjectStore's guarantee 8 about SignedPutURL).
 			if pr.ExternalID != "" {
-				t.Errorf("erro E PR ao mesmo tempo: %+v", pr)
+				t.Errorf("an error AND a PR at the same time: %+v", pr)
 			}
 		})
 
 		// ── garantias 6, 7 e 8: merge ───────────────────────────────────────
 
-		t.Run("6_merge_e_idempotente", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("6_merge_is_idempotent", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
+			origem, target := e.Pair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-				Title: "merge idempotente", ActorID: e.Ator})
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				Title: "merge idempotente", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
 			}
 			spec := delivery.MergeSpec{
-				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Ator}
+				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Actor}
 
-			primeiro, err := p.Merge(ctx, spec)
+			first, err := p.Merge(ctx, spec)
 			if err != nil {
 				t.Fatalf("1º Merge: %v", err)
 			}
-			if !primeiro.Merged {
-				t.Fatalf("PR sem impedimento não mergeou: %+v", primeiro)
+			if !first.Merged {
+				t.Fatalf("a PR with nothing in its way did not merge: %+v", first)
 			}
 			// Garantia 7.
-			if strings.TrimSpace(primeiro.MergeCommit) == "" {
-				t.Error("Merged=true sem MergeCommit: 'aceitei seu pedido' e 'está na main' " +
-					"são fatos diferentes, e a fila libera a próxima posição pelo segundo")
+			if strings.TrimSpace(first.MergeCommit) == "" {
+				t.Error("Merged=true with no MergeCommit: 'I accepted your request' and 'it is " +
+					"on main' are different facts, and the queue releases the next position by the second")
 			}
-			if primeiro.MergedAtUnix == 0 {
-				t.Error("merge confirmado sem instante")
+			if first.MergedAtUnix == 0 {
+				t.Error("a confirmed merge with no instant")
 			}
 
-			// Garantia 6. Cumprir isto custa uma leitura extra: os DOIS
-			// provedores recusam o PR já mergeado com o MESMO código HTTP que
-			// usam para "há conflito".
-			segundo, err := p.Merge(ctx, spec)
+			// Guarantee 6. Delivering this costs an extra read: BOTH providers
+			// refuse an already merged PR with the SAME HTTP code they use for
+			// "there is a conflict".
+			second, err := p.Merge(ctx, spec)
 			if err != nil {
-				t.Fatalf("REMERGE VIROU ERRO: a fila reprocessa a posição depois de "+
-					"uma queda e precisa reconhecer o que já entrou: %v", err)
+				t.Fatalf("A REMERGE BECAME AN ERROR: the queue reprocesses the position "+
+					"after a crash and has to recognize what already went in: %v", err)
 			}
-			if !segundo.Merged {
-				t.Errorf("PR já mergeado devolveu Merged=false: %+v", segundo)
+			if !second.Merged {
+				t.Errorf("an already merged PR returned Merged=false: %+v", second)
 			}
-			if segundo.Conflicted {
-				t.Errorf("PR já mergeado devolveu CONFLITO — é a ambiguidade do 405 "+
-					"vazando pela porta: %+v", segundo)
+			if second.Conflicted {
+				t.Errorf("an already merged PR returned a CONFLICT — it is the 405's "+
+					"ambiguity leaking through the port: %+v", second)
 			}
-			if segundo.MergeCommit != primeiro.MergeCommit {
-				t.Errorf("o commit de merge mudou entre duas leituras: %q e %q",
-					primeiro.MergeCommit, segundo.MergeCommit)
+			if second.MergeCommit != first.MergeCommit {
+				t.Errorf("the merge commit changed between two reads: %q and %q",
+					first.MergeCommit, second.MergeCommit)
 			}
 		})
 
-		t.Run("8_nao_mergeou_sem_ser_conflito_e_legitimo", func(t *testing.T) {
-			if e.ParBloqueado == nil {
-				t.Skip("este ambiente não sabe fabricar PR bloqueado por motivo que não é conflito")
+		t.Run("8_not_merged_without_being_a_conflict_is_legitimate", func(t *testing.T) {
+			if e.BlockedPair == nil {
+				t.Skip("this environment cannot fabricate a PR blocked for a reason that is not a conflict")
 			}
 			p := conectar(t)
-			origem, destino := e.ParBloqueado(t)
+			origem, target := e.BlockedPair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-				Title: "bloqueado", ActorID: e.Ator})
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				Title: "bloqueado", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
 			}
 			r, err := p.Merge(ctx, delivery.MergeSpec{
-				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Ator})
+				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Actor})
 			if err != nil {
-				t.Fatalf("bloqueio virou erro — 'ainda não pode mergear' é estado do "+
-					"fluxo, não falha de infra: %v", err)
+				t.Fatalf("a block became an error — 'it cannot merge yet' is a state of the "+
+					"flow, not an infrastructure failure: %v", err)
 			}
 			if r.Merged {
-				t.Fatalf("o provedor recusou o merge e o resultado diz que mergeou: %+v", r)
+				t.Fatalf("the provider refused the merge and the result says it merged: %+v", r)
 			}
 			if r.Conflicted {
 				t.Fatal("bloqueio classificado como CONFLITO: 'conflito' viraria o balde " +
-					"de tudo o que não mergeou, e a caixa de atenção chamaria um humano " +
-					"para resolver um pipeline que ainda está rodando")
+					"of everything that did not merge, and the attention box would call a human " +
+					"to solve a pipeline that is still running")
 			}
 			if strings.TrimSpace(r.Detail) == "" {
-				t.Error("não mergeou, não conflitou e não disse por quê")
+				t.Error("it did not merge, it did not conflict and it did not say why")
 			}
 		})
 
-		// ── garantias 9 e 10: rebase é síncrono, e exige PR aberto ──────────────────────────
+		// ── guarantees 9 and 10: the rebase is synchronous, and requires an open PR ──
 
-		t.Run("9_contexto_cancelado_nunca_vira_sem_conflito", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("9_a_cancelled_context_never_becomes_no_conflict", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
+			origem, target := e.Pair(t)
 			ctx, cancel := context.WithCancel(context.Background())
-			cancel() // já nasce cancelado
+			cancel() // it is born cancelled
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: destino})
+				RepoExternalID: e.Repo, Branch: origem, Onto: target})
 			if err == nil {
 				t.Fatalf("contexto cancelado e o rebase respondeu assim mesmo: %+v — "+
-					"Conflicted=false significaria 'não conflitou' quando o que houve "+
-					"foi 'não sei'", r)
+					"Conflicted=false would mean 'it did not conflict' when what happened "+
+					"was 'I do not know'", r)
 			}
 			if k := errs.KindOf(err); k != errs.KindUnavailable {
-				t.Errorf("cancelamento deveria ser %s, veio %s: %v", errs.KindUnavailable, k, err)
+				t.Errorf("a cancellation should be %s, got %s: %v", errs.KindUnavailable, k, err)
 			}
 		})
 
-		// ── garantia 11: vocabulário do provedor não cruza ──────────────────
+		// ── guarantee 11: the provider's vocabulary does not cross ──────────
 
-		t.Run("11_externalid_e_opaco_e_circula", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("11_the_externalid_is_opaque_and_round_trips", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, destino := e.Par(t)
+			origem, target := e.Pair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-				Title: "opacidade", ActorID: e.Ator})
+				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				Title: "opacidade", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
 			}
-			// O teste da opacidade é o CICLO: o que a porta devolveu volta para
-			// ela e funciona, sem que a suíte precise saber se aquilo é um
-			// número de PR do GitHub ou um iid de MR do GitLab. Uma suíte que
-			// afirmasse formato estaria escrevendo o vocabulário de um dos dois
-			// na porta.
+			// The opacity test is the ROUND TRIP: what the port returned goes
+			// back into it and works, without the suite needing to know whether
+			// that is a GitHub PR number or a GitLab MR iid. A suite that
+			// asserted the format would be writing one of the two vocabularies
+			// into the port.
 			r, err := p.Merge(ctx, delivery.MergeSpec{
-				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Ator})
+				RepoExternalID: e.Repo, PRExternalID: pr.ExternalID, ActorID: e.Actor})
 			if err != nil {
-				t.Fatalf("o ExternalID devolvido pela porta não foi aceito de volta por ela: %v", err)
+				t.Fatalf("the ExternalID the port returned was not accepted back by it: %v", err)
 			}
 			if !r.Merged {
-				t.Fatalf("ciclo do ExternalID não completou: %+v", r)
+				t.Fatalf("the ExternalID round trip did not complete: %+v", r)
 			}
 		})
 
-		// ── garantia 12: ausência, permissão e credencial ───────────────────
+		// ── guarantee 12: absence, permission and credential ────────────────
 
-		t.Run("12_repositorio_invisivel_e_notfound", func(t *testing.T) {
-			if e.RepoInvisivel == "" {
-				t.Skip("ambiente sem repositório invisível declarado")
+		t.Run("12_an_invisible_repository_is_notfound", func(t *testing.T) {
+			if e.InvisibleRepo == "" {
+				t.Skip("an environment with no invisible repository declared")
 			}
 			p := conectar(t)
 			_, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-				RepoExternalID: e.RepoInvisivel, SourceBranch: "x", TargetBranch: "main",
-				Title: "não deveria abrir", ActorID: e.Ator})
+				RepoExternalID: e.InvisibleRepo, SourceBranch: "x", TargetBranch: "main",
+				Title: "should not open", ActorID: e.Actor})
 			if err == nil {
-				t.Fatal("PR aberto em repositório inexistente")
+				t.Fatal("a PR opened in a nonexistent repository")
 			}
 			if k := errs.KindOf(err); k != errs.KindNotFound {
-				t.Errorf("esperava %s, veio %s: %v", errs.KindNotFound, k, err)
+				t.Errorf("expected %s, got %s: %v", errs.KindNotFound, k, err)
 			}
 		})
 
-		t.Run("12b_credencial_invalida_e_unauthorized", func(t *testing.T) {
-			if e.ConectarSemCredencial == nil {
-				t.Skip("este ambiente não sabe montar conexão com credencial inválida")
+		t.Run("12b_an_invalid_credential_is_unauthorized", func(t *testing.T) {
+			if e.ConnectWithoutCredential == nil {
+				t.Skip("this environment cannot build a connection with an invalid credential")
 			}
-			p := e.ConectarSemCredencial(t)
+			p := e.ConnectWithoutCredential(t)
 			_, err := p.HasNativeQueue(context.Background(), e.Repo)
 			if err == nil {
-				t.Fatal("credencial inválida foi aceita")
+				t.Fatal("an invalid credential was accepted")
 			}
 			if k := errs.KindOf(err); k != errs.KindUnauthorized {
-				t.Errorf("esperava %s — a decisão para quem opera é 'a credencial não "+
-					"serve', e confundi-la com indisponibilidade manda a equipe caçar o "+
-					"defeito no lugar errado. Veio %s: %v", errs.KindUnauthorized, k, err)
+				t.Errorf("expected %s — the decision for whoever operates is 'the credential "+
+					"does not work', and confusing it with an unavailability sends the team "+
+					"hunting the defect in the wrong place. Got %s: %v", errs.KindUnauthorized, k, err)
 			}
 		})
 
-		// ── garantia 13: o token não aparece em lugar nenhum ────────────────
+		// ── guarantee 13: the token appears nowhere ─────────────────────────
 
-		t.Run("13_token_nao_vaza_em_erro_nem_em_texto", func(t *testing.T) {
-			if e.TokenSentinela == "" {
-				t.Skip("ATENÇÃO: ambiente sem token sentinela — a garantia cuja falha " +
-					"entrega a conta inteira NÃO foi verificada aqui")
+		t.Run("13_the_token_leaks_neither_in_an_error_nor_in_text", func(t *testing.T) {
+			if e.SentinelToken == "" {
+				t.Skip("WARNING: an environment with no sentinel token — the guarantee whose " +
+					"failure hands over the whole account was NOT verified here")
 			}
 			p := conectar(t)
 			ctx := context.Background()
 
-			// Erros de vários caminhos: cada um formata mensagem por conta
-			// própria, e basta UM esquecer.
-			var erros []error
-			if e.RepoInvisivel != "" {
-				_, err := p.HasNativeQueue(ctx, e.RepoInvisivel)
-				erros = append(erros, err)
+			// Errors from several paths: each formats its message on its own, and
+			// ONE forgetting is enough.
+			var errList []error
+			if e.InvisibleRepo != "" {
+				_, err := p.HasNativeQueue(ctx, e.InvisibleRepo)
+				errList = append(errList, err)
 				_, err = p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-					RepoExternalID: e.RepoInvisivel, SourceBranch: "b", TargetBranch: "main",
-					ActorID: e.Ator})
-				erros = append(erros, err)
+					RepoExternalID: e.InvisibleRepo, SourceBranch: "b", TargetBranch: "main",
+					ActorID: e.Actor})
+				errList = append(errList, err)
 				_, err = p.Merge(ctx, delivery.MergeSpec{
-					RepoExternalID: e.RepoInvisivel, PRExternalID: "1", ActorID: e.Ator})
-				erros = append(erros, err)
+					RepoExternalID: e.InvisibleRepo, PRExternalID: "1", ActorID: e.Actor})
+				errList = append(errList, err)
 				_, err = p.Rebase(ctx, delivery.RebaseSpec{
-					RepoExternalID: e.RepoInvisivel, Branch: "b", Onto: "main"})
-				erros = append(erros, err)
+					RepoExternalID: e.InvisibleRepo, Branch: "b", Onto: "main"})
+				errList = append(errList, err)
 			}
-			if e.ConectarSemCredencial != nil {
-				ruim := e.ConectarSemCredencial(t)
+			if e.ConnectWithoutCredential != nil {
+				ruim := e.ConnectWithoutCredential(t)
 				_, err := ruim.HasNativeQueue(ctx, e.Repo)
-				erros = append(erros, err)
+				errList = append(errList, err)
 			}
 			_, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
 				RepoExternalID: e.Repo, SourceBranch: "b", TargetBranch: "main",
 				ActorID: "outro-ator-qualquer"})
-			erros = append(erros, err)
+			errList = append(errList, err)
 
-			vistos := 0
-			for _, err := range erros {
+			seen := 0
+			for _, err := range errList {
 				if err == nil {
 					continue
 				}
-				vistos++
-				if strings.Contains(err.Error(), e.TokenSentinela) {
-					// Sem imprimir o erro: imprimi-lo colocaria o token no log
-					// do próprio teste.
-					t.Fatal("VAZAMENTO: a mensagem de erro carrega o token do provedor — " +
-						"erro sobe para log, e token em log é credencial em repouso")
+				seen++
+				if strings.Contains(err.Error(), e.SentinelToken) {
+					// Without printing the error: printing it would put the token
+					// in the test's own log.
+					t.Fatal("LEAK: the error message carries the provider's token — " +
+						"an error goes up to a log, and a token in a log is a credential at rest")
 				}
 			}
-			if vistos == 0 {
-				t.Fatal("nenhum erro foi provocado: a varredura não verificou nada")
+			if seen == 0 {
+				t.Fatal("no error was provoked: the sweep verified nothing")
 			}
 
-			// E o próprio adaptador, formatado. `%+v` lê campos NÃO EXPORTADOS
-			// por reflexão e não consegue chamar o String() deles — é por isso
-			// que o token vive num closure, e não num campo.
+			// And the adapter itself, formatted. `%+v` reads UNEXPORTED fields
+			// through reflection and cannot call their String() — which is why
+			// the token lives in a closure, and not in a field.
 			for _, s := range []string{fmt.Sprintf("%v", p), fmt.Sprintf("%+v", p), fmt.Sprintf("%#v", p)} {
-				if strings.Contains(s, e.TokenSentinela) {
+				if strings.Contains(s, e.SentinelToken) {
 					t.Fatal("VAZAMENTO: formatar o adaptador revela o token")
 				}
 			}
-			t.Logf("%d mensagem(ns) de erro varrida(s) sem sinal do token", vistos)
+			t.Logf("%d error message(s) swept with no sign of the token", seen)
 		})
 
-		// ── garantia 14: o ator é conferido ─────────────────────────────────
+		// ── guarantee 14: the actor is checked ──────────────────────────────
 
-		t.Run("14_ator_diferente_do_da_conexao_e_recusado", func(t *testing.T) {
-			if e.Ator == "" {
-				t.Skip("ambiente sem ator declarado")
+		t.Run("14_an_actor_other_than_the_connections_is_refused", func(t *testing.T) {
+			if e.Actor == "" {
+				t.Skip("an environment with no actor declared")
 			}
 			p := conectar(t)
 			_, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
 				RepoExternalID: e.Repo, SourceBranch: "qualquer", TargetBranch: "main",
-				Title: "em nome de outro", ActorID: e.Ator + "-impostor"})
+				Title: "em nome de outro", ActorID: e.Actor + "-impostor"})
 			if err == nil {
-				t.Fatal("PR aberto em nome de um ator que NÃO é o da credencial: o PR " +
-					"sairia assinado por quem quer que seja o dono do token fiado, e a " +
+				t.Fatal("a PR opened on behalf of an actor that is NOT the credential's: the PR " +
+					"would go out signed by whoever owns the borrowed token, and the " +
 					"ADR-0003 ('quem conduziu assina') viraria mentira silenciosa")
 			}
 			if k := errs.KindOf(err); k != errs.KindPermission {
-				t.Errorf("esperava %s, veio %s: %v", errs.KindPermission, k, err)
+				t.Errorf("expected %s, got %s: %v", errs.KindPermission, k, err)
 			}
-			// E o mesmo para o merge: assinar o merge é assinar também.
+			// And the same for the merge: signing the merge is signing too.
 			_, err = p.Merge(context.Background(), delivery.MergeSpec{
-				RepoExternalID: e.Repo, PRExternalID: "1", ActorID: e.Ator + "-impostor"})
+				RepoExternalID: e.Repo, PRExternalID: "1", ActorID: e.Actor + "-impostor"})
 			if k := errs.KindOf(err); err == nil || k != errs.KindPermission {
-				t.Errorf("Merge em nome de outro ator não foi recusado (%v)", err)
+				t.Errorf("a Merge on behalf of another actor was not refused (%v)", err)
 			}
 		})
 
 		// ── garantias 15 e 16: fila nativa ──────────────────────────────────
 
-		t.Run("15_fila_nativa_nao_inventa_resposta", func(t *testing.T) {
+		t.Run("15_the_native_queue_does_not_invent_an_answer", func(t *testing.T) {
 			p := conectar(t)
 			ctx := context.Background()
 			verificados := 0
 
-			if e.RepoComFilaNativa != "" {
-				ok, err := p.HasNativeQueue(ctx, e.RepoComFilaNativa)
+			if e.RepoWithNativeQueue != "" {
+				ok, err := p.HasNativeQueue(ctx, e.RepoWithNativeQueue)
 				if err != nil {
-					t.Errorf("repositório com fila nativa: %v", err)
+					t.Errorf("a repository with a native queue: %v", err)
 				} else if !ok {
-					t.Error("repositório COM fila nativa respondeu false: a fila do DOP " +
-						"orquestraria por cima da fila do provedor e as duas mergeariam " +
-						"o mesmo repositório (ADR-0008 §4)")
+					t.Error("a repository WITH a native queue answered false: DOP's queue " +
+						"would orchestrate on top of the provider's and the two would merge " +
+						"the same repository (ADR-0008 §4)")
 				}
 				verificados++
 			}
-			if e.RepoSemFilaNativa != "" {
-				ok, err := p.HasNativeQueue(ctx, e.RepoSemFilaNativa)
+			if e.RepoWithoutNativeQueue != "" {
+				ok, err := p.HasNativeQueue(ctx, e.RepoWithoutNativeQueue)
 				if err != nil {
-					t.Errorf("repositório sem fila nativa: %v", err)
+					t.Errorf("a repository with no native queue: %v", err)
 				} else if ok {
-					t.Error("repositório SEM fila nativa respondeu true: o DOP sairia da " +
-						"frente e ninguém serializaria os merges")
+					t.Error("a repository WITHOUT a native queue answered true: DOP would step " +
+						"aside and nobody would serialize the merges")
 				}
 				verificados++
 			}
-			if e.RepoFilaIlegivel != "" {
-				ok, err := p.HasNativeQueue(ctx, e.RepoFilaIlegivel)
+			if e.RepoWithUnreadableQueue != "" {
+				ok, err := p.HasNativeQueue(ctx, e.RepoWithUnreadableQueue)
 				if err == nil {
-					t.Errorf("o adaptador NÃO conseguiu olhar e respondeu %v assim mesmo. "+
-						"`false` é uma AFIRMAÇÃO — 'pode orquestrar por cima' — e afirmá-la "+
-						"sem ter olhado é o mesmo defeito de degradar isolamento em silêncio", ok)
+					t.Errorf("the adapter COULD NOT look and answered %v anyway. "+
+						"`false` is an ASSERTION — 'you may orchestrate on top' — and asserting it "+
+						"without having looked is the same defect as degrading isolation in silence", ok)
 				}
 				if ok {
-					t.Error("resposta true JUNTO com erro: quem ignorar o erro sai da frente da fila")
+					t.Error("a true answer TOGETHER with an error: whoever ignores the error steps aside")
 				}
 				verificados++
 			}
 			if verificados == 0 {
-				t.Skip("ambiente não declarou nenhum repositório com resposta conhecida de fila nativa")
+				t.Skip("the environment declared no repository with a known native-queue answer")
 			}
 		})
 
-		t.Run("16_fila_nativa_e_leitura_e_e_estavel", func(t *testing.T) {
-			if e.RepoSemFilaNativa == "" {
-				t.Skip("ambiente sem repositório de fila conhecida")
+		t.Run("16_the_native_queue_is_a_read_and_is_stable", func(t *testing.T) {
+			if e.RepoWithoutNativeQueue == "" {
+				t.Skip("an environment with no repository of known queue status")
 			}
 			p := conectar(t)
 			ctx := context.Background()
-			a, err := p.HasNativeQueue(ctx, e.RepoSemFilaNativa)
+			a, err := p.HasNativeQueue(ctx, e.RepoWithoutNativeQueue)
 			if err != nil {
 				t.Fatalf("HasNativeQueue: %v", err)
 			}
-			b, err := p.HasNativeQueue(ctx, e.RepoSemFilaNativa)
+			b, err := p.HasNativeQueue(ctx, e.RepoWithoutNativeQueue)
 			if err != nil {
 				t.Fatalf("2ª HasNativeQueue: %v", err)
 			}
 			if a != b {
-				t.Fatalf("perguntar mudou a resposta: %v e depois %v", a, b)
+				t.Fatalf("asking changed the answer: %v and then %v", a, b)
 			}
 		})
 
-		// ── garantia 17: concorrência ───────────────────────────────────────
+		// ── guarantee 17: concurrency ───────────────────────────────────────
 
-		t.Run("17_seguro_para_uso_concorrente", func(t *testing.T) {
-			if e.Par == nil {
-				t.Skip("ambiente sem fábrica de branches")
+		t.Run("17_safe_for_concurrent_use", func(t *testing.T) {
+			if e.Pair == nil {
+				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
 			const n = 6
 			var wg sync.WaitGroup
 			ids := make([]string, n)
-			erros := make([]error, n)
-			origem, destino := e.Par(t)
+			errList := make([]error, n)
+			origem, target := e.Pair(t)
 			for i := 0; i < n; i++ {
 				wg.Add(1)
 				go func(i int) {
 					defer wg.Done()
-					// TODAS as goroutines abrem o MESMO PR: além de exercitar a
-					// corrida no cliente HTTP, é a idempotência da garantia 3
-					// sob concorrência — que é como ela acontece de verdade
-					// numa frota de agentes com retry.
+					// ALL the goroutines open the SAME PR: besides exercising the
+					// race in the HTTP client, it is guarantee 3's idempotency
+					// under concurrency — which is how it really happens in a
+					// fleet of agents with retries.
 					pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-						RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-						Title: fmt.Sprintf("concorrente %d", i), ActorID: e.Ator})
-					ids[i], erros[i] = pr.ExternalID, err
+						RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+						Title: fmt.Sprintf("concorrente %d", i), ActorID: e.Actor})
+					ids[i], errList[i] = pr.ExternalID, err
 				}(i)
 			}
 			wg.Wait()
-			for i, err := range erros {
+			for i, err := range errList {
 				if err != nil {
-					t.Fatalf("abertura concorrente %d falhou: %v", i, err)
+					t.Fatalf("concurrent opening %d failed: %v", i, err)
 				}
 			}
 			for i := 1; i < n; i++ {
 				if ids[i] != ids[0] {
-					t.Fatalf("a corrida criou PRs diferentes para o mesmo branch: %q e %q",
+					t.Fatalf("the race created different PRs for the same branch: %q and %q",
 						ids[0], ids[i])
 				}
 			}
@@ -628,34 +632,35 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 	})
 }
 
-// abrirParaRebase garante o PR que os dois provedores exigem antes de reaplicar.
+// openForRebase ensures the PR both providers require before reapplying.
 //
-// Está aqui, e não no ambiente, porque a exigência é dos PROVEDORES e vale para
-// os dois — é parte do que a suíte descobriu, não configuração de quem monta.
-func abrirParaRebase(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, destino string) {
+// It is here, and not in the environment, because the requirement is the
+// PROVIDERS' and holds for both — it is part of what the suite discovered, not
+// configuration from whoever assembles it.
+func openForRebase(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, target string) {
 	t.Helper()
 	if _, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-		RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: destino,
-		Title: "pré-requisito do rebase", ActorID: e.Ator,
+		RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+		Title: "the rebase's prerequisite", ActorID: e.Actor,
 	}); err != nil {
-		t.Fatalf("não foi possível preparar o PR que o rebase exige: %v", err)
+		t.Fatalf("could not prepare the PR the rebase requires: %v", err)
 	}
 }
 
-// ErroDeRebaseSemPR é a checagem de que a exigência acima é RECUSADA com
-// mensagem, e não com um rebase silencioso sobre o lugar errado. Fica separada
-// da suíte principal porque só faz sentido onde o ambiente sabe garantir que
-// NÃO existe PR para o par — contra um provedor real, isso exige um branch
-// virgem.
-func GitProviderRebaseSemPR(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, destino string) {
+// RebaseWithoutPRError is the check that the requirement above is REFUSED with a
+// message, and not with a silent rebase onto the wrong place. It is separate
+// from the main suite because it only makes sense where the environment can
+// guarantee there is NO PR for the pair — against a real provider, that requires
+// a virgin branch.
+func GitProviderRebaseSemPR(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, target string) {
 	t.Helper()
 	_, err := p.Rebase(context.Background(), delivery.RebaseSpec{
-		RepoExternalID: e.Repo, Branch: origem, Onto: destino})
+		RepoExternalID: e.Repo, Branch: origem, Onto: target})
 	if err == nil {
-		t.Fatal("reaplicou um branch sem PR aberto: nenhum dos dois provedores faz " +
-			"isso, então o que quer que tenha acontecido não foi o que o domínio pediu")
+		t.Fatal("it reapplied a branch with no open PR: neither provider does that, " +
+			"so whatever happened was not what the domain asked for")
 	}
 	if k := errs.KindOf(err); k != errs.KindPrecondition {
-		t.Errorf("esperava %s, veio %s: %v", errs.KindPrecondition, k, err)
+		t.Errorf("expected %s, got %s: %v", errs.KindPrecondition, k, err)
 	}
 }

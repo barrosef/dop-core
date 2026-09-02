@@ -60,24 +60,24 @@ func TestGitProviderContractGitHub(t *testing.T) {
 			})
 		}
 		return contract.GitProviderEnv{
-			Conectar: func(t *testing.T, ator string) delivery.GitProvider {
+			Connect: func(t *testing.T, ator string) delivery.GitProvider {
 				return novo(t, ator, tokenFalso)
 			},
-			ConectarSemCredencial: func(t *testing.T) delivery.GitProvider {
+			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider {
 				return novo(t, atorDeTeste, "token-que-nao-serve")
 			},
-			Ator:              atorDeTeste,
-			TokenSentinela:    tokenFalso,
+			Actor:              atorDeTeste,
+			SentinelToken:    tokenFalso,
 			Repo:              contract.GHRepoOK,
-			RepoInvisivel:     contract.GHRepoInvisivel,
-			RepoComFilaNativa: contract.GHRepoComFila,
-			RepoSemFilaNativa: contract.GHRepoSemFila,
-			RepoFilaIlegivel:  contract.GHRepoFilaProibida,
-			Par:               func(t *testing.T) (string, string) { return branches("") },
-			ParConflitante:    func(t *testing.T) (string, string) { return branches(contract.MarcaConflito) },
-			ParBloqueado:      func(t *testing.T) (string, string) { return branches(contract.MarcaBloqueado) },
-			ParSemCommits:     func(t *testing.T) (string, string) { return branches(contract.MarcaSemCommit) },
-			Espera:            10 * time.Second,
+			InvisibleRepo:     contract.GHRepoInvisivel,
+			RepoWithNativeQueue: contract.GHRepoComFila,
+			RepoWithoutNativeQueue: contract.GHRepoSemFila,
+			RepoWithUnreadableQueue:  contract.GHRepoFilaProibida,
+			Pair:               func(t *testing.T) (string, string) { return branches("") },
+			ConflictingPair:    func(t *testing.T) (string, string) { return branches(contract.MarcaConflito) },
+			BlockedPair:      func(t *testing.T) (string, string) { return branches(contract.MarcaBloqueado) },
+			PairWithNoCommits:     func(t *testing.T) (string, string) { return branches(contract.MarcaSemCommit) },
+			Wait:            10 * time.Second,
 		}
 	})
 }
@@ -95,24 +95,24 @@ func TestGitProviderContractGitLab(t *testing.T) {
 			})
 		}
 		return contract.GitProviderEnv{
-			Conectar: func(t *testing.T, ator string) delivery.GitProvider {
+			Connect: func(t *testing.T, ator string) delivery.GitProvider {
 				return novo(ator, tokenFalso)
 			},
-			ConectarSemCredencial: func(t *testing.T) delivery.GitProvider {
+			ConnectWithoutCredential: func(t *testing.T) delivery.GitProvider {
 				return novo(atorDeTeste, "token-que-nao-serve")
 			},
-			Ator:              atorDeTeste,
-			TokenSentinela:    tokenFalso,
+			Actor:              atorDeTeste,
+			SentinelToken:    tokenFalso,
 			Repo:              contract.GLProjOK,
-			RepoInvisivel:     contract.GLProjInvisivel,
-			RepoComFilaNativa: contract.GLProjComTrem,
-			RepoSemFilaNativa: contract.GLProjSemTrem,
-			RepoFilaIlegivel:  contract.GLProjEscopoRuim,
-			Par:               func(t *testing.T) (string, string) { return branches("") },
-			ParConflitante:    func(t *testing.T) (string, string) { return branches(contract.MarcaConflito) },
-			ParBloqueado:      func(t *testing.T) (string, string) { return branches(contract.MarcaBloqueado) },
-			ParSemCommits:     func(t *testing.T) (string, string) { return branches(contract.MarcaSemCommit) },
-			Espera:            10 * time.Second,
+			InvisibleRepo:     contract.GLProjInvisivel,
+			RepoWithNativeQueue: contract.GLProjComTrem,
+			RepoWithoutNativeQueue: contract.GLProjSemTrem,
+			RepoWithUnreadableQueue:  contract.GLProjEscopoRuim,
+			Pair:               func(t *testing.T) (string, string) { return branches("") },
+			ConflictingPair:    func(t *testing.T) (string, string) { return branches(contract.MarcaConflito) },
+			BlockedPair:      func(t *testing.T) (string, string) { return branches(contract.MarcaBloqueado) },
+			PairWithNoCommits:     func(t *testing.T) (string, string) { return branches(contract.MarcaSemCommit) },
+			Wait:            10 * time.Second,
 		}
 	})
 }
@@ -200,7 +200,7 @@ func TestGitProviderRebaseSemPR(t *testing.T) {
 			ActorID: atorDeTeste, Poll: time.Millisecond})
 		origem, destino := branches("virgem")
 		contract.GitProviderRebaseSemPR(t, p,
-			contract.GitProviderEnv{Repo: contract.GHRepoOK, Ator: atorDeTeste}, origem, destino)
+			contract.GitProviderEnv{Repo: contract.GHRepoOK, Actor: atorDeTeste}, origem, destino)
 	})
 	t.Run("gitlab", func(t *testing.T) {
 		f := contract.NewGitLabFake(t, tokenFalso)
@@ -208,7 +208,7 @@ func TestGitProviderRebaseSemPR(t *testing.T) {
 			APIBase: f.URL(), Token: tokenFalso, ActorID: atorDeTeste, Poll: time.Millisecond})
 		origem, destino := branches("virgem")
 		contract.GitProviderRebaseSemPR(t, p,
-			contract.GitProviderEnv{Repo: contract.GLProjOK, Ator: atorDeTeste}, origem, destino)
+			contract.GitProviderEnv{Repo: contract.GLProjOK, Actor: atorDeTeste}, origem, destino)
 	})
 }
 
