@@ -1,26 +1,26 @@
 //go:build integration
 
-// A MESMA suíte de contrato, agora contra o Kubernetes de verdade.
+// The SAME contract suite, now against real Kubernetes.
 //
 //	kubectl proxy --port=8001 --reject-paths='^$' &
 //	go test ./test/contract/ -tags=integration -run TestSandboxContractK8s -v
 //
-// ── O `--reject-paths` NÃO É OPCIONAL ───────────────────────────────────────
+// ── `--reject-paths` IS NOT OPTIONAL ────────────────────────────────────────
 //
-// O `kubectl proxy` recusa por PADRÃO os caminhos de exec e attach: o default de
-// `--reject-paths` é `^/api/.*/pods/.*/exec,^/api/.*/pods/.*/attach`. Sem a flag,
-// os subtestes de Exec voltam 403 no aperto de mão, ANTES de qualquer WebSocket
-// existir — e o 403 do proxy não diz o que fazer. Está anotado aqui, no
-// cabeçalho de internal/adapter/sandbox/websocket.go e na mensagem de erro do
-// próprio adaptador, porque é o tipo de detalhe que custa uma tarde quando não
-// está escrito em lugar nenhum. Dentro do cluster (a implantação real, com
-// service account) a questão não existe: não há proxy no caminho.
+// `kubectl proxy` refuses the exec and attach paths by DEFAULT: the default for
+// `--reject-paths` is `^/api/.*/pods/.*/exec,^/api/.*/pods/.*/attach`. Without
+// the flag, the Exec subtests come back 403 at the handshake, BEFORE any
+// WebSocket exists — and the proxy's 403 does not say what to do. It is recorded
+// here, in internal/adapter/sandbox/websocket.go's header and in the adapter's
+// own error message, because it is the kind of detail that costs an afternoon
+// when it is written down nowhere. Inside the cluster (the real deployment, with
+// a service account) the question does not arise: there is no proxy in the way.
 //
-// É esta execução que dá sentido à regra dos dois adaptadores: rodar a suíte só
-// contra o Docker provaria que o Docker é consistente consigo mesmo. As duas
-// implementações não têm uma linha em comum — namespace e PVC de um lado,
-// contêiner e volume do outro — e é exatamente por isso que passar nas mesmas
-// treze verificações significa alguma coisa.
+// It is this run that gives the two-adapter rule its meaning: running the suite
+// only against Docker would prove Docker is consistent with itself. The two
+// implementations do not have one line in common — a namespace and a PVC on one
+// side, a container and a volume on the other — and that is exactly why passing
+// the same thirteen checks means something.
 package contract_test
 
 import (
@@ -38,9 +38,10 @@ import (
 func TestSandboxContractK8s(t *testing.T) {
 	api := os.Getenv("K8S_API_SERVER")
 	if api == "" {
-		// `kubectl proxy` é o caminho de menor atrito fora do cluster: ele já
-		// resolve CA e credencial a partir do kubeconfig, e o adaptador
-		// continua falando a MESMA API que falaria de dentro de um pod.
+		// `kubectl proxy` is the path of least friction outside the cluster: it
+		// already resolves the CA and the credential from the kubeconfig, and
+		// the adapter goes on speaking the SAME API it would speak from inside a
+		// pod.
 		api = "http://127.0.0.1:8001"
 	}
 	launcher := sandbox.NewK8s(sandbox.K8sConfig{
@@ -56,32 +57,32 @@ func TestSandboxContractK8s(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, api+"/version", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Skipf("Kubernetes indisponível em %s: %v — rode `kubectl proxy --port=8001` "+
-			"ou aponte K8S_API_SERVER/K8S_TOKEN para o cluster", api, err)
+		t.Skipf("Kubernetes unavailable at %s: %v — run `kubectl proxy --port=8001` "+
+			"or point K8S_API_SERVER/K8S_TOKEN at the cluster", api, err)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		t.Skipf("a API do Kubernetes em %s respondeu HTTP %d — credencial ausente ou sem permissão",
+		t.Skipf("the Kubernetes API at %s answered HTTP %d — a missing credential or no permission",
 			api, resp.StatusCode)
 	}
 
 	tiers, err := launcher.SupportedTiers(context.Background())
 	if err != nil {
-		t.Skipf("não foi possível descobrir os níveis de isolamento do cluster: %v", err)
+		t.Skipf("could not discover the cluster's isolation levels: %v", err)
 	}
-	t.Logf("níveis de isolamento oferecidos por este cluster: %v", tiers)
+	t.Logf("isolation levels this cluster offers: %v", tiers)
 
 	contract.SandboxSuite(t, "kubernetes", func(t *testing.T) (ports.SandboxLauncher, contract.SandboxEnv) {
 		return launcher, contract.SandboxEnv{
 			NamespacePrefix: "dop-ct",
-			Image:           imagemDeTeste(),
+			Image:           testImage(),
 			Tier:            ports.TierNamespace,
-			// k3d não traz RuntimeClass de Kata. Pedir isolamento de hardware
-			// aqui precisa RECUSAR — é o R-4 da spec do substrato, e o caso em
-			// que degradar em silêncio custaria caro em produção.
+			// k3d ships no Kata RuntimeClass. Asking for hardware isolation here
+			// has to REFUSE — it is the substrate spec's R-4, and the case where
+			// degrading in silence would cost dearly in production.
 			Unsupported: ports.TierHardware,
-			// Um pod puxa imagem e espera o provisionador de volume; o
-			// contêiner local não faz nem uma coisa nem outra.
+			// A pod pulls an image and waits for the volume provisioner; the
+			// local container does neither.
 			Ready: 180 * time.Second,
 		}
 	})

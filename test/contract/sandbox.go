@@ -12,59 +12,61 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// SandboxEnv descreve o que ESTE substrato tem para a suíte trabalhar.
+// SandboxEnv describes what THIS substrate has for the suite to work with.
 //
-// Existe porque as duas coisas que mudam entre um cluster e o Docker do host
-// não são comportamento, e sim ambiente: o nome do espaço onde criar e qual
-// nível de isolamento a máquina realmente oferece. Tudo o mais — comando,
-// marcador de workspace, tempos — é da suíte, para que os dois adaptadores
-// sejam medidos com a MESMA régua.
+// It exists because the two things that change between a cluster and the host's
+// Docker are not behaviour, they are environment: the name of the space to
+// create in and which isolation level the machine really offers. Everything else
+// — the command, the workspace marker, the timings — belongs to the suite, so
+// both adapters are measured with the SAME ruler.
 type SandboxEnv struct {
-	// NamespacePrefix precisa ser válido em DNS-1123: o k8s exige, o Docker
-	// aceita, e usar a regra mais estrita nos dois é o que mantém o mesmo teste
-	// rodando dos dois lados.
+	// NamespacePrefix has to be valid under DNS-1123: k8s requires it, Docker
+	// accepts it, and using the stricter rule on both is what keeps the same
+	// test running on either side.
 	NamespacePrefix string
 	Image           string
-	// Tier é o que este substrato entrega. Unsupported é um que ele NÃO
-	// entrega — é o caso que prova a recusa em vez da degradação.
+	// Tier is what this substrate delivers. Unsupported is one it does NOT
+	// deliver — it is the case that proves the refusal instead of the
+	// degradation.
 	Tier        ports.IsolationTier
 	Unsupported ports.IsolationTier
-	// Ready é quanto esperar por uma mudança de fase. Um pod puxando imagem
-	// demora muito mais que um contêiner local.
+	// Ready is how long to wait for a phase change. A pod pulling an image takes
+	// far longer than a local container.
 	Ready time.Duration
 }
 
-// SandboxSuite verifica as doze garantias documentadas na porta SandboxLauncher.
+// SandboxSuite verifies the twelve guarantees documented on the SandboxLauncher
+// port.
 //
-// Disciplina da ADR-0001: uma porta com um adaptador só é palpite. O Kubernetes
-// e o Docker não têm UMA linha em comum na implementação — é só passando os dois
-// por esta suíte que "trocar de substrato não muda o comportamento" deixa de ser
-// promessa e vira fato verificado.
+// ADR-0001's discipline: a port with a single adapter is guesswork. Kubernetes
+// and Docker do not have ONE line in common in their implementations — it is
+// only by putting both through this suite that "changing substrate does not
+// change the behaviour" stops being a promise and becomes a verified fact.
 func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (ports.SandboxLauncher, SandboxEnv)) {
 	t.Run(name, func(t *testing.T) {
-		t.Run("3_supported_tiers_nunca_vazio", func(t *testing.T) {
+		t.Run("3_supported_tiers_is_never_empty", func(t *testing.T) {
 			l, env := newLauncher(t)
 			tiers, err := l.SupportedTiers(context.Background())
 			if err != nil {
 				t.Fatalf("SupportedTiers: %v", err)
 			}
 			if len(tiers) == 0 {
-				t.Fatal("lista vazia sem erro: substrato sem nível nenhum é substrato indisponível")
+				t.Fatal("an empty list with no error: a substrate with no level at all is an unavailable substrate")
 			}
 			for _, tr := range tiers {
 				if !ports.ValidIsolationTier(tr) {
-					t.Errorf("tier fora do vocabulário: %q", tr)
+					t.Errorf("tier outside the vocabulary: %q", tr)
 				}
 			}
 			if !containsTier(tiers, env.Tier) {
-				t.Errorf("o ambiente diz entregar %q, o substrato não o lista: %v", env.Tier, tiers)
+				t.Errorf("the environment says it delivers %q, the substrate does not list it: %v", env.Tier, tiers)
 			}
 			if containsTier(tiers, env.Unsupported) {
-				t.Errorf("o ambiente diz NÃO entregar %q, mas o substrato o lista", env.Unsupported)
+				t.Errorf("the environment says it does NOT deliver %q, but the substrate lists it", env.Unsupported)
 			}
 		})
 
-		t.Run("1_tier_entregue_e_o_declarado", func(t *testing.T) {
+		t.Run("1_the_tier_delivered_is_the_one_declared", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
@@ -74,32 +76,32 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("Launch: %v", err)
 			}
 			if st.Tier != spec.Tier {
-				t.Fatalf("DEGRADAÇÃO SILENCIOSA: pedi %q, recebi %q", spec.Tier, st.Tier)
+				t.Fatalf("SILENT DEGRADATION: I asked for %q, I got %q", spec.Tier, st.Tier)
 			}
 			st = waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 			if st.Tier != spec.Tier {
-				t.Fatalf("o tier mudou depois do provisionamento: %q != %q", st.Tier, spec.Tier)
+				t.Fatalf("the tier changed after provisioning: %q != %q", st.Tier, spec.Tier)
 			}
 		})
 
-		t.Run("2_tier_nao_suportado_recusa_sem_rastro", func(t *testing.T) {
+		t.Run("2_an_unsupported_tier_refuses_with_no_trace", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
 			spec.Tier = env.Unsupported
 
 			if _, err := l.Launch(ctx, spec); err == nil {
-				t.Fatal("aceitou tier que o substrato não oferece — degradar em silêncio é proibido")
+				t.Fatal("it accepted a tier the substrate does not offer — degrading in silence is forbidden")
 			} else if k := errs.KindOf(err); k != errs.KindPrecondition {
-				t.Fatalf("esperava KindPrecondition com mensagem, veio %s: %v", k, err)
+				t.Fatalf("expected KindPrecondition with a message, got %s: %v", k, err)
 			}
-			// Recusa que provisiona metade é pior que recusa nenhuma.
+			// A refusal that provisions half is worse than no refusal at all.
 			if _, err := l.Describe(ctx, spec.SandboxHandle); errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("a recusa deixou rastro: Describe devolveu %v", err)
+				t.Fatalf("the refusal left a trace: Describe returned %v", err)
 			}
 		})
 
-		t.Run("4_launch_idempotente", func(t *testing.T) {
+		t.Run("4_idempotent_launch", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
@@ -108,19 +110,19 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("1º Launch: %v", err)
 			}
 			if _, err := l.Launch(ctx, spec); err != nil {
-				t.Fatalf("2º Launch deveria devolver o existente: %v", err)
+				t.Fatalf("the 2nd Launch should return the existing one: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// Um Destroy só tem de bastar: se o relançamento tivesse criado um
-			// segundo sandbox, algo sobreviveria a ele.
+			// A single Destroy has to be enough: if the relaunch had created a
+			// second sandbox, something would survive it.
 			if err := l.Destroy(ctx, spec.SandboxHandle); err != nil {
 				t.Fatalf("Destroy: %v", err)
 			}
 			waitGone(t, l, spec.SandboxHandle, env.Ready)
 		})
 
-		t.Run("5e6_suspende_preserva_workspace_e_resume_retoma", func(t *testing.T) {
+		t.Run("5and6_suspend_preserves_the_workspace_and_resume_picks_it_up", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
@@ -129,7 +131,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-			waitLog(t, l, spec.SandboxHandle, marcaAusente, env.Ready)
+			waitLog(t, l, spec.SandboxHandle, markerAbsent, env.Ready)
 
 			if err := l.Suspend(ctx, spec.SandboxHandle); err != nil {
 				t.Fatalf("Suspend: %v", err)
@@ -144,15 +146,15 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// A GARANTIA 5, e só ela: o que estava sob SandboxWorkspacePath
-			// sobreviveu. Nada FORA dele é verificado aqui de propósito — o
-			// adaptador k8s apaga o pod inteiro na suspensão e o do Docker
-			// mantém a camada gravável do contêiner. Exigir o comportamento do
-			// Docker faria a suíte reprovar o k8s por cumprir a porta.
-			waitLog(t, l, spec.SandboxHandle, marcaPresente, env.Ready)
+			// GUARANTEE 5, and only it: what was under SandboxWorkspacePath
+			// survived. Nothing OUTSIDE it is verified here, on purpose — the
+			// k8s adapter deletes the whole pod on suspension and Docker's keeps
+			// the container's writable layer. Demanding Docker's behaviour would
+			// make the suite fail k8s for delivering the port.
+			waitLog(t, l, spec.SandboxHandle, markerPresent, env.Ready)
 		})
 
-		t.Run("7_suspend_e_resume_idempotentes", func(t *testing.T) {
+		t.Run("7_idempotent_suspend_and_resume", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
@@ -163,18 +165,18 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
 			if _, err := l.Resume(ctx, spec); err != nil {
-				t.Fatalf("Resume de sandbox ativo deveria ser inócuo: %v", err)
+				t.Fatalf("a Resume of an active sandbox should be harmless: %v", err)
 			}
 			if err := l.Suspend(ctx, spec.SandboxHandle); err != nil {
 				t.Fatalf("1º Suspend: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
 			if err := l.Suspend(ctx, spec.SandboxHandle); err != nil {
-				t.Fatalf("2º Suspend deveria ser inócuo: %v", err)
+				t.Fatalf("the 2nd Suspend should be harmless: %v", err)
 			}
 		})
 
-		t.Run("8_destroy_irreversivel_e_idempotente", func(t *testing.T) {
+		t.Run("8_destroy_is_irreversible_and_idempotent", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			spec := newSpec(t, l, env)
@@ -189,37 +191,37 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitGone(t, l, spec.SandboxHandle, env.Ready)
 
-			// Irreversível quer dizer que não há caminho de volta PELA PORTA.
+			// Irreversible means there is no way back THROUGH THE PORT.
 			if _, err := l.Resume(ctx, spec); errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("destruído voltou a viver: Resume devolveu %v", err)
+				t.Fatalf("the destroyed one came back to life: Resume returned %v", err)
 			}
 			if err := l.Destroy(ctx, spec.SandboxHandle); err != nil {
-				t.Fatalf("2º Destroy deveria ser inócuo: %v", err)
+				t.Fatalf("the 2nd Destroy should be harmless: %v", err)
 			}
 		})
 
-		t.Run("9_inexistente", func(t *testing.T) {
+		t.Run("9_nonexistent", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
-			spec := newSpec(t, l, env) // nunca lançado
+			spec := newSpec(t, l, env) // never launched
 
 			if _, err := l.Describe(ctx, spec.SandboxHandle); errs.KindOf(err) != errs.KindNotFound {
-				t.Errorf("Describe: esperava KindNotFound, veio %v", err)
+				t.Errorf("Describe: expected KindNotFound, got %v", err)
 			}
 			if err := l.Suspend(ctx, spec.SandboxHandle); errs.KindOf(err) != errs.KindNotFound {
-				t.Errorf("Suspend: esperava KindNotFound, veio %v", err)
+				t.Errorf("Suspend: expected KindNotFound, got %v", err)
 			}
 			if _, err := l.Resume(ctx, spec); errs.KindOf(err) != errs.KindNotFound {
-				t.Errorf("Resume: esperava KindNotFound, veio %v", err)
+				t.Errorf("Resume: expected KindNotFound, got %v", err)
 			}
-			// Só o Destroy trata ausência como sucesso: nele a ausência é o
-			// resultado desejado.
+			// Only Destroy treats absence as success: there, absence is the
+			// desired result.
 			if err := l.Destroy(ctx, spec.SandboxHandle); err != nil {
-				t.Errorf("Destroy de inexistente deveria ser inócuo: %v", err)
+				t.Errorf("a Destroy of a nonexistent sandbox should be harmless: %v", err)
 			}
 		})
 
-		t.Run("10_sandboxes_nao_interferem", func(t *testing.T) {
+		t.Run("10_sandboxes_do_not_interfere", func(t *testing.T) {
 			l, env := newLauncher(t)
 			ctx := context.Background()
 			a, b := newSpec(t, l, env), newSpec(t, l, env)
@@ -243,11 +245,11 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("destruir A afetou B: %v", err)
 			}
 			if st.Phase != ports.PhaseActive {
-				t.Fatalf("B saiu de ativo por causa de A: %s", st.Phase)
+				t.Fatalf("B left the active phase because of A: %s", st.Phase)
 			}
 		})
 
-		t.Run("11_tail_morre_junto_com_o_cliente", func(t *testing.T) {
+		t.Run("11_tail_dies_along_with_the_client", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -261,28 +263,28 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				done <- l.Tail(ctx, spec.SandboxHandle, ports.LogQuery{Follow: true},
 					func(ports.LogLine) error { return nil })
 			}()
-			// Deixa o follow pegar o fluxo antes de puxar o tapete.
+			// Let the follow catch the stream before pulling the rug.
 			time.Sleep(500 * time.Millisecond)
 			cancel()
 
 			select {
 			case err := <-done:
 				if err != nil {
-					t.Fatalf("cancelamento do cliente não é falha: %v", err)
+					t.Fatalf("the client's cancellation is not a failure: %v", err)
 				}
 			case <-time.After(15 * time.Second):
-				t.Fatal("Tail não morreu com o cliente — goroutine vazada por chamada")
+				t.Fatal("Tail did not die with the client — a leaked goroutine per call")
 			}
 		})
 
-		t.Run("12_erro_do_emit_interrompe_o_tail", func(t *testing.T) {
+		t.Run("12_an_emit_error_interrupts_the_tail", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-			waitLog(t, l, spec.SandboxHandle, marcaAusente, env.Ready)
+			waitLog(t, l, spec.SandboxHandle, markerAbsent, env.Ready)
 
 			boom := errs.Internal("cliente sumiu")
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -290,64 +292,64 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			err := l.Tail(ctx, spec.SandboxHandle, ports.LogQuery{Follow: true},
 				func(ports.LogLine) error { return boom })
 			if err == nil {
-				t.Fatal("erro do emit precisa subir: é como o servidor sabe que o cliente sumiu")
+				t.Fatal("the emit error has to go up: it is how the server learns the client is gone")
 			}
 		})
 
-		t.Run("endpoints_vazios_sem_porta_publicada", func(t *testing.T) {
+		t.Run("empty_endpoints_with_no_published_port", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			st := waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-			// Endpoint inventado faz o cockpit oferecer link que não abre.
+			// An invented endpoint makes the cockpit offer a link that does not open.
 			if len(st.Endpoints) != 0 {
-				t.Fatalf("sandbox sem porta publicada devolveu %d endpoint(s): %+v",
+				t.Fatalf("a sandbox with no published port returned %d endpoint(s): %+v",
 					len(st.Endpoints), st.Endpoints)
 			}
 		})
 
-		// ── Exec: as garantias 13 a 18 ──────────────────────────────────────
+		// ── Exec: guarantees 13 to 18 ───────────────────────────────────────
 		//
-		// Elas entraram quando exec entrou na porta, e cada uma existe porque a
-		// implementação ingênua correspondente PASSA sem elas: um exec que lê
-		// só o stream devolve código de saída zero para todo comando que
-		// falhou; um que confia no `Env` do processo do núcleo entrega a
-		// credencial do processo ao código do agente; um que lê até o EOF sem
-		// teto transforma um `cat` de log numa fatura.
+		// They came in when exec came into the port, and each exists because the
+		// corresponding naive implementation PASSES without them: an exec that
+		// reads only the stream returns a zero exit code for every failed
+		// command; one that trusts the core process's `Env` hands the process's
+		// credential to the agent's code; one that reads to EOF with no cap
+		// turns a `cat` of a log into an invoice.
 
-		t.Run("13e14_exec_roda_dentro_do_sandbox_e_no_workspace", func(t *testing.T) {
+		t.Run("13and14_exec_runs_inside_the_sandbox_and_in_the_workspace", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-			// O sandbox de teste grava `marca` no workspace ao subir; esperar
-			// a linha dele é esperar o arquivo existir.
-			waitLog(t, l, spec.SandboxHandle, marcaAusente, env.Ready)
+			// The test sandbox writes `marker` into the workspace when it comes
+			// up; waiting for its line is waiting for the file to exist.
+			waitLog(t, l, spec.SandboxHandle, markerAbsent, env.Ready)
 
-			// `pwd` prova a garantia 14 (o diretório de trabalho é o workspace,
-			// e nenhum dos dois adaptadores recebeu isso por parâmetro — os
-			// dois o fixam no contêiner). `cat marca` sem caminho absoluto
-			// prova as duas de uma vez: só funciona se o comando começou lá.
+			// `pwd` proves guarantee 14 (the working directory is the workspace,
+			// and neither adapter received that as a parameter — both pin it on
+			// the container). `cat marker` with no absolute path proves both at
+			// once: it only works if the command started there.
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"sh", "-c", "pwd; cat marca"},
+				Command: []string{"sh", "-c", "pwd; cat marker"},
 			})
 			if res.ExitCode != 0 {
 				t.Fatalf("exit %d, stderr=%q", res.ExitCode, res.Stderr)
 			}
 			if !strings.Contains(res.Stdout, ports.SandboxWorkspacePath) {
-				t.Fatalf("o comando não começou em %s: pwd disse %q",
+				t.Fatalf("the command did not start in %s: pwd said %q",
 					ports.SandboxWorkspacePath, res.Stdout)
 			}
 			if !strings.Contains(res.Stdout, "ok") {
-				t.Fatalf("o comando não enxergou o workspace do sandbox: %q", res.Stdout)
+				t.Fatalf("the command did not see the sandbox's workspace: %q", res.Stdout)
 			}
 		})
 
-		t.Run("15_codigo_de_saida_nao_e_erro_da_porta", func(t *testing.T) {
+		t.Run("15_the_exit_code_is_not_a_port_error", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -355,27 +357,27 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// É a garantia que sustenta o laço de ferramenta inteiro: o modelo
-			// precisa VER que o comando falhou para corrigir. Um erro de
-			// transporte no lugar disto apagaria a diferença entre "o teste
-			// reprovou" e "o substrato caiu".
+			// It is the guarantee that holds the whole tool loop up: the model
+			// needs to SEE that the command failed in order to fix it. A
+			// transport error in its place would erase the difference between
+			// "the test failed" and "the substrate went down".
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
 				Command: []string{"sh", "-c", "exit 7"},
 			})
 			if res.ExitCode != 7 {
-				t.Fatalf("CÓDIGO DE SAÍDA PERDIDO: veio %d, esperava 7 — um exec que lê só o "+
-					"stream devolve 0 para tudo, e o agente lê falha como sucesso", res.ExitCode)
+				t.Fatalf("EXIT CODE LOST: got %d, expected 7 — an exec that reads only the "+
+					"stream returns 0 for everything, and the agent reads failure as success", res.ExitCode)
 			}
-			// E o zero continua sendo zero: sem esta metade, um adaptador que
-			// devolvesse -1 sempre passaria na de cima.
+			// And zero stays zero: without this half, an adapter that always
+			// returned -1 would pass the one above.
 			if ok := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
 				Command: []string{"true"},
 			}); ok.ExitCode != 0 {
-				t.Fatalf("comando bem-sucedido devolveu código %d", ok.ExitCode)
+				t.Fatalf("a successful command returned code %d", ok.ExitCode)
 			}
 		})
 
-		t.Run("16_stdout_e_stderr_separados", func(t *testing.T) {
+		t.Run("16_stdout_and_stderr_are_separate", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -383,23 +385,23 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// Diferente do Tail, onde o k8s funde os dois e a porta não promete
-			// nada: no exec os dois substratos separam de verdade.
+			// Unlike Tail, where k8s merges the two and the port promises
+			// nothing: in exec both substrates really separate them.
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"sh", "-c", "echo SAIDA-PADRAO; echo SAIDA-DE-ERRO 1>&2"},
+				Command: []string{"sh", "-c", "echo STDOUT-LINE; echo STDERR-LINE 1>&2"},
 			})
-			if !strings.Contains(res.Stdout, "SAIDA-PADRAO") {
-				t.Fatalf("stdout não trouxe a linha de stdout: %q", res.Stdout)
+			if !strings.Contains(res.Stdout, "STDOUT-LINE") {
+				t.Fatalf("stdout did not carry the stdout line: %q", res.Stdout)
 			}
-			if !strings.Contains(res.Stderr, "SAIDA-DE-ERRO") {
-				t.Fatalf("stderr não trouxe a linha de stderr: %q", res.Stderr)
+			if !strings.Contains(res.Stderr, "STDERR-LINE") {
+				t.Fatalf("stderr did not carry the stderr line: %q", res.Stderr)
 			}
-			if strings.Contains(res.Stdout, "SAIDA-DE-ERRO") {
+			if strings.Contains(res.Stdout, "STDERR-LINE") {
 				t.Fatalf("os dois fluxos vieram fundidos em stdout: %q", res.Stdout)
 			}
 		})
 
-		t.Run("17_saida_limitada_e_prazo_respeitado", func(t *testing.T) {
+		t.Run("17_the_output_is_capped_and_the_deadline_respected", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -407,27 +409,28 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// ~22 KB de saída contra um teto de 1 KB. Shell puro de propósito:
-			// `yes | head` mata o produtor com SIGPIPE e mediria outra coisa.
-			grande := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+			// ~22 KB of output against a 1 KB cap. Plain shell on purpose:
+			// `yes | head` kills the producer with SIGPIPE and would measure
+			// something else.
+			big := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
 				Command: []string{"sh", "-c",
 					"i=0; while [ $i -lt 2000 ]; do echo 0123456789; i=$((i+1)); done"},
 				MaxOutputBytes: 1024,
 			})
-			if len(grande.Stdout) > 1024 {
-				t.Fatalf("SAÍDA SEM TETO: vieram %d bytes contra um teto de 1024. Saída de "+
-					"ferramenta vira contexto de modelo, e contexto é fatura (ADR-0011)",
-					len(grande.Stdout))
+			if len(big.Stdout) > 1024 {
+				t.Fatalf("OUTPUT WITH NO CAP: %d bytes came back against a cap of 1024. A "+
+					"tool's output becomes model context, and context is an invoice (ADR-0011)",
+					len(big.Stdout))
 			}
-			if !grande.Truncated {
-				t.Fatal("a saída foi cortada e Truncated veio falso: um agente que conclui a " +
-					"partir de saída cortada sem saber conclui errado")
+			if !big.Truncated {
+				t.Fatal("the output was cut and Truncated came back false: an agent that " +
+					"concludes from cut output without knowing concludes wrongly")
 			}
-			// O código de saída continua vindo mesmo com a saída cortada — é o
-			// que prova que o adaptador continuou drenando o fluxo em vez de
-			// fechar a conexão no teto.
-			if grande.ExitCode != 0 {
-				t.Fatalf("com a saída cortada, o código de saída se perdeu: %d", grande.ExitCode)
+			// The exit code still comes back even with the output cut — it is
+			// what proves the adapter kept draining the stream instead of
+			// closing the connection at the cap.
+			if big.ExitCode != 0 {
+				t.Fatalf("with the output cut, the exit code was lost: %d", big.ExitCode)
 			}
 
 			inicio := time.Now()
@@ -435,24 +438,24 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				Command: []string{"sh", "-c", "sleep 60"}, TimeoutSeconds: 3,
 			})
 			if !pendurado.TimedOut {
-				t.Fatal("o comando não terminou no prazo e TimedOut veio falso")
+				t.Fatal("the command did not finish within the deadline and TimedOut came back false")
 			}
 			if pendurado.ExitCode == 0 {
-				t.Fatal("comando pendurado devolveu código 0: zero afirma sucesso, e não houve")
+				t.Fatal("a hung command returned code 0: zero asserts success, and there was none")
 			}
-			if decorrido := time.Since(inicio); decorrido > 40*time.Second {
-				t.Fatalf("o prazo de 3s foi ignorado: a chamada levou %s", decorrido)
+			if elapsed := time.Since(inicio); elapsed > 40*time.Second {
+				t.Fatalf("the 3s deadline was ignored: the call took %s", elapsed)
 			}
 		})
 
-		t.Run("18_exec_em_suspenso_e_em_inexistente", func(t *testing.T) {
+		t.Run("18_exec_on_a_suspended_and_on_a_nonexistent_sandbox", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			cmd := ports.ExecRequest{Command: []string{"true"}}
 
 			// Inexistente: NotFound, como Describe.
 			if _, err := l.Exec(context.Background(), spec.SandboxHandle, cmd); errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("exec em sandbox inexistente: esperava KindNotFound, veio %v", err)
+				t.Fatalf("exec on a nonexistent sandbox: expected KindNotFound, got %v", err)
 			}
 
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -464,19 +467,19 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
 
-			// Suspenso: PRECONDIÇÃO, e nunca um código de saída inventado.
-			// Substrato sem execução não roda comando, e dizer isso é diferente
-			// de dizer que o comando falhou.
+			// Suspended: a PRECONDITION, and never an invented exit code. A
+			// substrate with no execution does not run a command, and saying
+			// that is different from saying the command failed.
 			res, err := l.Exec(context.Background(), spec.SandboxHandle, cmd)
 			if err == nil {
-				t.Fatalf("exec em sandbox SUSPENSO devolveu resultado: %+v", res)
+				t.Fatalf("exec on a SUSPENDED sandbox returned a result: %+v", res)
 			}
 			if k := errs.KindOf(err); k != errs.KindPrecondition {
-				t.Fatalf("exec em sandbox suspenso: esperava KindPrecondition, veio %s: %v", k, err)
+				t.Fatalf("exec on a suspended sandbox: expected KindPrecondition, got %s: %v", k, err)
 			}
 		})
 
-		t.Run("exec_nao_leva_o_ambiente_do_nucleo_para_dentro", func(t *testing.T) {
+		t.Run("exec_does_not_carry_the_cores_environment_inside", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -484,13 +487,13 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			// O núcleo é o processo que TEM as credenciais — a chave do
-			// provedor de modelo sai do cofre e vive na memória dele
-			// (ADR-0023). O sandbox roda código de agente, que lê conteúdo não
-			// confiável (spec do substrato §6). Um adaptador que passasse
-			// `os.Environ()` para o exec — que é o caminho mais curto e o que
-			// um SDK faria por conveniência — entregaria as duas coisas uma à
-			// outra, e nada falharia.
+			// The core is the process that HAS the credentials — the model
+			// provider's key comes out of the vault and lives in its memory
+			// (ADR-0023). The sandbox runs agent code, which reads untrusted
+			// content (substrate spec §6). An adapter that passed `os.Environ()`
+			// to the exec — which is the shortest path and what an SDK would do
+			// for convenience — would hand the two to each other, and nothing
+			// would fail.
 			const sentinela = "SENTINELA_DO_NUCLEO_NAO_PODE_ENTRAR_NO_SANDBOX"
 			t.Setenv("DOP_SENTINELA_DE_CREDENCIAL", sentinela)
 
@@ -498,13 +501,13 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				Command: []string{"sh", "-c", "env; echo ---; set"},
 			})
 			if strings.Contains(res.Stdout, sentinela) {
-				t.Fatal("O AMBIENTE DO PROCESSO DO NÚCLEO VAZOU PARA DENTRO DO SANDBOX: " +
-					"é lá que mora a credencial do provedor de agente, e é ali que roda o " +
-					"código que lê conteúdo não confiável")
+				t.Fatal("THE CORE PROCESS'S ENVIRONMENT LEAKED INTO THE SANDBOX: " +
+					"that is where the agent provider's credential lives, and that is where " +
+					"the code that reads untrusted content runs")
 			}
 		})
 
-		t.Run("processo_desconhecido_no_tail_e_not_found", func(t *testing.T) {
+		t.Run("an_unknown_process_in_the_tail_is_not_found", func(t *testing.T) {
 			l, env := newLauncher(t)
 			spec := newSpec(t, l, env)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
@@ -513,9 +516,9 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
 			err := l.Tail(context.Background(), spec.SandboxHandle,
-				ports.LogQuery{Service: "nao-existe"}, func(ports.LogLine) error { return nil })
+				ports.LogQuery{Service: "does-not-exist"}, func(ports.LogLine) error { return nil })
 			if errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("esperava KindNotFound para processo inexistente, veio %v", err)
+				t.Fatalf("expected KindNotFound for a nonexistent process, got %v", err)
 			}
 		})
 	})
@@ -523,30 +526,30 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 
 // ── o sandbox de teste ───────────────────────────────────────────────────────
 
-// As duas frases que o sandbox de teste imprime ao subir. Elas são o
-// instrumento da garantia 5: o marcador só existe no workspace, então a segunda
-// frase só aparece se o workspace tiver sobrevivido à suspensão.
+// The two phrases the test sandbox prints when it comes up. They are guarantee
+// 5's instrument: the marker only exists in the workspace, so the second phrase
+// only appears if the workspace survived the suspension.
 const (
-	marcaAusente  = "MARCA=ausente"
-	marcaPresente = "MARCA=gravada"
+	markerAbsent  = "MARKER=absent"
+	markerPresent = "MARKER=written"
 )
 
-// sandboxCommand imprime o estado do marcador, grava-o e fica vivo.
+// sandboxCommand prints the marker's state, writes it and stays alive.
 //
-// O `[infra]` no fim é de propósito: é a convenção de classificação de log do
-// domínio, e vê-la atravessar o substrato inteiro prova que nenhum dos dois
-// adaptadores mexe no texto da linha.
+// The `[infra]` at the end is on purpose: it is the domain's log classification
+// convention, and seeing it cross the whole substrate proves neither adapter
+// touches the line's text.
 func sandboxCommand() []string {
 	return []string{"sh", "-c",
-		"if [ -f " + ports.SandboxWorkspacePath + "/marca ]; then echo " + marcaPresente +
-			"; else echo " + marcaAusente + "; fi; " +
-			"echo ok > " + ports.SandboxWorkspacePath + "/marca; " +
+		"if [ -f " + ports.SandboxWorkspacePath + "/marker ]; then echo " + markerPresent +
+			"; else echo " + markerAbsent + "; fi; " +
+			"echo ok > " + ports.SandboxWorkspacePath + "/marker; " +
 			"echo '[infra] sandbox pronto'; sleep 900"}
 }
 
-// newSpec monta um sandbox novo e registra a limpeza. Cada subteste ganha o seu:
-// namespace compartilhado entre testes esconderia justamente a interferência que
-// a garantia 10 existe para detectar.
+// newSpec builds a fresh sandbox and registers the cleanup. Every subtest gets
+// its own: a namespace shared between tests would hide precisely the
+// interference guarantee 10 exists to detect.
 func newSpec(t *testing.T, l ports.SandboxLauncher, env SandboxEnv) ports.SandboxSpec {
 	t.Helper()
 	id := randomID()
@@ -555,7 +558,7 @@ func newSpec(t *testing.T, l ports.SandboxLauncher, env SandboxEnv) ports.Sandbo
 			ID:        id,
 			Namespace: env.NamespacePrefix + "-" + id,
 		},
-		AccountID: "conta-de-contrato",
+		AccountID: "contract-account",
 		DemandID:  "demanda-" + id,
 		Tier:      env.Tier,
 		Image:     env.Image,
@@ -570,12 +573,12 @@ func newSpec(t *testing.T, l ports.SandboxLauncher, env SandboxEnv) ports.Sandbo
 	return spec
 }
 
-// execOK roda um comando e exige que a PORTA não tenha falhado.
+// execOK runs a command and requires the PORT not to have failed.
 //
-// Repare no que ela NÃO checa: o código de saída. Erro aqui é falha do
-// substrato; o que o comando fez — inclusive falhar — é assunto de quem chamou.
-// Misturar os dois neste auxiliar apagaria a garantia 15 de todos os subtestes
-// que o usam.
+// Note what it does NOT check: the exit code. An error here is a substrate
+// failure; what the command did — failing included — is the caller's business.
+// Mixing the two in this helper would erase guarantee 15 from every subtest that
+// uses it.
 func execOK(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, req ports.ExecRequest) *ports.ExecResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -585,7 +588,7 @@ func execOK(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, req po
 		t.Fatalf("Exec(%v): %v", req.Command, err)
 	}
 	if res == nil {
-		t.Fatalf("Exec(%v) devolveu resultado nulo sem erro", req.Command)
+		t.Fatalf("Exec(%v) returned a nil result with no error", req.Command)
 	}
 	return res
 }
@@ -605,11 +608,11 @@ func containsTier(list []ports.IsolationTier, want ports.IsolationTier) bool {
 	return false
 }
 
-// ── espera ───────────────────────────────────────────────────────────────────
+// ── waiting ──────────────────────────────────────────────────────────────────
 //
-// Provisionar é assíncrono nos dois substratos: Launch devolve quando o pedido
-// foi aceito, não quando o processo subiu. Esperar aqui, e não dentro do
-// adaptador, é o que mantém a porta não-bloqueante para quem chama de verdade.
+// Provisioning is asynchronous in both substrates: Launch returns when the
+// request was accepted, not when the process came up. Waiting here, and not
+// inside the adapter, is what keeps the port non-blocking for real callers.
 
 func waitPhase(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, want ports.SandboxPhase, d time.Duration) *ports.SandboxStatus {
 	t.Helper()
@@ -630,7 +633,7 @@ func waitPhase(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, wan
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("o sandbox não chegou a %q em %s (último: %s)", want, d, last)
+	t.Fatalf("the sandbox did not reach %q in %s (last: %s)", want, d, last)
 	return nil
 }
 
@@ -646,12 +649,12 @@ func waitGone(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, d ti
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("o sandbox continuou existindo %s depois de destruído", d)
+	t.Fatalf("the sandbox went on existing %s after being destroyed", d)
 }
 
-// waitLog espera uma frase aparecer no log. Usa Follow=false de propósito: é a
-// leitura do que o substrato JÁ tem, que é o que interessa para provar
-// persistência de workspace.
+// waitLog waits for a phrase to appear in the log. It uses Follow=false on
+// purpose: it is a read of what the substrate ALREADY has, which is what matters
+// for proving workspace persistence.
 func waitLog(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, want string, d time.Duration) {
 	t.Helper()
 	if d <= 0 {
@@ -676,5 +679,5 @@ func waitLog(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, want 
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("a frase %q não apareceu no log em %s (linhas vistas: %v)", want, d, seen)
+	t.Fatalf("the phrase %q did not appear in the log in %s (lines seen: %v)", want, d, seen)
 }

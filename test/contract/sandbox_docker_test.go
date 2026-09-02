@@ -1,12 +1,13 @@
 //go:build integration
 
-// A suíte de contrato do substrato contra o Docker do host.
+// The substrate's contract suite against the host's Docker.
 //
 //	go test ./test/contract/ -tags=integration -run TestSandboxContractDocker -v
 //
-// Este é o adaptador que faz o desenvolvimento da plataforma existir sem
-// cluster — e é rodando ele e o do Kubernetes pela MESMA suíte que se descobre
-// onde os dois divergem. Sem isso, a porta sairia no formato de quem a inspirou.
+// This is the adapter that makes developing the platform possible with no
+// cluster — and it is by running it and the Kubernetes one through the SAME
+// suite that one discovers where the two diverge. Without that, the port would
+// come out in the shape of whichever inspired it.
 package contract_test
 
 import (
@@ -29,34 +30,34 @@ func TestSandboxContractDocker(t *testing.T) {
 	}
 	conn, err := net.DialTimeout("unix", socket, 2*time.Second)
 	if err != nil {
-		t.Skipf("Docker indisponível em %s: %v — suba o daemon ou aponte DOCKER_HOST", socket, err)
+		t.Skipf("Docker unavailable at %s: %v — start the daemon or point DOCKER_HOST", socket, err)
 	}
 	_ = conn.Close()
 
 	launcher := sandbox.NewDocker(sandbox.DockerConfig{Socket: socket})
 	tiers, err := launcher.SupportedTiers(context.Background())
 	if err != nil {
-		t.Skipf("o daemon do Docker não respondeu: %v", err)
+		t.Skipf("the Docker daemon did not answer: %v", err)
 	}
-	t.Logf("níveis de isolamento oferecidos por este host: %v", tiers)
+	t.Logf("isolation levels this host offers: %v", tiers)
 
 	contract.SandboxSuite(t, "docker", func(t *testing.T) (ports.SandboxLauncher, contract.SandboxEnv) {
 		return launcher, contract.SandboxEnv{
 			NamespacePrefix: "dop-ct",
-			Image:           imagemDeTeste(),
+			Image:           testImage(),
 			Tier:            ports.TierNamespace,
-			// Nenhum host de desenvolvimento tem Kata registrado no Docker. É
-			// justamente o caso que a garantia 1 existe para cobrir: pedir
-			// microVM aqui tem de RECUSAR, não entregar um contêiner comum.
+			// No development host has Kata registered in Docker. It is precisely
+			// the case guarantee 1 exists to cover: asking for a microVM here
+			// has to REFUSE, not deliver an ordinary container.
 			Unsupported: ports.TierHardware,
 			Ready:       90 * time.Second,
 		}
 	})
 }
 
-// imagemDeTeste é minúscula de propósito: a suíte precisa rodar no laptop de
-// quem mexe no adaptador, não só na esteira.
-func imagemDeTeste() string {
+// testImage is tiny on purpose: the suite has to run on the laptop of whoever
+// touches the adapter, not only in CI.
+func testImage() string {
 	if v := os.Getenv("DOP_SANDBOX_TEST_IMAGE"); v != "" {
 		return v
 	}
