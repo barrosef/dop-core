@@ -13,117 +13,118 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 )
 
-// As migrações criam partições FIXAS e param em novembro de 2026. Sem
-// manutenção, na virada do mês seguinte toda escrita de evento falha — no
-// caminho do outbox, ou seja, derrubando qualquer operação que mude estado.
+// The migrations create FIXED partitions and stop at November 2026. With no
+// maintenance, at the turn of the following month every event write fails — on
+// the outbox's path, which is to say bringing down any operation that changes
+// state.
 //
-// Este teste prova as duas metades: que as partições nascem, e que rodar de
-// novo não quebra (o scheduler executa isto a cada minuto).
-func TestParticoesFuturasSaoCriadasEEhIdempotente(t *testing.T) {
+// This test proves both halves: that the partitions are born, and that running
+// again does not break (the scheduler runs this every minute).
+func TestFuturePartitionsAreCreatedAndItIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, env("TEST_DATABASE_URL", "postgres://dop:dop-local-dev@localhost:5432/dop?sslmode=disable"))
 	if err != nil || pool.Ping(ctx) != nil {
-		t.Skipf("Postgres indisponível: %v", err)
+		t.Skipf("Postgres unavailable: %v", err)
 	}
-	// `t.Cleanup` roda DEPOIS que a função de teste retorna, e `defer` roda
-	// ANTES — então fechar o pool com defer deixaria a limpeza sem conexão.
-	// Registrado aqui, o fecho vira o ÚLTIMO cleanup (eles rodam ao contrário
-	// da ordem de registro), depois do DROP lá embaixo.
+	// `t.Cleanup` runs AFTER the test function returns, and `defer` runs
+	// BEFORE — so closing the pool with defer would leave the cleanup with no
+	// connection. Registered here, the close becomes the LAST cleanup (they run
+	// in reverse registration order), after the DROP further down.
 	t.Cleanup(pool.Close)
 
-	// Uma data bem à frente, para não depender do que já existe hoje.
-	futuro := time.Date(2027, 6, 15, 0, 0, 0, 0, time.UTC)
+	// A date well ahead, so as not to depend on what already exists today.
+	future := time.Date(2027, 6, 15, 0, 0, 0, 0, time.UTC)
 
-	// Apaga ANTES, não só depois: teste que depende da limpeza da execução
-	// anterior ter funcionado falha por motivo errado quando ela não funcionou
-	// — foi exatamente o que aconteceu aqui, e o sintoma ("nenhuma partição
-	// criada") mandava procurar no código de produção.
-	limparParticoes(t, ctx, pool)
+	// It deletes BEFORE, not only after: a test that depends on the previous
+	// run's cleanup having worked fails for the wrong reason when it did not —
+	// which is exactly what happened here, and the symptom ("no partition
+	// created") sent us looking in the production code.
+	clearPartitions(t, ctx, pool)
 
-	criadas, err := postgres.EnsureMonthlyPartitions(ctx, pool, futuro, 3)
+	created, err := postgres.EnsureMonthlyPartitions(ctx, pool, future, 3)
 	if err != nil {
-		t.Fatalf("primeira passada: %v", err)
+		t.Fatalf("first pass: %v", err)
 	}
-	if len(criadas) == 0 {
-		t.Fatal("nenhuma partição criada — o teste não provaria nada")
+	if len(created) == 0 {
+		t.Fatal("no partition created — the test would prove nothing")
 	}
-	t.Logf("criadas: %v", criadas)
+	t.Logf("created: %v", created)
 
-	// Idempotência não é detalhe: o scheduler roda a cada minuto, para sempre.
-	denovo, err := postgres.EnsureMonthlyPartitions(ctx, pool, futuro, 3)
+	// Idempotency is no detail: the scheduler runs every minute, forever.
+	again, err := postgres.EnsureMonthlyPartitions(ctx, pool, future, 3)
 	if err != nil {
-		t.Fatalf("segunda passada: %v", err)
+		t.Fatalf("second pass: %v", err)
 	}
-	if len(denovo) != 0 {
-		t.Errorf("segunda passada criou %v — deveria ser vazio", denovo)
+	if len(again) != 0 {
+		t.Errorf("the second pass created %v — it should be empty", again)
 	}
 
-	// E o que importa de verdade: dá para escrever no mês que antes não tinha
-	// casa. Sem isto, provaríamos só que a tabela existe.
-	var existe bool
+	// And what really matters: it is possible to write into the month that had
+	// no home before. Without this, we would prove only that the table exists.
+	var exists bool
 	if err := pool.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'events_2027_06')`).
-		Scan(&existe); err != nil {
+		Scan(&exists); err != nil {
 		t.Fatal(err)
 	}
-	if !existe {
-		t.Error("events_2027_06 não existe depois da criação")
+	if !exists {
+		t.Error("events_2027_06 does not exist after the creation")
 	}
 
-	t.Cleanup(func() { limparParticoes(t, context.Background(), pool) })
+	t.Cleanup(func() { clearPartitions(t, context.Background(), pool) })
 }
 
-// O buraco não é hipotético: as migrações param em outubro de 2026, e hoje é
-// agosto de 2026. Novembro não existe. Este teste roda com a data REAL para
-// provar que o ciclo do scheduler fecha o buraco antes de ele doer.
-func TestOBuracoDeNovembroEhFechadoPeloCicloReal(t *testing.T) {
+// The hole is not hypothetical: the migrations stop in October 2026, and today
+// is August 2026. November does not exist. This test runs with the REAL date to
+// prove the scheduler's cycle closes the hole before it hurts.
+func TestTheNovemberHoleIsClosedByTheRealCycle(t *testing.T) {
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, env("TEST_DATABASE_URL",
 		"postgres://dop:dop-local-dev@localhost:5432/dop?sslmode=disable"))
 	if err != nil || pool.Ping(ctx) != nil {
-		t.Skipf("Postgres indisponível: %v", err)
+		t.Skipf("Postgres unavailable: %v", err)
 	}
 	defer pool.Close()
 
 	if _, err := postgres.EnsureMonthlyPartitions(ctx, pool, time.Now().UTC(), 3); err != nil {
-		t.Fatalf("ciclo do scheduler: %v", err)
+		t.Fatalf("the scheduler's cycle: %v", err)
 	}
 
-	// Escrever de fato no mês que antes não tinha casa é o que separa
-	// "a tabela existe" de "a escrita funciona".
+	// Actually writing into the month that had no home before is what separates
+	// "the table exists" from "the write works".
 	//
-	// Ancorado no PRIMEIRO dia do mês antes de somar: `AddDate(0,1,0)` a
-	// partir de 31 de agosto normaliza para 1º de outubro — que já existia, e
-	// faria este teste passar sem provar nada. Três meses à frente cai fora do
-	// que as migrações criaram, que é justamente o buraco.
-	agora := time.Now().UTC()
-	mesSeguinte := time.Date(agora.Year(), agora.Month(), 1, 12, 0, 0, 0, time.UTC).AddDate(0, 3, 0)
-	var destino string
+	// Anchored on the FIRST day of the month before adding: `AddDate(0,1,0)`
+	// from 31 August normalizes to 1 October — which already existed, and would
+	// make this test pass without proving anything. Three months ahead falls
+	// outside what the migrations created, which is precisely the hole.
+	now := time.Now().UTC()
+	monthsAhead := time.Date(now.Year(), now.Month(), 1, 12, 0, 0, 0, time.UTC).AddDate(0, 3, 0)
+	var target string
 	err = pool.QueryRow(ctx, `
 		INSERT INTO events (id, account_id, aggregate, aggregate_id, type, payload, occurred_at)
-		VALUES (gen_random_uuid(), NULL, 'teste', gen_random_uuid(), 'dop.teste.particao', '{}', $1)
-		RETURNING tableoid::regclass::text`, mesSeguinte).Scan(&destino)
+		VALUES (gen_random_uuid(), NULL, 'test', gen_random_uuid(), 'dop.test.partition', '{}', $1)
+		RETURNING tableoid::regclass::text`, monthsAhead).Scan(&target)
 	if err != nil {
-		t.Fatalf("escrita no mês seguinte falhou — o buraco continua aberto: %v", err)
+		t.Fatalf("the write into a later month failed — the hole is still open: %v", err)
 	}
-	t.Logf("evento do mês seguinte caiu em %s", destino)
+	t.Logf("the later month's event landed in %s", target)
 
-	_, _ = pool.Exec(ctx, `DELETE FROM events WHERE type = 'dop.teste.particao'`)
+	_, _ = pool.Exec(ctx, `DELETE FROM events WHERE type = 'dop.test.partition'`)
 }
 
-// limparParticoes remove as partições que este teste cria.
+// clearPartitions removes the partitions this test creates.
 //
-// O erro é REPORTADO, não engolido: a primeira versão usava `_` e a falha de
-// limpeza ficou invisível por execuções inteiras — a partição sobrevivente
-// fazia a execução seguinte falhar dizendo "nenhuma partição criada", que
-// aponta para o código de produção em vez de para a limpeza.
-func limparParticoes(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+// The error is REPORTED, not swallowed: the first version used `_` and the
+// cleanup failure stayed invisible for whole runs — the surviving partition made
+// the next run fail saying "no partition created", which points at the
+// production code instead of at the cleanup.
+func clearPartitions(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
-	for _, tabela := range postgres.PartitionedTables {
-		for mes := 6; mes <= 10; mes++ {
-			nome := fmt.Sprintf("%s_2027_%02d", tabela, mes)
-			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS "+nome); err != nil {
-				t.Logf("limpeza de %s falhou: %v", nome, err)
+	for _, table := range postgres.PartitionedTables {
+		for month := 6; month <= 10; month++ {
+			name := fmt.Sprintf("%s_2027_%02d", table, month)
+			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS "+name); err != nil {
+				t.Logf("cleaning up %s failed: %v", name, err)
 			}
 		}
 	}
