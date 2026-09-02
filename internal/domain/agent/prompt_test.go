@@ -9,7 +9,7 @@ import (
 
 func fullPackage() agent.ContextPackage {
 	return agent.ContextPackage{
-		// Ordem da CURADORIA: a regra do projeto vem antes da regra da conta
+		// The CURATION's order: the project's rule comes before the account's
 		// because the more specific wins (knowledge.ResolveRules). Alphabetical
 		// inverteria as duas.
 		Rules: []string{"uphold the project standard", "open the PR against develop"},
@@ -40,8 +40,8 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 	if primeiro.Fingerprint() != segundo.Fingerprint() {
 		t.Fatal("Fingerprint diverged: it is of the prefix, and only of it")
 	}
-	// E o texto do turn NÃO pode ter escorregado para dentro do prefixo — o
-	// erro que o campo separado existe para impedir.
+	// And the turn's text must NOT have slipped into the prefix — the error the
+	// separate field exists to prevent.
 	if strings.Contains(primeiro.StablePrefix, "primeira pergunta") {
 		t.Fatal("the turn's text entered the stable prefix")
 	}
@@ -51,9 +51,9 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 	}
 }
 
-// Montar o mesmo turn duas vezes tem de dar exatamente os mesmos bytes: sem
-// clock, no volatile id, no collection iterated out of order.
-func TestMontagemDeterministica(t *testing.T) {
+// Building the same turn twice has to give exactly the same bytes: no clock, no
+// volatile id, no collection iterated out of order.
+func TestTheAssemblyIsDeterministic(t *testing.T) {
 	pkg := fullPackage()
 	card := agent.AgentCard{Purpose: "investigar", Tools: []string{"zsh", "grep", "bash", "curl"}}
 	base := buildTurn(pkg, "principal", card, "hi", "", 0)
@@ -66,11 +66,11 @@ func TestMontagemDeterministica(t *testing.T) {
 	// data, and reordering it here would change the prefix's bytes on the next
 	// turn without anybody having asked.
 	if card.Tools[0] != "zsh" {
-		t.Fatalf("BuildTurn reordenou o slice do chamador: %v", card.Tools)
+		t.Fatalf("BuildTurn reordered the caller's slice: %v", card.Tools)
 	}
 	// And what the brief ANNOUNCES are the DECLARED tools, not the granted ones:
-	// none of these four exists in the runtime's catalogue, so the prefix does not
-	// pode prometer nenhuma. Anunciar uma ferramenta inexistente faz o agente
+	// none of these four exists in the runtime's catalogue, so the prefix cannot
+	// promise any of them. Announcing a tool that does not exist makes the agent
 	// plan on top of it and promise the human it will use it.
 	if strings.Contains(base.StablePrefix, "Granted tools") {
 		t.Fatalf("the brief announced a tool the runtime does not declare:\n%s", base.StablePrefix)
@@ -78,10 +78,10 @@ func TestMontagemDeterministica(t *testing.T) {
 }
 
 // The brief announces what was DECLARED, and the declaration goes in the turn's
-// own field — not interpolated into the prefix's text, because a schema described
-// schema que nenhum fornecedor valida.
+// own field — not interpolated into the prefix's text, because a schema
+// described in prose is a schema no provider validates.
 func TestToolsEnterTheThreadBrief(t *testing.T) {
-	card := agent.AgentCard{Purpose: "implementar", Tools: []string{agent.ToolRunCommand}}
+	card := agent.AgentCard{Purpose: "implement", Tools: []string{agent.ToolRunCommand}}
 	specs, unknown := agent.ToolCatalog(card.Tools)
 	if len(specs) != 1 || len(unknown) != 0 {
 		t.Fatalf("the catalogue returned %d spec(s) and %d unknown", len(specs), len(unknown))
@@ -152,11 +152,11 @@ func TestArtefatoExternalizadoEntraPelaReferencia(t *testing.T) {
 
 // The operator's intervention is VOLATILE, it comes AFTER the user's turn and it
 // has a role of its own — never `user` (D3).
-func TestIntervencaoDoOperadorTemCanalProprio(t *testing.T) {
+func TestTheOperatorInterventionHasItsOwnChannel(t *testing.T) {
 	p := buildTurn(agent.ContextPackage{}, "principal", agent.AgentCard{},
 		"pergunta", "  pare de mexer no schema  ", 0)
 	if len(p.Messages) != 2 {
-		t.Fatalf("esperava 2 mensagens, veio %d", len(p.Messages))
+		t.Fatalf("expected 2 messages, got %d", len(p.Messages))
 	}
 	if p.Messages[0].Role != agent.RoleUser || p.Messages[1].Role != agent.RoleOperator {
 		t.Fatalf("wrong roles: %+v", p.Messages)
@@ -177,11 +177,11 @@ func TestIntervencaoDoOperadorTemCanalProprio(t *testing.T) {
 func TestTruncationWarnings(t *testing.T) {
 	sem := agent.ContextPackage{}
 	if s := agent.TruncationNotice(sem); s != "" {
-		t.Fatalf("aviso na thread sem truncamento: %q", s)
+		t.Fatalf("a warning in the thread with no truncation: %q", s)
 	}
 	if p := buildTurn(sem, "principal", agent.AgentCard{}, "hi", "", 0); strings.Contains(
 		p.StablePrefix, "TRUNCADO") {
-		t.Fatal("aviso no prefixo sem truncamento")
+		t.Fatal("a warning in the prefix with no truncation")
 	}
 
 	com := agent.ContextPackage{Dropped: agent.ContextDropped{Rules: 1, Index: 2, Memories: 3, Findings: 4}}
@@ -199,17 +199,17 @@ func TestTruncationWarnings(t *testing.T) {
 }
 
 // The output schema is a FUNCTION, not a shared variable: a mutable package
-// variable would change the contract of every turn of every account the day
-// em que um adaptador mexesse nela.
-func TestSchemaDeSaidaNaoEhCompartilhado(t *testing.T) {
+// variable would change the contract of every turn of every account the day an
+// adapter touched it.
+func TestTheOutputSchemaIsNotShared(t *testing.T) {
 	a, b := agent.OutputSchema(), agent.OutputSchema()
-	a["type"] = "vandalizado"
+	a["type"] = "vandalized"
 	if b["type"] != "object" {
 		t.Fatal("OutputSchema returns the SAME instance: touching one would change the contract of all")
 	}
 }
 
-func TestTetoDeSaidaTemPadrao(t *testing.T) {
+func TestTheOutputCapHasADefault(t *testing.T) {
 	if p := buildTurn(agent.ContextPackage{}, "k", agent.AgentCard{}, "hi", "", 0); p.MaxOutputTokens != agent.DefaultMaxOutputTokens {
 		t.Fatalf("a zero output ceiling did not fall back to the default: %d", p.MaxOutputTokens)
 	}

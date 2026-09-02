@@ -279,7 +279,8 @@ type GitProvider interface {
 	Rebase(ctx context.Context, spec RebaseSpec) (RebaseResult, error)
 	Merge(ctx context.Context, spec MergeSpec) (MergeResult, error)
 	// HasNativeQueue says whether the provider has a merge queue of its own
-	// GitHub, merge trains do GitLab). A fila do DOP orquestra por cima e cobre
+	// GitHub's, GitLab's merge trains). DOP's queue orchestrates on top and
+	// covers
 	// who does not.
 	HasNativeQueue(ctx context.Context, repoExternalID string) (bool, error)
 }
@@ -311,7 +312,7 @@ type OpenPRSpec struct {
 	Body string
 	// Actor is the AUTHORSHIP credential: whoever conducted signs the commits
 	// (ADR-0003). Resolving the credential is the adapter's job; the domain only
-	// em nome de quem.
+	// on whose behalf.
 	ActorID string
 }
 

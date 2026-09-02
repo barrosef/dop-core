@@ -100,7 +100,7 @@ func (r *fakeRepo) RipeAttention(_ context.Context, accountID, _ string, _ Actio
 type fakeMailer struct {
 	mu     sync.Mutex
 	sent   []ports.Mail
-	erro   error
+	err    error
 	estado ports.MailState
 }
 
@@ -109,8 +109,8 @@ func (m *fakeMailer) Resolve(context.Context, string) error { return nil }
 func (m *fakeMailer) Send(_ context.Context, mail ports.Mail) (*ports.MailReceipt, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.erro != nil {
-		return nil, m.erro
+	if m.err != nil {
+		return nil, m.err
 	}
 	m.sent = append(m.sent, mail)
 	estado := m.estado
@@ -162,7 +162,7 @@ func TestAnInviteBecomesAnEmail(t *testing.T) {
 		t.Fatalf("HandleEvent: %v", err)
 	}
 	if len(mail.sent) != 1 {
-		t.Fatalf("esperava 1 envio, veio %d", len(mail.sent))
+		t.Fatalf("expected 1 send, got %d", len(mail.sent))
 	}
 	m := mail.sent[0]
 	if m.Kind != string(KindInvite) || m.To != "convidado@exemplo.test" {
@@ -171,7 +171,7 @@ func TestAnInviteBecomesAnEmail(t *testing.T) {
 	// The link addresses THE INVITE, not the list: whoever receives it is not yet
 	// a user and has no list to look at.
 	if m.Data["link"] != "https://cockpit.test/invites/inv-1" {
-		t.Fatalf("link do aviso: %v", m.Data["link"])
+		t.Fatalf("the digest's link: %v", m.Data["link"])
 	}
 	if len(repo.settled) != 1 || repo.settled[0].State != StateSent {
 		t.Fatalf("registro: %+v", repo.settled)
@@ -204,14 +204,14 @@ func TestADifferentEventOfTheSameKindSendsAnotherEmail(t *testing.T) {
 	_ = s.HandleEvent(context.Background(), eventoDeConvite("ev-1"))
 	_ = s.HandleEvent(context.Background(), eventoDeConvite("ev-2"))
 	if len(mail.sent) != 2 {
-		t.Fatalf("esperava 2 envios, veio %d", len(mail.sent))
+		t.Fatalf("expected 2 sends, got %d", len(mail.sent))
 	}
 	_ = repo
 }
 
 func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 	repo := novoRepo()
-	mail := &fakeMailer{erro: errs.New(errs.KindUnavailable, "fornecedor fora do ar")}
+	mail := &fakeMailer{err: errs.New(errs.KindUnavailable, "fornecedor fora do ar")}
 	s := NewService(repo, mail, relogioFake{time.Now()}, Config{})
 	ctx := context.Background()
 
@@ -220,14 +220,14 @@ func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 		t.Fatal("a send failure has to propagate: redelivery is what gives a second chance")
 	}
 	if len(repo.settled) != 1 || repo.settled[0].State != StateError {
-		t.Fatalf("registro deveria estar em error: %+v", repo.settled)
+		t.Fatalf("the record should be in error: %+v", repo.settled)
 	}
 	if !strings.Contains(repo.settled[0].Error, "fora do ar") {
 		t.Fatalf("o registro perdeu o motivo: %q", repo.settled[0].Error)
 	}
 
 	// Redelivery now RESUMES (the claim is in error) and the send succeeds.
-	mail.erro = nil
+	mail.err = nil
 	if err := s.HandleEvent(ctx, eventoDeConvite("ev-1")); err != nil {
 		t.Fatalf("retomada: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestASendFailureRecordsErrorAndAllowsResume(t *testing.T) {
 
 func TestExhaustedAttemptsStopResending(t *testing.T) {
 	repo := novoRepo()
-	mail := &fakeMailer{erro: errors.New("caiu")}
+	mail := &fakeMailer{err: errors.New("caiu")}
 	s := NewService(repo, mail, relogioFake{time.Now()}, Config{MaxAttempts: 2})
 	ctx := context.Background()
 
@@ -292,12 +292,12 @@ func TestATooFreshItemDoesNotBecomeAnEmail(t *testing.T) {
 		t.Fatalf("SweepDigest: %v", err)
 	}
 	if avisos != 0 || len(mail.sent) != 0 {
-		t.Fatalf("item de 5 minutos virou e-mail (contas=%d, avisos=%d, envios=%d): "+
+		t.Fatalf("a 5-minute-old item became an e-mail (accounts=%d, digests=%d, sends=%d): "+
 			"o atraso existe para o trivial se resolver sozinho",
 			contas, avisos, len(mail.sent))
 	}
 	if got := agora.Sub(repo.corte); got != 15*time.Minute {
-		t.Fatalf("o corte foi calculado com atraso de %v, esperava 15m", got)
+		t.Fatalf("the cut-off was computed with a delay of %v, expected 15m", got)
 	}
 }
 
@@ -316,7 +316,7 @@ func TestAMatureItemBecomesAnEmail(t *testing.T) {
 		t.Fatalf("avisos=%d err=%v", avisos, err)
 	}
 	if len(mail.sent) != 1 {
-		t.Fatalf("esperava 1 envio, veio %d", len(mail.sent))
+		t.Fatalf("expected 1 send, got %d", len(mail.sent))
 	}
 	m := mail.sent[0]
 	if m.Kind != string(KindAttentionDigest) {
@@ -351,7 +351,7 @@ func TestManyItemsBecomeOneEmailWithOneClaimPerItem(t *testing.T) {
 		t.Fatalf("3 itens viraram %d e-mails", len(mail.sent))
 	}
 	if n := len(repo.settled[0].Keys); n != 3 {
-		t.Fatalf("o e-mail cobriu %d chaves, esperava 3", n)
+		t.Fatalf("the e-mail covered %d keys, expected 3", n)
 	}
 	itens, _ := mail.sent[0].Data["items"].([]map[string]any)
 	if len(itens) != 3 {
@@ -360,10 +360,10 @@ func TestManyItemsBecomeOneEmailWithOneClaimPerItem(t *testing.T) {
 
 	// Segunda varredura: nada novo, e nenhum e-mail.
 	if _, avisos, _ := s.SweepDigest(context.Background()); avisos != 0 {
-		t.Fatalf("a segunda varredura reavisou %d item(ns)", avisos)
+		t.Fatalf("the second sweep reported %d item(s) again", avisos)
 	}
 	if len(mail.sent) != 1 {
-		t.Fatalf("a segunda varredura mandou outro e-mail: %d", len(mail.sent))
+		t.Fatalf("the second sweep sent another e-mail: %d", len(mail.sent))
 	}
 }
 
@@ -403,7 +403,7 @@ func TestAnAccountWithNoRecipientClaimsNothing(t *testing.T) {
 		t.Fatalf("avisos=%d err=%v", avisos, err)
 	}
 	if len(repo.claims) != 0 {
-		t.Fatalf("reservou %d chave(s) sem ter para quem enviar", len(repo.claims))
+		t.Fatalf("it reserved %d key(s) with nobody to send to", len(repo.claims))
 	}
 }
 
@@ -463,10 +463,10 @@ func TestOneBrokenAccountDoesNotStopTheOthers(t *testing.T) {
 	s := NewService(repo, mail, relogioFake{agora}, Config{})
 	contas, _, err := s.SweepDigest(context.Background())
 	if err != nil {
-		t.Fatalf("a varredura inteira parou por causa de uma conta: %v", err)
+		t.Fatalf("the whole sweep stopped because of one account: %v", err)
 	}
 	if contas != 1 {
-		t.Fatalf("contas com sucesso: %d, esperava 1", contas)
+		t.Fatalf("accounts that succeeded: %d, expected 1", contas)
 	}
 	if len(mail.sent) != 1 {
 		t.Fatalf("the second account was not notified: %d send(s)", len(mail.sent))

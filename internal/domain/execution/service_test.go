@@ -54,10 +54,10 @@ func TestSuspendingIsNotDestroying(t *testing.T) {
 		}
 	}
 	if !execution.CanApply(execution.StateActive, sus) {
-		t.Error("ativo deveria suspender")
+		t.Error("active should suspend")
 	}
 	if !execution.CanApply(execution.StateSuspended, execution.ResumeTransition) {
-		t.Error("suspenso deveria retomar")
+		t.Error("suspended should resume")
 	}
 	if execution.CanApply(execution.StateSuspended, sus) {
 		t.Error("suspending the already suspended is not a transition — it is a repeat")
@@ -413,7 +413,7 @@ func TestLogFilter(t *testing.T) {
 		t.Error("an empty filter asks for everything")
 	}
 	if !(execution.LogFilter{Source: execution.SourceTest}).Matches(linha) {
-		t.Error("origem igual deveria casar")
+		t.Error("the same origin should match")
 	}
 	if (execution.LogFilter{Source: execution.SourceApp}).Matches(linha) {
 		t.Error("a different source does not match")
@@ -954,7 +954,7 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 		}
 		// A precondition, and never a made-up exit code: a substrate with no
 		// execution runs no command, and saying that is different from saying the
-		// comando falhou.
+		// the command failed.
 		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
 		if errs.KindOf(err) != errs.KindPrecondition {
 			t.Fatalf("expected KindPrecondition, got %v", err)
@@ -964,7 +964,7 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 		}
 	})
 
-	t.Run("viewer_nao_executa", func(t *testing.T) {
+	t.Run("a_viewer_does_not_run", func(t *testing.T) {
 		c := novoCenario(t)
 		c.provisionado(t)
 		c.access.papel = identity.RoleViewer

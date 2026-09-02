@@ -16,14 +16,13 @@ import (
 
 // The domain is testable WITHOUT a database and WITHOUT a real vault:
 // repository and SecretStore are ports, and in-memory doubles go in here. It is
-// the practical return on
-// arquitetura hexagonal.
+// the practical return on hexagonal architecture.
 //
 // The vault used in these tests is a local double, not the adapter
-// internal/adapter/secretstore: o teste de arquitetura varre TODO .go sob
-// internal/domain, inclusive os _test.go, e importar adaptador daqui quebraria
-// a fronteira que ele protege. O duplo satisfaz ports.SecretStore — a mesma
-// porta, o mesmo contrato.
+// internal/adapter/secretstore: the architecture test sweeps EVERY .go under
+// internal/domain, the _test.go files included, and importing an adapter from
+// here would break the very boundary it protects. The double satisfies
+// ports.SecretStore — the same port, the same contract.
 
 // ── natureza do recurso ──────────────────────────────────────────────────────
 
@@ -44,7 +43,7 @@ func TestResourceNature(t *testing.T) {
 	}
 	// Content is versioned; a credential is not.
 	if !(resource.Resource{Kind: resource.KindSkill}).IsVersioned() {
-		t.Error("skill deveria ser versionada")
+		t.Error("a skill should be versioned")
 	}
 	if (resource.Resource{Kind: resource.KindIntegration}).IsVersioned() {
 		t.Error("an integration is not versioned — config is current state, not history")
@@ -110,14 +109,14 @@ func TestIntegrationNeedsCategoryAndProvider(t *testing.T) {
 		t.Error("an integration with no category should be refused")
 	}
 	if _, err := resource.ParseIntegration(map[string]any{"category": "banco", "provider": "x"}); err == nil {
-		t.Error("categoria fora de git|task_manager|agent deveria ser recusada")
+		t.Error("a category outside git|task_manager|agent should be refused")
 	}
 	if _, err := resource.ParseIntegration(map[string]any{"category": "git"}); err == nil {
 		t.Error("an integration with no provider should be refused")
 	}
 	for _, c := range []string{"git", "task_manager", "agent"} {
 		if _, err := resource.ParseIntegration(map[string]any{"category": c, "provider": "p"}); err != nil {
-			t.Errorf("categoria %q deveria ser aceita: %v", c, err)
+			t.Errorf("category %q should be accepted: %v", c, err)
 		}
 	}
 }
@@ -134,7 +133,7 @@ type fakeVault struct {
 	data map[string]ports.SecretValue
 }
 
-func novoCofre() *fakeVault { return &fakeVault{data: map[string]ports.SecretValue{}} }
+func newVault() *fakeVault { return &fakeVault{data: map[string]ports.SecretValue{}} }
 
 func chave(r ports.SecretRef) string { return r.AccountID + "/" + r.Kind + "/" + r.OwnerID }
 
@@ -351,7 +350,7 @@ var _ resource.Access = (*fakeAccess)(nil)
 
 const acctID = "acct-1"
 
-func cenario() (*resource.Service, *fakeRepo, *fakeAccess, *fakeVault) {
+func scenario() (*resource.Service, *fakeRepo, *fakeAccess, *fakeVault) {
 	repo := newFakeRepo()
 	acc := &fakeAccess{
 		account: identity.Account{ID: acctID, Kind: identity.AccountOrganization, Handle: "acme"},
@@ -362,8 +361,8 @@ func cenario() (*resource.Service, *fakeRepo, *fakeAccess, *fakeVault) {
 			"view":  identity.RoleViewer,
 		},
 	}
-	cofre := novoCofre()
-	return resource.NewService(repo, acc, cofre), repo, acc, cofre
+	vault := newVault()
+	return resource.NewService(repo, acc, vault), repo, acc, vault
 }
 
 func asActor(user string) context.Context {
@@ -379,7 +378,7 @@ func integrationConfig() map[string]any {
 // ── service tests ────────────────────────────────────────────────────────────
 
 func TestOperationWithoutAnActiveAccountIsRefused(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	// No AccountID: the SP-0 rule — a request with no active account is invalid.
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "owner"})
 	if _, err := svc.List(ctx, ""); err == nil {
@@ -388,14 +387,14 @@ func TestOperationWithoutAnActiveAccountIsRefused(t *testing.T) {
 }
 
 func TestCreateValidatesKindNameAndCategory(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	ctx := asActor("owner")
 
 	if _, err := svc.Create(ctx, "database", "x", nil); err == nil {
-		t.Error("tipo desconhecido deveria ser recusado")
+		t.Error("an unknown kind should be refused")
 	}
 	if _, err := svc.Create(ctx, resource.KindSkill, "  ", nil); err == nil {
-		t.Error("nome vazio deveria ser recusado")
+		t.Error("an empty name should be refused")
 	}
 	if _, err := svc.Create(ctx, resource.KindIntegration, "gh", map[string]any{"provider": "github"}); err == nil {
 		t.Error("an integration with no category should be refused")
@@ -414,7 +413,7 @@ func TestCreateValidatesKindNameAndCategory(t *testing.T) {
 // loses access to
 // ela no instante seguinte — o default fechado viraria armadilha.
 func TestIntegrationCreatorReceivesManage(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	ctx := asActor("dev")
 
 	r, err := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
@@ -432,7 +431,7 @@ func TestIntegrationCreatorReceivesManage(t *testing.T) {
 }
 
 func TestListFiltersByWhatTheActorMayUse(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	owner := asActor("owner")
 
 	if _, err := svc.Create(owner, resource.KindIntegration, "github", integrationConfig()); err != nil {
@@ -444,9 +443,9 @@ func TestListFiltersByWhatTheActorMayUse(t *testing.T) {
 	}
 
 	// The owner sees everything — implicit manage.
-	todos, err := svc.List(owner, "")
-	if err != nil || len(todos) != 2 {
-		t.Fatalf("owner deveria ver os dois resources, veio %d (%v)", len(todos), err)
+	all, err := svc.List(owner, "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("the owner should see both resources, got %d (%v)", len(all), err)
 	}
 
 	// The developer sees the skill (content is open in an organization) and does
@@ -461,13 +460,13 @@ func TestListFiltersByWhatTheActorMayUse(t *testing.T) {
 }
 
 func TestUpdateVersionsContentButNotIntegrations(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	ctx := asActor("owner")
 
 	skill, _ := svc.Create(ctx, resource.KindSkill, "revisar-pr", map[string]any{"body": "v1"})
 	updated, err := svc.Update(ctx, skill.ID, map[string]any{"body": "v2"})
 	if err != nil {
-		t.Fatalf("update da skill: %v", err)
+		t.Fatalf("updating the skill: %v", err)
 	}
 	if updated.Version != skill.Version+1 {
 		t.Errorf("content should be versioned: %d -> %d", skill.Version, updated.Version)
@@ -487,11 +486,11 @@ func TestUpdateVersionsContentButNotIntegrations(t *testing.T) {
 
 // The developer only has USE over the open skill — changing it requires manage.
 func TestUpdatingContentRequiresManage(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	skill, _ := svc.Create(asActor("owner"), resource.KindSkill, "revisar-pr", nil)
 
 	if _, err := svc.Get(asActor("dev"), skill.ID); err != nil {
-		t.Errorf("developer deveria poder LER a skill aberta: %v", err)
+		t.Errorf("a developer should be able to READ the open skill: %v", err)
 	}
 	if _, err := svc.Update(asActor("dev"), skill.ID, map[string]any{"body": "x"}); err == nil ||
 		errs.KindOf(err) != errs.KindPermission {
@@ -500,7 +499,7 @@ func TestUpdatingContentRequiresManage(t *testing.T) {
 }
 
 func TestGrantRequiresManageAndAccountMembership(t *testing.T) {
-	svc, _, _, _ := cenario()
+	svc, _, _, _ := scenario()
 	integ, _ := svc.Create(asActor("owner"), resource.KindIntegration, "github", integrationConfig())
 
 	// Whoever does not manage the resource does not grant.
@@ -520,13 +519,13 @@ func TestGrantRequiresManageAndAccountMembership(t *testing.T) {
 
 	g, err := svc.Grant(asActor("owner"), integ.ID, "dev", resource.LevelUse)
 	if err != nil {
-		t.Fatalf("owner deveria conceder: %v", err)
+		t.Fatalf("the owner should grant: %v", err)
 	}
 	if _, err := svc.Get(asActor("dev"), integ.ID); err != nil {
 		t.Errorf("the grant should unlock access: %v", err)
 	}
 
-	// Revogar fecha de novo.
+	// Revogar fecha de newValue.
 	if err := svc.RevokeGrant(asActor("owner"), g.ID); err != nil {
 		t.Fatalf("revocation: %v", err)
 	}
@@ -543,7 +542,7 @@ func TestGrantRequiresManageAndAccountMembership(t *testing.T) {
 // SecretStore and
 // a row guarda APENAS o ponteiro opaco.
 func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
-	svc, repo, _, cofre := cenario()
+	svc, repo, _, vault := scenario()
 	ctx := asActor("owner")
 	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
 
@@ -564,18 +563,18 @@ func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 	}
 	for _, v := range row.Config {
 		if s, ok := v.(string); ok && strings.Contains(s, string(segredo)) {
-			t.Fatal("o segredo vazou para o config do recurso")
+			t.Fatal("the secret leaked into the resource's config")
 		}
 	}
 	// The value is in the vault, resolved by the LOGICAL reference.
-	guardado, err := cofre.Get(ctx, resource.SecretRefFor(acctID, integ.ID))
+	stored, err := vault.Get(ctx, resource.SecretRefFor(acctID, integ.ID))
 	if err != nil {
-		t.Fatalf("leitura no cofre: %v", err)
+		t.Fatalf("reading the vault: %v", err)
 	}
-	if !bytes.Equal(guardado, segredo) {
-		t.Error("o cofre deveria guardar exatamente o valor enviado")
+	if !bytes.Equal(stored, segredo) {
+		t.Error("the vault should keep exactly the value that was sent")
 	}
-	// E o valor nunca se imprime — nem em log, nem em erro.
+	// And the value never prints itself — not in a log, not in an error.
 	if got := ports.SecretValue(segredo).String(); got != "***" {
 		t.Errorf("SecretValue must not print itself: %q", got)
 	}
@@ -584,14 +583,14 @@ func TestSetCredentialKeepsTheSecretOutOfTheDatabase(t *testing.T) {
 	if _, err := svc.SetCredential(ctx, integ.ID, []byte("ghp_novo")); err != nil {
 		t.Fatalf("rotation: %v", err)
 	}
-	novo, _ := cofre.Get(ctx, resource.SecretRefFor(acctID, integ.ID))
-	if string(novo) != "ghp_novo" {
+	newValue, _ := vault.Get(ctx, resource.SecretRefFor(acctID, integ.ID))
+	if string(newValue) != "ghp_novo" {
 		t.Error("rotation should replace the stored value")
 	}
 }
 
 func TestSetCredentialOnlyAppliesToIntegrations(t *testing.T) {
-	svc, _, _, cofre := cenario()
+	svc, _, _, vault := scenario()
 	ctx := asActor("owner")
 
 	skill, _ := svc.Create(ctx, resource.KindSkill, "revisar-pr", nil)
@@ -599,14 +598,14 @@ func TestSetCredentialOnlyAppliesToIntegrations(t *testing.T) {
 		errs.KindOf(err) != errs.KindPrecondition {
 		t.Errorf("a content resource has no credential; error: %v", err)
 	}
-	if existe, _ := cofre.Exists(ctx, resource.SecretRefFor(acctID, skill.ID)); existe {
-		t.Error("nada deveria ter sido escrito no cofre")
+	if exists, _ := vault.Exists(ctx, resource.SecretRefFor(acctID, skill.ID)); exists {
+		t.Error("nothing should have been written to the vault")
 	}
 
 	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
 	if _, err := svc.SetCredential(ctx, integ.ID, nil); err == nil ||
 		errs.KindOf(err) != errs.KindInvalid {
-		t.Errorf("credencial vazia deveria ser recusada; erro: %v", err)
+		t.Errorf("an empty credential should be refused; err: %v", err)
 	}
 	// Whoever does not manage the integration does not change its credential.
 	if _, err := svc.SetCredential(asActor("dev"), integ.ID, []byte("x")); err == nil ||
@@ -617,7 +616,7 @@ func TestSetCredentialOnlyAppliesToIntegrations(t *testing.T) {
 
 // The credential does not outlive the resource: vault first, row second.
 func TestDeleteRemovesTheCredentialFromTheVault(t *testing.T) {
-	svc, _, _, cofre := cenario()
+	svc, _, _, vault := scenario()
 	ctx := asActor("owner")
 
 	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
@@ -627,7 +626,7 @@ func TestDeleteRemovesTheCredentialFromTheVault(t *testing.T) {
 	if err := svc.Delete(ctx, integ.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if existe, _ := cofre.Exists(ctx, resource.SecretRefFor(acctID, integ.ID)); existe {
+	if exists, _ := vault.Exists(ctx, resource.SecretRefFor(acctID, integ.ID)); exists {
 		t.Error("the secret must not outlive the deleted resource")
 	}
 	if _, err := svc.Get(ctx, integ.ID); err == nil || errs.KindOf(err) != errs.KindNotFound {
@@ -636,14 +635,14 @@ func TestDeleteRemovesTheCredentialFromTheVault(t *testing.T) {
 }
 
 // A personal account has no second member: the resource is never shareable, and
-// isso sai da cardinalidade, sem regra especial.
+// that falls out of the cardinality, with no special rule.
 func TestAPersonalAccountsResourceIsNotShareable(t *testing.T) {
 	repo := newFakeRepo()
 	acc := &fakeAccess{
 		account: identity.Account{ID: acctID, Kind: identity.AccountPersonal, Handle: "ed"},
 		members: map[string]identity.Role{"ed": identity.RoleOwner},
 	}
-	svc := resource.NewService(repo, acc, novoCofre())
+	svc := resource.NewService(repo, acc, newVault())
 	ctx := asActor("ed")
 
 	skill, err := svc.Create(ctx, resource.KindSkill, "revisar-pr", nil)

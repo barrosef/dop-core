@@ -60,7 +60,7 @@ type Outcome string
 const (
 	OutcomePassed  Outcome = "passed"
 	OutcomeFailed  Outcome = "failed"
-	OutcomeErrored Outcome = "errored" // nem passou nem falhou: quebrou no meio
+	OutcomeErrored Outcome = "errored" // neither passed nor failed: it broke halfway
 )
 
 func ValidOutcome(o Outcome) bool {
@@ -76,7 +76,7 @@ func ValidOutcome(o Outcome) bool {
 // Commit is the field that gives everything else its value: evidence that does
 // not say WHICH code ran can prove anything, and therefore proves nothing. That
 // is why green is always asked for a specific commit, and not for
-// para "a demanda".
+// to "the demand".
 type VerificationRun struct {
 	ID        string
 	AccountID string
@@ -223,7 +223,7 @@ type PullRequest struct {
 	UpdatedAt    time.Time
 }
 
-// ─────────────────────────── fila de merge ───────────────────────────
+// ─────────────────────────── merge queue ────────────────────────────
 
 // QueueState are ADR-0008's states: queued → rebase → re-verification → merge,
 // one at a time, per repository.
@@ -462,7 +462,7 @@ func (d Directive) Option(key string) (DirectiveOption, bool) {
 // it is an alarm with an OK button) and a recommendation among them.
 func (d Directive) Validate() error {
 	if strings.TrimSpace(d.ProjectID) == "" {
-		return errs.Invalid("diretriz sem projeto")
+		return errs.Invalid("a directive with no project")
 	}
 	if !ValidDirectiveKind(d.Kind) {
 		return errs.Invalid("tipo de diretriz desconhecido: %q", d.Kind)

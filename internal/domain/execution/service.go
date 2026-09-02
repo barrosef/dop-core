@@ -411,7 +411,7 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	}
 	sb.Endpoints = s.endpoints(sb.DemandID, status.Endpoints)
 	// The tier comes from the DATABASE, not from the substrate: it is what was
-	// provisionamento. Deixar o substrato redeclarar a cada leitura abriria a
+	// provisioning. Letting the substrate redeclare it on every read would open
 	// door for the value to change without anybody having asked.
 	return sb, nil
 }
@@ -491,7 +491,7 @@ func (s *Service) RunCommand(ctx context.Context, demandID string, req ports.Exe
 const streamTailLines = 500
 
 // Emitter delivers a line to the client. Its error ends the stream — it is how
-// servidor descobre que o cliente sumiu.
+// server finds out the client is gone.
 type Emitter func(LogLine) error
 
 // StreamLogs follows the sandbox's logs for as long as the client is listening.
@@ -547,7 +547,8 @@ func (s *Service) StreamLogs(ctx context.Context, sandboxID string, f LogFilter,
 
 // ── economia ─────────────────────────────────────────────────────────────────
 
-// SweepIdle suspende os sandboxes ociosos da conta e devolve quantos suspendeu.
+// SweepIdle suspends the account's idle sandboxes and returns how many it
+// suspended.
 //
 // It is spec §3 turned into code: demands wait on humans for hours, and an idle
 // sandbox is what separates real parallelism from a drowning machine. A failure
@@ -589,7 +590,7 @@ func (s *Service) SweepIdle(ctx context.Context) (int, error) {
 //
 // The returned service PANICS if anybody calls Provision or anything that needs
 // an actor: it is a wiring error, and failing loudly beats authorizing with
-// um duplo vazio.
+// an empty double.
 func NewSweeper(repo Repository, launcher ports.SandboxLauncher, clock ports.Clock) *Service {
 	if repo == nil || launcher == nil || clock == nil {
 		panic("execution.NewSweeper: repository, launcher and clock are required")

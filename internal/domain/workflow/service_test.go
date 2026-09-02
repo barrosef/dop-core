@@ -244,7 +244,7 @@ const (
 	project   = "prj-1"
 	demand    = "dmd-1"
 	dono      = "usr-owner"
-	membro    = "usr-dev"
+	member    = "usr-dev"
 )
 
 func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
@@ -257,7 +257,7 @@ func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 	}
 	acc := &fakeAccess{papel: map[string]string{
 		dono + "@" + account:   workflow.RoleOwner,
-		membro + "@" + account: "developer",
+		member + "@" + account: "developer",
 	}}
 	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()})
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
@@ -728,7 +728,7 @@ func TestPromoteRequiresManage(t *testing.T) {
 
 	// The same request, made by somebody with no manage over the account's content.
 	ctxDev := ctxutil.Into(context.Background(), ctxutil.Call{
-		AccountID: account, ActorID: membro, ActorKind: ctxutil.ActorUser,
+		AccountID: account, ActorID: member, ActorKind: ctxutil.ActorUser,
 	})
 	if _, err := svc.Promote(ctxDev, created.ID, workflow.ScopeWorkspace, workspace); errs.KindOf(err) != errs.KindPermission {
 		t.Fatalf("promoting changes the flow of people who asked for nothing; error: %v", err)

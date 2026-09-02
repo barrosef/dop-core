@@ -167,7 +167,7 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 			return nil, err
 		}
 		// What the provider returns WINS over what the caller said: id and URL
-		// dele, e aceitar os do chamador deixaria a nossa base apontando para
+		// its own, and accepting the caller's would leave our base pointing at
 		// a PR that may not be that one.
 		spec.ExternalID, spec.URL = aberto.ExternalID, aberto.URL
 	}
@@ -197,7 +197,7 @@ func (s *Service) ListPullRequests(ctx context.Context, f PRFilter) ([]PullReque
 	return s.repo.ListPullRequests(ctx, accountID, f)
 }
 
-// ─────────────────────────── fila de merge ───────────────────────────
+// ─────────────────────────── merge queue ────────────────────────────
 
 // GetMergeQueue returns ONE repository's queue, in a deterministic order and
 // with numbered positions (ADR-0008 §1).
@@ -287,7 +287,7 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 		return nil, err
 	}
 	if !ValidQueueState(to) {
-		return nil, errs.Invalid("estado de fila desconhecido: %q", to)
+		return nil, errs.Invalid("unknown queue state: %q", to)
 	}
 	if to == StateConflict {
 		// A conflict carries a report; it has its own path, with its own event.
@@ -345,7 +345,7 @@ func (s *Service) queueEntry(ctx context.Context, accountID, entryID string) (*M
 		return nil, err
 	}
 	if entry == nil {
-		return nil, errs.NotFound("entrada da fila de merge")
+		return nil, errs.NotFound("merge queue entry")
 	}
 	return entry, nil
 }

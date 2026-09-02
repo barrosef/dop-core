@@ -15,7 +15,7 @@ const (
 	maxPageSize     = 200
 )
 
-// Service concentra as regras da demanda. Recebe apenas PORTAS.
+// Service concentrates the demand's rules. It takes only PORTS.
 type Service struct {
 	repo    Repository
 	flows   FlowResolver
@@ -45,7 +45,7 @@ func NewService(repo Repository, flows FlowResolver, watcher Watcher, clock port
 
 func (s *Service) now() time.Time { return s.clock.Now() }
 
-// ── leitura ──────────────────────────────────────────────────────────────────
+// ── reading ──────────────────────────────────────────────────────────────────
 
 // List returns the project's demands, paginated by the id of the last one read.
 func (s *Service) List(ctx context.Context, projectID string, size int, token string) ([]Demand, string, error) {
@@ -167,7 +167,8 @@ func (s *Service) Start(ctx context.Context, projectID, externalKey, idemKey str
 	}, idemKey)
 }
 
-// instantiate transforma o molde congelado nas etapas da demanda. Todas nascem
+// instantiate turns the frozen mould into the demand's stages. They are all
+// born
 // pending: progress is an event, not an initial state.
 func instantiate(snap Snapshot) []Stage {
 	out := make([]Stage, 0, len(snap.Stages))
@@ -322,7 +323,7 @@ func (s *Service) ListThreads(ctx context.Context, demandID string) ([]Thread, e
 }
 
 // CreateThread launches a subagent: the thread is born together with its BRIEF
-// (ADR-0010 §2) e aparece de imediato para o dev acompanhar ou intervir.
+// (ADR-0010 §2) and shows up at once for the dev to follow or step in.
 func (s *Service) CreateThread(ctx context.Context, demandID, key string, card AgentCard, idemKey string) (*Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -388,7 +389,7 @@ func (s *Service) loadThread(ctx context.Context, accountID, id string) (*Thread
 	return t, nil
 }
 
-// PostMessage acrescenta a mensagem ao log da demanda (ADR-0006): toda mensagem
+// PostMessage appends the message to the demand's log (ADR-0006): every message
 // is an event. The thread leaves `open` and becomes `active` in the same transaction.
 func (s *Service) PostMessage(ctx context.Context, threadID, text, idemKey string) (*Message, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -531,7 +532,7 @@ func (s *Service) ConcludeThread(ctx context.Context, threadID, idemKey string) 
 
 // ── streaming ────────────────────────────────────────────────────────────────
 
-// Watch entrega ao vivo os eventos DESTA demanda.
+// Watch delivers THIS demand's events live.
 //
 // The fan-out, the replay and the per-account isolation belong to the event
 // service — here we only slice. The slice by demand is done on this side because
@@ -559,7 +560,7 @@ func (s *Service) Watch(ctx context.Context, demandID string, emit func(ports.Ev
 	})
 }
 
-// Findings devolve os achados publicados na demanda.
+// Findings returns the findings published on the demand.
 //
 // No RPC of its own in the contract yet; it exists because the context package
 // assembler needs them (ADR-0009) and the findings board is precisely what

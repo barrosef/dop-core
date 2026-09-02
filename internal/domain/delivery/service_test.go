@@ -42,11 +42,11 @@ const (
 // verifica estruturalmente.
 type fakeDemands struct {
 	demandas map[string]delivery.DemandInfo
-	leituras int
+	reads    int
 }
 
 func (f *fakeDemands) Demand(_ context.Context, accountID, id string) (*delivery.DemandInfo, error) {
-	f.leituras++
+	f.reads++
 	if accountID != account {
 		return nil, errs.Permission("demand de outra account")
 	}
@@ -157,13 +157,13 @@ func (f *fakeRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest
 	return pr, nil
 }
 
-func (f *fakeRepo) QueueOfRepo(_ context.Context, accountID, repoID string, incluirMergeados bool) ([]delivery.MergeQueueEntry, error) {
+func (f *fakeRepo) QueueOfRepo(_ context.Context, accountID, repoID string, includeMerged bool) ([]delivery.MergeQueueEntry, error) {
 	var out []delivery.MergeQueueEntry
 	for _, e := range f.entries {
 		if e.AccountID != accountID || e.RepoID != repoID {
 			continue
 		}
-		if !incluirMergeados && e.State.IsTerminal() {
+		if !includeMerged && e.State.IsTerminal() {
 			continue
 		}
 		out = append(out, e)
@@ -344,7 +344,7 @@ func TestEvidenceFromAnotherCommitDoesNotCount(t *testing.T) {
 		t.Fatal("evidence from another commit must not approve the commit under review")
 	}
 	if !strings.Contains(ev.Reason(), "not to commit") {
-		t.Errorf("a recusa deveria apontar o commit divergente: %s", ev.Reason())
+		t.Errorf("the refusal should point at the divergent commit: %s", ev.Reason())
 	}
 }
 
@@ -395,10 +395,10 @@ func TestAPRDoesNotOpenWithoutGreen(t *testing.T) {
 		DemandID: "dem-1", RepoID: repo1, SourceBranch: "feat/x", HeadCommit: commit1,
 	}, "idem-1")
 	if err == nil || errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("sem green, sem PR (ADR-0007); err veio: %v", err)
+		t.Fatalf("no green, no PR (ADR-0007); err was: %v", err)
 	}
 	if !strings.Contains(err.Error(), "acceptance") {
-		t.Errorf("a recusa deveria dizer o que falta: %v", err)
+		t.Errorf("the refusal should say what is missing: %v", err)
 	}
 }
 
@@ -435,7 +435,7 @@ func TestEnqueueWithoutEvidenceOfGreenIsRefused(t *testing.T) {
 		t.Fatal("the queue accepted an entry with no evidence for the current commit")
 	}
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("recusa deveria ser failed_precondition, veio %s: %v", errs.KindOf(err), err)
+		t.Fatalf("the refusal should be failed_precondition, got %s: %v", errs.KindOf(err), err)
 	}
 	// The message has to say WHAT is missing, not only that something was.
 	if !strings.Contains(err.Error(), "acceptance") || !strings.Contains(err.Error(), "critic") {
@@ -601,7 +601,7 @@ func TestAConflictEscalatesWithItsReport(t *testing.T) {
 	e, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 
 	if _, err := svc.AdvanceQueue(ctx, e.ID, delivery.StateRebasing, "idem-r1"); err != nil {
-		t.Fatalf("ir para rebase: %v", err)
+		t.Fatalf("moving to rebase: %v", err)
 	}
 	// An empty report gives nobody anything to decide — the attention box gets
 	// context, not an alarm.
@@ -620,11 +620,11 @@ func TestAConflictEscalatesWithItsReport(t *testing.T) {
 		t.Error("a conflict has to set the state that feeds the attention box")
 	}
 	if got.Conflict == nil || got.Conflict.ReportedAt.IsZero() {
-		t.Error("o relato do conflito precisa ficar gravado, com quando")
+		t.Error("the conflict report has to stay recorded, with its when")
 	}
 	// A conflict is not the end: once resolved, it goes back to the rebase.
 	if !delivery.StateConflict.CanTransitionTo(delivery.StateRebasing) {
-		t.Error("conflito resolvido deveria voltar para o rebase")
+		t.Error("a resolved conflict should go back to rebase")
 	}
 }
 
@@ -657,7 +657,7 @@ func diretrizExemplo() delivery.Directive {
 		Options: []delivery.DirectiveOption{
 			{
 				Key:     "cherry-pick",
-				Summary: "quando a 0 commitar o contrato, a 1 faz cherry-pick e segue",
+				Summary: "once 0 commits the contract, 1 cherry-picks and carries on",
 				Instructions: []delivery.Instruction{{
 					DemandID: "dem-1", Action: delivery.DirectiveCherryPick,
 					When:    "demand dem-0 commitou o contrato",
@@ -665,8 +665,8 @@ func diretrizExemplo() delivery.Directive {
 				}},
 			},
 			{
-				Key:     "ordem-de-merge",
-				Summary: "as duas seguem; a 0 mergeia antes da 1",
+				Key:     "merge-order",
+				Summary: "both carry on; 0 merges before 1",
 				Instructions: []delivery.Instruction{{
 					DemandID: "dem-1", Action: delivery.DirectiveMergeOrder,
 					Payload: map[string]any{"priority": 200, "repo_id": repo1},
@@ -726,11 +726,11 @@ func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 	// With no reason: refused. A decision with no why becomes invisible magic.
 	if _, err := svc.DecideDirective(ctx, d.ID,
 		map[string]any{"option": "cherry-pick"}, "idem-x1"); err == nil {
-		t.Error("decidir sem motivo deveria ser recusado")
+		t.Error("deciding with no reason should be refused")
 	}
 	// An option that was not offered: refused, saying which ones exist.
 	_, err = svc.DecideDirective(ctx, d.ID,
-		map[string]any{"option": "cancelar-tudo", "rationale": "porque sim"}, "idem-x2")
+		map[string]any{"option": "cancel-everything", "rationale": "just because"}, "idem-x2")
 	if err == nil || !strings.Contains(err.Error(), "cherry-pick") {
 		t.Errorf("the refusal should list the options offered: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 	comoAgente := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: account, ActorID: "thread-7", ActorKind: ctxutil.ActorAgent})
 	if _, err := svc.DecideDirective(comoAgente, d.ID, map[string]any{
-		"option": "cherry-pick", "rationale": "eu mesmo resolvo",
+		"option": "cherry-pick", "rationale": "I will sort it out myself",
 	}, "idem-x0"); err == nil || errs.KindOf(err) != errs.KindPermission {
 		t.Errorf("an agent should not decide a directive; error was: %v", err)
 	}
@@ -763,12 +763,12 @@ func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 	}
 	// Repeating the SAME decision is harmless; changing your mind needs a new directive.
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
-		"option": "cherry-pick", "rationale": "de newOne",
+		"option": "cherry-pick", "rationale": "again",
 	}, "idem-x4"); err != nil {
 		t.Errorf("repeating the same decision should be harmless: %v", err)
 	}
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
-		"option": "ordem-de-merge", "rationale": "mudei de ideia",
+		"option": "merge-order", "rationale": "I changed my mind",
 	}, "idem-x5"); err == nil {
 		t.Error("rewriting a decision already made should be a conflict")
 	}
@@ -802,14 +802,14 @@ func TestDecidingADirectiveDoesNotInterruptARunningDemand(t *testing.T) {
 		t.Fatalf("propor directive: %v", err)
 	}
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
-		"option": "cherry-pick", "rationale": "a 1 segue e faz cherry-pick quando a 0 commitar",
+		"option": "cherry-pick", "rationale": "1 carries on and cherry-picks once 0 commits",
 	}, "idem-x1"); err != nil {
 		t.Fatalf("decidir: %v", err)
 	}
 
 	// 1. The demand stays active — delivery only READS demands, there is no way to stop one.
 	if info, _ := dem.Demand(ctx, account, "dem-1"); !info.Active {
-		t.Error("a demand parou por causa de uma transversal identificada (ADR-0015 §5)")
+		t.Error("the demand stopped because of an identified cross-cutting concern (ADR-0015 §5)")
 	}
 	// 2. A entry dela na queue continua exatamente onde estava.
 	alive, _ := repo.QueueEntryByID(ctx, account, entry.ID)
@@ -845,7 +845,7 @@ func TestAnOrderingDirectiveReordersWithoutStopping(t *testing.T) {
 
 	d, _ := svc.ProposeDirective(ctx, diretrizExemplo(), "idem-d1")
 	if _, err := svc.DecideDirective(ctx, d.ID, map[string]any{
-		"option": "ordem-de-merge", "rationale": "a 0 precisa entrar antes",
+		"option": "merge-order", "rationale": "0 has to go in first",
 	}, "idem-x1"); err != nil {
 		t.Fatalf("decidir: %v", err)
 	}
@@ -866,13 +866,13 @@ func TestAnOperationWithNoActiveAccountIsRefused(t *testing.T) {
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{ActorID: "ed"})
 
 	if _, err := svc.GetMergeQueue(ctx, repo1); err == nil {
-		t.Error("consultar queue sem account ativa deveria ser recusado")
+		t.Error("querying the queue with no active account should be refused")
 	}
 	if _, err := svc.EnqueueMerge(ctx, repo1, "dem-1", "k"); err == nil {
-		t.Error("enfileirar sem account ativa deveria ser recusado")
+		t.Error("enqueueing with no active account should be refused")
 	}
 	if _, err := svc.ListDirectives(ctx, project); err == nil {
-		t.Error("listar diretrizes sem account ativa deveria ser recusado")
+		t.Error("listing directives with no active account should be refused")
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 // The table is the entire policy. These tests check the properties that make it
 // REPLACEABLE by data (P-29) — not the content of each row, which changes.
 
-func TestTodaLinhaTemNomeAcaoTipoEPorque(t *testing.T) {
+func TestEveryRowHasANameAnActionAKindAndAWhy(t *testing.T) {
 	for _, r := range Rules() {
 		if r.Name == "" {
 			t.Errorf("rule with no name: the name goes into the idempotency key, "+
@@ -41,11 +41,10 @@ func TestTodaLinhaTemNomeAcaoTipoEPorque(t *testing.T) {
 	}
 }
 
-func TestNomesDeRegraSaoUnicos(t *testing.T) {
+func TestRuleNamesAreUnique(t *testing.T) {
 	// A repeated name is a repeated idempotency key: the second rule for the same
 	// event would be discarded as a duplicate of the first — in silence, which is
-	// the
-	// modo de falhar que a chave composta existe para evitar.
+	// the failure mode the composite key exists to prevent.
 	vistos := map[string]bool{}
 	for _, r := range Rules() {
 		if vistos[r.Name] {
@@ -55,7 +54,7 @@ func TestNomesDeRegraSaoUnicos(t *testing.T) {
 	}
 }
 
-func TestKindsVemDaTabelaESemRepeticao(t *testing.T) {
+func TestKindsComesFromTheTableAndDoesNotRepeat(t *testing.T) {
 	ks := Kinds()
 	if len(ks) == 0 {
 		t.Fatal("no kinds: the Mailer contract suite would prove nothing")
@@ -67,7 +66,7 @@ func TestKindsVemDaTabelaESemRepeticao(t *testing.T) {
 	vistos := map[Kind]bool{}
 	for _, k := range ks {
 		if vistos[k] {
-			t.Errorf("tipo %q repetido em Kinds()", k)
+			t.Errorf("kind %q repeated in Kinds()", k)
 		}
 		vistos[k] = true
 		if !naTabela[k] {
@@ -83,23 +82,23 @@ func TestKindsVemDaTabelaESemRepeticao(t *testing.T) {
 	}
 }
 
-func TestSubjectsCobreTodosOsEventosDaTabela(t *testing.T) {
+func TestSubjectsCoversEveryEventInTheTable(t *testing.T) {
 	// One subscription too FEW makes the event never arrive — nobody receives it
 	// and nothing fails. It is the same trap as attention.Subjects, and here it is
 	// derived precisely so it does not depend on somebody remembering.
-	assinados := map[string]bool{}
+	subscribed := map[string]bool{}
 	for _, s := range Subjects() {
-		assinados[s] = true
+		subscribed[s] = true
 	}
 	for _, r := range Rules() {
-		if r.Trigger == TriggerEvent && !assinados[r.Event] {
+		if r.Trigger == TriggerEvent && !subscribed[r.Event] {
 			t.Errorf("rule %q reacts to %q and the consumer does not subscribe to that subject",
 				r.Name, r.Event)
 		}
 	}
 }
 
-func TestDigestRuleEhUnicaEAchadaPeloNome(t *testing.T) {
+func TestTheDigestRuleIsUniqueAndFoundByName(t *testing.T) {
 	r, ok := DigestRule()
 	if !ok {
 		t.Fatal("with no digest rule, the box never becomes an email")
@@ -120,34 +119,34 @@ func TestDigestRuleEhUnicaEAchadaPeloNome(t *testing.T) {
 	}
 }
 
-func TestApplyIgnoraOQueNaoEstaNaTabela(t *testing.T) {
-	e := Event{ID: "ev-1", AccountID: "conta-1", Type: "dop.demand.stage.advanced",
+func TestApplyIgnoresWhatIsNotInTheTable(t *testing.T) {
+	e := Event{ID: "ev-1", AccountID: "account-1", Type: "dop.demand.stage.advanced",
 		OccurredAt: time.Now(), Payload: map[string]any{}}
 	if cs := Apply(e, noRecipient); len(cs) != 0 {
-		t.Fatalf("evento fora da tabela virou %d comando(s)", len(cs))
+		t.Fatalf("an event outside the table became %d command(s)", len(cs))
 	}
 }
 
-func TestApplyIgnoraEventoSemConta(t *testing.T) {
-	// `dop.identity.user.ensured` ocorre no primeiro login, antes de a conta
-	// personal account exists (migration 0003). There is no account to notify on
+func TestApplyIgnoresAnEventWithNoAccount(t *testing.T) {
+	// `dop.identity.user.ensured` happens on the first login, before the personal
+	// account exists (migration 0003). There is no account to notify on
 	// behalf of.
 	e := Event{ID: "ev-1", Type: EvInviteCreated,
 		Payload: map[string]any{"email": "a@b.test"}}
 	if cs := Apply(e, payloadEmail); len(cs) != 0 {
-		t.Fatalf("evento sem conta virou %d comando(s)", len(cs))
+		t.Fatalf("an event with no account became %d command(s)", len(cs))
 	}
 }
 
-func TestApplyDoConviteMontaAChaveComposta(t *testing.T) {
+func TestApplyForAnInviteBuildsTheCompositeKey(t *testing.T) {
 	e := Event{
-		ID: "ev-1", AccountID: "conta-1", Aggregate: "invite", AggregateID: "inv-1",
+		ID: "ev-1", AccountID: "account-1", Aggregate: "invite", AggregateID: "inv-1",
 		Type: EvInviteCreated, OccurredAt: time.Now(),
 		Payload: map[string]any{"email": "convidado@exemplo.test", "role": "member"},
 	}
 	cs := Apply(e, payloadEmail)
 	if len(cs) != 1 {
-		t.Fatalf("esperava 1 comando, veio %d", len(cs))
+		t.Fatalf("expected 1 command, got %d", len(cs))
 	}
 	c := cs[0]
 	if !c.Valid() {
@@ -159,7 +158,7 @@ func TestApplyDoConviteMontaAChaveComposta(t *testing.T) {
 			"discard the same event's second action as a duplicate, in silence", ev, ruleName, action)
 	}
 	if c.Kind != KindInvite {
-		t.Fatalf("tipo %q, esperava %q", c.Kind, KindInvite)
+		t.Fatalf("kind %q, expected %q", c.Kind, KindInvite)
 	}
 	if len(c.Recipients) != 1 || c.Recipients[0].Email != "convidado@exemplo.test" {
 		t.Fatalf("recipient: %+v — the invitee IS NOT YET A USER, and the only place "+
@@ -170,21 +169,21 @@ func TestApplyDoConviteMontaAChaveComposta(t *testing.T) {
 	}
 }
 
-func TestApplySemDestinatarioNaoViraComando(t *testing.T) {
+func TestApplyWithNoRecipientDoesNotBecomeACommand(t *testing.T) {
 	// With no recipient there is nothing to fire, and that is NOT an error:
 	// stopping the consumer here would delay every notification in the queue.
-	e := Event{ID: "ev-1", AccountID: "conta-1", Type: EvInviteCreated,
+	e := Event{ID: "ev-1", AccountID: "account-1", Type: EvInviteCreated,
 		Payload: map[string]any{"email": "isto-nao-e-endereco"}}
 	if cs := Apply(e, payloadEmail); len(cs) != 0 {
 		t.Fatalf("an invalid address became %d command(s)", len(cs))
 	}
 }
 
-func TestRulesDevolveCopia(t *testing.T) {
+func TestRulesReturnsACopy(t *testing.T) {
 	// A policy the caller can edit in memory stops being a policy.
 	rs := Rules()
 	if len(rs) == 0 {
-		t.Fatal("tabela vazia")
+		t.Fatal("the table is empty")
 	}
 	original := rs[0].Name
 	rs[0].Name = "sabotado"
@@ -217,20 +216,20 @@ func TestLinkPlaceholderMustBeInData(t *testing.T) {
 func TestResolvePathTrocaOCampoEEscapa(t *testing.T) {
 	got := resolvePath("/invites/{invite_id}", map[string]any{"invite_id": "inv-1/2"})
 	if got != "/invites/inv-1%2F2" {
-		t.Errorf("caminho resolvido %q — o valor precisa ser escapado, ou ele inventa segmento de URL", got)
+		t.Errorf("resolved path %q — the value has to be escaped, or it invents a URL segment", got)
 	}
 }
 
 // A missing or empty field erases the whole link. Half a link is worse than no
 // link: the button shows up and leads nowhere.
-func TestResolvePathSemOCampoApagaOLink(t *testing.T) {
+func TestResolvePathWithoutTheFieldErasesTheLink(t *testing.T) {
 	for nome, dados := range map[string]map[string]any{
 		"ausente": {},
 		"vazio":   {"invite_id": ""},
 		"branco":  {"invite_id": "   "},
 	} {
 		if got := resolvePath("/invites/{invite_id}", dados); got != "" {
-			t.Errorf("%s: caminho deveria ser vazio, veio %q", nome, got)
+			t.Errorf("%s: the path should be empty, got %q", nome, got)
 		}
 	}
 }
