@@ -317,7 +317,7 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 		log.Info("attention digests sent", "accounts", accounts, "notices", notices)
 	}
 
-	log.Debug("ciclo do scheduler")
+	log.Debug("scheduler cycle")
 }
 
 // partitionsAhead is slack, not a forecast: with 3 months the scheduler can be

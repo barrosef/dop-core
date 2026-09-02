@@ -52,7 +52,7 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 		srv.GracefulStop()
 	}()
 
-	log.Info("gRPC ouvindo", "addr", lis.Addr().String())
+	log.Info("gRPC listening", "addr", lis.Addr().String())
 	return srv.Serve(lis)
 }
 
@@ -73,7 +73,7 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 			log.Error("relay parou", "error", err)
 		}
 	}()
-	log.Info("relay do outbox ativo", "intervalo", cfg.RelayInterval.String())
+	log.Info("outbox relay active", "intervalo", cfg.RelayInterval.String())
 
 	if err := RegisterProjections(ctx, deps); err != nil {
 		return err
@@ -99,7 +99,7 @@ func RunSched(ctx context.Context, cfg *config.Config) error {
 	go serveHealthHTTP(ctx, cfg.HTTPPort)
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
-	log.Info("scheduler ativo")
+	log.Info("scheduler active")
 	for {
 		select {
 		case <-ctx.Done():
@@ -125,7 +125,7 @@ func RunLauncher(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	go serveHealthHTTP(ctx, cfg.HTTPPort)
-	log.Info("launcher ativo, aguardando comandos")
+	log.Info("launcher active, waiting for commands")
 	<-ctx.Done()
 	return ctx.Err()
 }
