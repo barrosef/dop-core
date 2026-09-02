@@ -202,16 +202,17 @@ const (
 	KeyCategoryInvalid  = "resource.integration.category_invalid"
 	KeyProviderRequired = "resource.integration.provider_required"
 
-	KeyResourceMissing     = "resource.id_missing"
-	KeyNoGrant             = "resource.grant.absent"
-	KeyKindUnknown         = "resource.kind.unknown"
-	KeyViewerCannotCreate  = "resource.create.viewer_forbidden"
-	KeyLevelInvalid        = "resource.grant.level_invalid"
-	KeyGrantUserMissing    = "resource.grant.user_missing"
-	KeyGranteeNotMember    = "resource.grant.not_a_member"
-	KeyGrantMissing        = "resource.grant.id_missing"
-	KeyCredentialEmpty     = "resource.credential.empty"
-	KeyKindHasNoCredential = "resource.credential.kind_unsupported"
+	KeyResourceMissing       = "resource.id_missing"
+	KeyNoGrant               = "resource.grant.absent"
+	KeyKindUnknown           = "resource.kind.unknown"
+	KeyViewerCannotCreate    = "resource.create.viewer_forbidden"
+	KeyLevelInvalid          = "resource.grant.level_invalid"
+	KeyGrantUserMissing      = "resource.grant.user_missing"
+	KeyGranteeNotMember      = "resource.grant.not_a_member"
+	KeyGrantMissing          = "resource.grant.id_missing"
+	KeyOnlyManagersSeeGrants = "resource.grant.only_managers_read"
+	KeyCredentialEmpty       = "resource.credential.empty"
+	KeyKindHasNoCredential   = "resource.credential.kind_unsupported"
 )
 
 // ValidateName: the name is the resource's natural key within the (account,

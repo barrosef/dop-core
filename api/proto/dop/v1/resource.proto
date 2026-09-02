@@ -69,6 +69,9 @@ service ResourceService {
   rpc DeleteResource (DeleteResourceRequest) returns (DeleteResourceResponse);
   rpc GrantResource  (GrantResourceRequest)  returns (ResourceGrant);
   rpc RevokeGrant    (RevokeGrantRequest)    returns (RevokeGrantResponse);
+  // The grants of ONE person in the active account — what the members screen
+  // needs in order to show state before editing it.
+  rpc ListMemberGrants(ListMemberGrantsRequest) returns (ListMemberGrantsResponse);
   // The credential is written to the SecretStore; the value never comes back on a read.
   rpc SetCredential  (SetCredentialRequest)  returns (SetCredentialResponse);
 }
@@ -89,5 +92,7 @@ message DeleteResourceResponse{ bool deleted = 1; }
 message GrantResourceRequest  { reserved 1; string resource_id = 2; string user_id = 3; string level = 4; }
 message RevokeGrantRequest    { reserved 1; string grant_id = 2; }
 message RevokeGrantResponse   { bool revoked = 1; }
+message ListMemberGrantsRequest  { reserved 1; string user_id = 2; }
+message ListMemberGrantsResponse { repeated ResourceGrant grants = 1; }
 message SetCredentialRequest  { reserved 1; string resource_id = 2; bytes secret = 3; }
 message SetCredentialResponse { string credential_ref = 1; }

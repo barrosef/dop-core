@@ -82,6 +82,9 @@ service IdentityService {
   rpc AcceptInvite   (AcceptInviteRequest)   returns (Membership);
   rpc RevokeInvite   (RevokeInviteRequest)   returns (Invite);
   rpc UpdateMembership(UpdateMembershipRequest) returns (Membership);
+  // Taking somebody out of the account. It sweeps the grants they held HERE;
+  // their user, their personal account and what they created stay (US-5.3).
+  rpc RemoveMembership(RemoveMembershipRequest) returns (RemoveMembershipResponse);
   rpc ListInvites    (ListInvitesRequest)    returns (ListInvitesResponse);
   // GetInvite is the ONE identity RPC that does not require an active account:
   // whoever opens the link may not be a member of anything yet — that is the
@@ -143,6 +146,9 @@ message CreateInviteRequest {
 // which is the correct failure.
 message AcceptInviteRequest { reserved 1; string invite_id = 2; string idempotency_key = 3; }
 message RevokeInviteRequest { reserved 1; string id = 2; }
+message RemoveMembershipRequest  { reserved 1; string membership_id = 2; }
+message RemoveMembershipResponse { bool removed = 1; }
+
 message UpdateMembershipRequest {
   reserved 1;
   string membership_id = 2;

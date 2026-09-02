@@ -70,6 +70,10 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// is k8s's or GCP's.
 	resourceSvc := resource.NewService(postgres.NewResourceRepo(deps.Pool), identitySvc, deps.Secrets)
 	resourceSvc.WithStepUp(secondFactorSvc)
+	// Identity gets its grants sweep only now, because it needs the resource
+	// service, which needs identity. It is the same cycle the step-up gate has,
+	// resolved the same way: a port on one side, the wiring here.
+	identitySvc.WithGrants(resourceSvc)
 	dopv1.RegisterResourceServiceServer(srv, appgrpc.NewResourceServer(resourceSvc))
 
 	// Live events: ONE subscription on the bus per process, with an in-memory

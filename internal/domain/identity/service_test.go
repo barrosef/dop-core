@@ -190,6 +190,23 @@ func (f *fakeRepo) MembershipOf(_ context.Context, uid, aid string) (*identity.M
 	}
 	return nil, nil
 }
+func (f *fakeRepo) MembershipByID(_ context.Context, id string) (*identity.Membership, error) {
+	for i := range f.members {
+		if f.members[i].ID == id {
+			return &f.members[i], nil
+		}
+	}
+	return nil, nil
+}
+func (f *fakeRepo) RemoveMembership(_ context.Context, id string) error {
+	for i := range f.members {
+		if f.members[i].ID == id {
+			f.members = append(f.members[:i], f.members[i+1:]...)
+			return nil
+		}
+	}
+	return errs.NotFound("membership")
+}
 func (f *fakeRepo) UpdateMembershipRole(_ context.Context, id string, r identity.Role) (*identity.Membership, error) {
 	for i := range f.members {
 		if f.members[i].ID == id {
@@ -695,5 +712,181 @@ func TestTheLastOwnerCannotBeDemoted(t *testing.T) {
 		ID: "mem-second", UserID: "usr-2", AccountID: acct.ID, Role: identity.RoleOwner})
 	if _, err := svc.UpdateMembershipRole(ctx, only, identity.RoleAdmin); err != nil {
 		t.Fatalf("with two owners it still refused: %v", err)
+	}
+}
+
+// ── taking somebody out of the account (US-5.3) ─────────────────────────────
+
+type fakeGrants struct {
+	swept []string // "accountID/userID", in call order
+	fail  error
+}
+
+func (g *fakeGrants) RevokeAllOfMember(_ context.Context, accountID, userID string) error {
+	if g.fail != nil {
+		return g.fail
+	}
+	g.swept = append(g.swept, accountID+"/"+userID)
+	return nil
+}
+
+// orgFixture builds an organization with an owner and a second member, which is
+// the only shape where a removal is legal at all.
+func orgFixture(t *testing.T) (*identity.Service, *fakeRepo, *fakeGrants, context.Context, string) {
+	t.Helper()
+	repo := newFakeRepo()
+	grants := &fakeGrants{}
+	svc := identity.NewService(repo, fixedClock{now}).WithGrants(grants)
+	u, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s1", Email: "owner@x.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := svc.CreateOrganization(
+		ctxutil.Into(context.Background(), ctxutil.Call{ActorID: u.ID, ActorKind: ctxutil.ActorUser}),
+		"acme", "Acme", "00.000.000/0001-00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-dev", UserID: "usr-dev", AccountID: org.ID, Role: identity.RoleDeveloper})
+	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: org.ID, SessionID: "sess-1"})
+	return svc, repo, grants, ctx, org.ID
+}
+
+func TestRemovingAMemberSweepsTheirGrantsFirst(t *testing.T) {
+	// A grant outliving the membership is access with no membership to justify
+	// it. And the order matters: if the sweep fails, nothing was removed.
+	svc, repo, grants, ctx, orgID := orgFixture(t)
+
+	if err := svc.RemoveMembership(ctx, "mem-dev"); err != nil {
+		t.Fatal(err)
+	}
+	if len(grants.swept) != 1 || grants.swept[0] != orgID+"/usr-dev" {
+		t.Errorf("the grants were not swept: %v", grants.swept)
+	}
+	mems, _ := repo.MembershipsOfAccount(ctx, orgID)
+	for _, m := range mems {
+		if m.ID == "mem-dev" {
+			t.Fatal("the membership survived the removal")
+		}
+	}
+}
+
+func TestAFailedSweepRemovesNothing(t *testing.T) {
+	svc, repo, grants, ctx, orgID := orgFixture(t)
+	grants.fail = errs.New(errs.KindInternal, "the vault is down")
+
+	if err := svc.RemoveMembership(ctx, "mem-dev"); err == nil {
+		t.Fatal("it removed the member with the sweep failing")
+	}
+	mems, _ := repo.MembershipsOfAccount(ctx, orgID)
+	found := false
+	for _, m := range mems {
+		if m.ID == "mem-dev" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the membership went away even though the sweep failed")
+	}
+}
+
+func TestTheLastOwnerCannotBeRemoved(t *testing.T) {
+	svc, repo, _, ctx, orgID := orgFixture(t)
+	var ownerMembership string
+	mems, _ := repo.MembershipsOfAccount(ctx, orgID)
+	for _, m := range mems {
+		if m.Role == identity.RoleOwner {
+			ownerMembership = m.ID
+		}
+	}
+
+	err := svc.RemoveMembership(ctx, ownerMembership)
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("removing the only owner gave %v (%s)", err, errs.KindOf(err))
+	}
+	if k, _ := errs.CodeOf(err); k != identity.KeyLastOwner {
+		t.Errorf("key = %q", k)
+	}
+}
+
+func TestThePersonalAccountsMembershipIsNotRemovable(t *testing.T) {
+	// Removing it would be deleting the user — another operation, with another
+	// meaning and another set of rules (P-3).
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now}).WithGrants(&fakeGrants{})
+	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s1", Email: "dev@x.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID, SessionID: "sess-1"})
+	mems, _ := repo.MembershipsOfAccount(ctx, acct.ID)
+
+	err = svc.RemoveMembership(ctx, mems[0].ID)
+	if k, _ := errs.CodeOf(err); k != identity.KeyPersonalNotRemovable {
+		t.Fatalf("it gave %v (key %q)", err, k)
+	}
+}
+
+func TestAMembershipOfAnotherAccountIsNotFound(t *testing.T) {
+	// Telling apart "it is not yours" from "it does not exist" would say that
+	// the row is real somewhere else.
+	svc, repo, _, ctx, _ := orgFixture(t)
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-elsewhere", UserID: "usr-x", AccountID: "acct-other", Role: identity.RoleDeveloper})
+
+	err := svc.RemoveMembership(ctx, "mem-elsewhere")
+	if errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("it gave %v (%s)", err, errs.KindOf(err))
+	}
+}
+
+func TestADeveloperCannotRemoveAMember(t *testing.T) {
+	svc, _, _, _, orgID := orgFixture(t)
+	asDev := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: "usr-dev", ActorKind: ctxutil.ActorUser, AccountID: orgID, SessionID: "sess-2"})
+
+	if err := svc.RemoveMembership(asDev, "mem-dev"); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("a developer removed a member: %v", err)
+	}
+}
+
+func TestRemovingAMemberAsksTheStepUpGate(t *testing.T) {
+	// It does not go into the table of the other three because the refusals
+	// that come BEFORE the gate — not an admin, the last owner, a personal
+	// account — are legitimately answered without a second factor. Only a
+	// removal that would actually happen is worth challenging.
+	repo := newFakeRepo()
+	gate := &refusingGate{}
+	grants := &fakeGrants{}
+	svc := identity.NewService(repo, fixedClock{now}).WithStepUp(gate).WithGrants(grants)
+	u, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s1", Email: "owner@x.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := svc.CreateOrganization(
+		ctxutil.Into(context.Background(), ctxutil.Call{ActorID: u.ID, ActorKind: ctxutil.ActorUser}),
+		"acme", "Acme", "00.000.000/0001-00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-dev", UserID: "usr-dev", AccountID: org.ID, Role: identity.RoleDeveloper})
+	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: org.ID, SessionID: "sess-1"})
+
+	if err := svc.RemoveMembership(ctx, "mem-dev"); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("with the gate refusing it gave %v", err)
+	}
+	if gate.calls == 0 {
+		t.Error("the gate was not asked")
+	}
+	if len(grants.swept) != 0 {
+		t.Error("it swept the grants before the gate refused")
 	}
 }

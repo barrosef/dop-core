@@ -17,6 +17,7 @@ type Service struct {
 	repo   Repository
 	clock  ports.Clock
 	stepUp StepUpGate
+	grants Grants
 }
 
 // StepUpGate is the second factor's gate, in the narrowest possible shape: one
@@ -58,6 +59,7 @@ const (
 	KeyOnlyAdminsRevoke     = "identity.invite.only_admins_revoke"
 	KeyOnlyAdminsSetRole    = "identity.membership.only_admins"
 	KeyLastOwner            = "identity.membership.last_owner"
+	KeyPersonalNotRemovable = "identity.membership.personal_not_removable"
 	KeyInviteNotUsable      = "identity.invite.not_usable"
 	KeyInviteNeedsSession   = "identity.invite.session_required"
 	KeyInviteEmailUnverif   = "identity.invite.email_unverified"
@@ -483,6 +485,12 @@ func (s *Service) assertNotTheLastOwner(ctx context.Context, accountID, membersh
 	if role == RoleOwner {
 		return nil
 	}
+	return s.assertLeavesAnOwner(ctx, accountID, membershipID)
+}
+
+// assertLeavesAnOwner is the check itself, shared by the demotion and the
+// removal — the two ways the number of owners can drop.
+func (s *Service) assertLeavesAnOwner(ctx context.Context, accountID, membershipID string) error {
 	members, err := s.repo.MembershipsOfAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -529,6 +537,87 @@ func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string,
 		return nil, err
 	}
 	return s.repo.UpdateMembershipRole(ctx, membershipID, role)
+}
+
+// Grants is what identity needs from the RESOURCE domain when somebody leaves
+// an account: the grants they held there stop existing with them.
+//
+// It is a port and not a direct call because grants are not identity's data.
+// The composition root wires the resource service in, the same way it wires the
+// second factor's gate.
+type Grants interface {
+	// RevokeAllOfMember removes every grant the person holds IN THIS ACCOUNT.
+	// It does not authorize: whoever calls it has already decided.
+	RevokeAllOfMember(ctx context.Context, accountID, userID string) error
+}
+
+// WithGrants wires the sweep. Without it, RemoveMembership refuses — a removal
+// that leaves grants behind is exactly the hole it exists to close.
+func (s *Service) WithGrants(g Grants) *Service {
+	s.grants = g
+	return s
+}
+
+// RemoveMembership takes somebody out of the account.
+//
+// What it does NOT touch is as important as what it does: the person's user,
+// their personal account and everything in it stay untouched — they were never
+// in this account (US-5.3). What the person CREATED here also stays: a resource
+// belongs to the account, and `created_by` keeps the trail of who made it. What
+// goes away is the membership and, with it, the grants — a grant outliving the
+// membership would be access with no membership to justify it.
+//
+// The order is deliberate: the grants FIRST, the membership after. If the sweep
+// fails, nothing was removed. Doing it the other way round, a failure between
+// the two steps would leave exactly the orphan grant this exists to prevent.
+func (s *Service) RemoveMembership(ctx context.Context, membershipID string) error {
+	call, _ := ctxutil.From(ctx)
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	actor, err := s.Authorize(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !actor.Role.CanManageMembers() {
+		return errs.Permission("only an owner or admin may remove a member").
+			WithCode(KeyOnlyAdminsSetRole, nil)
+	}
+	m, err := s.repo.MembershipByID(ctx, membershipID)
+	if err != nil {
+		return err
+	}
+	if m == nil || m.AccountID != accountID {
+		// Another account's id answers the same as one that does not exist: the
+		// difference between the two would tell whoever asked that the row is
+		// real somewhere else.
+		return errs.NotFound("membership")
+	}
+	acct, err := s.repo.AccountByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if acct != nil && acct.Kind == AccountPersonal {
+		// A personal account has exactly one membership, and removing it would
+		// be deleting the user — another operation, with another meaning and
+		// another set of rules (P-3).
+		return errs.Precondition("a personal account's membership is not removable").
+			WithCode(KeyPersonalNotRemovable, nil)
+	}
+	if err := s.assertLeavesAnOwner(ctx, accountID, membershipID); err != nil {
+		return err
+	}
+	if err := s.requireStepUp(ctx); err != nil {
+		return err
+	}
+	if s.grants == nil {
+		return errs.New(errs.KindInternal, "the grants sweep is not wired")
+	}
+	if err := s.grants.RevokeAllOfMember(ctx, accountID, m.UserID); err != nil {
+		return err
+	}
+	return s.repo.RemoveMembership(ctx, membershipID)
 }
 
 func (s *Service) ListMemberships(ctx context.Context) ([]Membership, error) {

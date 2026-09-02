@@ -1407,6 +1407,94 @@ func (x *RevokeInviteRequest) GetId() string {
 	return ""
 }
 
+type RemoveMembershipRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MembershipId  string                 `protobuf:"bytes,2,opt,name=membership_id,json=membershipId,proto3" json:"membership_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveMembershipRequest) Reset() {
+	*x = RemoveMembershipRequest{}
+	mi := &file_dop_v1_identity_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveMembershipRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveMembershipRequest) ProtoMessage() {}
+
+func (x *RemoveMembershipRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveMembershipRequest.ProtoReflect.Descriptor instead.
+func (*RemoveMembershipRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RemoveMembershipRequest) GetMembershipId() string {
+	if x != nil {
+		return x.MembershipId
+	}
+	return ""
+}
+
+type RemoveMembershipResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Removed       bool                   `protobuf:"varint,1,opt,name=removed,proto3" json:"removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveMembershipResponse) Reset() {
+	*x = RemoveMembershipResponse{}
+	mi := &file_dop_v1_identity_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveMembershipResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveMembershipResponse) ProtoMessage() {}
+
+func (x *RemoveMembershipResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_identity_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveMembershipResponse.ProtoReflect.Descriptor instead.
+func (*RemoveMembershipResponse) Descriptor() ([]byte, []int) {
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RemoveMembershipResponse) GetRemoved() bool {
+	if x != nil {
+		return x.Removed
+	}
+	return false
+}
+
 type UpdateMembershipRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MembershipId  string                 `protobuf:"bytes,2,opt,name=membership_id,json=membershipId,proto3" json:"membership_id,omitempty"`
@@ -1418,7 +1506,7 @@ type UpdateMembershipRequest struct {
 
 func (x *UpdateMembershipRequest) Reset() {
 	*x = UpdateMembershipRequest{}
-	mi := &file_dop_v1_identity_proto_msgTypes[20]
+	mi := &file_dop_v1_identity_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1430,7 +1518,7 @@ func (x *UpdateMembershipRequest) String() string {
 func (*UpdateMembershipRequest) ProtoMessage() {}
 
 func (x *UpdateMembershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_identity_proto_msgTypes[20]
+	mi := &file_dop_v1_identity_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1443,7 +1531,7 @@ func (x *UpdateMembershipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMembershipRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMembershipRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_identity_proto_rawDescGZIP(), []int{20}
+	return file_dop_v1_identity_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UpdateMembershipRequest) GetMembershipId() string {
@@ -1570,7 +1658,11 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\tinvite_id\x18\x02 \x01(\tR\binviteId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x02\"+\n" +
 	"\x13RevokeInviteRequest\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"\x99\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02idJ\x04\b\x01\x10\x02\"D\n" +
+	"\x17RemoveMembershipRequest\x12#\n" +
+	"\rmembership_id\x18\x02 \x01(\tR\fmembershipIdJ\x04\b\x01\x10\x02\"4\n" +
+	"\x18RemoveMembershipResponse\x12\x18\n" +
+	"\aremoved\x18\x01 \x01(\bR\aremoved\"\x99\x01\n" +
 	"\x17UpdateMembershipRequest\x12#\n" +
 	"\rmembership_id\x18\x02 \x01(\tR\fmembershipId\x12 \n" +
 	"\x04role\x18\x03 \x01(\x0e2\f.dop.v1.RoleR\x04role\x121\n" +
@@ -1582,7 +1674,7 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_ADMIN\x10\x02\x12\x12\n" +
 	"\x0eROLE_DEVELOPER\x10\x03\x12\x0f\n" +
-	"\vROLE_VIEWER\x10\x042\x9c\x06\n" +
+	"\vROLE_VIEWER\x10\x042\xf3\x06\n" +
 	"\x0fIdentityService\x12/\n" +
 	"\aGetUser\x12\x16.dop.v1.GetUserRequest\x1a\f.dop.v1.User\x125\n" +
 	"\n" +
@@ -1595,7 +1687,8 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\fCreateInvite\x12\x1b.dop.v1.CreateInviteRequest\x1a\x0e.dop.v1.Invite\x12?\n" +
 	"\fAcceptInvite\x12\x1b.dop.v1.AcceptInviteRequest\x1a\x12.dop.v1.Membership\x12;\n" +
 	"\fRevokeInvite\x12\x1b.dop.v1.RevokeInviteRequest\x1a\x0e.dop.v1.Invite\x12G\n" +
-	"\x10UpdateMembership\x12\x1f.dop.v1.UpdateMembershipRequest\x1a\x12.dop.v1.Membership\x12F\n" +
+	"\x10UpdateMembership\x12\x1f.dop.v1.UpdateMembershipRequest\x1a\x12.dop.v1.Membership\x12U\n" +
+	"\x10RemoveMembership\x12\x1f.dop.v1.RemoveMembershipRequest\x1a .dop.v1.RemoveMembershipResponse\x12F\n" +
 	"\vListInvites\x12\x1a.dop.v1.ListInvitesRequest\x1a\x1b.dop.v1.ListInvitesResponse\x12<\n" +
 	"\tGetInvite\x12\x18.dop.v1.GetInviteRequest\x1a\x15.dop.v1.InvitePreviewB\x93\x01\n" +
 	"\n" +
@@ -1614,61 +1707,63 @@ func file_dop_v1_identity_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_identity_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dop_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_dop_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_dop_v1_identity_proto_goTypes = []any{
-	(Role)(0),                       // 0: dop.v1.Role
-	(Account_Kind)(0),               // 1: dop.v1.Account.Kind
-	(Invite_Status)(0),              // 2: dop.v1.Invite.Status
-	(*User)(nil),                    // 3: dop.v1.User
-	(*Account)(nil),                 // 4: dop.v1.Account
-	(*Membership)(nil),              // 5: dop.v1.Membership
-	(*Invite)(nil),                  // 6: dop.v1.Invite
-	(*ResourceGrantSpec)(nil),       // 7: dop.v1.ResourceGrantSpec
-	(*ListInvitesRequest)(nil),      // 8: dop.v1.ListInvitesRequest
-	(*ListInvitesResponse)(nil),     // 9: dop.v1.ListInvitesResponse
-	(*GetInviteRequest)(nil),        // 10: dop.v1.GetInviteRequest
-	(*InvitePreview)(nil),           // 11: dop.v1.InvitePreview
-	(*GetUserRequest)(nil),          // 12: dop.v1.GetUserRequest
-	(*EnsureUserRequest)(nil),       // 13: dop.v1.EnsureUserRequest
-	(*ListAccountsRequest)(nil),     // 14: dop.v1.ListAccountsRequest
-	(*ListAccountsResponse)(nil),    // 15: dop.v1.ListAccountsResponse
-	(*GetAccountRequest)(nil),       // 16: dop.v1.GetAccountRequest
-	(*CreateAccountRequest)(nil),    // 17: dop.v1.CreateAccountRequest
-	(*ListMembershipsRequest)(nil),  // 18: dop.v1.ListMembershipsRequest
-	(*ListMembershipsResponse)(nil), // 19: dop.v1.ListMembershipsResponse
-	(*CreateInviteRequest)(nil),     // 20: dop.v1.CreateInviteRequest
-	(*AcceptInviteRequest)(nil),     // 21: dop.v1.AcceptInviteRequest
-	(*RevokeInviteRequest)(nil),     // 22: dop.v1.RevokeInviteRequest
-	(*UpdateMembershipRequest)(nil), // 23: dop.v1.UpdateMembershipRequest
-	(*AuditStamp)(nil),              // 24: dop.v1.AuditStamp
-	(*UserRef)(nil),                 // 25: dop.v1.UserRef
-	(*AccountRef)(nil),              // 26: dop.v1.AccountRef
-	(*timestamppb.Timestamp)(nil),   // 27: google.protobuf.Timestamp
-	(*ResourceRef)(nil),             // 28: dop.v1.ResourceRef
+	(Role)(0),                        // 0: dop.v1.Role
+	(Account_Kind)(0),                // 1: dop.v1.Account.Kind
+	(Invite_Status)(0),               // 2: dop.v1.Invite.Status
+	(*User)(nil),                     // 3: dop.v1.User
+	(*Account)(nil),                  // 4: dop.v1.Account
+	(*Membership)(nil),               // 5: dop.v1.Membership
+	(*Invite)(nil),                   // 6: dop.v1.Invite
+	(*ResourceGrantSpec)(nil),        // 7: dop.v1.ResourceGrantSpec
+	(*ListInvitesRequest)(nil),       // 8: dop.v1.ListInvitesRequest
+	(*ListInvitesResponse)(nil),      // 9: dop.v1.ListInvitesResponse
+	(*GetInviteRequest)(nil),         // 10: dop.v1.GetInviteRequest
+	(*InvitePreview)(nil),            // 11: dop.v1.InvitePreview
+	(*GetUserRequest)(nil),           // 12: dop.v1.GetUserRequest
+	(*EnsureUserRequest)(nil),        // 13: dop.v1.EnsureUserRequest
+	(*ListAccountsRequest)(nil),      // 14: dop.v1.ListAccountsRequest
+	(*ListAccountsResponse)(nil),     // 15: dop.v1.ListAccountsResponse
+	(*GetAccountRequest)(nil),        // 16: dop.v1.GetAccountRequest
+	(*CreateAccountRequest)(nil),     // 17: dop.v1.CreateAccountRequest
+	(*ListMembershipsRequest)(nil),   // 18: dop.v1.ListMembershipsRequest
+	(*ListMembershipsResponse)(nil),  // 19: dop.v1.ListMembershipsResponse
+	(*CreateInviteRequest)(nil),      // 20: dop.v1.CreateInviteRequest
+	(*AcceptInviteRequest)(nil),      // 21: dop.v1.AcceptInviteRequest
+	(*RevokeInviteRequest)(nil),      // 22: dop.v1.RevokeInviteRequest
+	(*RemoveMembershipRequest)(nil),  // 23: dop.v1.RemoveMembershipRequest
+	(*RemoveMembershipResponse)(nil), // 24: dop.v1.RemoveMembershipResponse
+	(*UpdateMembershipRequest)(nil),  // 25: dop.v1.UpdateMembershipRequest
+	(*AuditStamp)(nil),               // 26: dop.v1.AuditStamp
+	(*UserRef)(nil),                  // 27: dop.v1.UserRef
+	(*AccountRef)(nil),               // 28: dop.v1.AccountRef
+	(*timestamppb.Timestamp)(nil),    // 29: google.protobuf.Timestamp
+	(*ResourceRef)(nil),              // 30: dop.v1.ResourceRef
 }
 var file_dop_v1_identity_proto_depIdxs = []int32{
-	24, // 0: dop.v1.User.audit:type_name -> dop.v1.AuditStamp
+	26, // 0: dop.v1.User.audit:type_name -> dop.v1.AuditStamp
 	1,  // 1: dop.v1.Account.kind:type_name -> dop.v1.Account.Kind
-	24, // 2: dop.v1.Account.audit:type_name -> dop.v1.AuditStamp
-	25, // 3: dop.v1.Membership.user:type_name -> dop.v1.UserRef
-	26, // 4: dop.v1.Membership.account:type_name -> dop.v1.AccountRef
+	26, // 2: dop.v1.Account.audit:type_name -> dop.v1.AuditStamp
+	27, // 3: dop.v1.Membership.user:type_name -> dop.v1.UserRef
+	28, // 4: dop.v1.Membership.account:type_name -> dop.v1.AccountRef
 	0,  // 5: dop.v1.Membership.role:type_name -> dop.v1.Role
-	24, // 6: dop.v1.Membership.audit:type_name -> dop.v1.AuditStamp
-	26, // 7: dop.v1.Invite.account:type_name -> dop.v1.AccountRef
+	26, // 6: dop.v1.Membership.audit:type_name -> dop.v1.AuditStamp
+	28, // 7: dop.v1.Invite.account:type_name -> dop.v1.AccountRef
 	0,  // 8: dop.v1.Invite.role:type_name -> dop.v1.Role
 	7,  // 9: dop.v1.Invite.grants:type_name -> dop.v1.ResourceGrantSpec
 	2,  // 10: dop.v1.Invite.status:type_name -> dop.v1.Invite.Status
-	27, // 11: dop.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
-	24, // 12: dop.v1.Invite.audit:type_name -> dop.v1.AuditStamp
-	28, // 13: dop.v1.ResourceGrantSpec.resource:type_name -> dop.v1.ResourceRef
+	29, // 11: dop.v1.Invite.expires_at:type_name -> google.protobuf.Timestamp
+	26, // 12: dop.v1.Invite.audit:type_name -> dop.v1.AuditStamp
+	30, // 13: dop.v1.ResourceGrantSpec.resource:type_name -> dop.v1.ResourceRef
 	6,  // 14: dop.v1.ListInvitesResponse.invites:type_name -> dop.v1.Invite
 	0,  // 15: dop.v1.InvitePreview.role:type_name -> dop.v1.Role
 	2,  // 16: dop.v1.InvitePreview.status:type_name -> dop.v1.Invite.Status
-	27, // 17: dop.v1.InvitePreview.expires_at:type_name -> google.protobuf.Timestamp
-	25, // 18: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
+	29, // 17: dop.v1.InvitePreview.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 18: dop.v1.ListAccountsRequest.user:type_name -> dop.v1.UserRef
 	4,  // 19: dop.v1.ListAccountsResponse.accounts:type_name -> dop.v1.Account
 	1,  // 20: dop.v1.CreateAccountRequest.kind:type_name -> dop.v1.Account.Kind
-	26, // 21: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
+	28, // 21: dop.v1.ListMembershipsRequest.account:type_name -> dop.v1.AccountRef
 	5,  // 22: dop.v1.ListMembershipsResponse.memberships:type_name -> dop.v1.Membership
 	0,  // 23: dop.v1.CreateInviteRequest.role:type_name -> dop.v1.Role
 	7,  // 24: dop.v1.CreateInviteRequest.grants:type_name -> dop.v1.ResourceGrantSpec
@@ -1683,23 +1778,25 @@ var file_dop_v1_identity_proto_depIdxs = []int32{
 	20, // 33: dop.v1.IdentityService.CreateInvite:input_type -> dop.v1.CreateInviteRequest
 	21, // 34: dop.v1.IdentityService.AcceptInvite:input_type -> dop.v1.AcceptInviteRequest
 	22, // 35: dop.v1.IdentityService.RevokeInvite:input_type -> dop.v1.RevokeInviteRequest
-	23, // 36: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
-	8,  // 37: dop.v1.IdentityService.ListInvites:input_type -> dop.v1.ListInvitesRequest
-	10, // 38: dop.v1.IdentityService.GetInvite:input_type -> dop.v1.GetInviteRequest
-	3,  // 39: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
-	3,  // 40: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
-	15, // 41: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
-	4,  // 42: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
-	4,  // 43: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
-	19, // 44: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
-	6,  // 45: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
-	5,  // 46: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
-	6,  // 47: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
-	5,  // 48: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
-	9,  // 49: dop.v1.IdentityService.ListInvites:output_type -> dop.v1.ListInvitesResponse
-	11, // 50: dop.v1.IdentityService.GetInvite:output_type -> dop.v1.InvitePreview
-	39, // [39:51] is the sub-list for method output_type
-	27, // [27:39] is the sub-list for method input_type
+	25, // 36: dop.v1.IdentityService.UpdateMembership:input_type -> dop.v1.UpdateMembershipRequest
+	23, // 37: dop.v1.IdentityService.RemoveMembership:input_type -> dop.v1.RemoveMembershipRequest
+	8,  // 38: dop.v1.IdentityService.ListInvites:input_type -> dop.v1.ListInvitesRequest
+	10, // 39: dop.v1.IdentityService.GetInvite:input_type -> dop.v1.GetInviteRequest
+	3,  // 40: dop.v1.IdentityService.GetUser:output_type -> dop.v1.User
+	3,  // 41: dop.v1.IdentityService.EnsureUser:output_type -> dop.v1.User
+	15, // 42: dop.v1.IdentityService.ListAccounts:output_type -> dop.v1.ListAccountsResponse
+	4,  // 43: dop.v1.IdentityService.GetAccount:output_type -> dop.v1.Account
+	4,  // 44: dop.v1.IdentityService.CreateAccount:output_type -> dop.v1.Account
+	19, // 45: dop.v1.IdentityService.ListMemberships:output_type -> dop.v1.ListMembershipsResponse
+	6,  // 46: dop.v1.IdentityService.CreateInvite:output_type -> dop.v1.Invite
+	5,  // 47: dop.v1.IdentityService.AcceptInvite:output_type -> dop.v1.Membership
+	6,  // 48: dop.v1.IdentityService.RevokeInvite:output_type -> dop.v1.Invite
+	5,  // 49: dop.v1.IdentityService.UpdateMembership:output_type -> dop.v1.Membership
+	24, // 50: dop.v1.IdentityService.RemoveMembership:output_type -> dop.v1.RemoveMembershipResponse
+	9,  // 51: dop.v1.IdentityService.ListInvites:output_type -> dop.v1.ListInvitesResponse
+	11, // 52: dop.v1.IdentityService.GetInvite:output_type -> dop.v1.InvitePreview
+	40, // [40:53] is the sub-list for method output_type
+	27, // [27:40] is the sub-list for method input_type
 	27, // [27:27] is the sub-list for extension type_name
 	27, // [27:27] is the sub-list for extension extendee
 	0,  // [0:27] is the sub-list for field type_name
@@ -1717,7 +1814,7 @@ func file_dop_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_identity_proto_rawDesc), len(file_dop_v1_identity_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

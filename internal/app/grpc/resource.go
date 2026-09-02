@@ -93,6 +93,18 @@ func (s *ResourceServer) RevokeGrant(ctx context.Context, req *dopv1.RevokeGrant
 	return &dopv1.RevokeGrantResponse{Revoked: true}, nil
 }
 
+func (s *ResourceServer) ListMemberGrants(ctx context.Context, req *dopv1.ListMemberGrantsRequest) (*dopv1.ListMemberGrantsResponse, error) {
+	grants, err := s.svc.GrantsOfMember(ctx, req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dopv1.ResourceGrant, 0, len(grants))
+	for i := range grants {
+		out = append(out, grantToProto(&grants[i]))
+	}
+	return &dopv1.ListMemberGrantsResponse{Grants: out}, nil
+}
+
 // SetCredential returns the REFERENCE, never the value. The secret goes in
 // through this RPC and comes out through none: there is no GetCredential in the
 // contract, and that is how it has to be (ADR-0001).

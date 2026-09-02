@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ResourceService_ListResources_FullMethodName  = "/dop.v1.ResourceService/ListResources"
-	ResourceService_GetResource_FullMethodName    = "/dop.v1.ResourceService/GetResource"
-	ResourceService_CreateResource_FullMethodName = "/dop.v1.ResourceService/CreateResource"
-	ResourceService_UpdateResource_FullMethodName = "/dop.v1.ResourceService/UpdateResource"
-	ResourceService_DeleteResource_FullMethodName = "/dop.v1.ResourceService/DeleteResource"
-	ResourceService_GrantResource_FullMethodName  = "/dop.v1.ResourceService/GrantResource"
-	ResourceService_RevokeGrant_FullMethodName    = "/dop.v1.ResourceService/RevokeGrant"
-	ResourceService_SetCredential_FullMethodName  = "/dop.v1.ResourceService/SetCredential"
+	ResourceService_ListResources_FullMethodName    = "/dop.v1.ResourceService/ListResources"
+	ResourceService_GetResource_FullMethodName      = "/dop.v1.ResourceService/GetResource"
+	ResourceService_CreateResource_FullMethodName   = "/dop.v1.ResourceService/CreateResource"
+	ResourceService_UpdateResource_FullMethodName   = "/dop.v1.ResourceService/UpdateResource"
+	ResourceService_DeleteResource_FullMethodName   = "/dop.v1.ResourceService/DeleteResource"
+	ResourceService_GrantResource_FullMethodName    = "/dop.v1.ResourceService/GrantResource"
+	ResourceService_RevokeGrant_FullMethodName      = "/dop.v1.ResourceService/RevokeGrant"
+	ResourceService_ListMemberGrants_FullMethodName = "/dop.v1.ResourceService/ListMemberGrants"
+	ResourceService_SetCredential_FullMethodName    = "/dop.v1.ResourceService/SetCredential"
 )
 
 // ResourceServiceClient is the client API for ResourceService service.
@@ -40,6 +41,9 @@ type ResourceServiceClient interface {
 	DeleteResource(ctx context.Context, in *DeleteResourceRequest, opts ...grpc.CallOption) (*DeleteResourceResponse, error)
 	GrantResource(ctx context.Context, in *GrantResourceRequest, opts ...grpc.CallOption) (*ResourceGrant, error)
 	RevokeGrant(ctx context.Context, in *RevokeGrantRequest, opts ...grpc.CallOption) (*RevokeGrantResponse, error)
+	// The grants of ONE person in the active account — what the members screen
+	// needs in order to show state before editing it.
+	ListMemberGrants(ctx context.Context, in *ListMemberGrantsRequest, opts ...grpc.CallOption) (*ListMemberGrantsResponse, error)
 	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(ctx context.Context, in *SetCredentialRequest, opts ...grpc.CallOption) (*SetCredentialResponse, error)
 }
@@ -122,6 +126,16 @@ func (c *resourceServiceClient) RevokeGrant(ctx context.Context, in *RevokeGrant
 	return out, nil
 }
 
+func (c *resourceServiceClient) ListMemberGrants(ctx context.Context, in *ListMemberGrantsRequest, opts ...grpc.CallOption) (*ListMemberGrantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMemberGrantsResponse)
+	err := c.cc.Invoke(ctx, ResourceService_ListMemberGrants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *resourceServiceClient) SetCredential(ctx context.Context, in *SetCredentialRequest, opts ...grpc.CallOption) (*SetCredentialResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetCredentialResponse)
@@ -143,6 +157,9 @@ type ResourceServiceServer interface {
 	DeleteResource(context.Context, *DeleteResourceRequest) (*DeleteResourceResponse, error)
 	GrantResource(context.Context, *GrantResourceRequest) (*ResourceGrant, error)
 	RevokeGrant(context.Context, *RevokeGrantRequest) (*RevokeGrantResponse, error)
+	// The grants of ONE person in the active account — what the members screen
+	// needs in order to show state before editing it.
+	ListMemberGrants(context.Context, *ListMemberGrantsRequest) (*ListMemberGrantsResponse, error)
 	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(context.Context, *SetCredentialRequest) (*SetCredentialResponse, error)
 	mustEmbedUnimplementedResourceServiceServer()
@@ -175,6 +192,9 @@ func (UnimplementedResourceServiceServer) GrantResource(context.Context, *GrantR
 }
 func (UnimplementedResourceServiceServer) RevokeGrant(context.Context, *RevokeGrantRequest) (*RevokeGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeGrant not implemented")
+}
+func (UnimplementedResourceServiceServer) ListMemberGrants(context.Context, *ListMemberGrantsRequest) (*ListMemberGrantsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMemberGrants not implemented")
 }
 func (UnimplementedResourceServiceServer) SetCredential(context.Context, *SetCredentialRequest) (*SetCredentialResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetCredential not implemented")
@@ -326,6 +346,24 @@ func _ResourceService_RevokeGrant_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ResourceService_ListMemberGrants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMemberGrantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourceServiceServer).ListMemberGrants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourceService_ListMemberGrants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourceServiceServer).ListMemberGrants(ctx, req.(*ListMemberGrantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ResourceService_SetCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetCredentialRequest)
 	if err := dec(in); err != nil {
@@ -378,6 +416,10 @@ var ResourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeGrant",
 			Handler:    _ResourceService_RevokeGrant_Handler,
+		},
+		{
+			MethodName: "ListMemberGrants",
+			Handler:    _ResourceService_ListMemberGrants_Handler,
 		},
 		{
 			MethodName: "SetCredential",

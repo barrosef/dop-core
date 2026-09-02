@@ -339,6 +339,54 @@ func (s *Service) RevokeGrant(ctx context.Context, grantID string) error {
 	return s.repo.RevokeGrant(ctx, a.accountID, grantID)
 }
 
+// GrantsOfMember lists the grants somebody holds in the active account.
+//
+// It is what the members screen needs in order to SHOW state before editing it:
+// without a read, the screen can only write blind.
+//
+// Whoever asks about themselves always may. Asking about somebody else requires
+// managing members — the same role that hands out and takes away access. It is
+// not the resource's `manage`: this question is about a PERSON, and answering it
+// resource by resource would leak which resources exist to whoever holds a grant
+// over one of them.
+func (s *Service) GrantsOfMember(ctx context.Context, userID string) ([]Grant, error) {
+	a, err := s.who(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil, errs.Invalid("grant user not provided").WithCode(KeyGrantUserMissing, nil)
+	}
+	if userID != a.userID && !a.role.CanManageMembers() {
+		return nil, errs.Permission("only an owner or admin sees another member's grants").
+			WithCode(KeyOnlyManagersSeeGrants, nil)
+	}
+	return s.repo.GrantsOfUser(ctx, a.accountID, userID)
+}
+
+// RevokeAllOfMember removes every grant the person holds in the account.
+//
+// It DOES NOT AUTHORIZE, and that is deliberate: it is not reached from the
+// edge — there is no RPC for it. Identity calls it when somebody leaves the
+// account, and identity has already checked the role, the last-owner invariant
+// and the second factor. Repeating the check here would mean checking it
+// against the WRONG actor — the one doing the removing, not the one leaving.
+//
+// It takes accountID explicitly instead of reading the context so it cannot,
+// by accident, sweep another account's grants.
+func (s *Service) RevokeAllOfMember(ctx context.Context, accountID, userID string) error {
+	grants, err := s.repo.GrantsOfUser(ctx, accountID, userID)
+	if err != nil {
+		return err
+	}
+	for _, g := range grants {
+		if err := s.repo.RevokeGrant(ctx, accountID, g.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetCredential stores the secret in the SecretStore and persists ONLY the
 // opaque reference on the resource's row.
 //

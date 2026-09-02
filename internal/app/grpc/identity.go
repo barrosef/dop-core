@@ -168,6 +168,13 @@ func (s *IdentityServer) UpdateMembership(ctx context.Context, req *dopv1.Update
 	return membershipToProto(m), nil
 }
 
+func (s *IdentityServer) RemoveMembership(ctx context.Context, req *dopv1.RemoveMembershipRequest) (*dopv1.RemoveMembershipResponse, error) {
+	if err := s.svc.RemoveMembership(ctx, req.GetMembershipId()); err != nil {
+		return nil, err
+	}
+	return &dopv1.RemoveMembershipResponse{Removed: true}, nil
+}
+
 // ── conversions ──────────────────────────────────────────────────────────────
 
 func userToProto(u *identity.User) *dopv1.User {

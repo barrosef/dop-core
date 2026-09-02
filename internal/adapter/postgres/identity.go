@@ -222,6 +222,47 @@ func (r *IdentityRepo) MembershipOf(ctx context.Context, userID, accountID strin
 // UpdateMembershipRole may fire the owner invariant's trigger — Translate turns
 // the trigger's exception into a precondition error, with the database's message
 // reaching the user.
+// MembershipByID reads the row without filtering by account: the use case needs
+// to compare the account and answer "not found" when it differs — an id from
+// another account must not be told apart from one that does not exist.
+func (r *IdentityRepo) MembershipByID(ctx context.Context, membershipID string) (*identity.Membership, error) {
+	var m identity.Membership
+	var role string
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, user_id, account_id, role, created_at, updated_at
+		  FROM memberships WHERE id = $1`, membershipID).
+		Scan(&m.ID, &m.UserID, &m.AccountID, &role, &m.CreatedAt, &m.UpdatedAt)
+	if NoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Translate(err, "membership")
+	}
+	m.Role = identity.Role(role)
+	return &m, nil
+}
+
+// RemoveMembership deletes the row and emits the event in the SAME transaction
+// (ADR-0019). The event carries the user_id because the row will not be there
+// to be consulted afterwards — a projection reading this later has no way back.
+func (r *IdentityRepo) RemoveMembership(ctx context.Context, membershipID string) error {
+	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		var userID, accountID, role string
+		err := tx.QueryRow(ctx, `
+			DELETE FROM memberships WHERE id = $1
+			 RETURNING user_id, account_id, role`, membershipID).
+			Scan(&userID, &accountID, &role)
+		if err != nil {
+			return Translate(err, "membership")
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: accountID, Aggregate: "membership", AggregateID: membershipID,
+			Type:    "dop.identity.membership.removed",
+			Payload: mustJSON(map[string]any{"user_id": userID, "role": role}),
+		})
+	})
+}
+
 func (r *IdentityRepo) UpdateMembershipRole(ctx context.Context, membershipID string, role identity.Role) (*identity.Membership, error) {
 	var m identity.Membership
 	var got string

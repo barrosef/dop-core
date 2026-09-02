@@ -21,6 +21,11 @@ type Repository interface {
 	MembershipsOfAccount(ctx context.Context, accountID string) ([]Membership, error)
 	MembershipOf(ctx context.Context, userID, accountID string) (*Membership, error)
 	UpdateMembershipRole(ctx context.Context, membershipID string, role Role) (*Membership, error)
+	// MembershipByID exists because removing takes the membership's id and has
+	// to know WHOSE it is before deciding — the grants to sweep hang off the
+	// user, not off the row.
+	MembershipByID(ctx context.Context, membershipID string) (*Membership, error)
+	RemoveMembership(ctx context.Context, membershipID string) error
 
 	// Invites
 	CreateInvite(ctx context.Context, inv *Invite) (*Invite, error)

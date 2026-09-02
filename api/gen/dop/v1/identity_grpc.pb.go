@@ -29,6 +29,7 @@ const (
 	IdentityService_AcceptInvite_FullMethodName     = "/dop.v1.IdentityService/AcceptInvite"
 	IdentityService_RevokeInvite_FullMethodName     = "/dop.v1.IdentityService/RevokeInvite"
 	IdentityService_UpdateMembership_FullMethodName = "/dop.v1.IdentityService/UpdateMembership"
+	IdentityService_RemoveMembership_FullMethodName = "/dop.v1.IdentityService/RemoveMembership"
 	IdentityService_ListInvites_FullMethodName      = "/dop.v1.IdentityService/ListInvites"
 	IdentityService_GetInvite_FullMethodName        = "/dop.v1.IdentityService/GetInvite"
 )
@@ -49,6 +50,9 @@ type IdentityServiceClient interface {
 	AcceptInvite(ctx context.Context, in *AcceptInviteRequest, opts ...grpc.CallOption) (*Membership, error)
 	RevokeInvite(ctx context.Context, in *RevokeInviteRequest, opts ...grpc.CallOption) (*Invite, error)
 	UpdateMembership(ctx context.Context, in *UpdateMembershipRequest, opts ...grpc.CallOption) (*Membership, error)
+	// Taking somebody out of the account. It sweeps the grants they held HERE;
+	// their user, their personal account and what they created stay (US-5.3).
+	RemoveMembership(ctx context.Context, in *RemoveMembershipRequest, opts ...grpc.CallOption) (*RemoveMembershipResponse, error)
 	ListInvites(ctx context.Context, in *ListInvitesRequest, opts ...grpc.CallOption) (*ListInvitesResponse, error)
 	// GetInvite is the ONE identity RPC that does not require an active account:
 	// whoever opens the link may not be a member of anything yet — that is the
@@ -164,6 +168,16 @@ func (c *identityServiceClient) UpdateMembership(ctx context.Context, in *Update
 	return out, nil
 }
 
+func (c *identityServiceClient) RemoveMembership(ctx context.Context, in *RemoveMembershipRequest, opts ...grpc.CallOption) (*RemoveMembershipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveMembershipResponse)
+	err := c.cc.Invoke(ctx, IdentityService_RemoveMembership_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *identityServiceClient) ListInvites(ctx context.Context, in *ListInvitesRequest, opts ...grpc.CallOption) (*ListInvitesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListInvitesResponse)
@@ -200,6 +214,9 @@ type IdentityServiceServer interface {
 	AcceptInvite(context.Context, *AcceptInviteRequest) (*Membership, error)
 	RevokeInvite(context.Context, *RevokeInviteRequest) (*Invite, error)
 	UpdateMembership(context.Context, *UpdateMembershipRequest) (*Membership, error)
+	// Taking somebody out of the account. It sweeps the grants they held HERE;
+	// their user, their personal account and what they created stay (US-5.3).
+	RemoveMembership(context.Context, *RemoveMembershipRequest) (*RemoveMembershipResponse, error)
 	ListInvites(context.Context, *ListInvitesRequest) (*ListInvitesResponse, error)
 	// GetInvite is the ONE identity RPC that does not require an active account:
 	// whoever opens the link may not be a member of anything yet — that is the
@@ -244,6 +261,9 @@ func (UnimplementedIdentityServiceServer) RevokeInvite(context.Context, *RevokeI
 }
 func (UnimplementedIdentityServiceServer) UpdateMembership(context.Context, *UpdateMembershipRequest) (*Membership, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateMembership not implemented")
+}
+func (UnimplementedIdentityServiceServer) RemoveMembership(context.Context, *RemoveMembershipRequest) (*RemoveMembershipResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveMembership not implemented")
 }
 func (UnimplementedIdentityServiceServer) ListInvites(context.Context, *ListInvitesRequest) (*ListInvitesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListInvites not implemented")
@@ -452,6 +472,24 @@ func _IdentityService_UpdateMembership_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_RemoveMembership_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveMembershipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).RemoveMembership(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_RemoveMembership_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).RemoveMembership(ctx, req.(*RemoveMembershipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IdentityService_ListInvites_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListInvitesRequest)
 	if err := dec(in); err != nil {
@@ -534,6 +572,10 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateMembership",
 			Handler:    _IdentityService_UpdateMembership_Handler,
+		},
+		{
+			MethodName: "RemoveMembership",
+			Handler:    _IdentityService_RemoveMembership_Handler,
 		},
 		{
 			MethodName: "ListInvites",
