@@ -88,17 +88,17 @@ func (g agentProviders) For(ctx context.Context, resourceID string) (agent.Agent
 	}
 
 	switch spec.Provider {
-	case agentprovider.NomeAnthropic:
+	case agentprovider.NameAnthropic:
 		return agentprovider.NewAnthropic(agentprovider.AnthropicConfig{
 			APIBase: spec.BaseURL,
 			APIKey:  string(valor),
-			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogoAnthropic()),
+			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogAnthropic()),
 		}), nil
-	case agentprovider.NomeOpenAI:
+	case agentprovider.NameOpenAI:
 		return agentprovider.NewOpenAI(agentprovider.OpenAIConfig{
 			APIBase: spec.BaseURL,
 			APIKey:  string(valor),
-			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogoOpenAI()),
+			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogOpenAI()),
 		}), nil
 	}
 	// Provedor desconhecido é recusa explícita, NUNCA uma queda para o padrão:

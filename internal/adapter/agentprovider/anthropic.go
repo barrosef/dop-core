@@ -1,45 +1,47 @@
-// Adaptador de agent.AgentProvider sobre a API da Anthropic.
+// An agent.AgentProvider adapter over Anthropic's API.
 //
-// O que ESTE adaptador cumpre e o outro não (ver as divergências em
+// What THIS adapter delivers and the other one does not (see the divergences in
 // internal/domain/agent/entity.go):
 //
-//   - CACHE DE PREFIXO EXPLÍCITO (D1): o prefixo estável vai como bloco de
-//     `system` com `cache_control: ephemeral`. O breakpoint é o FIM DO PREFIXO, e
-//     não o fim do prompt — pôr o marcador depois da mensagem do turno escreveria
-//     uma entrada de cache nova a cada turno e não leria nenhuma. É o erro que
-//     não falha, só cobra;
-//   - CONTABILIDADE DE CRIAÇÃO DE CACHE (D1): `cache_creation_input_tokens` e
-//     `cache_read_input_tokens` vêm separados, que é o que a telemetria da
-//     ADR-0012 §1 precisa para acusar invalidador silencioso;
-//   - OS CINCO NÍVEIS DE EFFORT (D4), incluindo o `max` que a ADR-0007 exige no
-//     crítico.
+//   - EXPLICIT PREFIX CACHE (D1): the stable prefix goes as a `system` block with
+//     `cache_control: ephemeral`. The breakpoint is the END OF THE PREFIX, and
+//     not the end of the prompt — putting the marker after the turn's message
+//     would write a new cache entry every turn and read none. It is the error
+//     that does not fail, it only charges;
+//   - CACHE CREATION ACCOUNTING (D1): `cache_creation_input_tokens` and
+//     `cache_read_input_tokens` come separately, which is what ADR-0012 §1's
+//     telemetry needs in order to report a silent invalidator;
+//   - THE FIVE EFFORT LEVELS (D4), including the `max` ADR-0007 requires on
+//     critical work.
 //
-// FERRAMENTAS, como este fornecedor as trata (D7–D11):
+// TOOLS, as this provider handles them (D7–D11):
 //
-//   - D7: `tools: [{name, description, input_schema}]` — schema no TOPO do
-//     objeto, sem casca. E a declaração vai ANTES de `system` no corpo, que é a
-//     ordem canônica de cache deste fornecedor (tools → system → messages);
-//   - D8: a chamada é um bloco `tool_use` DENTRO de `content`, ao lado dos
-//     blocos de texto, e `input` já é OBJETO. Nada a decodificar — é o outro
-//     adaptador que tem esse trabalho;
-//   - D9: o resultado volta como bloco `tool_result` numa mensagem
-//     `role:"user"`, VÁRIOS na mesma mensagem, com `is_error` booleano nativo;
-//   - D10: paralelo por padrão, e o adaptador não manda flag nenhuma;
-//   - D11: `tool_use_id` órfão é 400. Por isso a fala do assistente com as
-//     chamadas é REENVIADA junto com os resultados, sempre.
+//   - D7: `tools: [{name, description, input_schema}]` — the schema at the TOP
+//     of the object, with no shell. And the declaration goes BEFORE `system` in
+//     the body, which is this provider's canonical cache order (tools → system →
+//     messages);
+//   - D8: the call is a `tool_use` block INSIDE `content`, next to the text
+//     blocks, and `input` is already an OBJECT. Nothing to decode — it is the
+//     other adapter that has that job;
+//   - D9: the result comes back as a `tool_result` block in a `role:"user"`
+//     message, SEVERAL in the same message, with a native `is_error` boolean;
+//   - D10: parallel by default, and the adapter sends no flag at all;
+//   - D11: an orphan `tool_use_id` is a 400. That is why the assistant's
+//     utterance with the calls is RESENT along with the results, always.
 //
-// O que ele faz de diferente do óbvio:
+// What it does differently from the obvious:
 //
-//   - `thinking: adaptive`. O orçamento fixo de tokens de raciocínio
-//     (`budget_tokens`) foi removido nos modelos atuais e devolve 400. Quem
-//     controla profundidade é `output_config.effort`, que é justamente o segundo
-//     eixo da ADR-0011 §3 — as duas decisões encaixam sem tradução;
-//   - MENSAGEM DE OPERADOR COM RECUO. `role:"system"` no meio de `messages` é o
-//     canal não-forjável e preserva o prefixo, mas não existe em todo modelo (o
-//     Sonnet 5 responde 400). Em vez de manter uma lista de modelos que envelhece
-//     em silêncio, o adaptador TENTA e, no 400 específico, refaz a chamada com a
-//     instrução marcada dentro do turno do usuário — e AVISA. Recuar sem avisar
-//     seria entregar como dado do usuário algo que autoriza.
+//   - `thinking: adaptive`. The fixed reasoning-token budget (`budget_tokens`)
+//     was removed on the current models and returns a 400. What controls depth is
+//     `output_config.effort`, which is exactly ADR-0011 §3's second axis — the
+//     two decisions fit with no translation;
+//   - AN OPERATOR MESSAGE WITH A FALLBACK. `role:"system"` in the middle of
+//     `messages` is the unforgeable channel and it preserves the prefix, but it
+//     does not exist on every model (Sonnet 5 answers 400). Instead of keeping a
+//     model list that ages in silence, the adapter TRIES and, on the specific
+//     400, redoes the call with the instruction marked inside the user's turn —
+//     and WARNS. Falling back without warning would be delivering, as the user's
+//     data, something that authorizes.
 package agentprovider
 
 import (
@@ -53,17 +55,17 @@ import (
 )
 
 const (
-	NomeAnthropic       = "anthropic"
+	NameAnthropic       = "anthropic"
 	BaseAnthropic       = "https://api.anthropic.com/v1"
-	rotaAnthropic       = "/messages"
-	versaoAPIAnthropic  = "2023-06-01"
-	cabecalhoAnthropicK = "x-api-key"
+	routeAnthropic      = "/messages"
+	apiVersionAnthropic = "2023-06-01"
+	keyHeaderAnthropic  = "x-api-key"
 )
 
-// CatalogoAnthropic é o catálogo DESTE fornecedor: classe → nome concreto.
-// Muda quando a Anthropic lança modelo; a política da ADR-0011 §3 não muda
-// junto — é a separação política × catálogo de `cost/router.go`, continuada aqui.
-func CatalogoAnthropic() map[agent.ModelClass]string {
+// CatalogAnthropic is THIS provider's catalog: class → concrete name. It changes
+// when Anthropic ships a model; ADR-0011 §3's policy does not change with it —
+// it is `cost/router.go`'s policy × catalog separation, continued here.
+func CatalogAnthropic() map[agent.ModelClass]string {
 	return map[agent.ModelClass]string{
 		agent.ClassCheap:  "claude-haiku-4-5",
 		agent.ClassMedium: "claude-sonnet-5",
@@ -71,16 +73,17 @@ func CatalogoAnthropic() map[agent.ModelClass]string {
 	}
 }
 
-// PrecosAnthropic é a tabela de preço, em MICROS por 1.000 tokens (USD).
+// PricesAnthropic is the price table, in MICROS per 1,000 tokens (USD).
 //
-// Leitura de cache a 0,1× do input e escrita a 1,25× — é essa razão que faz a
-// economia da ADR-0012 valer a disciplina do prefixo estável, e é ela que precisa
-// aparecer na medição.
+// A cache read at 0.1× the input and a write at 1.25× — it is that ratio that
+// makes ADR-0012's saving worth the stable prefix's discipline, and it is what
+// has to show up in the measurement.
 //
-// É tabela de PARTIDA e ENVELHECE: preço muda, e quando mudar é aqui que se mexe.
-// Modelo fora dela devolve "desconhecido" em `PriceFor`, e o ciclo do turno DIZ
-// que não sabe — nunca grava zero (ver `agent.ProviderInfo.PriceFor`).
-func PrecosAnthropic() map[string]agent.Price {
+// It is a STARTING table and it AGES: prices change, and when they do this is
+// where you touch. A model outside it returns "unknown" from `PriceFor`, and the
+// turn's cycle SAYS it does not know — it never records a zero (see
+// `agent.ProviderInfo.PriceFor`).
+func PricesAnthropic() map[string]agent.Price {
 	return map[string]agent.Price{
 		"claude-opus-5":    {Currency: "USD", InputPer1k: 5_000, OutputPer1k: 25_000, CacheReadPer1k: 500, CacheCreationPer1k: 6_250},
 		"claude-sonnet-5":  {Currency: "USD", InputPer1k: 3_000, OutputPer1k: 15_000, CacheReadPer1k: 300, CacheCreationPer1k: 3_750},
@@ -88,30 +91,32 @@ func PrecosAnthropic() map[string]agent.Price {
 	}
 }
 
-// paradaAnthropic traduz o motivo do fornecedor para o vocabulário do domínio (D5).
-var paradaAnthropic = map[string]agent.StopReason{
+// stopAnthropic translates the provider's reason into the domain's vocabulary
+// (D5).
+var stopAnthropic = map[string]agent.StopReason{
 	"end_turn":                      agent.StopCompleted,
 	"stop_sequence":                 agent.StopCompleted,
 	"max_tokens":                    agent.StopMaxTokens,
 	"model_context_window_exceeded": agent.StopMaxTokens,
 	"refusal":                       agent.StopRefused,
 	"tool_use":                      agent.StopToolUse,
-	// `pause_turn` é o modelo pedindo para continuar depois de uma ferramenta
-	// de servidor. Sem ferramentas na porta ele não deveria aparecer; mapeado
-	// para TOOL_USE porque é o que ele significa, e o domínio precisa saber
-	// que a resposta NÃO terminou.
+	// `pause_turn` is the model asking to continue after a server tool. With no
+	// server tools on the port it should not appear; mapped to TOOL_USE because
+	// that is what it means, and the domain needs to know the response did NOT
+	// finish.
 	"pause_turn": agent.StopToolUse,
 }
 
 type AnthropicConfig struct {
-	// APIBase permite apontar para um gateway corporativo ou para um duplo de
-	// teste sem tocar no ciclo do turno.
+	// APIBase allows pointing at a corporate gateway or at a test double
+	// without touching the turn's cycle.
 	APIBase string
-	// APIKey é o valor JÁ RESOLVIDO da credencial de recurso (ADR-0013). Este
-	// pacote não conhece `ports.SecretStore`.
+	// APIKey is the ALREADY RESOLVED value of the resource credential
+	// (ADR-0013). This package does not know `ports.SecretStore`.
 	APIKey string
-	// Catalog vazio usa CatalogoAnthropic(). Existe porque, quando o provedor
-	// vier configurado no recurso da conta, o catálogo vem de lá.
+	// An empty Catalog uses CatalogAnthropic(). It exists because, when the
+	// provider comes configured on the account's resource, the catalog comes
+	// from there.
 	Catalog map[agent.ModelClass]string
 	Timeout time.Duration
 	Client  httpDoer
@@ -127,34 +132,34 @@ func NewAnthropic(cfg AnthropicConfig) *Anthropic {
 	if base == "" {
 		base = BaseAnthropic
 	}
-	autorizar := func(r *http.Request) {
+	authorize := func(r *http.Request) {
 		if cfg.APIKey != "" {
-			r.Header.Set(cabecalhoAnthropicK, cfg.APIKey)
+			r.Header.Set(keyHeaderAnthropic, cfg.APIKey)
 		}
-		// Versão FIXADA no adaptador, não configurável: é a promessa de que o
-		// formato da resposta não muda debaixo de nós. Deixá-la de fora
-		// significa aceitar a versão default, que muda sozinha.
-		r.Header.Set("anthropic-version", versaoAPIAnthropic)
+		// The version is PINNED in the adapter, not configurable: it is the
+		// promise that the response's format does not change under us. Leaving
+		// it out means accepting the default version, which changes on its own.
+		r.Header.Set("anthropic-version", apiVersionAnthropic)
 		r.Header.Set("User-Agent", "dop-core")
 	}
 	cat := cfg.Catalog
 	if len(cat) == 0 {
-		cat = CatalogoAnthropic()
+		cat = CatalogAnthropic()
 	}
 	return &Anthropic{
-		c:       newClient(base, NomeAnthropic, cfg.Client, cfg.Timeout, autorizar, cfg.APIKey),
+		c:       newClient(base, NameAnthropic, cfg.Client, cfg.Timeout, authorize, cfg.APIKey),
 		catalog: cat,
 	}
 }
 
 var _ agent.AgentProvider = (*Anthropic)(nil)
 
-// String: receptor por VALOR, para valer também em `%+v` de um valor.
+// String: a VALUE receiver, so it also applies to `%+v` of a value.
 func (a Anthropic) String() string { return "agentprovider.Anthropic{}" }
 
 func (a *Anthropic) Info() agent.ProviderInfo {
 	return agent.ProviderInfo{
-		Name:    NomeAnthropic,
+		Name:    NameAnthropic,
 		Catalog: a.catalog,
 		Capabilities: agent.Capabilities{
 			agent.CapExplicitPrefixCache,
@@ -164,33 +169,33 @@ func (a *Anthropic) Info() agent.ProviderInfo {
 			agent.CapStructuredOutput,
 			agent.CapToolUse,
 		},
-		Prices: PrecosAnthropic(),
+		Prices: PricesAnthropic(),
 	}
 }
 
-// ── formas do fornecedor (só o que a porta usa) ─────────────────────────────
+// ── the provider's shapes (only what the port uses) ─────────────────────────
 //
-// A ORDEM DOS CAMPOS destes structs é significativa: `encoding/json` serializa
-// na ordem de declaração, e é ela que põe o PREFIXO antes das mensagens no corpo
-// (garantia 3 da porta). Reordenar `System` para depois de `Messages` não
-// quebraria nenhum teste de comportamento e custaria 10× na fatura — por isso a
-// suíte de contrato verifica a ordem no corpo serializado.
+// These structs' FIELD ORDER is significant: `encoding/json` serializes in
+// declaration order, and it is what puts the PREFIX before the messages in the
+// body (the port's guarantee 3). Reordering `System` to come after `Messages`
+// would break no behaviour test and would cost 10× on the invoice — which is why
+// the contract suite verifies the order in the serialized body.
 
-type antBlocoTexto struct {
+type antTextBlock struct {
 	Type         string       `json:"type"`
 	Text         string       `json:"text"`
 	CacheControl *antCacheCtl `json:"cache_control,omitempty"`
 }
 
-// antBloco é um bloco de `content` que pode ser texto, chamada ou resultado.
+// antBlock is a `content` block that may be text, a call or a result.
 //
-// Um struct com `omitempty` em tudo, e não três tipos com uma interface: os
-// campos são disjuntos por `type`, e a alternativa faria cada montagem deste
-// arquivo virar um type switch. `Input` é `any` porque o bloco de saída leva
-// objeto e o de entrada não leva nada.
-type antBloco struct {
+// One struct with `omitempty` on everything, and not three types behind an
+// interface: the fields are disjoint by `type`, and the alternative would turn
+// every assembly in this file into a type switch. `Input` is `any` because the
+// output block carries an object and the input one carries nothing.
+type antBlock struct {
 	Type string `json:"type"`
-	// texto
+	// text
 	Text string `json:"text,omitempty"`
 	// tool_use
 	ID    string         `json:"id,omitempty"`
@@ -202,8 +207,9 @@ type antBloco struct {
 	IsError   bool   `json:"is_error,omitempty"`
 }
 
-// antFerramenta é a DECLARAÇÃO (D7): schema no topo, sem casca de "function".
-type antFerramenta struct {
+// antTool is the DECLARATION (D7): the schema at the top, with no "function"
+// shell.
+type antTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"input_schema"`
@@ -213,7 +219,7 @@ type antCacheCtl struct {
 	Type string `json:"type"`
 }
 
-type antMensagem struct {
+type antMessage struct {
 	Role    string `json:"role"`
 	Content any    `json:"content"`
 }
@@ -222,44 +228,45 @@ type antThinking struct {
 	Type string `json:"type"`
 }
 
-type antFormato struct {
+type antFormat struct {
 	Type   string         `json:"type"`
 	Schema map[string]any `json:"schema"`
 }
 
 type antOutputConfig struct {
-	Effort string      `json:"effort"`
-	Format *antFormato `json:"format,omitempty"`
+	Effort string     `json:"effort"`
+	Format *antFormat `json:"format,omitempty"`
 }
 
-type antPedido struct {
+type antRequest struct {
 	Model     string `json:"model"`
 	MaxTokens int    `json:"max_tokens"`
-	// Tools vem ANTES de System, e não é estética: a ordem canônica de cache
-	// deste fornecedor é tools → system → messages, e a suíte de contrato
-	// audita a ordem no corpo SERIALIZADO (garantia 15). Declaração depois da
-	// conversa não erra — só sai do trecho cacheável e cobra por isso.
+	// Tools comes BEFORE System, and it is not aesthetics: this provider's
+	// canonical cache order is tools → system → messages, and the contract suite
+	// audits the order in the SERIALIZED body (guarantee 15). A declaration
+	// after the conversation is not wrong — it just leaves the cacheable stretch
+	// and charges for it.
 	//
-	// `omitempty` é a garantia 16: turno sem ferramenta não manda o campo.
-	// Array vazio ocupa lugar no prompt e convida o modelo a chamar o que não
-	// existe.
-	Tools        []antFerramenta `json:"tools,omitempty"`
-	System       []antBlocoTexto `json:"system"`
-	Messages     []antMensagem   `json:"messages"`
+	// `omitempty` is guarantee 16: a turn with no tool does not send the field.
+	// An empty array takes up room in the prompt and invites the model to call
+	// what does not exist.
+	Tools        []antTool       `json:"tools,omitempty"`
+	System       []antTextBlock  `json:"system"`
+	Messages     []antMessage    `json:"messages"`
 	Thinking     antThinking     `json:"thinking"`
 	OutputConfig antOutputConfig `json:"output_config"`
 }
 
-type antResposta struct {
+type antResponse struct {
 	Model      string `json:"model"`
 	StopReason string `json:"stop_reason"`
 	Content    []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
-		// D8: a chamada vem DENTRO de content, e `input` já é objeto.
-		// `json.RawMessage` e não `map[string]any` porque um `input` que não
-		// seja objeto (o caso degenerado) precisa chegar como texto cru ao
-		// modelo, e não sumir num erro de decodificação.
+		// D8: the call comes INSIDE content, and `input` is already an object.
+		// `json.RawMessage` and not `map[string]any` because an `input` that is
+		// not an object (the degenerate case) has to reach the model as raw
+		// text, and not vanish into a decoding error.
 		ID    string          `json:"id"`
 		Name  string          `json:"name"`
 		Input json.RawMessage `json:"input"`
@@ -272,232 +279,238 @@ type antResposta struct {
 	} `json:"usage"`
 }
 
-// ── montagem ────────────────────────────────────────────────────────────────
+// ── assembly ────────────────────────────────────────────────────────────────
 
 func (a *Anthropic) Render(t agent.Turn, model string, effort agent.Effort) ([]byte, []string, error) {
 	return a.render(t, model, effort, false)
 }
 
-// render monta a requisição. A CREDENCIAL NÃO ENTRA AQUI: ela vai em cabeçalho,
-// pelo closure de autorização — o que faz de `render` uma superfície segura para
-// log e para a suíte de contrato inspecionar.
+// render assembles the request. THE CREDENTIAL DOES NOT ENTER HERE: it goes in a
+// header, through the authorization closure — which makes `render` a surface
+// safe to log and for the contract suite to inspect.
 //
-// `operatorInline` é o RECUO do D3, e é interno de propósito: quem chama a porta
-// não escolhe canal de operador, ele é consequência do modelo.
+// `operatorInline` is D3's FALLBACK, and it is internal on purpose: whoever
+// calls the port does not choose the operator channel, it is a consequence of
+// the model.
 func (a *Anthropic) render(t agent.Turn, model string, effort agent.Effort,
 	operatorInline bool) ([]byte, []string, error) {
 
-	var avisos []string
-	var conteudoUsuario []antBlocoTexto
-	var mensagens []antMensagem
+	var warnings []string
+	var userContent []antTextBlock
+	var messages []antMessage
 
 	for _, m := range t.Messages {
 		switch {
 		case m.Role == agent.RoleOperator && !operatorInline:
-			// Canal próprio: `role:"system"` DEPOIS da história preserva o
-			// prefixo cacheado (D3). NUNCA `role:"user"`.
-			mensagens = append(mensagens, antMensagem{Role: "system", Content: m.Text})
+			// A channel of its own: `role:"system"` AFTER the history preserves
+			// the cached prefix (D3). NEVER `role:"user"`.
+			messages = append(messages, antMessage{Role: "system", Content: m.Text})
 		case m.Role == agent.RoleOperator:
-			conteudoUsuario = append(conteudoUsuario, antBlocoTexto{
+			userContent = append(userContent, antTextBlock{
 				Type: "text",
-				Text: "<intervencao-do-operador>\n" + m.Text + "\n</intervencao-do-operador>",
+				Text: "<operator-intervention>\n" + m.Text + "\n</operator-intervention>",
 			})
-			avisos = append(avisos,
-				"modelo sem canal de operador nativo: a instrução foi marcada dentro "+
-					"do turno do usuário (D3)")
+			warnings = append(warnings,
+				"model with no native operator channel: the instruction was marked inside "+
+					"the user's turn (D3)")
 		case m.Role == agent.RoleToolResult:
-			// D9: os resultados vão como blocos `tool_result` numa mensagem
-			// `role:"user"` — VÁRIOS na mesma, que é o formato deste
-			// fornecedor. Mensagem PRÓPRIA e não misturada ao turno do
-			// usuário: saída de ferramenta é conteúdo não confiável (spec do
-			// substrato §6) e não pode ser confundida com a pergunta de quem
-			// pediu o trabalho.
-			mensagens = append(mensagens, antMensagem{
-				Role: "user", Content: antResultados(m.ToolResults),
+			// D9: the results go as `tool_result` blocks in a `role:"user"`
+			// message — SEVERAL in the same one, which is this provider's
+			// format. A message of its OWN and not mixed into the user's turn:
+			// a tool's output is untrusted content (substrate spec §6) and must
+			// not be confused with the question of whoever asked for the work.
+			messages = append(messages, antMessage{
+				Role: "user", Content: antResults(m.ToolResults),
 			})
 		case m.Role == agent.RoleAssistant:
-			// D11: a fala do assistente REENVIA as chamadas junto. Sem elas, o
-			// `tool_use_id` do resultado seguinte fica órfão e o fornecedor
-			// devolve 400.
-			mensagens = append(mensagens, antMensagem{
-				Role: "assistant", Content: antConteudoAssistente(m),
+			// D11: the assistant's utterance RESENDS the calls with it. Without
+			// them, the next result's `tool_use_id` is orphaned and the provider
+			// returns a 400.
+			messages = append(messages, antMessage{
+				Role: "assistant", Content: antAssistantContent(m),
 			})
 		default:
-			conteudoUsuario = append(conteudoUsuario, antBlocoTexto{Type: "text", Text: m.Text})
+			userContent = append(userContent, antTextBlock{Type: "text", Text: m.Text})
 		}
 	}
 
-	if len(conteudoUsuario) > 0 {
-		// O turno do usuário entra ANTES de qualquer mensagem de operador já
-		// enfileirada: a mensagem `system` do meio precisa seguir um turno de
-		// usuário, e é a última entrada de `messages`.
-		mensagens = append([]antMensagem{{Role: "user", Content: conteudoUsuario}}, mensagens...)
+	if len(userContent) > 0 {
+		// The user's turn goes in BEFORE any operator message already queued:
+		// the `system` message in the middle has to follow a user turn, and it
+		// is the last entry of `messages`.
+		messages = append([]antMessage{{Role: "user", Content: userContent}}, messages...)
 	}
 
-	pedido := antPedido{
+	request := antRequest{
 		Model:     model,
 		MaxTokens: t.MaxOutputTokens,
-		Tools:     antFerramentas(t.Tools),
-		// O PREFIXO, com o breakpoint no FIM DELE — e não no fim do prompt.
-		System: []antBlocoTexto{{
+		Tools:     antTools(t.Tools),
+		// THE PREFIX, with the breakpoint at ITS END — and not at the end of the
+		// prompt.
+		System: []antTextBlock{{
 			Type:         "text",
 			Text:         t.StablePrefix,
 			CacheControl: &antCacheCtl{Type: "ephemeral"},
 		}},
-		Messages:     mensagens,
+		Messages:     messages,
 		Thinking:     antThinking{Type: "adaptive"},
 		OutputConfig: antOutputConfig{Effort: string(effort)},
 	}
 	if t.OutputSchema != nil {
-		pedido.OutputConfig.Format = &antFormato{Type: "json_schema", Schema: t.OutputSchema}
+		request.OutputConfig.Format = &antFormat{Type: "json_schema", Schema: t.OutputSchema}
 	}
 
-	// json.Marshal ordena as chaves de MAPA alfabeticamente e mantém os campos
-	// de STRUCT na ordem de declaração — as duas coisas são determinísticas, que
-	// é a garantia 4. É por isso que o schema pode ser mapa sem custar o cache.
-	corpo, err := json.Marshal(pedido)
+	// json.Marshal orders MAP keys alphabetically and keeps STRUCT fields in
+	// declaration order — both are deterministic, which is guarantee 4. That is
+	// why the schema can be a map without costing the cache.
+	body, err := json.Marshal(request)
 	if err != nil {
-		return nil, nil, agent.Unavailability(NomeAnthropic, agent.ReasonProviderError,
-			"pedido ilegível: "+err.Error())
+		return nil, nil, agent.Unavailability(NameAnthropic, agent.ReasonProviderError,
+			"unreadable request: "+err.Error())
 	}
-	return corpo, avisos, nil
+	return body, warnings, nil
 }
 
-// antFerramentas traduz a declaração do domínio para a forma deste fornecedor
-// (D7). Lista vazia devolve nil, e o `omitempty` do pedido faz o resto: campo
-// AUSENTE, não array vazio (garantia 16).
-func antFerramentas(specs []agent.ToolSpec) []antFerramenta {
+// antTools translates the domain's declaration into this provider's shape (D7).
+// An empty list returns nil, and the request's `omitempty` does the rest: an
+// ABSENT field, not an empty array (guarantee 16).
+func antTools(specs []agent.ToolSpec) []antTool {
 	if len(specs) == 0 {
 		return nil
 	}
-	out := make([]antFerramenta, 0, len(specs))
+	out := make([]antTool, 0, len(specs))
 	for _, s := range specs {
-		out = append(out, antFerramenta{
+		out = append(out, antTool{
 			Name: s.Name, Description: s.Description, InputSchema: s.InputSchema,
 		})
 	}
 	return out
 }
 
-// antConteudoAssistente monta a fala do assistente com as chamadas junto (D11).
+// antAssistantContent assembles the assistant's utterance with the calls
+// alongside (D11).
 //
-// O texto vem ANTES das chamadas porque é a ordem em que o modelo os produziu, e
-// remontar a história fora de ordem faz o modelo ler o próprio raciocínio ao
-// contrário.
-func antConteudoAssistente(m agent.Message) []antBloco {
-	blocos := make([]antBloco, 0, len(m.ToolCalls)+1)
+// The text comes BEFORE the calls because it is the order the model produced
+// them in, and reassembling the history out of order makes the model read its
+// own reasoning backwards.
+func antAssistantContent(m agent.Message) []antBlock {
+	blocks := make([]antBlock, 0, len(m.ToolCalls)+1)
 	if strings.TrimSpace(m.Text) != "" {
-		blocos = append(blocos, antBloco{Type: "text", Text: m.Text})
+		blocks = append(blocks, antBlock{Type: "text", Text: m.Text})
 	}
 	for _, c := range m.ToolCalls {
-		entrada := c.Input
-		if entrada == nil {
-			// Chamada que veio ilegível (D8) é reenviada com objeto VAZIO, e
-			// não omitida: o `tool_use_id` precisa existir para o resultado de
-			// erro correspondente ter par (D11). Omitir a chamada e mandar o
-			// resultado é o 400 clássico.
-			entrada = map[string]any{}
+		input := c.Input
+		if input == nil {
+			// A call that arrived unreadable (D8) is resent with an EMPTY
+			// object, and not omitted: the `tool_use_id` has to exist for the
+			// corresponding error result to have a pair (D11). Omitting the call
+			// and sending the result is the classic 400.
+			input = map[string]any{}
 		}
-		blocos = append(blocos, antBloco{
-			Type: "tool_use", ID: c.ID, Name: c.Name, Input: entrada,
+		blocks = append(blocks, antBlock{
+			Type: "tool_use", ID: c.ID, Name: c.Name, Input: input,
 		})
 	}
-	return blocos
+	return blocks
 }
 
-// antResultados monta os blocos `tool_result` (D9). O `is_error` é NATIVO aqui —
-// é o fornecedor que tem o booleano, e usá-lo é a metade fácil da garantia 21.
-func antResultados(rs []agent.ToolResult) []antBloco {
-	blocos := make([]antBloco, 0, len(rs))
+// antResults assembles the `tool_result` blocks (D9). `is_error` is NATIVE here
+// — it is the provider that has the boolean, and using it is guarantee 21's easy
+// half.
+func antResults(rs []agent.ToolResult) []antBlock {
+	blocks := make([]antBlock, 0, len(rs))
 	for _, r := range rs {
-		blocos = append(blocos, antBloco{
+		blocks = append(blocks, antBlock{
 			Type: "tool_result", ToolUseID: r.CallID, Content: r.Content, IsError: r.IsError,
 		})
 	}
-	return blocos
+	return blocks
 }
 
-// ── envio ───────────────────────────────────────────────────────────────────
+// ── sending ─────────────────────────────────────────────────────────────────
 
 func (a *Anthropic) Send(ctx context.Context, t agent.Turn, model string,
 	effort agent.Effort) (*agent.Reply, error) {
 
-	if !a.c.temCredencial {
-		// Sem chave não se gasta uma ida à rede: o erro fala de configuração,
-		// que é o que é.
-		return nil, agent.Unavailability(NomeAnthropic, agent.ReasonMissingCredential, "")
+	if !a.c.hasCredential {
+		// With no key we do not spend a round trip: the error talks about
+		// configuration, which is what it is.
+		return nil, agent.Unavailability(NameAnthropic, agent.ReasonMissingCredential, "")
 	}
 
-	corpo, avisos, err := a.render(t, model, effort, false)
+	body, warnings, err := a.render(t, model, effort, false)
 	if err != nil {
 		return nil, err
 	}
-	status, resp, err := a.c.post(ctx, rotaAnthropic, corpo)
+	status, resp, err := a.c.post(ctx, routeAnthropic, body)
 	if err != nil {
 		return nil, err
 	}
 
-	if status == http.StatusBadRequest && ehCanalDeOperador(resp) {
-		// Recuo documentado (D3): este modelo não aceita `role:"system"` no
-		// meio. Refaz com a instrução marcada no turno do usuário. UMA vez —
-		// um segundo 400 é 400 de verdade.
-		corpo, avisos, err = a.render(t, model, effort, true)
+	if status == http.StatusBadRequest && isOperatorChannel(resp) {
+		// The documented fallback (D3): this model does not accept
+		// `role:"system"` in the middle. Redo it with the instruction marked in
+		// the user's turn. ONCE — a second 400 is a real 400.
+		body, warnings, err = a.render(t, model, effort, true)
 		if err != nil {
 			return nil, err
 		}
-		status, resp, err = a.c.post(ctx, rotaAnthropic, corpo)
+		status, resp, err = a.c.post(ctx, routeAnthropic, body)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if status >= 400 {
-		return nil, a.c.falha(status, resp)
+		return nil, a.c.failure(status, resp)
 	}
 
-	var out antResposta
+	var out antResponse
 	if err := json.Unmarshal(resp, &out); err != nil {
-		// Resposta ilegível é INDISPONIBILIDADE, não defeito nosso: quase
-		// sempre é um proxy ou portal de autenticação respondendo HTML no
-		// lugar do fornecedor.
-		return nil, agent.Unavailability(NomeAnthropic, agent.ReasonProviderError,
-			"resposta ilegível: "+a.c.redact(err.Error()))
+		// An unreadable response is an UNAVAILABILITY, not a defect of ours:
+		// almost always it is a proxy or an authentication portal answering HTML
+		// in the provider's place.
+		return nil, agent.Unavailability(NameAnthropic, agent.ReasonProviderError,
+			"unreadable response: "+a.c.redact(err.Error()))
 	}
 
-	var texto strings.Builder
-	var chamadas []agent.ToolCall
+	var text strings.Builder
+	var calls []agent.ToolCall
 	for _, b := range out.Content {
 		switch b.Type {
 		case "text":
-			texto.WriteString(b.Text)
+			text.WriteString(b.Text)
 		case "tool_use":
-			// D8: aqui o `input` já é objeto — a decodificação é uma linha, e
-			// não a armadilha que ela é no outro adaptador. O caso degenerado
-			// existe mesmo assim (um `input` que não é objeto), e a resposta é
-			// a mesma dos dois lados: a chamada SOBE com Input nulo e um aviso,
-			// para o laço devolver o erro ao modelo em vez de matar o turno.
+			// D8: here `input` is already an object — the decoding is one line,
+			// and not the trap it is in the other adapter. The degenerate case
+			// exists anyway (an `input` that is not an object), and the answer
+			// is the same on both sides: the call GOES UP with a nil Input and a
+			// warning, so the loop returns the error to the model instead of
+			// killing the turn.
 			c := agent.ToolCall{ID: b.ID, Name: b.Name, RawInput: string(b.Input)}
 			if err := json.Unmarshal(b.Input, &c.Input); err != nil || c.Input == nil {
 				c.Input = nil
-				avisos = append(avisos,
-					"o modelo mandou argumentos ilegíveis para a ferramenta '"+b.Name+
-						"': a chamada foi devolvida a ele como erro (D8)")
+				warnings = append(warnings,
+					"the model sent unreadable arguments for the '"+b.Name+
+						"' tool: the call was returned to it as an error (D8)")
 			}
-			chamadas = append(chamadas, c)
+			calls = append(calls, c)
 		}
 	}
 
-	parada, ok := paradaAnthropic[out.StopReason]
+	stop, ok := stopAnthropic[out.StopReason]
 	if !ok {
-		// Motivo novo do fornecedor NÃO vira erro: parar de trabalhar por causa
-		// de uma string desconhecida seria pior que registrar que ela apareceu.
-		parada = agent.StopUnknown
+		// A new reason from the provider does NOT become an error: stopping work
+		// because of an unknown string would be worse than recording that it
+		// appeared.
+		stop = agent.StopUnknown
 	}
 
 	return &agent.Reply{
-		Text: texto.String(),
-		// As três parcelas de entrada são DISJUNTAS neste fornecedor (D2):
-		// `input_tokens` já EXCLUI o que veio do cache. Nada a subtrair aqui —
-		// e é justamente o adaptador OpenAI que precisa subtrair.
+		Text: text.String(),
+		// The three input parts are DISJOINT in this provider (D2):
+		// `input_tokens` already EXCLUDES what came from cache. Nothing to
+		// subtract here — and it is precisely the OpenAI adapter that has to
+		// subtract.
 		Usage: agent.Usage{
 			InputTokens:         out.Usage.InputTokens,
 			OutputTokens:        out.Usage.OutputTokens,
@@ -505,27 +518,28 @@ func (a *Anthropic) Send(ctx context.Context, t agent.Turn, model string,
 			CacheCreationTokens: out.Usage.CacheCreationInputTokens,
 		},
 		Model:      out.Model,
-		Provider:   NomeAnthropic,
-		StopReason: parada,
-		Data:       decodificarTexto(texto.String()),
-		ToolCalls:  chamadas,
-		// Os cinco níveis existem aqui: o effort pedido é o aplicado (D4).
+		Provider:   NameAnthropic,
+		StopReason: stop,
+		Data:       decodeText(text.String()),
+		ToolCalls:  calls,
+		// The five levels exist here: the effort requested is the one applied
+		// (D4).
 		EffortApplied: effort,
 		Capabilities:  a.Info().Capabilities,
-		Warnings:      avisos,
+		Warnings:      warnings,
 	}, nil
 }
 
-// ehCanalDeOperador reconhece o 400 específico de "este modelo não aceita
-// mensagem de sistema no meio".
+// isOperatorChannel recognizes the specific 400 of "this model does not accept a
+// system message in the middle".
 //
-// É uma APOSTA sobre um texto que a Anthropic não publica, e está escrito aqui
-// para que fique explícito onde ela está. O custo de errar para MENOS é um turno
-// que falha com 400 em vez de recuar; o custo de errar para MAIS é uma segunda
-// chamada desnecessária que provavelmente falha igual. Nenhum dos dois corrompe
-// nada — e é por isso que a heurística é aceitável aqui e não seria, por exemplo,
-// para decidir se um merge conflitou.
-func ehCanalDeOperador(corpo []byte) bool {
-	t := strings.ToLower(string(corpo))
+// It is a BET on a text Anthropic does not publish, and it is written here so
+// that where the bet lives is explicit. The cost of erring on the LOW side is a
+// turn that fails with a 400 instead of falling back; the cost of erring on the
+// HIGH side is one unnecessary second call that probably fails the same way.
+// Neither corrupts anything — and that is why the heuristic is acceptable here
+// and would not be, for example, for deciding whether a merge conflicted.
+func isOperatorChannel(body []byte) bool {
+	t := strings.ToLower(string(body))
 	return strings.Contains(t, "role") && strings.Contains(t, "system")
 }

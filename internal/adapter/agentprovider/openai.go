@@ -1,70 +1,73 @@
-// Adaptador de agent.AgentProvider sobre a API da OpenAI/Codex — o SEGUNDO
-// adaptador.
+// An agent.AgentProvider adapter over the OpenAI/Codex API — the SECOND adapter.
 //
-// Ele existe por disciplina da ADR-0001: *uma porta com um adaptador só é
-// palpite*. Enquanto só houvesse o adaptador Anthropic, "porta de provedor de
-// agente" seria a API da Anthropic com outro nome — e as diferenças que a
-// plataforma vai pagar (cache, contagem, effort) só apareceriam no dia da troca.
+// It exists out of ADR-0001's discipline: *a port with a single adapter is
+// guesswork*. While only the Anthropic adapter existed, "agent provider port"
+// would be Anthropic's API under another name — and the differences the platform
+// is going to pay for (cache, counting, effort) would only show up on the day of
+// the swap.
 //
-// AS DIVERGÊNCIAS, como este adaptador as trata (numeração de agent/entity.go):
+// THE DIVERGENCES, as this adapter handles them (numbering from
+// agent/entity.go):
 //
-// D1 (cache) — Aqui o cache de prefixo é AUTOMÁTICO: não há breakpoint para
-// marcar, não há TTL para escolher e, sobretudo, NÃO HÁ CONTABILIDADE DE CRIAÇÃO
-// de cache. A resposta informa só `prompt_tokens_details.cached_tokens`
-// (leitura). Por isso `Usage.CacheCreationTokens` é sempre 0 aqui, e o adaptador
-// NÃO anuncia `CapCacheCreationAccounting`. A consequência é de produto: o alerta
-// de invalidador silencioso da ADR-0012 §1 ("leitura de cache zerada em prefixo
-// que deveria estar estável", que é o `cost.UsageEvent.SuspectCacheMiss`)
-// continua funcionando, mas a outra metade — "escreveu cache e nunca leu" — é
-// INVISÍVEL sob este provedor. Quem lê a telemetria precisa ver a capacidade
-// junto do número, e é por isso que ela viaja no `Reply`.
+// D1 (cache) — Here the prefix cache is AUTOMATIC: there is no breakpoint to
+// mark, no TTL to choose and, above all, NO CACHE CREATION ACCOUNTING. The
+// response reports only `prompt_tokens_details.cached_tokens` (reads). That is
+// why `Usage.CacheCreationTokens` is always 0 here, and the adapter does NOT
+// announce `CapCacheCreationAccounting`. The consequence is a product one:
+// ADR-0012 §1's silent-invalidator alert ("zero cache reads on a prefix that
+// should be stable", which is `cost.UsageEvent.SuspectCacheMiss`) keeps working,
+// but the other half — "it wrote cache and never read it" — is INVISIBLE under
+// this provider. Whoever reads the telemetry needs to see the capability next to
+// the number, and that is why it travels in the `Reply`.
 //
-// D2 (contagem) — AQUI ESTÁ A ARMADILHA DA DUPLA CONTAGEM. Neste fornecedor
-// `prompt_tokens` INCLUI os tokens servidos do cache; `cached_tokens` é um
-// SUBCONJUNTO dele. Somar os dois campos como se fossem parcelas disjuntas — que
-// é o que `cost.UsageEvent` assume, porque é a semântica da Anthropic — inflaria
-// a medição da ADR-0011 sem erro nenhum aparecendo. Este adaptador SUBTRAI, e a
-// subtração é a linha mais importante do arquivo.
+// D2 (counting) — HERE IS THE DOUBLE-COUNTING TRAP. In this provider
+// `prompt_tokens` INCLUDES the tokens served from cache; `cached_tokens` is a
+// SUBSET of it. Summing the two fields as if they were disjoint parts — which is
+// what `cost.UsageEvent` assumes, because it is Anthropic's semantics — would
+// inflate ADR-0011's measurement with no error showing up at all. This adapter
+// SUBTRACTS, and the subtraction is the most important line in the file.
 //
-// D3 (operador) — `role:"developer"` é o canal de autoridade deste fornecedor, e
-// é aceito em qualquer posição. O prefixo estável e a intervenção do operador vão
-// os DOIS como `developer`, o que é correto: os dois são autoria da plataforma. O
-// que a porta garante e este adaptador cumpre é que intervenção de operador nunca
-// sai como `role:"user"`.
+// D3 (operator) — `role:"developer"` is this provider's authority channel, and it
+// is accepted in any position. The stable prefix and the operator's intervention
+// BOTH go as `developer`, which is correct: both are the platform's authorship.
+// What the port guarantees and this adapter delivers is that an operator's
+// intervention never goes out as `role:"user"`.
 //
-// D4 (effort) — Aqui só existem `low|medium|high`. `xhigh` e `max` são REBAIXADOS
-// para `high`, com aviso legível no `Reply`. Numa tarefa crítica (ADR-0007: não
-// se economiza no crítico) isso é decisão de produto, não detalhe de adaptador:
-// quem roteia para `max` e recebe `high` precisa saber que recebeu.
+// D4 (effort) — Here only `low|medium|high` exist. `xhigh` and `max` are
+// DOWNGRADED to `high`, with a readable warning in the `Reply`. On critical work
+// (ADR-0007: you do not save on the critical path) that is a product decision,
+// not an adapter detail: whoever routes to `max` and gets `high` needs to know
+// that they got it.
 //
-// D5 (parada) — `stop | length | tool_calls | content_filter`, normalizados.
+// D5 (stop) — `stop | length | tool_calls | content_filter`, normalized.
 //
-// D7 (declaração) — Aqui a ferramenta vem embrulhada: `{type:"function",
-// function:{name, description, parameters}}`. Dois nomes diferentes para a mesma
-// coisa (`parameters`, não `input_schema`) e um nível a mais de aninhamento. É
-// só casca — e é por isso que o terreno comum da porta é nome + descrição +
-// schema, e não o formato de nenhum dos dois.
+// D7 (declaration) — Here the tool comes wrapped: `{type:"function",
+// function:{name, description, parameters}}`. Two different names for the same
+// thing (`parameters`, not `input_schema`) and one more level of nesting. It is
+// only a shell — and that is why the port's common ground is name + description +
+// schema, and not either one's format.
 //
-// D8 (chamada) — **AQUI ESTÁ A SEGUNDA ARMADILHA DESTE ARQUIVO**, irmã da dupla
-// contagem. A chamada vem em `tool_calls`, FORA de `content`, e
-// `function.arguments` é uma **STRING**, não um objeto: ela ainda precisa de
-// `json.Unmarshal`. E o modelo pode emitir uma string que não é JSON válido —
-// argumento cortado no meio, aspas erradas. Ali, falhar o turno seria a resposta
-// errada: quem conserta o argumento é o MODELO, e ele só conserta se receber o
-// erro de volta. Este adaptador devolve a chamada com `Input` nulo, `RawInput`
-// preenchido e um aviso; o laço a transforma em resultado de erro.
+// D8 (call) — **HERE IS THIS FILE'S SECOND TRAP**, sibling to the double
+// counting. The call comes in `tool_calls`, OUTSIDE `content`, and
+// `function.arguments` is a **STRING**, not an object: it still needs
+// `json.Unmarshal`. And the model may emit a string that is not valid JSON — an
+// argument cut in half, wrong quotes. There, failing the turn would be the wrong
+// answer: the one who fixes the argument is the MODEL, and it only fixes it if it
+// gets the error back. This adapter returns the call with a nil `Input`, a filled
+// `RawInput` and a warning; the loop turns it into an error result.
 //
-// D9 (resultado) — Uma mensagem `role:"tool"` POR resultado, com `tool_call_id`,
-// e SEM campo de erro. O booleano `IsError` da porta não tem onde caber, então
-// ele vira MARCA NO TEXTO. Perder a marca faria o modelo ler uma falha como
-// saída normal — que é a diferença entre "o teste passou" e "o teste nem rodou".
+// D9 (result) — One `role:"tool"` message PER result, with a `tool_call_id`, and
+// NO error field. The port's `IsError` boolean has nowhere to fit, so it becomes
+// a MARKER IN THE TEXT. Losing the marker would make the model read a failure as
+// normal output — which is the difference between "the test passed" and "the test
+// did not even run".
 //
-// D10 (paralelismo) — `parallel_tool_calls` é campo de topo aqui e o default é
-// verdadeiro, que é o que queremos; o adaptador não manda a flag.
+// D10 (parallelism) — `parallel_tool_calls` is a top-level field here and the
+// default is true, which is what we want; the adapter does not send the flag.
 //
-// D11 (não declarada) — `tool_call_id` sem par é 400, igual ao outro. Por isso a
-// mensagem do assistente com `tool_calls` é sempre reenviada antes dos
-// resultados.
+// D11 (undeclared) — a `tool_call_id` with no pair is a 400, the same as the
+// other one. That is why the assistant's message with `tool_calls` is always
+// resent before the results.
 package agentprovider
 
 import (
@@ -77,16 +80,16 @@ import (
 )
 
 const (
-	NomeOpenAI = "openai"
-	BaseOpenAI = "https://api.openai.com/v1"
-	rotaOpenAI = "/chat/completions"
+	NameOpenAI  = "openai"
+	BaseOpenAI  = "https://api.openai.com/v1"
+	routeOpenAI = "/chat/completions"
 )
 
-// CatalogoOpenAI é o catálogo de PARTIDA deste fornecedor — a mesma natureza do
-// `cost.DefaultCatalog()`: nomes substituíveis, não afirmação sobre o catálogo
-// vigente da OpenAI. Quando o provedor vier configurado no recurso da conta
-// (ADR-0013), o catálogo vem de lá e isto fica só como padrão.
-func CatalogoOpenAI() map[agent.ModelClass]string {
+// CatalogOpenAI is this provider's STARTING catalog — the same nature as
+// `cost.DefaultCatalog()`: replaceable names, not an assertion about OpenAI's
+// current catalog. When the provider comes configured on the account's resource
+// (ADR-0013), the catalog comes from there and this remains only a default.
+func CatalogOpenAI() map[agent.ModelClass]string {
 	return map[agent.ModelClass]string{
 		agent.ClassCheap:  "gpt-5-mini",
 		agent.ClassMedium: "gpt-5",
@@ -94,21 +97,22 @@ func CatalogoOpenAI() map[agent.ModelClass]string {
 	}
 }
 
-// PrecosOpenAI é VAZIO de propósito.
+// PricesOpenAI is EMPTY on purpose.
 //
-// Preencher esta tabela com números que ninguém conferiu seria pior que
-// deixá-la vazia: um preço inventado alimenta o orçamento da ADR-0011 com ficção
-// convincente, e ninguém confere um número plausível. Vazia, `PriceFor` devolve
-// "desconhecido" e o ciclo do turno DIZ que não sabe calcular o custo deste
-// provedor — em vez de gravar zero, que afirmaria que foi de graça.
+// Filling this table with numbers nobody checked would be worse than leaving it
+// empty: an invented price feeds ADR-0011's budget with convincing fiction, and
+// nobody double-checks a plausible number. Empty, `PriceFor` returns "unknown"
+// and the turn's cycle SAYS it cannot compute this provider's cost — instead of
+// recording a zero, which would assert it was free.
 //
-// Preencher é trabalho de quem tem a tabela do contrato, e o lugar certo é a
-// configuração do recurso de categoria `agent` (ADR-0013).
-func PrecosOpenAI() map[string]agent.Price { return map[string]agent.Price{} }
+// Filling it is the job of whoever holds the contract's table, and the right
+// place is the configuration of the `agent`-category resource (ADR-0013).
+func PricesOpenAI() map[string]agent.Price { return map[string]agent.Price{} }
 
-// effortOpenAI: os cinco níveis do núcleo → os três daqui (D4). `xhigh` e `max`
-// caem em `high`, que é o teto REAL — fingir que aplicou `max` seria pior que
-// rebaixar, porque quem confia no `max` do crítico não teria como descobrir.
+// effortOpenAI: the core's five levels → the three here (D4). `xhigh` and `max`
+// fall into `high`, which is the REAL ceiling — pretending it applied `max` would
+// be worse than downgrading, because whoever trusts `max` on critical work would
+// have no way of finding out.
 var effortOpenAI = map[agent.Effort]agent.Effort{
 	agent.EffortLow:    agent.EffortLow,
 	agent.EffortMedium: agent.EffortMedium,
@@ -117,7 +121,7 @@ var effortOpenAI = map[agent.Effort]agent.Effort{
 	agent.EffortMax:    agent.EffortHigh,
 }
 
-var paradaOpenAI = map[string]agent.StopReason{
+var stopOpenAI = map[string]agent.StopReason{
 	"stop":           agent.StopCompleted,
 	"length":         agent.StopMaxTokens,
 	"tool_calls":     agent.StopToolUse,
@@ -126,7 +130,7 @@ var paradaOpenAI = map[string]agent.StopReason{
 
 type OpenAIConfig struct {
 	APIBase string
-	// APIKey é o valor JÁ RESOLVIDO da credencial de recurso (ADR-0013).
+	// APIKey is the ALREADY RESOLVED value of the resource credential (ADR-0013).
 	APIKey  string
 	Catalog map[agent.ModelClass]string
 	Timeout time.Duration
@@ -143,7 +147,7 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAI {
 	if base == "" {
 		base = BaseOpenAI
 	}
-	autorizar := func(r *http.Request) {
+	authorize := func(r *http.Request) {
 		if cfg.APIKey != "" {
 			r.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 		}
@@ -151,10 +155,10 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAI {
 	}
 	cat := cfg.Catalog
 	if len(cat) == 0 {
-		cat = CatalogoOpenAI()
+		cat = CatalogOpenAI()
 	}
 	return &OpenAI{
-		c:       newClient(base, NomeOpenAI, cfg.Client, cfg.Timeout, autorizar, cfg.APIKey),
+		c:       newClient(base, NameOpenAI, cfg.Client, cfg.Timeout, authorize, cfg.APIKey),
 		catalog: cat,
 	}
 }
@@ -165,61 +169,61 @@ func (o OpenAI) String() string { return "agentprovider.OpenAI{}" }
 
 func (o *OpenAI) Info() agent.ProviderInfo {
 	return agent.ProviderInfo{
-		Name:    NomeOpenAI,
+		Name:    NameOpenAI,
 		Catalog: o.catalog,
 		Capabilities: agent.Capabilities{
-			// Sem CapExplicitPrefixCache: o cache é automático (D1).
-			// Sem CapCacheCreationAccounting: criação não é reportada (D1).
-			// Sem CapFullEffortRange: xhigh e max não existem (D4).
+			// No CapExplicitPrefixCache: the cache is automatic (D1).
+			// No CapCacheCreationAccounting: creation is not reported (D1).
+			// No CapFullEffortRange: xhigh and max do not exist (D4).
 			agent.CapOperatorChannel,
 			agent.CapStructuredOutput,
 			agent.CapToolUse,
 		},
-		Prices: PrecosOpenAI(),
+		Prices: PricesOpenAI(),
 	}
 }
 
-// ── formas do fornecedor ────────────────────────────────────────────────────
+// ── the provider's shapes ───────────────────────────────────────────────────
 //
-// A ordem de declaração é a ordem do corpo serializado, e `Messages` vem cedo
-// porque a única alavanca de cache DESTE fornecedor é a ORDEM (D1): estável
-// primeiro, volátil depois. Aqui não há breakpoint para marcar — o que existe é
-// a disciplina de não deixar nada volátil antes do prefixo.
+// Declaration order is the serialized body's order, and `Messages` comes early
+// because THIS provider's only cache lever is the ORDER (D1): stable first,
+// volatile after. There is no breakpoint to mark here — what exists is the
+// discipline of leaving nothing volatile before the prefix.
 
-// oaiChamadaFuncao é o corpo de uma chamada. `Arguments` é STRING — é o D8 no
-// tipo, e é por isso que ele aparece tanto na montagem quanto na leitura.
-type oaiChamadaFuncao struct {
+// oaiCallFunction is a call's body. `Arguments` is a STRING — it is D8 in the
+// type, and that is why it shows up both in the assembly and in the reading.
+type oaiCallFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-type oaiChamada struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function oaiChamadaFuncao `json:"function"`
+type oaiCall struct {
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Function oaiCallFunction `json:"function"`
 }
 
-type oaiMensagem struct {
+type oaiMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
-	// ToolCalls só em `role:"assistant"`; ToolCallID só em `role:"tool"`. Os
-	// dois com `omitempty`: mandar `tool_calls: null` numa mensagem comum é
-	// recusado por algumas versões da API.
-	ToolCalls  []oaiChamada `json:"tool_calls,omitempty"`
-	ToolCallID string       `json:"tool_call_id,omitempty"`
+	// ToolCalls only on `role:"assistant"`; ToolCallID only on `role:"tool"`.
+	// Both with `omitempty`: sending `tool_calls: null` on an ordinary message
+	// is refused by some versions of the API.
+	ToolCalls  []oaiCall `json:"tool_calls,omitempty"`
+	ToolCallID string    `json:"tool_call_id,omitempty"`
 }
 
-// oaiFerramentaFuncao é o miolo da declaração (D7): `parameters`, não
+// oaiToolFunction is the declaration's core (D7): `parameters`, not
 // `input_schema`.
-type oaiFerramentaFuncao struct {
+type oaiToolFunction struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
 
-type oaiFerramenta struct {
-	Type     string              `json:"type"`
-	Function oaiFerramentaFuncao `json:"function"`
+type oaiTool struct {
+	Type     string          `json:"type"`
+	Function oaiToolFunction `json:"function"`
 }
 
 type oaiSchema struct {
@@ -228,34 +232,34 @@ type oaiSchema struct {
 	Schema map[string]any `json:"schema"`
 }
 
-type oaiFormato struct {
+type oaiFormat struct {
 	Type       string    `json:"type"`
 	JSONSchema oaiSchema `json:"json_schema"`
 }
 
-type oaiPedido struct {
+type oaiRequest struct {
 	Model string `json:"model"`
-	// Tools ANTES de Messages, pela mesma razão da garantia 15: a declaração é
-	// estável por thread e o que é estável vem primeiro. Aqui o cache é
-	// automático (D1) e a ORDEM é a única alavanca que existe — deixar a
-	// declaração depois da conversa a tiraria do prefixo comum sem erro nenhum,
-	// só com fatura.
+	// Tools BEFORE Messages, for guarantee 15's same reason: the declaration is
+	// stable per thread and what is stable comes first. Here the cache is
+	// automatic (D1) and the ORDER is the only lever that exists — leaving the
+	// declaration after the conversation would take it out of the common prefix
+	// with no error at all, only with an invoice.
 	//
-	// `omitempty` é a garantia 16.
-	Tools               []oaiFerramenta `json:"tools,omitempty"`
-	Messages            []oaiMensagem   `json:"messages"`
-	MaxCompletionTokens int             `json:"max_completion_tokens"`
-	ReasoningEffort     string          `json:"reasoning_effort"`
-	ResponseFormat      *oaiFormato     `json:"response_format,omitempty"`
+	// `omitempty` is guarantee 16.
+	Tools               []oaiTool    `json:"tools,omitempty"`
+	Messages            []oaiMessage `json:"messages"`
+	MaxCompletionTokens int          `json:"max_completion_tokens"`
+	ReasoningEffort     string       `json:"reasoning_effort"`
+	ResponseFormat      *oaiFormat   `json:"response_format,omitempty"`
 }
 
-type oaiResposta struct {
+type oaiResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
-			// D8: FORA de `content`, e com os argumentos como STRING.
-			ToolCalls []oaiChamada `json:"tool_calls"`
+			// D8: OUTSIDE `content`, and with the arguments as a STRING.
+			ToolCalls []oaiCall `json:"tool_calls"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -268,87 +272,87 @@ type oaiResposta struct {
 	} `json:"usage"`
 }
 
-// ── montagem ────────────────────────────────────────────────────────────────
+// ── assembly ────────────────────────────────────────────────────────────────
 
 func (o *OpenAI) Render(t agent.Turn, model string, effort agent.Effort) ([]byte, []string, error) {
-	var avisos []string
+	var warnings []string
 
-	// O prefixo estável é a PRIMEIRA mensagem. Não há breakpoint para marcar
-	// (D1): a única alavanca de cache é a ordem, e é ela que este adaptador
-	// respeita.
-	mensagens := []oaiMensagem{{Role: "developer", Content: t.StablePrefix}}
+	// The stable prefix is the FIRST message. There is no breakpoint to mark
+	// (D1): the only cache lever is the order, and it is what this adapter
+	// respects.
+	messages := []oaiMessage{{Role: "developer", Content: t.StablePrefix}}
 	for _, m := range t.Messages {
 		switch m.Role {
 		case agent.RoleOperator:
-			// Canal de autoridade — NUNCA `user` (D3).
-			mensagens = append(mensagens, oaiMensagem{Role: "developer", Content: m.Text})
+			// The authority channel — NEVER `user` (D3).
+			messages = append(messages, oaiMessage{Role: "developer", Content: m.Text})
 		case agent.RoleAssistant:
-			// D11: as chamadas voltam junto com a fala. Sem elas, o
-			// `tool_call_id` das mensagens `tool` seguintes fica órfão e a API
-			// recusa o turno.
-			mensagens = append(mensagens, oaiMensagem{
-				Role: "assistant", Content: m.Text, ToolCalls: oaiChamadas(m.ToolCalls),
+			// D11: the calls come back along with the utterance. Without them,
+			// the `tool_call_id` of the following `tool` messages is orphaned
+			// and the API refuses the turn.
+			messages = append(messages, oaiMessage{
+				Role: "assistant", Content: m.Text, ToolCalls: oaiCalls(m.ToolCalls),
 			})
 		case agent.RoleToolResult:
-			// D9: UMA mensagem por resultado — é a diferença de forma mais
-			// visível entre os dois fornecedores para o mesmo turno do
-			// domínio, e é por isso que a suíte de contrato compara CONTEÚDO e
-			// nunca contagem de mensagens.
+			// D9: ONE message per result — it is the most visible difference in
+			// shape between the two providers for the same domain turn, and that
+			// is why the contract suite compares CONTENT and never message
+			// counts.
 			for _, r := range m.ToolResults {
-				mensagens = append(mensagens, oaiMensagem{
-					Role: "tool", ToolCallID: r.CallID, Content: oaiTextoDeResultado(r),
+				messages = append(messages, oaiMessage{
+					Role: "tool", ToolCallID: r.CallID, Content: oaiResultText(r),
 				})
 			}
 		default:
-			mensagens = append(mensagens, oaiMensagem{Role: "user", Content: m.Text})
+			messages = append(messages, oaiMessage{Role: "user", Content: m.Text})
 		}
 	}
 
-	aplicado, conhecido := effortOpenAI[effort]
-	if !conhecido {
-		// Effort fora do vocabulário do núcleo cai no teto real deste
-		// fornecedor, não no piso: na dúvida não se economiza (ADR-0011 §3).
-		aplicado = agent.EffortHigh
+	applied, known := effortOpenAI[effort]
+	if !known {
+		// An effort outside the core's vocabulary falls to this provider's real
+		// ceiling, not its floor: in doubt you do not save (ADR-0011 §3).
+		applied = agent.EffortHigh
 	}
-	if aplicado != effort {
-		avisos = append(avisos,
-			"effort '"+string(effort)+"' não existe neste provedor: aplicado '"+
-				string(aplicado)+"' (D4). Em trabalho crítico, isso é decisão de produto.")
+	if applied != effort {
+		warnings = append(warnings,
+			"effort '"+string(effort)+"' does not exist in this provider: applied '"+
+				string(applied)+"' (D4). On critical work, that is a product decision.")
 	}
 
-	pedido := oaiPedido{
+	request := oaiRequest{
 		Model:               model,
-		Tools:               oaiFerramentas(t.Tools),
-		Messages:            mensagens,
+		Tools:               oaiTools(t.Tools),
+		Messages:            messages,
 		MaxCompletionTokens: t.MaxOutputTokens,
-		ReasoningEffort:     string(aplicado),
+		ReasoningEffort:     string(applied),
 	}
 	if t.OutputSchema != nil {
-		pedido.ResponseFormat = &oaiFormato{
+		request.ResponseFormat = &oaiFormat{
 			Type:       "json_schema",
 			JSONSchema: oaiSchema{Name: "dop_turn", Strict: true, Schema: t.OutputSchema},
 		}
 	}
 
-	corpo, err := json.Marshal(pedido)
+	body, err := json.Marshal(request)
 	if err != nil {
-		return nil, nil, agent.Unavailability(NomeOpenAI, agent.ReasonProviderError,
-			"pedido ilegível: "+err.Error())
+		return nil, nil, agent.Unavailability(NameOpenAI, agent.ReasonProviderError,
+			"unreadable request: "+err.Error())
 	}
-	return corpo, avisos, nil
+	return body, warnings, nil
 }
 
-// oaiFerramentas embrulha a declaração do domínio na casca deste fornecedor
-// (D7). Lista vazia devolve nil e o `omitempty` cuida do resto (garantia 16).
-func oaiFerramentas(specs []agent.ToolSpec) []oaiFerramenta {
+// oaiTools wraps the domain's declaration in this provider's shell (D7). An
+// empty list returns nil and `omitempty` takes care of the rest (guarantee 16).
+func oaiTools(specs []agent.ToolSpec) []oaiTool {
 	if len(specs) == 0 {
 		return nil
 	}
-	out := make([]oaiFerramenta, 0, len(specs))
+	out := make([]oaiTool, 0, len(specs))
 	for _, s := range specs {
-		out = append(out, oaiFerramenta{
+		out = append(out, oaiTool{
 			Type: "function",
-			Function: oaiFerramentaFuncao{
+			Function: oaiToolFunction{
 				Name: s.Name, Description: s.Description, Parameters: s.InputSchema,
 			},
 		})
@@ -356,17 +360,17 @@ func oaiFerramentas(specs []agent.ToolSpec) []oaiFerramenta {
 	return out
 }
 
-// oaiChamadas reenvia as chamadas na história (D11).
+// oaiCalls resends the calls in the history (D11).
 //
-// `Arguments` volta a ser STRING, e é aqui que o `RawInput` ganha utilidade:
-// quando o argumento veio ilegível, é ele que é reenviado — reserializar o
-// `Input` nulo mandaria `null` no lugar do que o modelo escreveu, e o modelo
-// perderia a chance de ver o próprio erro.
-func oaiChamadas(calls []agent.ToolCall) []oaiChamada {
+// `Arguments` becomes a STRING again, and this is where `RawInput` earns its
+// keep: when the argument arrived unreadable, it is what gets resent —
+// re-serializing the nil `Input` would send `null` in place of what the model
+// wrote, and the model would lose the chance to see its own error.
+func oaiCalls(calls []agent.ToolCall) []oaiCall {
 	if len(calls) == 0 {
 		return nil
 	}
-	out := make([]oaiChamada, 0, len(calls))
+	out := make([]oaiCall, 0, len(calls))
 	for _, c := range calls {
 		args := c.RawInput
 		if c.Input != nil {
@@ -377,117 +381,118 @@ func oaiChamadas(calls []agent.ToolCall) []oaiChamada {
 		if args == "" {
 			args = "{}"
 		}
-		out = append(out, oaiChamada{
+		out = append(out, oaiCall{
 			ID: c.ID, Type: "function",
-			Function: oaiChamadaFuncao{Name: c.Name, Arguments: args},
+			Function: oaiCallFunction{Name: c.Name, Arguments: args},
 		})
 	}
 	return out
 }
 
-// oaiTextoDeResultado é a metade DIFÍCIL da garantia 21.
+// oaiResultText is guarantee 21's HARD half.
 //
-// Este fornecedor não tem campo de erro na mensagem `tool` (D9): o booleano
-// `IsError` da porta não tem onde caber. Em vez de perdê-lo — o que faria o
-// modelo ler uma falha como saída normal e seguir afirmando o contrário do que
-// aconteceu —, a marca vai no TEXTO, em maiúsculas e na primeira linha, que é
-// onde o modelo a lê antes de qualquer outra coisa.
-func oaiTextoDeResultado(r agent.ToolResult) string {
+// This provider has no error field on the `tool` message (D9): the port's
+// `IsError` boolean has nowhere to fit. Instead of losing it — which would make
+// the model read a failure as normal output and carry on asserting the opposite
+// of what happened — the marker goes in the TEXT, in capitals and on the first
+// line, which is where the model reads it before anything else.
+func oaiResultText(r agent.ToolResult) string {
 	if !r.IsError {
 		return r.Content
 	}
-	return "ERRO NA FERRAMENTA:\n" + r.Content
+	return "TOOL ERROR:\n" + r.Content
 }
 
-// ── envio ───────────────────────────────────────────────────────────────────
+// ── sending ─────────────────────────────────────────────────────────────────
 
 func (o *OpenAI) Send(ctx context.Context, t agent.Turn, model string,
 	effort agent.Effort) (*agent.Reply, error) {
 
-	if !o.c.temCredencial {
-		return nil, agent.Unavailability(NomeOpenAI, agent.ReasonMissingCredential, "")
+	if !o.c.hasCredential {
+		return nil, agent.Unavailability(NameOpenAI, agent.ReasonMissingCredential, "")
 	}
 
-	corpo, avisos, err := o.Render(t, model, effort)
+	body, warnings, err := o.Render(t, model, effort)
 	if err != nil {
 		return nil, err
 	}
-	status, resp, err := o.c.post(ctx, rotaOpenAI, corpo)
+	status, resp, err := o.c.post(ctx, routeOpenAI, body)
 	if err != nil {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, o.c.falha(status, resp)
+		return nil, o.c.failure(status, resp)
 	}
 
-	var out oaiResposta
+	var out oaiResponse
 	if err := json.Unmarshal(resp, &out); err != nil {
-		return nil, agent.Unavailability(NomeOpenAI, agent.ReasonProviderError,
-			"resposta ilegível: "+o.c.redact(err.Error()))
+		return nil, agent.Unavailability(NameOpenAI, agent.ReasonProviderError,
+			"unreadable response: "+o.c.redact(err.Error()))
 	}
 
-	var texto, motivo string
-	var chamadas []agent.ToolCall
+	var text, reason string
+	var calls []agent.ToolCall
 	if len(out.Choices) > 0 {
-		texto = out.Choices[0].Message.Content
-		motivo = out.Choices[0].FinishReason
+		text = out.Choices[0].Message.Content
+		reason = out.Choices[0].FinishReason
 		for _, tc := range out.Choices[0].Message.ToolCalls {
-			// ── D8, a linha que impede o turno de morrer por argumento ruim ──
-			// `arguments` é STRING aqui. Ela pode não ser JSON válido, e nesse
-			// caso a chamada SOBE mesmo assim, com Input nulo e o texto cru
-			// junto: quem corrige o argumento é o modelo, e ele só corrige se
-			// receber o erro de volta.
+			// ── D8, the line that stops the turn from dying over a bad
+			// argument ── `arguments` is a STRING here. It may not be valid
+			// JSON, and in that case the call GOES UP anyway, with a nil Input
+			// and the raw text alongside: the one who fixes the argument is the
+			// model, and it only fixes it if it gets the error back.
 			c := agent.ToolCall{
 				ID: tc.ID, Name: tc.Function.Name, RawInput: tc.Function.Arguments,
 			}
 			if err := json.Unmarshal([]byte(tc.Function.Arguments), &c.Input); err != nil || c.Input == nil {
 				c.Input = nil
-				avisos = append(avisos,
-					"o modelo mandou argumentos ilegíveis para a ferramenta '"+
-						tc.Function.Name+"': a chamada foi devolvida a ele como erro (D8)")
+				warnings = append(warnings,
+					"the model sent unreadable arguments for the '"+
+						tc.Function.Name+"' tool: the call was returned to it as an error (D8)")
 			}
-			chamadas = append(chamadas, c)
+			calls = append(calls, c)
 		}
 	}
 
-	cacheados := out.Usage.PromptTokensDetails.CachedTokens
-	// ── D2, a linha que impede a dupla contagem ─────────────────────────────
-	// `prompt_tokens` INCLUI `cached_tokens` neste fornecedor; o domínio de
-	// custo espera parcelas DISJUNTAS. O `max(…, 0)` não é paranoia: se um dia
-	// o fornecedor mudar a semântica, o pior caso passa a ser subestimar a
-	// entrada — e não gravar um número impossível no orçamento.
-	entrada := out.Usage.PromptTokens - cacheados
-	if entrada < 0 {
-		entrada = 0
+	cached := out.Usage.PromptTokensDetails.CachedTokens
+	// ── D2, the line that stops the double counting ─────────────────────────
+	// `prompt_tokens` INCLUDES `cached_tokens` in this provider; the cost domain
+	// expects DISJOINT parts. The floor at 0 is not paranoia: if one day the
+	// provider changes the semantics, the worst case becomes underestimating the
+	// input — and not recording an impossible number in the budget.
+	input := out.Usage.PromptTokens - cached
+	if input < 0 {
+		input = 0
 	}
 
-	parada, ok := paradaOpenAI[motivo]
+	stop, ok := stopOpenAI[reason]
 	if !ok {
-		parada = agent.StopUnknown
+		stop = agent.StopUnknown
 	}
 
-	aplicado, conhecido := effortOpenAI[effort]
-	if !conhecido {
-		aplicado = agent.EffortHigh
+	applied, known := effortOpenAI[effort]
+	if !known {
+		applied = agent.EffortHigh
 	}
 
 	return &agent.Reply{
-		Text: texto,
+		Text: text,
 		Usage: agent.Usage{
-			InputTokens:     entrada,
+			InputTokens:     input,
 			OutputTokens:    out.Usage.CompletionTokens,
-			CacheReadTokens: cacheados,
-			// NÃO é zero-afirmação: é "não dá para saber" (D1). A capacidade
-			// AUSENTE em Capabilities é o que diz isso a quem lê.
+			CacheReadTokens: cached,
+			// NOT a zero-assertion: it is "it cannot be known" (D1). The
+			// capability's ABSENCE from Capabilities is what says that to
+			// whoever reads it.
 			CacheCreationTokens: 0,
 		},
 		Model:         out.Model,
-		Provider:      NomeOpenAI,
-		StopReason:    parada,
-		Data:          decodificarTexto(texto),
-		ToolCalls:     chamadas,
-		EffortApplied: aplicado,
+		Provider:      NameOpenAI,
+		StopReason:    stop,
+		Data:          decodeText(text),
+		ToolCalls:     calls,
+		EffortApplied: applied,
 		Capabilities:  o.Info().Capabilities,
-		Warnings:      avisos,
+		Warnings:      warnings,
 	}, nil
 }

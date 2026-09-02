@@ -861,7 +861,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 			}
 			// Mesmo no recuo, ela precisa estar MARCADA — entregue como texto
 			// solto do usuário, ela viraria dado indistinguível de injeção.
-			if !bytes.Contains(corpo, []byte("intervencao-do-operador")) {
+			if !bytes.Contains(corpo, []byte("operator-intervention")) {
 				t.Fatal("no recuo, a instrução entrou no turno do usuário SEM MARCAÇÃO")
 			}
 		})
