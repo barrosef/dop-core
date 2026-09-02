@@ -1,14 +1,14 @@
 //go:build integration
 
-// A MESMA suíte de contrato, agora contra o NATS de verdade.
+// The SAME contract suite, now against real NATS.
 //
 //	go test ./test/contract/ -tags=integration -v
 //
-// É esta execução que dá sentido à regra dos dois adaptadores: uma suíte que só
-// roda contra o duplo em memória prova que o duplo é consistente consigo mesmo.
-// Foi divergência de CODIFICAÇÃO entre as duas pontas — o relay publicando
-// envelope JSON e o assinante esperando base64 — que já deixou toda entrega
-// sendo descartada em silêncio.
+// It is this run that gives the two-adapter rule its meaning: a suite that only
+// runs against the in-memory double proves the double is consistent with itself.
+// It was an ENCODING divergence between the two ends — the relay publishing a
+// JSON envelope and the subscriber expecting base64 — that once had every
+// delivery discarded in silence.
 package contract_test
 
 import (
@@ -30,7 +30,7 @@ func TestEventBusContractNATS(t *testing.T) {
 		ctx := context.Background()
 		bus, err := eventbus.NewNATS(ctx, url)
 		if err != nil {
-			t.Skipf("NATS indisponível em %s: %v", url, err)
+			t.Skipf("NATS unavailable at %s: %v", url, err)
 		}
 		t.Cleanup(func() { _ = bus.Close() })
 		return bus

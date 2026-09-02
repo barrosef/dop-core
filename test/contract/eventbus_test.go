@@ -8,11 +8,11 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// O barramento em memória roda sempre; o NATS roda sob a tag `integration`
-// (eventbus_nats_test.go). Ambos passam pela MESMA suíte — foi divergência de
-// codificação entre as duas pontas que já deixou o sistema mudo e verde uma vez.
+// The in-memory bus always runs; NATS runs under the `integration` tag
+// (eventbus_nats_test.go). Both go through the SAME suite — it was an encoding
+// divergence between the two ends that once left the system mute and green.
 func TestEventBusContract(t *testing.T) {
-	contract.EventBusSuite(t, "memoria", func(t *testing.T) ports.EventBus {
+	contract.EventBusSuite(t, "memory", func(t *testing.T) ports.EventBus {
 		return eventbus.NewMemory()
 	})
 }
