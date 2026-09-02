@@ -145,7 +145,7 @@ func (e Evidence) Missing() []string {
 		return []string{"there is no commit to verify: the PR has to point at a commit"}
 	}
 
-	var aceitacao, critico int
+	var acceptance, critic int
 	for _, r := range e.Runs {
 		// A run from another commit does not count — neither for nor against. It
 		// is what caught the semantic break ADR-0008 describes: yesterday's green
@@ -163,16 +163,16 @@ func (e Evidence) Missing() []string {
 		}
 		switch r.Kind {
 		case CheckAcceptance:
-			aceitacao++
+			acceptance++
 		case CheckCritic:
-			critico++
+			critic++
 		}
 	}
-	if aceitacao == 0 {
+	if acceptance == 0 {
 		falta = append(falta, fmt.Sprintf(
 			"no passed acceptance run for commit %s (ADR-0007 §1)", short(e.Commit)))
 	}
-	if critico == 0 {
+	if critic == 0 {
 		falta = append(falta, fmt.Sprintf(
 			"the critic's opinion for commit %s is missing (ADR-0007 §3)", short(e.Commit)))
 	}
