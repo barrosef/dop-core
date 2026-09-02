@@ -1,32 +1,34 @@
-// Adaptador de delivery.GitProvider sobre o GitHub.
+// A delivery.GitProvider adapter over GitHub.
 //
-// ── Por que REST **e** GraphQL ────────────────────────────────────────────────
+// ── Why REST **and** GraphQL ─────────────────────────────────────────────────
 //
-// Porque o GitHub NÃO TEM REBASE NO REST. O único endpoint parecido é
-// `PUT /pulls/{n}/update-branch`, e a documentação dele é explícita: ele atualiza
-// o branch do PR "merging HEAD from the base branch into the pull request
-// branch". Não existe parâmetro `update_method`, não existe outra rota, e o
-// anúncio de 2022 que trouxe a opção de rebase é só da interface web.
+// Because GitHub HAS NO REBASE IN REST. The only similar endpoint is
+// `PUT /pulls/{n}/update-branch`, and its documentation is explicit: it updates
+// the PR's branch "merging HEAD from the base branch into the pull request
+// branch". There is no `update_method` parameter, there is no other route, and
+// the 2022 announcement that brought the rebase option is about the web
+// interface only.
 //
-// Isso importa muito mais do que parece: usar `update-branch` para cumprir
-// `Rebase` seria fazer uma operação DIFERENTE da pedida, com sucesso aparente. A
-// fila da ADR-0008 reaplica cada PR sobre a `main` atualizada e RE-VERIFICA; um
-// merge de main→branch também "atualiza", mas produz um histórico e um commit de
-// topo diferentes do que o domínio pediu, e nada no retorno denunciaria a troca.
-// A alternativa honesta é o GraphQL, onde o rebase existe de verdade:
+// That matters far more than it looks: using `update-branch` to fulfil `Rebase`
+// would be performing a DIFFERENT operation from the one requested, with
+// apparent success. ADR-0008's queue reapplies each PR on top of the updated
+// `main` and RE-VERIFIES; a main→branch merge also "updates", but it produces a
+// history and a head commit different from what the domain asked for, and
+// nothing in the return would give the swap away. The honest alternative is
+// GraphQL, where the rebase really exists:
 //
 //	updatePullRequestBranch(input: { pullRequestId: <node id>, updateMethod: REBASE })
 //
-// Repare no preço: a mutação recebe o NODE ID do PR (não o número), e por isso o
-// adaptador precisa localizar o PR antes. Ver Rebase.
+// Note the price: the mutation takes the PR's NODE ID (not its number), and that
+// is why the adapter has to locate the PR first. See Rebase.
 //
-// ── O que o GitHub esconde ───────────────────────────────────────────────────
+// ── What GitHub hides ────────────────────────────────────────────────────────
 //
-// Duas respostas de que este adaptador depende NÃO são publicadas pelo GitHub:
-// o texto do 422 quando já existe PR para o branch, e o texto do erro de
-// GraphQL quando o rebase conflita. Onde deu, o adaptador foi desenhado para
-// não precisar do texto (ver OpenPullRequest); onde não deu, o comentário diz
-// exatamente onde está a aposta.
+// Two responses this adapter depends on are NOT published by GitHub: the 422's
+// text when a PR already exists for the branch, and the GraphQL error's text
+// when the rebase conflicts. Where it was possible, the adapter was designed not
+// to need the text (see OpenPullRequest); where it was not, the comment says
+// exactly where the bet is.
 package gitprovider
 
 import (
@@ -45,8 +47,8 @@ import (
 type GitHub struct {
 	rest *client
 	gql  *client
-	// actorID é o ator pelo qual ESTA conexão fala (garantia 13). Não é
-	// credencial: é o nome que a conferência compara.
+	// actorID is the actor THIS connection speaks for (guarantee 13). It is not
+	// a credential: it is the name the check compares against.
 	actorID       string
 	mergeMethod   string
 	rebaseTimeout time.Duration
@@ -54,19 +56,19 @@ type GitHub struct {
 }
 
 type GitHubConfig struct {
-	// APIBase é https://api.github.com no serviço público e
-	// https://<host>/api/v3 no GitHub Enterprise.
+	// APIBase is https://api.github.com on the public service and
+	// https://<host>/api/v3 on GitHub Enterprise.
 	APIBase string
-	// GraphQLURL é separado porque no Enterprise ele NÃO é APIBase+"/graphql":
-	// o REST mora em /api/v3 e o GraphQL em /api/graphql. Deduzir um do outro
-	// funcionaria no github.com e quebraria em toda instalação self-hosted —
-	// exatamente o tipo de diferença que só aparece no cliente.
+	// GraphQLURL is separate because on Enterprise it is NOT APIBase+"/graphql":
+	// REST lives at /api/v3 and GraphQL at /api/graphql. Deducing one from the
+	// other would work on github.com and break in every self-hosted installation
+	// — exactly the kind of difference that only shows up at the client's.
 	GraphQLURL string
-	// Token é o valor JÁ RESOLVIDO da credencial de recurso (ADR-0013). Este
-	// pacote não conhece ports.SecretStore.
+	// Token is the ALREADY RESOLVED value of the resource credential
+	// (ADR-0013). This package does not know ports.SecretStore.
 	Token   string
 	ActorID string
-	// MergeMethod é política do fluxo git (ADR-0013), não do domínio.
+	// MergeMethod is the git flow's policy (ADR-0013), not the domain's.
 	MergeMethod   string // merge | squash | rebase
 	Timeout       time.Duration
 	RebaseTimeout time.Duration
@@ -84,17 +86,18 @@ func NewGitHub(cfg GitHubConfig) *GitHub {
 	if gql == "" {
 		gql = base + "/graphql"
 	}
-	autorizar := func(r *http.Request) {
+	authorize := func(r *http.Request) {
 		if cfg.Token != "" {
 			r.Header.Set("Authorization", "Bearer "+cfg.Token)
 		}
-		// Versão FIXADA no adaptador, não configurável. É a promessa que o
-		// GitHub faz de não mudar formato de resposta debaixo de nós; deixá-la
-		// de fora significa aceitar a versão default, que muda sozinha.
+		// The version is PINNED in the adapter, not configurable. It is
+		// GitHub's promise not to change the response's format under us;
+		// leaving it out means accepting the default version, which changes on
+		// its own.
 		r.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 		r.Header.Set("Accept", "application/vnd.github+json")
-		// O GitHub REJEITA com 403 requisição sem User-Agent — é um dos poucos
-		// cabeçalhos que a documentação chama de obrigatório de verdade.
+		// GitHub REJECTS a request with no User-Agent with a 403 — it is one of
+		// the few headers the documentation calls genuinely mandatory.
 		r.Header.Set("User-Agent", "dop-core")
 	}
 	mm := cfg.MergeMethod
@@ -110,8 +113,8 @@ func NewGitHub(cfg GitHubConfig) *GitHub {
 		p = defaultPoll
 	}
 	return &GitHub{
-		rest:          newClient(base, "GitHub", cfg.Client, cfg.Timeout, autorizar, cfg.Token),
-		gql:           newClient(gql, "GitHub", cfg.Client, cfg.Timeout, autorizar, cfg.Token),
+		rest:          newClient(base, "GitHub", cfg.Client, cfg.Timeout, authorize, cfg.Token),
+		gql:           newClient(gql, "GitHub", cfg.Client, cfg.Timeout, authorize, cfg.Token),
 		actorID:       cfg.ActorID,
 		mergeMethod:   mm,
 		rebaseTimeout: rt,
@@ -121,12 +124,12 @@ func NewGitHub(cfg GitHubConfig) *GitHub {
 
 var _ delivery.GitProvider = (*GitHub)(nil)
 
-// String: receptor por VALOR, para valer também em `%+v` de um valor. Sem ele,
-// o fmt percorreria os campos por reflexão — inclusive os não exportados, cujo
-// String() ele não consegue chamar.
-func (g GitHub) String() string { return "gitprovider.GitHub{ator=" + g.actorID + "}" }
+// String: a VALUE receiver, so it also applies to `%+v` of a value. Without it,
+// fmt would walk the fields through reflection — including the unexported ones,
+// whose String() it cannot call.
+func (g GitHub) String() string { return "gitprovider.GitHub{actor=" + g.actorID + "}" }
 
-// ── formas do GitHub (só o que a porta usa) ──────────────────────────────────
+// ── GitHub's shapes (only what the port uses) ────────────────────────────────
 
 type ghRef struct {
 	Ref string `json:"ref"`
@@ -140,7 +143,7 @@ type ghPR struct {
 	State          string  `json:"state"`
 	Draft          bool    `json:"draft"`
 	Merged         bool    `json:"merged"`
-	Mergeable      *bool   `json:"mergeable"` // nulo enquanto o GitHub calcula
+	Mergeable      *bool   `json:"mergeable"` // nil while GitHub computes it
 	MergeableState string  `json:"mergeable_state"`
 	MergeCommitSHA string  `json:"merge_commit_sha"`
 	CreatedAt      string  `json:"created_at"`
@@ -149,7 +152,7 @@ type ghPR struct {
 	Base           ghRef   `json:"base"`
 }
 
-type ghErro struct {
+type ghError struct {
 	Message string `json:"message"`
 	Errors  []struct {
 		Resource string `json:"resource"`
@@ -159,92 +162,92 @@ type ghErro struct {
 	} `json:"errors"`
 }
 
-// explain achata o corpo de erro do GitHub numa frase.
-func explicarGH(body []byte) string {
-	var e ghErro
-	_ = jsonUnmarshalTolerante(body, &e)
-	partes := make([]string, 0, 1+len(e.Errors))
+// explainGH flattens GitHub's error body into one sentence.
+func explainGH(body []byte) string {
+	var e ghError
+	_ = tolerantUnmarshal(body, &e)
+	parts := make([]string, 0, 1+len(e.Errors))
 	if s := strings.TrimSpace(e.Message); s != "" {
-		partes = append(partes, s)
+		parts = append(parts, s)
 	}
 	for _, it := range e.Errors {
 		if s := strings.TrimSpace(it.Message); s != "" {
-			partes = append(partes, s)
+			parts = append(parts, s)
 			continue
 		}
 		if it.Field != "" || it.Code != "" {
-			partes = append(partes, strings.TrimSpace(it.Resource+"."+it.Field+": "+it.Code))
+			parts = append(parts, strings.TrimSpace(it.Resource+"."+it.Field+": "+it.Code))
 		}
 	}
-	if len(partes) == 0 {
+	if len(parts) == 0 {
 		return strings.TrimSpace(string(body))
 	}
-	return strings.Join(partes, "; ")
+	return strings.Join(parts, "; ")
 }
 
-// dono e nome a partir de "owner/repo".
-func partesRepo(externo string) (dono, nome string, err error) {
-	p := strings.SplitN(strings.Trim(externo, "/"), "/", 3)
+// owner and name out of "owner/repo".
+func repoParts(external string) (owner, name string, err error) {
+	p := strings.SplitN(strings.Trim(external, "/"), "/", 3)
 	if len(p) != 2 || p[0] == "" || p[1] == "" {
 		return "", "", errs.Invalid(
-			"identificador de repositório do GitHub deve ser \"dono/nome\", veio %q", externo)
+			"a GitHub repository identifier must be \"owner/name\", got %q", external)
 	}
 	return p[0], p[1], nil
 }
 
-func (g *GitHub) prPath(dono, nome string, n int) string {
-	return fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(dono), url.PathEscape(nome), n)
+func (g *GitHub) prPath(owner, name string, n int) string {
+	return fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), n)
 }
 
-func (g *GitHub) prToPorta(pr ghPR) delivery.ProviderPR {
+func (g *GitHub) prToPort(pr ghPR) delivery.ProviderPR {
 	return delivery.ProviderPR{
-		// ExternalID é OPACO para o domínio (garantia 10): aqui é o número do
-		// PR, e nada fora deste arquivo pode contar com isso.
+		// ExternalID is OPAQUE to the domain (guarantee 10): here it is the PR's
+		// number, and nothing outside this file may count on that.
 		ExternalID:   strconv.Itoa(pr.Number),
 		URL:          pr.HTMLURL,
 		HeadCommit:   pr.Head.SHA,
 		TargetBranch: pr.Base.Ref,
-		CreatedAt:    instante(pr.CreatedAt),
+		CreatedAt:    instant(pr.CreatedAt),
 	}
 }
 
 // ── OpenPullRequest ──────────────────────────────────────────────────────────
 
-// OpenPullRequest abre o PR, e é IDEMPOTENTE por (repo, origem, destino).
+// OpenPullRequest opens the PR, and it is IDEMPOTENT by (repo, source, target).
 //
-// O jeito de cumprir a garantia 3 aqui merece explicação, porque o caminho
-// óbvio é uma armadilha: o GitHub recusa o segundo PR com 422 e uma mensagem de
-// validação — e essa mensagem NÃO É DOCUMENTADA. O corpo publicado do 422 tem
-// só o schema; o texto "A pull request already exists for …" é folclore de
-// observação, e o GitHub nunca prometeu mantê-lo.
+// The way guarantee 3 is delivered here deserves an explanation, because the
+// obvious path is a trap: GitHub refuses the second PR with a 422 and a
+// validation message — and that message is NOT DOCUMENTED. The published body of
+// the 422 has only the schema; the text "A pull request already exists for …" is
+// observational folklore, and GitHub never promised to keep it.
 //
-// Então o adaptador NÃO casa texto. Diante de QUALQUER 422 ele vai PROCURAR o
-// PR aberto para aquele par de branches: se existe, o 422 era duplicidade e a
-// resposta é o PR existente; se não existe, o 422 era outra coisa (branch sem
-// commits, destino inválido) e vira erro com a mensagem do provedor junto.
-// A idempotência passa a depender de um FATO consultável em vez de uma string
-// que pode mudar sem aviso.
+// So the adapter does NOT match text. Faced with ANY 422 it goes and LOOKS for
+// the open PR for that pair of branches: if it exists, the 422 was a duplicate
+// and the answer is the existing PR; if it does not, the 422 was something else
+// (a branch with no commits, an invalid target) and it becomes an error with the
+// provider's message alongside. Idempotency comes to depend on a queryable FACT
+// instead of a string that may change without notice.
 func (g *GitHub) OpenPullRequest(ctx context.Context, spec delivery.OpenPRSpec) (delivery.ProviderPR, error) {
-	if err := conferirAtor(g.actorID, spec.ActorID, "a abertura do PR"); err != nil {
+	if err := checkActor(g.actorID, spec.ActorID, "opening the PR"); err != nil {
 		return delivery.ProviderPR{}, err
 	}
-	dono, nome, err := partesRepo(spec.RepoExternalID)
+	owner, name, err := repoParts(spec.RepoExternalID)
 	if err != nil {
 		return delivery.ProviderPR{}, err
 	}
-	destino := spec.TargetBranch
-	if destino == "" {
-		destino = "main"
+	target := spec.TargetBranch
+	if target == "" {
+		target = "main"
 	}
 
 	code, body, err := g.rest.do(ctx, http.MethodPost,
-		fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(dono), url.PathEscape(nome)),
+		fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(name)),
 		map[string]any{
-			// `head` SEM o prefixo do dono: no CORPO da criação ele só é
-			// necessário para PR entre forks. Na LISTAGEM, logo abaixo, o
-			// prefixo é obrigatório. A assimetria é do GitHub, não nossa.
+			// `head` WITHOUT the owner prefix: in the creation BODY it is only
+			// needed for a PR between forks. In the LISTING, just below, the
+			// prefix is mandatory. The asymmetry is GitHub's, not ours.
 			"head":  spec.SourceBranch,
-			"base":  destino,
+			"base":  target,
 			"title": spec.Title,
 			"body":  spec.Body,
 		})
@@ -254,71 +257,71 @@ func (g *GitHub) OpenPullRequest(ctx context.Context, spec delivery.OpenPRSpec) 
 	switch {
 	case code == http.StatusCreated:
 		var pr ghPR
-		if err := g.rest.decode(body, &pr, "abertura de PR"); err != nil {
+		if err := g.rest.decode(body, &pr, "opening a PR"); err != nil {
 			return delivery.ProviderPR{}, err
 		}
-		return g.prToPorta(pr), nil
+		return g.prToPort(pr), nil
 
 	case code == http.StatusUnprocessableEntity:
-		existente, err := g.prAberto(ctx, dono, nome, spec.SourceBranch, destino)
+		existing, err := g.openPR(ctx, owner, name, spec.SourceBranch, target)
 		if err != nil {
 			return delivery.ProviderPR{}, err
 		}
-		if existente != nil {
-			// Garantia 4: devolve o que existe, com o título e o corpo
-			// ORIGINAIS. Não há PATCH aqui de propósito — o pacote de
-			// evidência da ADR-0007 §4 não pode ser substituído por um retry.
-			return g.prToPorta(*existente), nil
+		if existing != nil {
+			// Guarantee 4: return what exists, with the ORIGINAL title and
+			// body. There is no PATCH here, on purpose — ADR-0007 §4's evidence
+			// package must not be replaced by a retry.
+			return g.prToPort(*existing), nil
 		}
 		return delivery.ProviderPR{}, errs.Invalid(
-			"o GitHub recusou a abertura do PR de %q para %q: %s",
-			spec.SourceBranch, destino, g.rest.redact(explicarGH(body)))
+			"GitHub refused to open the PR from %q to %q: %s",
+			spec.SourceBranch, target, g.rest.redact(explainGH(body)))
 	}
-	return delivery.ProviderPR{}, g.rest.fail(code, explicarGH(body),
-		fmt.Sprintf("a abertura de PR em %s/%s", dono, nome))
+	return delivery.ProviderPR{}, g.rest.fail(code, explainGH(body),
+		fmt.Sprintf("opening a PR in %s/%s", owner, name))
 }
 
-// prAberto localiza o PR ABERTO de um par de branches. Devolve (nil, nil)
-// quando não há — ausência não é erro aqui, é a informação pedida.
-func (g *GitHub) prAberto(ctx context.Context, dono, nome, origem, destino string) (*ghPR, error) {
-	// `head` na listagem EXIGE o prefixo do dono ("dono:branch") — é o formato
-	// que a documentação descreve, e o único que ela descreve.
+// openPR locates the OPEN PR for a pair of branches. It returns (nil, nil) when
+// there is none — absence is not an error here, it is the information asked for.
+func (g *GitHub) openPR(ctx context.Context, owner, name, source, target string) (*ghPR, error) {
+	// `head` in the listing REQUIRES the owner prefix ("owner:branch") — it is
+	// the format the documentation describes, and the only one it describes.
 	q := url.Values{}
-	q.Set("head", dono+":"+origem)
-	q.Set("base", destino)
+	q.Set("head", owner+":"+source)
+	q.Set("base", target)
 	q.Set("state", "open")
 	q.Set("per_page", "100")
 	code, body, err := g.rest.do(ctx, http.MethodGet,
-		fmt.Sprintf("/repos/%s/%s/pulls?%s", url.PathEscape(dono), url.PathEscape(nome), q.Encode()), nil)
+		fmt.Sprintf("/repos/%s/%s/pulls?%s", url.PathEscape(owner), url.PathEscape(name), q.Encode()), nil)
 	if err != nil {
 		return nil, err
 	}
 	if code >= 300 {
-		return nil, g.rest.fail(code, explicarGH(body),
-			fmt.Sprintf("a busca de PR aberto em %s/%s", dono, nome))
+		return nil, g.rest.fail(code, explainGH(body),
+			fmt.Sprintf("searching for an open PR in %s/%s", owner, name))
 	}
 	var prs []ghPR
-	if err := g.rest.decode(body, &prs, "listagem de PRs"); err != nil {
+	if err := g.rest.decode(body, &prs, "listing PRs"); err != nil {
 		return nil, err
 	}
 	for i := range prs {
-		if prs[i].Head.Ref == origem && prs[i].Base.Ref == destino {
+		if prs[i].Head.Ref == source && prs[i].Base.Ref == target {
 			return &prs[i], nil
 		}
 	}
 	return nil, nil
 }
 
-func (g *GitHub) prPorNumero(ctx context.Context, dono, nome string, n int) (*ghPR, error) {
-	code, body, err := g.rest.do(ctx, http.MethodGet, g.prPath(dono, nome, n), nil)
+func (g *GitHub) prByNumber(ctx context.Context, owner, name string, n int) (*ghPR, error) {
+	code, body, err := g.rest.do(ctx, http.MethodGet, g.prPath(owner, name, n), nil)
 	if err != nil {
 		return nil, err
 	}
 	if code >= 300 {
-		return nil, g.rest.fail(code, explicarGH(body), fmt.Sprintf("a leitura do PR #%d", n))
+		return nil, g.rest.fail(code, explainGH(body), fmt.Sprintf("reading PR #%d", n))
 	}
 	var pr ghPR
-	if err := g.rest.decode(body, &pr, "leitura de PR"); err != nil {
+	if err := g.rest.decode(body, &pr, "reading a PR"); err != nil {
 		return nil, err
 	}
 	return &pr, nil
@@ -326,38 +329,39 @@ func (g *GitHub) prPorNumero(ctx context.Context, dono, nome string, n int) (*gh
 
 // ── Rebase ───────────────────────────────────────────────────────────────────
 
-// Rebase reaplica o branch do PR sobre o destino, pela mutação de GraphQL.
+// Rebase reapplies the PR's branch on top of the target, through the GraphQL
+// mutation.
 //
-// Duas coisas que a assinatura da porta esconde e que valem mais que o código:
+// Two things the port's signature hides and that are worth more than the code:
 //
-//  1. NÃO EXISTE "rebase de branch" nos provedores. O que existe é "reaplique o
-//     branch DESTE PR". Os dois — GitHub e GitLab — exigem um PR/MR aberto e
-//     reaplicam sobre o DESTINO DELE. Por isso `Onto` não é livre: se não bate
-//     com o destino do PR, o pedido é recusado em vez de reaplicado em cima do
-//     lugar errado em silêncio;
+//  1. THERE IS NO "branch rebase" in the providers. What exists is "reapply THIS
+//     PR's branch". Both — GitHub and GitLab — require an open PR/MR and reapply
+//     on top of ITS target. That is why `Onto` is not free: if it does not match
+//     the PR's target, the request is refused instead of being reapplied on top
+//     of the wrong place in silence;
 //
-//  2. o GitHub responde a mutação com HTTP 200 mesmo quando ela FALHA — o
-//     fracasso vem no array `errors` do corpo. Um adaptador que olhasse só o
-//     código de status relataria "rebase feito" para todo conflito, e a fila da
-//     ADR-0008 mergearia em cima de um branch que não foi reaplicado.
+//  2. GitHub answers the mutation with HTTP 200 even when it FAILS — the failure
+//     comes in the body's `errors` array. An adapter that looked only at the
+//     status code would report "rebase done" for every conflict, and ADR-0008's
+//     queue would merge on top of a branch that was not reapplied.
 func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery.RebaseResult, error) {
-	dono, nome, err := partesRepo(spec.RepoExternalID)
+	owner, name, err := repoParts(spec.RepoExternalID)
 	if err != nil {
 		return delivery.RebaseResult{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, g.rebaseTimeout)
 	defer cancel()
 
-	pr, err := g.prAberto(ctx, dono, nome, spec.Branch, spec.Onto)
+	pr, err := g.openPR(ctx, owner, name, spec.Branch, spec.Onto)
 	if err != nil {
 		return delivery.RebaseResult{}, err
 	}
 	if pr == nil {
 		return delivery.RebaseResult{}, errs.Precondition(
-			"não há PR aberto de %q para %q em %s/%s — nem o GitHub nem o GitLab "+
-				"reaplicam um branch solto: os dois só reaplicam o branch de um PR/MR, "+
-				"e sempre sobre o destino DELE",
-			spec.Branch, spec.Onto, dono, nome)
+			"there is no open PR from %q to %q in %s/%s — neither GitHub nor GitLab "+
+				"reapplies a loose branch: both only reapply a PR/MR's branch, and "+
+				"always on top of ITS target",
+			spec.Branch, spec.Onto, owner, name)
 	}
 
 	const mut = `mutation($pr:ID!,$head:GitObjectID!){` +
@@ -365,16 +369,16 @@ func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery
 		`{pullRequest{id}}}`
 	code, body, err := g.gql.do(ctx, http.MethodPost, "", map[string]any{
 		"query": mut,
-		// expectedHeadOid é concorrência otimista: se o branch andou entre a
-		// leitura e a mutação, o GitHub recusa em vez de reaplicar sobre um
-		// topo que não é o que a fila verificou.
+		// expectedHeadOid is optimistic concurrency: if the branch moved
+		// between the read and the mutation, GitHub refuses instead of
+		// reapplying on top of a head the queue did not verify.
 		"variables": map[string]any{"pr": pr.NodeID, "head": pr.Head.SHA},
 	})
 	if err != nil {
 		return delivery.RebaseResult{}, err
 	}
 	if code >= 300 {
-		return delivery.RebaseResult{}, g.gql.fail(code, explicarGH(body), "a reaplicação do branch")
+		return delivery.RebaseResult{}, g.gql.fail(code, explainGH(body), "reapplying the branch")
 	}
 	var resp struct {
 		Errors []struct {
@@ -382,7 +386,7 @@ func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := g.gql.decode(body, &resp, "reaplicação do branch"); err != nil {
+	if err := g.gql.decode(body, &resp, "reapplying the branch"); err != nil {
 		return delivery.RebaseResult{}, err
 	}
 	if len(resp.Errors) > 0 {
@@ -390,47 +394,47 @@ func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery
 		for _, e := range resp.Errors {
 			msgs = append(msgs, e.Message)
 		}
-		detalhe := g.gql.redact(strings.Join(msgs, "; "))
-		// AQUI ESTÁ A APOSTA, e ela está escrita para quem vier depois: o
-		// GitHub NÃO publica o texto do erro de rebase conflitado. Não há
-		// campo estruturado que diga "conflito" — `type` vem genérico. Então a
-		// classificação é por marcador no texto, e o default é ERRO, não
-		// conflito: classificar errado para o lado do conflito mandaria um
-		// humano resolver um problema de permissão na caixa de atenção, e o
-		// erro pelo menos aparece no lugar certo com a mensagem inteira.
-		if pareceConflito(detalhe) {
+		detail := g.gql.redact(strings.Join(msgs, "; "))
+		// HERE IS THE BET, and it is written down for whoever comes next:
+		// GitHub does NOT publish the text of a conflicted rebase's error. There
+		// is no structured field saying "conflict" — `type` comes back generic.
+		// So the classification is by a marker in the text, and the default is
+		// ERROR, not conflict: classifying wrongly towards conflict would send a
+		// human to solve a permission problem in the attention box, and the
+		// error at least shows up in the right place with the whole message.
+		if looksLikeConflict(detail) {
 			return delivery.RebaseResult{
 				BaseCommit: pr.Base.SHA,
 				HeadCommit: pr.Head.SHA,
 				Conflicted: true,
-				// Files vazio: o GitHub não publica a lista (garantia 2).
-				Detail: detalhe,
+				// Files empty: GitHub does not publish the list (guarantee 2).
+				Detail: detail,
 			}, nil
 		}
 		return delivery.RebaseResult{}, errs.Internal(
-			"o GitHub recusou a reaplicação do branch %q: %s", spec.Branch, detalhe)
+			"GitHub refused to reapply branch %q: %s", spec.Branch, detail)
 	}
 
-	// Releitura do PR para os commits de topo e de base.
+	// Re-reading the PR for the head and base commits.
 	//
-	// Ressalva honesta: o GitHub NÃO documenta se a mutação termina antes de
-	// responder. Se ela for assíncrona, este SHA pode ser o de ANTES. O que o
-	// adaptador NÃO faz é fingir: ele devolve o que leu, e a fila re-verifica
-	// sobre esse commit — que é a proteção da ADR-0008 §1 justamente contra
-	// "achei que era outro estado do código".
-	atual, err := g.prPorNumero(ctx, dono, nome, pr.Number)
+	// An honest caveat: GitHub does NOT document whether the mutation finishes
+	// before answering. If it is asynchronous, this SHA may be the one from
+	// BEFORE. What the adapter does NOT do is pretend: it returns what it read,
+	// and the queue re-verifies on top of that commit — which is ADR-0008 §1's
+	// protection against exactly "I thought the code was in another state".
+	current, err := g.prByNumber(ctx, owner, name, pr.Number)
 	if err != nil {
 		return delivery.RebaseResult{}, err
 	}
 	return delivery.RebaseResult{
-		HeadCommit: atual.Head.SHA,
-		BaseCommit: atual.Base.SHA,
+		HeadCommit: current.Head.SHA,
+		BaseCommit: current.Base.SHA,
 	}, nil
 }
 
-// pareceConflito é compartilhado pelos dois adaptadores. Português e inglês
-// porque a mensagem vem do provedor, não de nós.
-func pareceConflito(s string) bool {
+// looksLikeConflict is shared by both adapters. Portuguese and English because
+// the message comes from the provider, not from us.
+func looksLikeConflict(s string) bool {
 	l := strings.ToLower(s)
 	for _, m := range []string{"conflict", "conflito", "rebase failed", "not mergeable", "cannot be merged"} {
 		if strings.Contains(l, m) {
@@ -442,31 +446,32 @@ func pareceConflito(s string) bool {
 
 // ── Merge ────────────────────────────────────────────────────────────────────
 
-// Merge integra o PR.
+// Merge integrates the PR.
 //
-// O trabalho de verdade está na RECUSA: o GitHub responde `405 {"message":"Pull
-// Request is not mergeable"}` — a MESMA resposta — para PR já mergeado, PR com
-// conflito, PR bloqueado por checagem obrigatória e PR em rascunho. Quatro fatos
-// com consequências opostas atrás de um código só.
+// The real work is in the REFUSAL: GitHub answers `405 {"message":"Pull Request
+// is not mergeable"}` — the SAME response — for an already merged PR, a
+// conflicted PR, a PR blocked by a required check and a draft PR. Four facts
+// with opposite consequences behind a single code.
 //
-// Por isso a recusa provoca uma LEITURA do PR, e é ela que decide entre a
-// garantia 6 (já mergeado ⇒ sucesso idempotente), a garantia 1 (conflito ⇒
-// dado) e a garantia 8 (bloqueado ⇒ não mergeou e não é conflito).
+// That is why the refusal triggers a READ of the PR, and it is that read that
+// decides between guarantee 6 (already merged ⇒ idempotent success), guarantee 1
+// (conflict ⇒ data) and guarantee 8 (blocked ⇒ it did not merge and it is not a
+// conflict).
 func (g *GitHub) Merge(ctx context.Context, spec delivery.MergeSpec) (delivery.MergeResult, error) {
-	if err := conferirAtor(g.actorID, spec.ActorID, "o merge"); err != nil {
+	if err := checkActor(g.actorID, spec.ActorID, "the merge"); err != nil {
 		return delivery.MergeResult{}, err
 	}
-	dono, nome, err := partesRepo(spec.RepoExternalID)
+	owner, name, err := repoParts(spec.RepoExternalID)
 	if err != nil {
 		return delivery.MergeResult{}, err
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(spec.PRExternalID))
 	if err != nil || n <= 0 {
 		return delivery.MergeResult{}, errs.Invalid(
-			"identificador de PR do GitHub deve ser o número do PR, veio %q", spec.PRExternalID)
+			"a GitHub PR identifier must be the PR's number, got %q", spec.PRExternalID)
 	}
 
-	code, body, err := g.rest.do(ctx, http.MethodPut, g.prPath(dono, nome, n)+"/merge",
+	code, body, err := g.rest.do(ctx, http.MethodPut, g.prPath(owner, name, n)+"/merge",
 		map[string]any{"merge_method": g.mergeMethod})
 	if err != nil {
 		return delivery.MergeResult{}, err
@@ -476,13 +481,13 @@ func (g *GitHub) Merge(ctx context.Context, spec delivery.MergeSpec) (delivery.M
 			SHA    string `json:"sha"`
 			Merged bool   `json:"merged"`
 		}
-		if err := g.rest.decode(body, &ok, "merge de PR"); err != nil {
+		if err := g.rest.decode(body, &ok, "merging a PR"); err != nil {
 			return delivery.MergeResult{}, err
 		}
-		// Uma leitura a mais: a resposta do merge não traz o INSTANTE, e a
-		// garantia 7 pede o commit E o quando. A fila da ADR-0008 registra os
-		// dois no evento que alimenta o cockpit.
-		pr, err := g.prPorNumero(ctx, dono, nome, n)
+		// One extra read: the merge's response does not carry the INSTANT, and
+		// guarantee 7 asks for the commit AND the when. ADR-0008's queue records
+		// both in the event that feeds the cockpit.
+		pr, err := g.prByNumber(ctx, owner, name, n)
 		if err != nil {
 			return delivery.MergeResult{}, err
 		}
@@ -492,133 +497,135 @@ func (g *GitHub) Merge(ctx context.Context, spec delivery.MergeSpec) (delivery.M
 		}
 		return delivery.MergeResult{
 			Merged: ok.Merged || pr.Merged, MergeCommit: commit,
-			MergedAtUnix: unixDe(instantePtr(pr.MergedAt)),
+			MergedAtUnix: unixOf(instantPtr(pr.MergedAt)),
 		}, nil
 	}
 	switch code {
 	case http.StatusMethodNotAllowed, http.StatusConflict, http.StatusUnprocessableEntity:
-		return g.classificarRecusa(ctx, dono, nome, n, explicarGH(body))
+		return g.classifyRefusal(ctx, owner, name, n, explainGH(body))
 	}
-	return delivery.MergeResult{}, g.rest.fail(code, explicarGH(body),
-		fmt.Sprintf("o merge do PR #%d em %s/%s", n, dono, nome))
+	return delivery.MergeResult{}, g.rest.fail(code, explainGH(body),
+		fmt.Sprintf("merging PR #%d in %s/%s", n, owner, name))
 }
 
-// classificarRecusa desfaz a ambiguidade do 405.
-func (g *GitHub) classificarRecusa(ctx context.Context, dono, nome string, n int, motivo string) (delivery.MergeResult, error) {
-	pr, err := g.prPorNumero(ctx, dono, nome, n)
+// classifyRefusal undoes the 405's ambiguity.
+func (g *GitHub) classifyRefusal(ctx context.Context, owner, name string, n int, reason string) (delivery.MergeResult, error) {
+	pr, err := g.prByNumber(ctx, owner, name, n)
 	if err != nil {
 		return delivery.MergeResult{}, err
 	}
-	// `mergeable` é NULO enquanto o GitHub calcula. Nulo não é "sem conflito":
-	// é "não sei", e garantia 9 diz que "não sei" nunca vira Conflicted=false.
-	// Então esperamos a resposta, e desistir vira KindUnavailable.
-	prazo := time.Now().Add(g.rebaseTimeout)
+	// `mergeable` is NIL while GitHub computes it. Nil is not "no conflict": it
+	// is "I do not know", and guarantee 9 says "I do not know" never becomes
+	// Conflicted=false. So we wait for the answer, and giving up becomes
+	// KindUnavailable.
+	deadline := time.Now().Add(g.rebaseTimeout)
 	for pr.Mergeable == nil && !pr.Merged {
-		if time.Now().After(prazo) {
+		if time.Now().After(deadline) {
 			return delivery.MergeResult{}, errs.New(errs.KindUnavailable,
-				"o GitHub não terminou de calcular a mergeabilidade do PR #%d — "+
-					"sem essa resposta não dá para distinguir conflito de bloqueio, e "+
-					"chutar qualquer um dos dois manda a fila para o lado errado", n)
+				"GitHub did not finish computing PR #%d's mergeability — without that "+
+					"answer there is no telling a conflict from a block, and guessing "+
+					"either one sends the queue the wrong way", n)
 		}
-		if err := esperar(ctx, g.poll, "espera pela mergeabilidade do PR"); err != nil {
+		if err := wait(ctx, g.poll, "waiting for the PR's mergeability"); err != nil {
 			return delivery.MergeResult{}, err
 		}
-		if pr, err = g.prPorNumero(ctx, dono, nome, n); err != nil {
+		if pr, err = g.prByNumber(ctx, owner, name, n); err != nil {
 			return delivery.MergeResult{}, err
 		}
 	}
 	if pr.Merged {
-		// Garantia 6. A fila reprocessa a posição depois de uma queda e precisa
-		// reconhecer o que já entrou: devolver erro aqui faria a entrada
-		// mergeada voltar para a caixa de atenção como problema. Esta checagem
-		// é ÚNICA de propósito — havia uma segunda, antes do laço, e a
-		// duplicata fazia o experimento de quebra passar: apagar uma das duas
-		// não mudava comportamento nenhum, e garantia que sobrevive a ser
-		// apagada não está sendo verificada.
+		// Guarantee 6. The queue reprocesses the position after a crash and has
+		// to recognize what already went in: returning an error here would send
+		// the merged entry back to the attention box as a problem. This check is
+		// SINGLE on purpose — there used to be a second one, before the loop,
+		// and the duplicate made the break experiment pass: deleting either one
+		// changed no behaviour at all, and a guarantee that survives being
+		// deleted is not being verified.
 		return delivery.MergeResult{
 			Merged: true, MergeCommit: pr.MergeCommitSHA,
-			MergedAtUnix: unixDe(instantePtr(pr.MergedAt)),
-			Detail:       "o PR já estava mergeado",
+			MergedAtUnix: unixOf(instantPtr(pr.MergedAt)),
+			Detail:       "the PR was already merged",
 		}, nil
 	}
 	if pr.Mergeable != nil && !*pr.Mergeable {
-		// Garantia 1: conflito é DADO.
+		// Guarantee 1: a conflict is DATA.
 		return delivery.MergeResult{
 			Conflicted: true,
 			Detail: g.rest.redact(strings.TrimSpace(fmt.Sprintf(
-				"o GitHub recusou o merge por conteúdo que não integra (%s; mergeable_state=%q)",
-				motivo, pr.MergeableState))),
+				"GitHub refused the merge over content that does not integrate (%s; mergeable_state=%q)",
+				reason, pr.MergeableState))),
 		}, nil
 	}
-	// Garantia 8: não mergeou, não é conflito. Rascunho, checagem obrigatória
-	// pendente, revisão faltando, regra de proteção do branch.
+	// Guarantee 8: it did not merge, and it is not a conflict. A draft, a
+	// pending required check, a missing review, a branch protection rule.
 	return delivery.MergeResult{
 		Detail: g.rest.redact(strings.TrimSpace(fmt.Sprintf(
-			"o GitHub ainda não permite o merge (%s; mergeable_state=%q; rascunho=%v)",
-			motivo, pr.MergeableState, pr.Draft))),
+			"GitHub does not allow the merge yet (%s; mergeable_state=%q; draft=%v)",
+			reason, pr.MergeableState, pr.Draft))),
 	}, nil
 }
 
 // ── HasNativeQueue ───────────────────────────────────────────────────────────
 
-// HasNativeQueue diz se este repositório tem merge queue nativa (ADR-0008 §4).
+// HasNativeQueue says whether this repository has a native merge queue
+// (ADR-0008 §4).
 //
-// Divergência que a normalização teve de absorver: a merge queue do GitHub é
-// POR BRANCH — ela é uma regra de ruleset que casa com um padrão de ref — e os
-// merge trains do GitLab são POR PROJETO. A porta pergunta por REPOSITÓRIO, e a
-// resposta honesta para o GitHub é sobre o branch que a fila da ADR-0008
-// realmente disputa: o branch PADRÃO. Por isso as duas chamadas — descobrir o
-// default e perguntar as regras dele.
+// A divergence the normalization had to absorb: GitHub's merge queue is PER
+// BRANCH — it is a ruleset rule matching a ref pattern — and GitLab's merge
+// trains are PER PROJECT. The port asks per REPOSITORY, and the honest answer
+// for GitHub is about the branch ADR-0008's queue actually contends for: the
+// DEFAULT branch. Hence the two calls — find the default and ask for its rules.
 //
-// Garantia 14 em duas linhas: 403 vira ERRO. Sem permissão para ler as regras,
-// o adaptador não SABE — e responder `false` seria afirmar "pode orquestrar por
-// cima" sem ter olhado, com duas filas mergeando o mesmo repositório como
-// prêmio.
+// Guarantee 14 in two lines: a 403 becomes an ERROR. With no permission to read
+// the rules, the adapter does not KNOW — and answering `false` would be
+// asserting "you may orchestrate on top" without having looked, with two queues
+// merging the same repository as the prize.
 func (g *GitHub) HasNativeQueue(ctx context.Context, repoExternalID string) (bool, error) {
-	dono, nome, err := partesRepo(repoExternalID)
+	owner, name, err := repoParts(repoExternalID)
 	if err != nil {
 		return false, err
 	}
 	code, body, err := g.rest.do(ctx, http.MethodGet,
-		fmt.Sprintf("/repos/%s/%s", url.PathEscape(dono), url.PathEscape(nome)), nil)
+		fmt.Sprintf("/repos/%s/%s", url.PathEscape(owner), url.PathEscape(name)), nil)
 	if err != nil {
 		return false, err
 	}
 	if code >= 300 {
-		return false, g.rest.fail(code, explicarGH(body), fmt.Sprintf("a leitura do repositório %s/%s", dono, nome))
+		return false, g.rest.fail(code, explainGH(body), fmt.Sprintf("reading repository %s/%s", owner, name))
 	}
 	var repo struct {
 		DefaultBranch string `json:"default_branch"`
 	}
-	if err := g.rest.decode(body, &repo, "leitura de repositório"); err != nil {
+	if err := g.rest.decode(body, &repo, "reading a repository"); err != nil {
 		return false, err
 	}
 	if repo.DefaultBranch == "" {
 		return false, errs.New(errs.KindUnavailable,
-			"o GitHub não informou o branch padrão de %s/%s — sem ele não há sobre "+
-				"qual branch perguntar pela fila nativa", dono, nome)
+			"GitHub did not report the default branch of %s/%s — without it there is no "+
+				"branch to ask about the native queue for", owner, name)
 	}
 
-	// Esta rota resolve rulesets de repositório E de organização, já filtrados
-	// pelos que estão em vigor. A alternativa (listar rulesets e abrir um a um)
-	// devolve resumo sem as regras e obrigaria a casar os globos de ref na mão.
+	// This route resolves repository AND organization rulesets, already filtered
+	// to the ones in force. The alternative (listing rulesets and opening them
+	// one by one) returns a summary with no rules and would force matching the
+	// ref globs by hand.
 	code, body, err = g.rest.do(ctx, http.MethodGet,
 		fmt.Sprintf("/repos/%s/%s/rules/branches/%s",
-			url.PathEscape(dono), url.PathEscape(nome), url.PathEscape(repo.DefaultBranch)), nil)
+			url.PathEscape(owner), url.PathEscape(name), url.PathEscape(repo.DefaultBranch)), nil)
 	if err != nil {
 		return false, err
 	}
 	if code >= 300 {
-		return false, g.rest.fail(code, explicarGH(body),
-			fmt.Sprintf("a leitura das regras do branch %q de %s/%s", repo.DefaultBranch, dono, nome))
+		return false, g.rest.fail(code, explainGH(body),
+			fmt.Sprintf("reading the rules of branch %q of %s/%s", repo.DefaultBranch, owner, name))
 	}
-	var regras []struct {
+	var rules []struct {
 		Type string `json:"type"`
 	}
-	if err := g.rest.decode(body, &regras, "regras de branch"); err != nil {
+	if err := g.rest.decode(body, &rules, "branch rules"); err != nil {
 		return false, err
 	}
-	for _, r := range regras {
+	for _, r := range rules {
 		if r.Type == "merge_queue" {
 			return true, nil
 		}

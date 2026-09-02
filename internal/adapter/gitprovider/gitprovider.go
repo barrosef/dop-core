@@ -1,28 +1,29 @@
-// Package gitprovider implementa a porta delivery.GitProvider sobre as APIs do
-// GitHub e do GitLab.
+// Package gitprovider implements the delivery.GitProvider port over GitHub's and
+// GitLab's APIs.
 //
-// Padrão desta casa, pelos mesmos motivos dos adaptadores de secretstore e
-// sandbox: `net/http` puro, sem SDK de fornecedor. O SDK traria o vocabulário do
-// provedor de volta para dentro do processo (tipos `github.PullRequest`,
-// `gitlab.MergeRequest`) e a primeira vez que alguém os passasse adiante a porta
-// teria vazado. Fora isso, os dois SDKs oficiais arrastam árvores de dependência
-// grandes para usar seis chamadas HTTP.
+// The house pattern, for the same reasons as the secretstore and sandbox
+// adapters: plain `net/http`, no vendor SDK. The SDK would bring the provider's
+// vocabulary back into the process (`github.PullRequest`, `gitlab.MergeRequest`
+// types) and the first time somebody passed them along the port would have
+// leaked. Beyond that, both official SDKs drag large dependency trees along to
+// make six HTTP calls.
 //
-// ── Onde mora o token ────────────────────────────────────────────────────────
+// ── Where the token lives ────────────────────────────────────────────────────
 //
-// O token do provedor é CREDENCIAL DE RECURSO (ADR-0013): vive no cofre, atrás
-// de ports.SecretStore, e quem o resolve é o composition root. Este pacote NÃO
-// importa ports.SecretStore, não recebe cofre por parâmetro e não sabe que
-// cofre existe — recebe o valor pronto no construtor. A razão é a mesma da
-// ADR-0001: um adaptador de git que soubesse consultar o cofre passaria a ter
-// duas responsabilidades e uma delas seria impossível de testar sem infra.
+// The provider's token is a RESOURCE CREDENTIAL (ADR-0013): it lives in the
+// vault, behind ports.SecretStore, and the composition root resolves it. This
+// package does NOT import ports.SecretStore, does not receive a vault as a
+// parameter and does not know a vault exists — it receives the value ready-made
+// in the constructor. The reason is ADR-0001's: a git adapter that knew how to
+// query the vault would have two responsibilities, and one of them would be
+// impossible to test without infrastructure.
 //
-// E o token, uma vez dentro, não sai: ele é capturado num CLOSURE de
-// autorização em vez de guardado num campo. Campo de struct — mesmo não
-// exportado — é impresso por `%+v`, porque o fmt lê campos não exportados por
-// reflexão e não consegue chamar o String() deles. Closure imprime como
-// endereço. É a diferença entre "prometemos não logar o token" e "não há token
-// para logar".
+// And the token, once inside, does not leave: it is captured in an authorization
+// CLOSURE instead of kept in a field. A struct field — even an unexported one —
+// is printed by `%+v`, because fmt reads unexported fields through reflection and
+// cannot call their String(). A closure prints as an address. It is the
+// difference between "we promise not to log the token" and "there is no token to
+// log".
 package gitprovider
 
 import (
@@ -37,45 +38,46 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// DefaultTimeout cobre a chamada única. O rebase, que é assíncrono nos dois
-// provedores (garantia 9 da porta), tem prazo próprio — ver RebaseTimeout.
+// DefaultTimeout covers the single call. The rebase, which is asynchronous in
+// both providers (the port's guarantee 9), has a deadline of its own — see
+// RebaseTimeout.
 const DefaultTimeout = 30 * time.Second
 
-// DefaultRebaseTimeout é quanto o adaptador espera o provedor TERMINAR de
-// reaplicar antes de desistir. Precisa ser generoso: no GitLab o rebase é uma
-// tarefa de fila do Sidekiq, e num repositório grande em hora cheia ela demora.
-// Desistir cedo devolve KindUnavailable — o que é honesto — mas transforma
-// fila lenta em falha, então o default é alto de propósito.
+// DefaultRebaseTimeout is how long the adapter waits for the provider to FINISH
+// reapplying before giving up. It has to be generous: in GitLab the rebase is a
+// Sidekiq queue task, and in a large repository at a busy hour it takes a while.
+// Giving up early returns KindUnavailable — which is honest — but turns a slow
+// queue into a failure, so the default is high on purpose.
 const DefaultRebaseTimeout = 3 * time.Minute
 
-// defaultPoll é o intervalo entre duas leituras do estado do rebase.
+// defaultPoll is the interval between two reads of the rebase's state.
 const defaultPoll = 2 * time.Second
 
-// httpDoer permite injetar o cliente na suíte de contrato sem expor o
-// transporte para o composition root — mesma escolha do adaptador de
-// secretstore, onde `Client` existe "para teste".
+// httpDoer allows injecting the client in the contract suite without exposing
+// the transport to the composition root — the same choice as the secretstore
+// adapter, where `Client` exists "for tests".
 type httpDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// client é a plumbing compartilhada entre GitHub e GitLab.
+// client is the plumbing shared between GitHub and GitLab.
 //
-// `authorize` é o closure que carrega o token (ver o cabeçalho do pacote).
-// `redact` é a rede de segurança: se um dia alguém montar uma URL com o token
-// dentro, ou o provedor devolver o token no corpo do erro, a mensagem sai
-// redigida em vez de vazar. Cinto E suspensório, porque o custo de errar aqui é
-// alguém abrir PR e mergear como o dono da conta.
+// `authorize` is the closure that carries the token (see the package header).
+// `redact` is the safety net: if one day somebody assembles a URL with the token
+// inside, or the provider returns the token in the error body, the message comes
+// out redacted instead of leaking. Belt AND braces, because the cost of getting
+// this wrong is somebody opening a PR and merging as the account's owner.
 type client struct {
 	base      string
 	http      httpDoer
 	authorize func(*http.Request)
 	redact    func(string) string
-	who       string // "GitHub" | "GitLab", para a mensagem de erro
+	who       string // "GitHub" | "GitLab", for the error message
 }
 
-// String impede que a instância inteira revele qualquer coisa quando alguém
-// escreve `log.Info("...", "provider", p)`. Receptor por VALOR de propósito:
-// com receptor por ponteiro, `%+v` de um valor não chamaria este método.
+// String stops the whole instance from revealing anything when somebody writes
+// `log.Info("...", "provider", p)`. A VALUE receiver on purpose: with a pointer
+// receiver, `%+v` of a value would not call this method.
 func (c client) String() string { return "gitprovider.client{" + c.who + "}" }
 
 func newClient(base, who string, doer httpDoer, timeout time.Duration, authorize func(*http.Request), token string) *client {
@@ -83,19 +85,20 @@ func newClient(base, who string, doer httpDoer, timeout time.Duration, authorize
 		if timeout <= 0 {
 			timeout = DefaultTimeout
 		}
-		// Sem CA customizada, ao contrário dos adaptadores de k8s: aqui o
-		// certificado é público (api.github.com) ou de uma instalação
-		// self-hosted que já precisa estar no bundle do sistema. Inventar um
-		// pool aqui só criaria um lugar a mais para o TLS quebrar em silêncio.
+		// No custom CA, unlike the k8s adapters: here the certificate is public
+		// (api.github.com) or belongs to a self-hosted installation that already
+		// has to be in the system bundle. Inventing a pool here would only
+		// create one more place for TLS to break in silence.
 		doer = &http.Client{Timeout: timeout}
 	}
 	return &client{base: strings.TrimRight(base, "/"), http: doer, authorize: authorize,
 		redact: redactor(token), who: who}
 }
 
-// redactor devolve a função que apaga o token de qualquer texto que vá subir.
-// Token vazio devolve identidade — sem isso, `strings.ReplaceAll(s, "", x)`
-// espalharia o marcador entre TODOS os caracteres da mensagem.
+// redactor returns the function that erases the token from any text about to go
+// up. An empty token returns the identity — without that,
+// `strings.ReplaceAll(s, "", x)` would spread the marker between ALL the
+// message's characters.
 func redactor(token string) func(string) string {
 	if token == "" {
 		return func(s string) string { return s }
@@ -103,21 +106,21 @@ func redactor(token string) func(string) string {
 	return func(s string) string { return strings.ReplaceAll(s, token, "***") }
 }
 
-// do executa a chamada e devolve status + corpo. Nunca devolve o corpo junto de
-// um erro de transporte: erro de transporte não tem corpo, e devolver os dois
-// convida quem chama a inspecionar bytes que não existem.
+// do makes the call and returns status + body. It never returns the body
+// alongside a transport error: a transport error has no body, and returning both
+// invites the caller to inspect bytes that do not exist.
 func (c *client) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
 	var rdr io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, errs.Wrap(errs.KindInternal, err, "pedido ilegível para o %s", c.who)
+			return 0, nil, errs.Wrap(errs.KindInternal, err, "request unreadable for %s", c.who)
 		}
 		rdr = strings.NewReader(string(raw))
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rdr)
 	if err != nil {
-		return 0, nil, errs.Wrap(errs.KindInternal, err, "requisição inválida para o %s", c.who)
+		return 0, nil, errs.Wrap(errs.KindInternal, err, "invalid request for %s", c.who)
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -126,64 +129,66 @@ func (c *client) do(ctx context.Context, method, path string, body any) (int, []
 	c.authorize(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// A mensagem do net/http carrega a URL; a URL não carrega o token
-		// (autorização vai em cabeçalho), mas o redator passa por cima assim
-		// mesmo — é barato e cobre o dia em que alguém mudar isso.
-		return 0, nil, errs.New(errs.KindUnavailable, "falha ao falar com o %s: %s",
+		// net/http's message carries the URL; the URL does not carry the token
+		// (authorization goes in a header), but the redactor passes over it
+		// anyway — it is cheap and it covers the day somebody changes that.
+		return 0, nil, errs.New(errs.KindUnavailable, "failed to talk to %s: %s",
 			c.who, c.redact(err.Error()))
 	}
 	defer resp.Body.Close()
 	out, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return resp.StatusCode, nil, errs.New(errs.KindUnavailable,
-			"resposta truncada do %s: %s", c.who, c.redact(err.Error()))
+			"truncated response from %s: %s", c.who, c.redact(err.Error()))
 	}
 	return resp.StatusCode, out, nil
 }
 
-// fail traduz o status HTTP para o Kind da porta (garantia 11).
+// fail translates the HTTP status into the port's Kind (guarantee 11).
 //
-// A tradução é a MESMA nos dois provedores porque a garantia é da porta, não do
-// fornecedor. O que muda é de onde sai a mensagem legível — e isso cada
-// adaptador resolve com o seu `explain`.
+// The translation is the SAME in both providers because the guarantee is the
+// port's, not the vendor's. What changes is where the readable message comes
+// from — and each adapter solves that with its own `explain`.
 func (c *client) fail(code int, msg, what string) error {
 	msg = strings.TrimSpace(c.redact(msg))
 	switch code {
 	case http.StatusUnauthorized:
-		// Sem detalhe do provedor de propósito: 401 é sempre a mesma decisão
-		// para quem opera — a credencial não serve — e o corpo do 401 é o
-		// lugar mais provável de um provedor ecoar o que recebeu.
+		// No provider detail, on purpose: a 401 is always the same decision for
+		// whoever operates — the credential does not work — and a 401's body is
+		// the likeliest place for a provider to echo what it received.
 		return errs.New(errs.KindUnauthorized,
-			"o %s recusou a credencial deste recurso (HTTP 401)", c.who)
+			"%s refused this resource's credential (HTTP 401)", c.who)
 	case http.StatusForbidden:
-		return errs.Permission("o %s negou %s: %s", c.who, what, msg)
+		return errs.Permission("%s denied %s: %s", c.who, what, msg)
 	case http.StatusNotFound:
-		// Ver garantia 11: o GitHub responde 404 para repositório privado que o
-		// token não enxerga, e não há como saber daqui se sumiu ou se é
-		// invisível. A mensagem diz as duas possibilidades para quem for
-		// investigar.
-		return errs.NotFound("%s no %s — inexistente ou fora do alcance desta credencial", what, c.who)
+		// See guarantee 11: GitHub answers 404 for a private repository the
+		// token cannot see, and there is no way from here to know whether it is
+		// gone or invisible. The message states both possibilities for whoever
+		// investigates.
+		return errs.NotFound("%s at %s — nonexistent or outside this credential's reach", what, c.who)
 	}
 	if code == http.StatusTooManyRequests || code >= 500 {
-		return errs.New(errs.KindUnavailable, "o %s não atendeu %s (HTTP %d): %s", c.who, what, code, msg)
+		return errs.New(errs.KindUnavailable, "%s did not serve %s (HTTP %d): %s", c.who, what, code, msg)
 	}
-	return errs.Internal("o %s recusou %s (HTTP %d): %s", c.who, what, code, msg)
+	return errs.Internal("%s refused %s (HTTP %d): %s", c.who, what, code, msg)
 }
 
-// decode desserializa com mensagem útil. Resposta ilegível é KindUnavailable, e
-// não Internal: quase sempre é um proxy ou portal de autenticação respondendo
-// HTML no lugar do provedor — problema do caminho, não do nosso código.
+// decode deserializes with a useful message. An unreadable response is
+// KindUnavailable, and not Internal: almost always it is a proxy or an
+// authentication portal answering HTML in the provider's place — a problem of
+// the path, not of our code.
 func (c *client) decode(body []byte, v any, what string) error {
 	if err := json.Unmarshal(body, v); err != nil {
 		return errs.New(errs.KindUnavailable,
-			"resposta ilegível do %s em %s: %s", c.who, what, c.redact(err.Error()))
+			"unreadable response from %s at %s: %s", c.who, what, c.redact(err.Error()))
 	}
 	return nil
 }
 
-// esperar dorme respeitando o contexto. Devolve KindUnavailable no
-// cancelamento, que é a garantia 9: "não sei" nunca vira "não conflitou".
-func esperar(ctx context.Context, d time.Duration, what string) error {
+// wait sleeps while respecting the context. It returns KindUnavailable on
+// cancellation, which is guarantee 9: "I do not know" never becomes "it did not
+// conflict".
+func wait(ctx context.Context, d time.Duration, what string) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
@@ -194,51 +199,52 @@ func esperar(ctx context.Context, d time.Duration, what string) error {
 	}
 }
 
-// conferirAtor é a garantia 13, escrita uma vez para os dois adaptadores.
+// checkActor is guarantee 13, written once for both adapters.
 //
-// Recusar é melhor que ignorar: uma instância fala por UMA credencial, e um
-// pedido em nome de outro ator abriria o PR assinado por quem quer que seja o
-// dono do token fiado. A ADR-0003 exige que quem conduziu assine — silenciar
-// aqui transformaria essa exigência numa mentira que ninguém veria.
-func conferirAtor(instancia, pedido, op string) error {
-	if pedido == "" || instancia == "" || pedido == instancia {
+// Refusing is better than ignoring: one instance speaks for ONE credential, and
+// a request on behalf of another actor would open the PR signed by whoever owns
+// the token instead. ADR-0003 requires whoever drove to sign — silencing this
+// would turn that requirement into a lie nobody would see.
+func checkActor(instance, requested, op string) error {
+	if requested == "" || instance == "" || requested == instance {
 		return nil
 	}
 	return errs.Permission(
-		"esta conexão com o provedor fala pelo ator %q; %s foi pedido em nome de %q "+
-			"(ADR-0003: quem conduziu assina) — monte a conexão com a credencial do ator certo",
-		instancia, op, pedido)
+		"this connection to the provider speaks for actor %q; %s was requested on behalf of %q "+
+			"(ADR-0003: whoever drove signs) — build the connection with the right actor's credential",
+		instance, op, requested)
 }
 
-// textoDe achata o que os provedores devolvem em `message`: o GitHub manda
-// string, o GitLab manda ora string, ora lista de strings, ora objeto de campo
-// para lista de erros. Achatar aqui evita três decodificadores diferentes.
-func textoDe(v any) string {
+// textOf flattens what the providers return in `message`: GitHub sends a string,
+// GitLab sends sometimes a string, sometimes a list of strings, sometimes an
+// object mapping a field to a list of errors. Flattening here avoids three
+// different decoders.
+func textOf(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return ""
 	case string:
 		return t
 	case []any:
-		partes := make([]string, 0, len(t))
+		parts := make([]string, 0, len(t))
 		for _, e := range t {
-			if s := textoDe(e); s != "" {
-				partes = append(partes, s)
+			if s := textOf(e); s != "" {
+				parts = append(parts, s)
 			}
 		}
-		return strings.Join(partes, "; ")
+		return strings.Join(parts, "; ")
 	case map[string]any:
-		partes := make([]string, 0, len(t))
+		parts := make([]string, 0, len(t))
 		for k, e := range t {
-			if s := textoDe(e); s != "" {
-				partes = append(partes, k+": "+s)
+			if s := textOf(e); s != "" {
+				parts = append(parts, k+": "+s)
 			}
 		}
-		// Ordem estável: mapa em Go itera aleatoriamente, e mensagem de erro
-		// que muda de ordem entre execuções é impossível de casar em teste e
-		// irritante de ler em log.
-		sortStrings(partes)
-		return strings.Join(partes, "; ")
+		// A stable order: a Go map iterates randomly, and an error message that
+		// changes order between runs is impossible to match in a test and
+		// annoying to read in a log.
+		sortStrings(parts)
+		return strings.Join(parts, "; ")
 	default:
 		return fmt.Sprint(t)
 	}
@@ -252,16 +258,16 @@ func sortStrings(s []string) {
 	}
 }
 
-// jsonUnmarshalTolerante existe só para o caminho de ERRO: quando o provedor
-// (ou um proxy no meio) devolve algo que não é o JSON esperado, queremos a
-// mensagem que der para extrair, não um segundo erro por cima do primeiro.
-func jsonUnmarshalTolerante(b []byte, v any) error { return json.Unmarshal(b, v) }
+// tolerantUnmarshal exists only for the ERROR path: when the provider (or a
+// proxy in between) returns something that is not the expected JSON, we want
+// whatever message can be extracted, not a second error on top of the first.
+func tolerantUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
 
-// instante converte a data ISO-8601 dos provedores. Data ilegível vira o
-// instante ZERO em vez de erro: a garantia da porta é sobre identidade e
-// conflito, e derrubar a abertura de um PR por causa de um fuso mal formatado
-// seria trocar um problema cosmético por um bloqueio de entrega.
-func instante(s string) time.Time {
+// instant converts the providers' ISO-8601 date. An unreadable date becomes the
+// ZERO instant instead of an error: the port's guarantee is about identity and
+// conflict, and bringing down the opening of a PR over a badly formatted time
+// zone would trade a cosmetic problem for a delivery block.
+func instant(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}
@@ -274,16 +280,17 @@ func instante(s string) time.Time {
 	return time.Time{}
 }
 
-func instantePtr(s *string) time.Time {
+func instantPtr(s *string) time.Time {
 	if s == nil {
 		return time.Time{}
 	}
-	return instante(*s)
+	return instant(*s)
 }
 
-// unixDe devolve 0 — e não o Unix do instante zero, que é -62135596800 — para
-// data ausente. É a diferença entre "não mergeou ainda" e "mergeou no ano 1".
-func unixDe(t time.Time) int64 {
+// unixOf returns 0 — and not the zero instant's Unix time, which is
+// -62135596800 — for an absent date. It is the difference between "it has not
+// merged yet" and "it merged in the year 1".
+func unixOf(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
 	}
