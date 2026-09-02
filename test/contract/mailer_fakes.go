@@ -196,7 +196,7 @@ func serveSMTP(conn net.Conn, inbox *Inbox, f Failure, secret string) {
 			if f == FailureContent {
 				// 550 is PERMANENT: resending gives the same result. It is what
 				// separates KindInvalid from KindUnavailable in guarantee 7.
-				reply("550 5.1.1 inbox inexistente")
+				reply("550 5.1.1 no such inbox")
 				continue
 			}
 			to = extractAddress(cmd)

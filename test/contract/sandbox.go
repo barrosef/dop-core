@@ -397,7 +397,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("stderr did not carry the stderr line: %q", res.Stderr)
 			}
 			if strings.Contains(res.Stdout, "STDERR-LINE") {
-				t.Fatalf("os dois fluxos vieram fundidos em stdout: %q", res.Stdout)
+				t.Fatalf("the two streams came back merged into stdout: %q", res.Stdout)
 			}
 		})
 

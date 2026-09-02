@@ -128,9 +128,9 @@ func (a agentRouting) RecordUsage(ctx context.Context, c agent.Consumption, idem
 	if err != nil {
 		return agent.Accounting{}, err
 	}
-	estourados := make([]agent.BudgetView, 0, len(out.Exceeded))
+	exceeded := make([]agent.BudgetView, 0, len(out.Exceeded))
 	for _, b := range out.Exceeded {
-		estourados = append(estourados, agent.BudgetView{
+		exceeded = append(exceeded, agent.BudgetView{
 			Scope:       string(b.Scope),
 			ScopeID:     b.ScopeID,
 			LimitMicros: agent.Micros(b.LimitMicros),
@@ -138,7 +138,7 @@ func (a agentRouting) RecordUsage(ctx context.Context, c agent.Consumption, idem
 			Currency:    b.Currency,
 		})
 	}
-	return agent.Accounting{BudgetExceeded: out.BudgetExceeded, Exceeded: estourados}, nil
+	return agent.Accounting{BudgetExceeded: out.BudgetExceeded, Exceeded: exceeded}, nil
 }
 
 // ── demand → agent ──────────────────────────────────────────────────────────

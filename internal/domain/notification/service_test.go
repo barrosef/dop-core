@@ -270,7 +270,7 @@ func TestLocalRehearsalBecomesItsOwnStateInTheRecord(t *testing.T) {
 func itemMaduro(evento string, aberto time.Time) AttentionNotice {
 	return AttentionNotice{
 		AccountID: "acct-1", EventID: evento, ItemID: "it-" + evento,
-		Kind: "thread_blocked", Title: "Um agente precisa de resposta",
+		Kind: "thread_blocked", Title: "An agent needs an answer",
 		OpenedAt: aberto,
 	}
 }
@@ -293,7 +293,7 @@ func TestATooFreshItemDoesNotBecomeAnEmail(t *testing.T) {
 	}
 	if avisos != 0 || len(mail.sent) != 0 {
 		t.Fatalf("a 5-minute-old item became an e-mail (accounts=%d, digests=%d, sends=%d): "+
-			"o atraso existe para o trivial se resolver sozinho",
+			"the delay exists so the trivial resolves itself",
 			contas, avisos, len(mail.sent))
 	}
 	if got := agora.Sub(repo.corte); got != 15*time.Minute {

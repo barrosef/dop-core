@@ -174,7 +174,7 @@ func claimsBase(s contract.TokenSpec, iss, aud string) map[string]any {
 	return c
 }
 
-// ───────────────────────── emissor OIDC de mentira ─────────────────────────
+// ───────────────────────── a make-believe OIDC issuer ──────────────────────
 
 // oidcIssuer serves /.well-known/openid-configuration and a JWKS, counting the
 // key fetches. It is the minimum needed to exercise discovery, caching and

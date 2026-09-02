@@ -125,7 +125,7 @@ func TestGitProviderContractGitLab(t *testing.T) {
 // half of guarantee 4 ("reopening does not rewrite") and of guarantee 15 ("asking
 // about the queue is a read") lives.
 
-func TestGitProviderGitHubNaoReescreveNemMuda(t *testing.T) {
+func TestGitProviderGitHubNeitherRewritesNorChanges(t *testing.T) {
 	f := contract.NewGitHubFake(t, fakeToken)
 	p := gitprovider.NewGitHub(gitprovider.GitHubConfig{
 		APIBase: f.URL(), GraphQLURL: f.GraphQLURL(),
@@ -154,7 +154,7 @@ func TestGitProviderGitHubNaoReescreveNemMuda(t *testing.T) {
 	}
 }
 
-func TestGitProviderFilaNativaSoLe(t *testing.T) {
+func TestGitProviderTheNativeQueueOnlyReads(t *testing.T) {
 	// Guarantee 15: asking whether a native queue exists must neither CREATE nor
 	// CONFIGURE anything. It is verifiable in one way only — by looking at the
 	// HTTP methods.

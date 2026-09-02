@@ -41,27 +41,27 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 
 			if !bytes.Equal(got.Payload, data) {
 				t.Fatalf("the envelope's bytes did not survive the transport.\n"+
-					"publicado: %s\nrecebido:  %s\n"+
+					"published: %s\nrecebido:  %s\n"+
 					"(a base64 payload on the other side = somebody re-serialized ports.Event)",
 					data, got.Payload)
 			}
-			var publicado, recebido eventbus.Envelope
-			_ = json.Unmarshal(data, &publicado)
+			var published, recebido eventbus.Envelope
+			_ = json.Unmarshal(data, &published)
 			if err := json.Unmarshal(got.Payload, &recebido); err != nil {
 				t.Fatalf("the delivered payload is not the JSON envelope: %v", err)
 			}
-			if string(recebido.Payload) != string(publicado.Payload) {
+			if string(recebido.Payload) != string(published.Payload) {
 				t.Fatalf("the business data inside the envelope changed: %s != %s",
-					recebido.Payload, publicado.Payload)
+					recebido.Payload, published.Payload)
 			}
 			// The delivered event's fields come from the envelope, not from the published struct.
-			if got.ID != publicado.ID || got.AccountID != publicado.AccountID ||
-				got.Aggregate != publicado.Aggregate || got.AggregateID != publicado.AggregateID ||
-				got.Type != publicado.Type {
-				t.Fatalf("campos desembrulhados divergem do envelope:\nrecebido: %+v\nenvelope: %+v", got, publicado)
+			if got.ID != published.ID || got.AccountID != published.AccountID ||
+				got.Aggregate != published.Aggregate || got.AggregateID != published.AggregateID ||
+				got.Type != published.Type {
+				t.Fatalf("the unwrapped fields diverge from the envelope:\nreceived: %+v\nenvelope: %+v", got, published)
 			}
-			if !got.OccurredAt.Equal(publicado.OccurredAt) {
-				t.Errorf("OccurredAt divergente: %v != %v", got.OccurredAt, publicado.OccurredAt)
+			if !got.OccurredAt.Equal(published.OccurredAt) {
+				t.Errorf("OccurredAt divergente: %v != %v", got.OccurredAt, published.OccurredAt)
 			}
 		})
 

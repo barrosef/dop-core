@@ -154,16 +154,16 @@ func TestIdentityProviderFirebaseRealEmulatorToken(t *testing.T) {
 		t.Fatalf("a token ISSUED by the emulator was refused by the adapter: %v", err)
 	}
 	if p.Subject != out.LocalID {
-		t.Errorf("Subject %q não é o localId %q que o emulador criou", p.Subject, out.LocalID)
+		t.Errorf("Subject %q is not the localId %q the emulator created", p.Subject, out.LocalID)
 	}
 	if p.Email != email {
 		t.Errorf("Email %q divergente do cadastrado %q", p.Email, email)
 	}
 	if p.EmailVerified {
-		t.Error("usuário recém-criado por senha não tem e-mail verificado, e o adaptador disse que tem")
+		t.Error("a user just created by password has no verified e-mail, and the adapter said it does")
 	}
 	if len(p.Providers) == 0 {
-		t.Error("o token traz firebase.sign_in_provider e Providers saiu vazio")
+		t.Error("the token carries firebase.sign_in_provider and Providers came out empty")
 	}
 	t.Logf("principal normalizado do token real: %+v", p)
 }

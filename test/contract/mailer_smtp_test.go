@@ -69,7 +69,7 @@ func TestMailerSMTPRendersTheDataIntoTheBody(t *testing.T) {
 			"total": 2,
 			"link":  "https://cockpit.exemplo.test/atencao",
 			"items": []map[string]any{
-				{"kind": "thread_blocked", "title": "Um agente precisa de resposta", "summary": "thread 7"},
+				{"kind": "thread_blocked", "title": "An agent needs an answer", "summary": "thread 7"},
 				{"kind": "pr_review", "title": "PR aguardando revisão"},
 			},
 		},
@@ -83,7 +83,7 @@ func TestMailerSMTPRendersTheDataIntoTheBody(t *testing.T) {
 	}
 	body := msgs[0].Body
 	for _, want := range []string{
-		"Um agente precisa de resposta",
+		"An agent needs an answer",
 		"PR aguardando revisão",
 		"thread 7",
 		"https://cockpit.exemplo.test/atencao",

@@ -195,7 +195,7 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 					errs.KindOf(err), err)
 			}
 			if inbox.Calls() != 0 {
-				t.Fatalf("tipo desconhecido chegou a tocar o fornecedor (%d chamada(s)): "+
+				t.Fatalf("an unknown kind actually touched the provider (%d call(s)): "+
 					"the resolution happens BEFORE the I/O", inbox.Calls())
 			}
 		})
@@ -323,7 +323,7 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 				{"recipient with no at sign", ports.Mail{Kind: kinds[0], To: "someone"}},
 				{"recipient with a space", ports.Mail{Kind: kinds[0], To: "a b@c.test"}},
 				{"arroba no fim", ports.Mail{Kind: kinds[0], To: "fulano@"}},
-				{"tipo vazio", ports.Mail{Kind: "", To: "someone@example.test"}},
+				{"empty kind", ports.Mail{Kind: "", To: "someone@example.test"}},
 			}
 			for _, c := range casos {
 				m, inbox := h.New(t)

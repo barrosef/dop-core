@@ -223,13 +223,13 @@ func TestResolvePathTrocaOCampoEEscapa(t *testing.T) {
 // A missing or empty field erases the whole link. Half a link is worse than no
 // link: the button shows up and leads nowhere.
 func TestResolvePathWithoutTheFieldErasesTheLink(t *testing.T) {
-	for nome, dados := range map[string]map[string]any{
+	for name, data := range map[string]map[string]any{
 		"ausente": {},
 		"vazio":   {"invite_id": ""},
 		"branco":  {"invite_id": "   "},
 	} {
-		if got := resolvePath("/invites/{invite_id}", dados); got != "" {
-			t.Errorf("%s: the path should be empty, got %q", nome, got)
+		if got := resolvePath("/invites/{invite_id}", data); got != "" {
+			t.Errorf("%s: the path should be empty, got %q", name, got)
 		}
 	}
 }

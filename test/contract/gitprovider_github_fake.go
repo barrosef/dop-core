@@ -101,7 +101,7 @@ func (f *GitHubFake) URL() string { return f.srv.URL }
 // GraphQLURL is separate on purpose: on GitHub Enterprise REST lives at
 // /api/v3 and GraphQL at /api/graphql, and an adapter that deduced one from the
 // other would break there.
-// funcionaria contra o github.com e quebraria em toda instalação self-hosted.
+// would work against github.com and break on every self-hosted installation.
 func (f *GitHubFake) GraphQLURL() string { return f.srv.URL + "/graphql" }
 
 // Calls returns the request log, for the tests that need to assert about what

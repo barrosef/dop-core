@@ -117,7 +117,7 @@ func TestBothTemplatesConsumeTheSameFields(t *testing.T) {
 	}
 }
 
-// handlebarsFields extrai os nomes usados num template do SendGrid.
+// handlebarsFields extracts the names used in a SendGrid template.
 // Reconhece `{{campo}}`, `{{#if campo}}`, `{{#each campo}}` e `{{this.campo}}`.
 func handlebarsFields(s string) map[string]bool {
 	out := map[string]bool{}

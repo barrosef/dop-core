@@ -117,12 +117,12 @@ func (g agentProviders) For(ctx context.Context, resourceID string) (agent.Agent
 // along with the cached prefix, the price and the cache semantics. Refusing with
 // the list is the only honest answer.
 func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource, error) {
-	todos, err := g.resources.List(ctx, resource.KindIntegration)
+	all, err := g.resources.List(ctx, resource.KindIntegration)
 	if err != nil {
 		return nil, err
 	}
 	var candidatos []resource.Resource
-	for _, r := range todos {
+	for _, r := range all {
 		spec, err := resource.ParseIntegration(r.Config)
 		if err != nil {
 			// A badly configured integration does not bring the search down: it

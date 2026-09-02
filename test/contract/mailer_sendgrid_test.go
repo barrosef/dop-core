@@ -78,7 +78,7 @@ func TestMailerContractSendGrid(t *testing.T) {
 // the `d-…` points at nothing. SendGrid answers 400; the adapter has to say it
 // was a content refusal, and not an unavailability — otherwise the worker keeps
 // resending forever a template that does not exist.
-func TestMailerSendGridTemplateInexistenteNaoViraRetryEterno(t *testing.T) {
+func TestMailerSendGridAMissingTemplateDoesNotBecomeAnEternalRetry(t *testing.T) {
 	ids := testIDs()
 	url, _ := contract.NewSendGridDouble(t, ids, contract.FailureContent, sendGridKey)
 	m := mailer.NewSendGrid(mailer.SendGridConfig{
@@ -99,10 +99,10 @@ func TestMailerSendGridTemplateInexistenteNaoViraRetryEterno(t *testing.T) {
 // PRECONDITION — an assembly error, not a policy one. The distinction exists so
 // whoever reads the error knows whether a line of code or a deploy variable is
 // missing.
-func TestMailerSendGridSemIDConfiguradoEhErroDeMontagem(t *testing.T) {
+func TestMailerSendGridWithNoConfiguredIDIsAnAssemblyError(t *testing.T) {
 	url, inbox := contract.NewSendGridDouble(t, testIDs(), "", sendGridKey)
 	m := mailer.NewSendGrid(mailer.SendGridConfig{
-		APIKey: sendGridKey, BaseURL: url, // Templates vazio
+		APIKey: sendGridKey, BaseURL: url, // Templates left empty
 	})
 	kind := notification.KindNames()[0]
 	if got := errsKindOf(m.Resolve(t.Context(), kind)); got != "failed_precondition" {

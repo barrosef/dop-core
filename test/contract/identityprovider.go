@@ -25,11 +25,11 @@ type TokenSpec struct {
 	Name          string
 	Picture       string
 	Providers     []string
-	// Extra são claims que o emissor carrega e que o domínio NÃO pode ver.
+	// Extra are claims the issuer carries and the domain must NOT see.
 	Extra map[string]any
 
-	// Vazio = o valor correto. Preenchido = o token é emitido errado de
-	// propósito.
+	// Empty = the correct value. Filled in = the token is issued wrong on
+	// purpose.
 	Issuer   string
 	Audience string
 
@@ -70,7 +70,7 @@ type IdentityEnv struct {
 	Rotate func(t *testing.T)
 	// MinRefresh is the re-fetch brake configured in this adapter.
 	MinRefresh time.Duration
-	// IssuerDown derruba o emissor.
+	// IssuerDown brings the issuer down.
 	IssuerDown func(t *testing.T)
 }
 
@@ -97,7 +97,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 			return raw
 		}
-		t.Run("1_token_improvavel_e_unauthorized", func(t *testing.T) {
+		t.Run("1_an_implausible_token_is_unauthorized", func(t *testing.T) {
 			env := newEnv(t)
 
 			// These the suite builds on its own: no issuer needs to cooperate for
@@ -105,7 +105,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			lixo := map[string]string{
 				"emptyEnv":                 "",
 				"so_espaco":                "   ",
-				"so_o_prefixo_bearer":      "Bearer ",
+				"only_the_bearer_prefix":   "Bearer ",
 				"not_a_jwt":                "this-is-not-a-token",
 				"duas_partes":              "aaaabbbb.ccccdddd",
 				"quatro_partes":            "aaaabbbb.ccccdddd.eeeeffff.gggghhhh",
@@ -125,9 +125,9 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 				"expirado":          {Subject: "s", Expiry: agora.Add(-2 * time.Hour)},
 				"ainda_nao_valido":  {Subject: "s", NotBefore: agora.Add(2 * time.Hour)},
 				"emitido_no_futuro": {Subject: "s", IssuedAt: agora.Add(2 * time.Hour)},
-				"emissor_errado":    {Subject: "s", Issuer: "https://emissor-de-outra-instalacao.example"},
+				"wrong_issuer":      {Subject: "s", Issuer: "https://issuer-of-another-installation.example"},
 				"audiencia_errada":  {Subject: "s", Audience: "outra-aplicacao"},
-				"sem_sujeito":       {},
+				"no_subject":        {},
 			}
 			for nome, spec := range casos {
 				t.Run(nome, func(t *testing.T) {
@@ -141,7 +141,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			// The signature cases. They are what separates "I verified the token"
 			// from "I read the token".
 			assinatura := map[string]TokenSpec{
-				"assinado_por_chave_intrusa": {Subject: "s", WrongKey: true},
+				"signed_by_an_intruding_key": {Subject: "s", WrongKey: true},
 				"sem_assinatura_alg_none":    {Subject: "s", Unsigned: true},
 				"algoritmo_simetrico_hs256":  {Subject: "s", Symmetric: true},
 			}
@@ -163,7 +163,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("2_erro_nao_vaza_o_token", func(t *testing.T) {
+		t.Run("2_the_error_does_not_leak_the_token", func(t *testing.T) {
 			env := newEnv(t)
 			const secret = "a-claim-that-must-not-appear-in-a-log"
 			raw := mint(t, env, TokenSpec{
@@ -184,9 +184,9 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			doesNotLeak(t, raw, err)
 		})
 
-		t.Run("3_sujeito_obrigatorio_e_estavel", func(t *testing.T) {
+		t.Run("3_the_subject_is_mandatory_and_stable", func(t *testing.T) {
 			env := newEnv(t)
-			raw := mint(t, env, TokenSpec{Subject: "sujeito-estavel-42"})
+			raw := mint(t, env, TokenSpec{Subject: "stable-subject-42"})
 			p, err := env.Provider.VerifyToken(ctx, raw)
 			if err != nil {
 				t.Fatalf("a valid token was refused: %v", err)
@@ -194,7 +194,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			if p == nil || p.Subject == "" {
 				t.Fatal("a nil error with an empty Subject: the domain would be left with no identity at all")
 			}
-			if p.Subject != "sujeito-estavel-42" {
+			if p.Subject != "stable-subject-42" {
 				t.Fatalf("Subject %q is not the token's subject", p.Subject)
 			}
 			// Guarantee 9, the deterministic half: the same token, the same result.
@@ -203,11 +203,11 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 				t.Fatalf("the second verification of the SAME token failed: %v", err)
 			}
 			if p2.Subject != p.Subject {
-				t.Fatalf("o mesmo token deu sujeitos diferentes: %q e %q", p.Subject, p2.Subject)
+				t.Fatalf("the same token gave different subjects: %q and %q", p.Subject, p2.Subject)
 			}
 		})
 
-		t.Run("4_email_nome_e_avatar_sao_opcionais", func(t *testing.T) {
+		t.Run("4_email_name_and_avatar_are_optional", func(t *testing.T) {
 			env := newEnv(t)
 			raw := mint(t, env, TokenSpec{Subject: "just-the-subject"})
 			p, err := env.Provider.VerifyToken(ctx, raw)
@@ -220,7 +220,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("5_email_verified_ausente_e_false", func(t *testing.T) {
+		t.Run("5_an_absent_email_verified_is_false", func(t *testing.T) {
 			env := newEnv(t)
 			raw := mint(t, env, TokenSpec{Subject: "s", Email: "someone@example.withPrefix"})
 			p, err := env.Provider.VerifyToken(ctx, raw)
@@ -243,7 +243,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("6_providers_e_informativo_e_normalizado", func(t *testing.T) {
+		t.Run("6_providers_is_informative_and_normalized", func(t *testing.T) {
 			env := newEnv(t)
 			raw := mint(t, env, TokenSpec{Subject: "s", Providers: []string{"password"}})
 			p, err := env.Provider.VerifyToken(ctx, raw)
@@ -282,7 +282,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("7_emissor_fora_do_ar_e_unavailable", func(t *testing.T) {
+		t.Run("7_an_issuer_that_is_down_is_unavailable", func(t *testing.T) {
 			env := newEnv(t)
 			if env.IssuerDown == nil {
 				t.Skip("this environment cannot bring the issuer down — the guarantee is not verifiable here")
@@ -292,7 +292,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 
 			p, err := env.Provider.VerifyToken(ctx, raw)
 			if err == nil {
-				t.Fatalf("emissor fora do ar e o token foi aceito: %+v", p)
+				t.Fatalf("the issuer is down and the token was accepted: %+v", p)
 			}
 			if k := errs.KindOf(err); k != errs.KindUnavailable {
 				t.Fatalf("an unavailable issuer became %s: %v\n"+
@@ -303,7 +303,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			doesNotLeak(t, raw, err)
 		})
 
-		t.Run("7b_contexto_cancelado_e_unavailable", func(t *testing.T) {
+		t.Run("7b_a_cancelled_context_is_unavailable", func(t *testing.T) {
 			env := newEnv(t)
 			if env.Fetches == nil {
 				t.Skip("this adapter does no I/O to verify — nothing to cancel")
@@ -320,7 +320,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("8_chave_cacheada_e_revalidada_na_rotacao", func(t *testing.T) {
+		t.Run("8_the_key_is_cached_and_revalidated_on_rotation", func(t *testing.T) {
 			env := newEnv(t)
 			if env.Fetches == nil || env.Rotate == nil {
 				t.Skip("this environment neither observes key fetches nor knows how to rotate — " +
@@ -377,7 +377,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 
 		t.Run("9_seguro_para_uso_concorrente", func(t *testing.T) {
 			env := newEnv(t)
-			raw := mint(t, env, TokenSpec{Subject: "sujeito-concorrente"})
+			raw := mint(t, env, TokenSpec{Subject: "concurrent-subject"})
 			const n = 24
 			var wg sync.WaitGroup
 			errors := make([]error, n)
@@ -398,13 +398,13 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 				if errors[i] != nil {
 					t.Fatalf("concurrent verification %d failed: %v", i, errors[i])
 				}
-				if subs[i] != "sujeito-concorrente" {
+				if subs[i] != "concurrent-subject" {
 					t.Fatalf("concurrent verification %d returned subject %q", i, subs[i])
 				}
 			}
 		})
 
-		t.Run("10_prefixo_bearer_e_token_vazio", func(t *testing.T) {
+		t.Run("10_the_bearer_prefix_and_an_empty_token", func(t *testing.T) {
 			env := newEnv(t)
 			raw := mint(t, env, TokenSpec{Subject: "s"})
 			withPrefix, err := env.Provider.VerifyToken(ctx, "Bearer "+raw)
@@ -432,7 +432,7 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 			}
 		})
 
-		t.Run("11_claim_crua_nao_cruza_a_porta", func(t *testing.T) {
+		t.Run("11_a_raw_claim_does_not_cross_the_port", func(t *testing.T) {
 			env := newEnv(t)
 			const forjado = "administrador-forjado"
 			raw, ok := env.Mint(t, TokenSpec{

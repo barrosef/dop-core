@@ -513,7 +513,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			if err == nil {
 				t.Fatal("a PR opened on behalf of an actor that is NOT the credential's: the PR " +
 					"would go out signed by whoever owns the borrowed token, and the " +
-					"ADR-0003 ('quem conduziu assina') viraria mentira silenciosa")
+					"ADR-0003 ('whoever conducted signs') would become a silent lie")
 			}
 			if k := errs.KindOf(err); k != errs.KindPermission {
 				t.Errorf("expected %s, got %s: %v", errs.KindPermission, k, err)
@@ -531,7 +531,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 		t.Run("15_the_native_queue_does_not_invent_an_answer", func(t *testing.T) {
 			p := conectar(t)
 			ctx := context.Background()
-			verificados := 0
+			verified := 0
 
 			if e.RepoWithNativeQueue != "" {
 				ok, err := p.HasNativeQueue(ctx, e.RepoWithNativeQueue)
@@ -542,7 +542,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 						"would orchestrate on top of the provider's and the two would merge " +
 						"the same repository (ADR-0008 §4)")
 				}
-				verificados++
+				verified++
 			}
 			if e.RepoWithoutNativeQueue != "" {
 				ok, err := p.HasNativeQueue(ctx, e.RepoWithoutNativeQueue)
@@ -552,7 +552,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 					t.Error("a repository WITHOUT a native queue answered true: DOP would step " +
 						"aside and nobody would serialize the merges")
 				}
-				verificados++
+				verified++
 			}
 			if e.RepoWithUnreadableQueue != "" {
 				ok, err := p.HasNativeQueue(ctx, e.RepoWithUnreadableQueue)
@@ -564,9 +564,9 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				if ok {
 					t.Error("a true answer TOGETHER with an error: whoever ignores the error steps aside")
 				}
-				verificados++
+				verified++
 			}
-			if verificados == 0 {
+			if verified == 0 {
 				t.Skip("the environment declared no repository with a known native-queue answer")
 			}
 		})
