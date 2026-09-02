@@ -12,32 +12,32 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// WorkflowRepo implementa workflow.Repository e workflow.Ancestry. É o ÚNICO
-// lugar com SQL de fluxo — o domínio nunca vê uma query.
+// WorkflowRepo implements workflow.Repository and workflow.Ancestry. It is the
+// ONLY place with flow SQL — the domain never sees a query.
 //
-// As duas portas moram no mesmo tipo porque a linhagem é uma consulta sobre as
-// MESMAS tabelas da árvore que a resolução já precisa varrer. Separá-las em
-// dois adaptadores duplicaria o pool e não separaria nada de verdade.
+// Both ports live in the same type because the lineage is a query over the SAME
+// tree tables the resolution already has to sweep. Splitting them into two
+// adapters would duplicate the pool and would not really separate anything.
 type WorkflowRepo struct{ pool *pgxpool.Pool }
 
 func NewWorkflowRepo(pool *pgxpool.Pool) *WorkflowRepo { return &WorkflowRepo{pool: pool} }
 
-// flowCols junta identidade (flows) e conteúdo congelado (flow_versions).
-// O fluxo que o domínio manipula é sempre UMA versão — nunca a linha de flows
-// sozinha, que não tem etapa nenhuma.
+// flowCols joins identity (flows) and frozen content (flow_versions). The flow
+// the domain manipulates is always ONE version — never the flows row on its own,
+// which has no stage at all.
 const flowCols = `f.id, COALESCE(f.account_id::text,''), f.owner_scope::text,
 	COALESCE(f.owner_id::text,''), v.name, COALESCE(v.description,''), v.version,
 	v.stages, COALESCE(v.created_by::text,''), f.created_at, v.created_at`
 
-// currentJoin amarra a versão CORRENTE; frozenJoin amarra uma versão pedida.
+// currentJoin ties the CURRENT version; frozenJoin ties a requested version.
 const currentJoin = ` FROM flows f JOIN flow_versions v
 	ON v.flow_id = f.id AND v.version = f.current_version`
 
-// visibleToAccount é o filtro multi-tenant das LEITURAS.
+// visibleToAccount is the READS' multi-tenant filter.
 //
-// O catálogo da plataforma entra porque não tem dono e vale para todas as
-// contas — é o nível 0 da cadeia. Toda ESCRITA usa `f.account_id = $1` puro:
-// nenhuma conta escreve no catálogo.
+// The platform's catalog is included because it has no owner and applies to
+// every account — it is the chain's level 0. Every WRITE uses a plain
+// `f.account_id = $1`: no account writes into the catalog.
 const visibleToAccount = ` WHERE (f.account_id = $1 OR f.owner_scope = 'platform')`
 
 func scanFlow(row pgx.Row) (*workflow.Flow, error) {
@@ -55,7 +55,7 @@ func scanFlow(row pgx.Row) (*workflow.Flow, error) {
 	return &f, nil
 }
 
-// ── leitura ──────────────────────────────────────────────────────────────────
+// ── reads ────────────────────────────────────────────────────────────────────
 
 func (r *WorkflowRepo) List(ctx context.Context, accountID string, scope workflow.Scope, ownerID string) ([]workflow.Flow, error) {
 	rows, err := r.pool.Query(ctx, `SELECT `+flowCols+currentJoin+visibleToAccount+`
@@ -63,7 +63,7 @@ func (r *WorkflowRepo) List(ctx context.Context, accountID string, scope workflo
 		  AND ($3 = '' OR COALESCE(f.owner_id::text,'') = $3)
 		ORDER BY f.owner_scope, v.name`, accountID, string(scope), ownerID)
 	if err != nil {
-		return nil, Translate(err, "fluxos")
+		return nil, Translate(err, "flows")
 	}
 	defer rows.Close()
 
@@ -71,38 +71,38 @@ func (r *WorkflowRepo) List(ctx context.Context, accountID string, scope workflo
 	for rows.Next() {
 		f, err := scanFlow(rows)
 		if err != nil {
-			return nil, Translate(err, "fluxos")
+			return nil, Translate(err, "flows")
 		}
 		out = append(out, *f)
 	}
-	return out, Translate(rows.Err(), "fluxos")
+	return out, Translate(rows.Err(), "flows")
 }
 
 func (r *WorkflowRepo) ByID(ctx context.Context, accountID, id string) (*workflow.Flow, error) {
 	f, err := scanFlow(r.pool.QueryRow(ctx,
 		`SELECT `+flowCols+currentJoin+visibleToAccount+` AND f.id = $2`, accountID, id))
 	if err != nil {
-		return nil, Translate(err, "fluxo")
+		return nil, Translate(err, "flow")
 	}
 	return f, nil
 }
 
-// VersionOf lê uma versão congelada. Não passa por current_version de
-// propósito: quem pergunta pela versão 3 quer a 3, mesmo que o fluxo já esteja
-// na 7 — é assim que a demanda em execução continua enxergando o que assinou.
+// VersionOf reads a frozen version. It does not go through current_version on
+// purpose: whoever asks for version 3 wants 3, even if the flow is already on 7
+// — it is how a running demand keeps seeing what it signed up to.
 func (r *WorkflowRepo) VersionOf(ctx context.Context, accountID, id string, version int32) (*workflow.Flow, error) {
 	f, err := scanFlow(r.pool.QueryRow(ctx, `SELECT `+flowCols+`
 		  FROM flows f JOIN flow_versions v ON v.flow_id = f.id
 		 WHERE (f.account_id = $1 OR f.owner_scope = 'platform')
 		   AND f.id = $2 AND v.version = $3`, accountID, id, version))
 	if err != nil {
-		return nil, Translate(err, "versão do fluxo")
+		return nil, Translate(err, "the flow's version")
 	}
 	return f, nil
 }
 
-// ByOwners traz os fluxos de todos os níveis da cadeia numa varredura. Ver o
-// comentário na porta: a resolução acontece a cada abertura de demanda.
+// ByOwners brings the flows of every level of the chain in one sweep. See the
+// comment on the port: the resolution happens on every demand opening.
 func (r *WorkflowRepo) ByOwners(ctx context.Context, accountID string, refs []workflow.ScopeRef) ([]workflow.Flow, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -118,7 +118,7 @@ func (r *WorkflowRepo) ByOwners(ctx context.Context, accountID string, refs []wo
 		      IN (SELECT * FROM unnest($2::text[], $3::text[]))`,
 		accountID, scopes, owners)
 	if err != nil {
-		return nil, Translate(err, "fluxos da cadeia")
+		return nil, Translate(err, "the chain's flows")
 	}
 	defer rows.Close()
 
@@ -126,20 +126,21 @@ func (r *WorkflowRepo) ByOwners(ctx context.Context, accountID string, refs []wo
 	for rows.Next() {
 		f, err := scanFlow(rows)
 		if err != nil {
-			return nil, Translate(err, "fluxos da cadeia")
+			return nil, Translate(err, "the chain's flows")
 		}
 		out = append(out, *f)
 	}
-	return out, Translate(rows.Err(), "fluxos da cadeia")
+	return out, Translate(rows.Err(), "the chain's flows")
 }
 
-// ── escrita ──────────────────────────────────────────────────────────────────
+// ── writes ───────────────────────────────────────────────────────────────────
 
-// Create grava o fluxo e a versão 1 na MESMA transação do evento (ADR-0019).
+// Create writes the flow and version 1 in the event's SAME transaction
+// (ADR-0019).
 //
-// A repetição é resolvida pela chave de idempotência e não por "consultar
-// antes de inserir": entre a consulta e a inserção cabe outra requisição, e o
-// resultado seriam dois fluxos no mesmo nível.
+// The repetition is resolved by the idempotency key and not by "query before
+// inserting": another request fits between the query and the insert, and the
+// result would be two flows at the same level.
 func (r *WorkflowRepo) Create(ctx context.Context, f *workflow.Flow, idempotencyKey string) (*workflow.Flow, error) {
 	var saved *workflow.Flow
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -163,23 +164,23 @@ func (r *WorkflowRepo) Create(ctx context.Context, f *workflow.Flow, idempotency
 	return saved, err
 }
 
-// AppendVersion grava a versão seguinte SEM tocar na anterior — a trigger do
-// banco recusaria de qualquer forma, e é bom que recuse: a proteção precisa
-// valer também para o caminho que ninguém previu.
+// AppendVersion writes the next version WITHOUT touching the previous one — the
+// database's trigger would refuse anyway, and it is good that it does: the
+// protection has to hold for the path nobody anticipated too.
 func (r *WorkflowRepo) AppendVersion(ctx context.Context, accountID string, f *workflow.Flow, baseVersion int32, idempotencyKey string) (*workflow.Flow, error) {
 	var saved *workflow.Flow
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		// FOR UPDATE serializa duas edições simultâneas: sem a trava, as duas
-		// leriam a versão 3 e as duas tentariam gravar a 4.
+		// FOR UPDATE serializes two simultaneous edits: without the lock, both
+		// would read version 3 and both would try to write 4.
 		var current int32
 		err := tx.QueryRow(ctx,
 			`SELECT current_version FROM flows WHERE id = $1 AND account_id = $2 FOR UPDATE`,
 			f.ID, accountID).Scan(&current)
 		if err != nil {
-			return Translate(err, "fluxo")
+			return Translate(err, "flow")
 		}
 		if current != baseVersion {
-			return errs.Conflict("o fluxo já está na versão %d; a alteração foi escrita sobre a %d",
+			return errs.Conflict("the flow is already on version %d; the change was written against %d",
 				current, baseVersion)
 		}
 
@@ -189,14 +190,14 @@ func (r *WorkflowRepo) AppendVersion(ctx context.Context, accountID string, f *w
 			return err
 		}
 		if !created {
-			// Reenvio idêntico: devolve a versão que já foi gravada.
+			// An identical resend: it returns the version already written.
 			saved, err = flowVersionByKey(ctx, tx, idempotencyKey)
 			return err
 		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE flows SET current_version = $3, updated_at = $4 WHERE id = $1 AND account_id = $2`,
 			f.ID, accountID, next, f.UpdatedAt); err != nil {
-			return Translate(err, "fluxo")
+			return Translate(err, "flow")
 		}
 		saved, err = loadFlow(ctx, tx, accountID, f.ID)
 		if err != nil {
@@ -207,9 +208,10 @@ func (r *WorkflowRepo) AppendVersion(ctx context.Context, accountID string, f *w
 	return saved, err
 }
 
-// Promote publica o conteúdo no nível alvo. Se o alvo já tem fluxo, o conteúdo
-// entra como versão NOVA dele — o fluxo do alvo não é substituído, é versionado,
-// pelo mesmo motivo de sempre: alguém pode estar seguindo a versão atual.
+// Promote publishes the content at the target level. If the target already has
+// a flow, the content goes in as a NEW version of it — the target's flow is not
+// replaced, it is versioned, for the usual reason: somebody may be following the
+// current version.
 func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workflow.Flow, target workflow.ScopeRef, idempotencyKey string) (*workflow.Flow, error) {
 	var saved *workflow.Flow
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -244,7 +246,7 @@ func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workf
 			}
 			targetID = id
 		case err != nil:
-			return Translate(err, "fluxo do nível de destino")
+			return Translate(err, "the target level's flow")
 		default:
 			promoted.ID = targetID
 			promoted.Version = current + 1
@@ -259,7 +261,7 @@ func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workf
 			if _, err := tx.Exec(ctx,
 				`UPDATE flows SET current_version = $3, updated_at = $4 WHERE id = $1 AND account_id = $2`,
 				targetID, accountID, promoted.Version, src.UpdatedAt); err != nil {
-				return Translate(err, "fluxo do nível de destino")
+				return Translate(err, "the target level's flow")
 			}
 		}
 
@@ -271,8 +273,8 @@ func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workf
 		ev.Payload = mustJSON(map[string]any{
 			"name": saved.Name, "version": saved.Version,
 			"owner_scope": string(saved.OwnerScope), "owner_id": saved.OwnerID,
-			// A procedência da promoção: sem ela, ninguém explica de onde veio
-			// o fluxo que passou a valer para o nível inteiro.
+			// The promotion's provenance: without it, nobody explains where the
+			// flow that came to apply to the whole level came from.
 			"promoted_from_flow_id": src.ID,
 			"promoted_from_scope":   string(src.OwnerScope),
 			"promoted_from_owner":   src.OwnerID,
@@ -285,9 +287,9 @@ func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workf
 
 // ── linhagem (workflow.Ancestry) ─────────────────────────────────────────────
 
-// ChainOf devolve a cadeia de níveis acima do alvo, do mais genérico ao mais
-// específico. Cada salto filtra por conta: id de outra conta simplesmente não
-// existe daqui, e volta como NotFound.
+// ChainOf returns the chain of levels above the target, from the most generic to
+// the most specific. Each hop filters by account: another account's id simply
+// does not exist from here, and comes back as NotFound.
 func (r *WorkflowRepo) ChainOf(ctx context.Context, accountID string, target workflow.ScopeRef) ([]workflow.ScopeRef, error) {
 	base := []workflow.ScopeRef{{Scope: workflow.ScopePlatform}}
 	switch target.Scope {
@@ -295,7 +297,7 @@ func (r *WorkflowRepo) ChainOf(ctx context.Context, accountID string, target wor
 		return base, nil
 	case workflow.ScopeAccount:
 		if target.ID != accountID {
-			return nil, errs.NotFound("conta %s", target.ID)
+			return nil, errs.NotFound("account %s", target.ID)
 		}
 		return append(base, workflow.ScopeRef{Scope: workflow.ScopeAccount, ID: accountID}), nil
 	}
@@ -316,7 +318,7 @@ func (r *WorkflowRepo) ChainOf(ctx context.Context, accountID string, target wor
 		if err := r.pool.QueryRow(ctx,
 			`SELECT workspace_id FROM projects WHERE id = $1 AND account_id = $2`,
 			target.ID, accountID).Scan(&workspaceID); err != nil {
-			return nil, Translate(err, "projeto")
+			return nil, Translate(err, "project")
 		}
 		return append(base,
 			workflow.ScopeRef{Scope: workflow.ScopeWorkspace, ID: workspaceID},
@@ -325,24 +327,25 @@ func (r *WorkflowRepo) ChainOf(ctx context.Context, accountID string, target wor
 	case workflow.ScopeDemand:
 		return r.demandChain(ctx, accountID, base, target.ID)
 	}
-	return nil, errs.Invalid("nível desconhecido: %q", target.Scope)
+	return nil, errs.Invalid("unknown level: %q", target.Scope)
 }
 
-// demandChain sobe da demanda até a conta.
+// demandChain climbs from the demand up to the account.
 //
-// A tabela de demandas chega em migração de OUTRO domínio, que ainda não
-// aterrissou neste banco. Perguntar pela existência antes de consultar troca um
-// "relation does not exist" (que chega ao usuário como falha interna) por uma
-// recusa que diz o que está faltando — e some sozinha quando a tabela nascer.
+// The demands table arrives in ANOTHER domain's migration, which has not landed
+// in this database yet. Asking about its existence before querying trades a
+// "relation does not exist" (which reaches the user as an internal failure) for
+// a refusal that says what is missing — and it disappears on its own when the
+// table is born.
 func (r *WorkflowRepo) demandChain(ctx context.Context, accountID string, base []workflow.ScopeRef, demandID string) ([]workflow.ScopeRef, error) {
 	var ready bool
 	if err := r.pool.QueryRow(ctx,
 		`SELECT to_regclass('public.demands') IS NOT NULL`).Scan(&ready); err != nil {
-		return nil, Translate(err, "demanda")
+		return nil, Translate(err, "demand")
 	}
 	if !ready {
 		return nil, errs.Precondition(
-			"o domínio de demanda ainda não existe neste banco: resolva o fluxo pelo projeto até a migração de demanda ser aplicada")
+			"the demand domain does not exist in this database yet: resolve the flow through the project until the demand migration is applied")
 	}
 	var projectID, workspaceID string
 	if err := r.pool.QueryRow(ctx, `
@@ -350,7 +353,7 @@ func (r *WorkflowRepo) demandChain(ctx context.Context, accountID string, base [
 		  FROM demands d JOIN projects p ON p.id = d.project_id
 		 WHERE d.id = $1 AND d.account_id = $2`, demandID, accountID).
 		Scan(&projectID, &workspaceID); err != nil {
-		return nil, Translate(err, "demanda")
+		return nil, Translate(err, "demand")
 	}
 	return append(base,
 		workflow.ScopeRef{Scope: workflow.ScopeWorkspace, ID: workspaceID},
@@ -360,8 +363,8 @@ func (r *WorkflowRepo) demandChain(ctx context.Context, accountID string, base [
 
 // ── auxiliares ───────────────────────────────────────────────────────────────
 
-// insertFlowRow grava a identidade do fluxo. created=false significa que a
-// chave de idempotência já tinha sido usada — repetição, não erro.
+// insertFlowRow writes the flow's identity. created=false means the idempotency
+// key had already been used — a repetition, not an error.
 func insertFlowRow(ctx context.Context, tx pgx.Tx, f *workflow.Flow, key string) (string, bool, error) {
 	var accountID, ownerID any
 	if f.AccountID != "" {
@@ -387,7 +390,7 @@ func insertFlowRow(ctx context.Context, tx pgx.Tx, f *workflow.Flow, key string)
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, Translate(err, "fluxo")
+		return "", false, Translate(err, "flow")
 	}
 	return id, true, nil
 }
@@ -410,7 +413,7 @@ func insertVersion(ctx context.Context, tx pgx.Tx, flowID string, version int32,
 		return false, nil
 	}
 	if err != nil {
-		return false, Translate(err, "versão do fluxo")
+		return false, Translate(err, "the flow's version")
 	}
 	return true, nil
 }
@@ -419,19 +422,19 @@ func loadFlow(ctx context.Context, tx pgx.Tx, accountID, id string) (*workflow.F
 	f, err := scanFlow(tx.QueryRow(ctx,
 		`SELECT `+flowCols+currentJoin+visibleToAccount+` AND f.id = $2`, accountID, id))
 	if err != nil {
-		return nil, Translate(err, "fluxo")
+		return nil, Translate(err, "flow")
 	}
 	return f, nil
 }
 
-// flowByKey e flowVersionByKey são o retorno da repetição: a chave já gravada
-// aponta para o que o chamador queria criar, e devolver isso é o que torna a
-// escrita idempotente de verdade (ADR-0017).
+// flowByKey and flowVersionByKey are the repetition's return: the already
+// written key points at what the caller wanted to create, and returning that is
+// what makes the write genuinely idempotent (ADR-0017).
 func flowByKey(ctx context.Context, tx pgx.Tx, key string) (*workflow.Flow, error) {
 	f, err := scanFlow(tx.QueryRow(ctx, `SELECT `+flowCols+currentJoin+
 		` WHERE f.idempotency_key = $1`, key))
 	if err != nil {
-		return nil, Translate(err, "fluxo")
+		return nil, Translate(err, "flow")
 	}
 	return f, nil
 }
@@ -441,7 +444,7 @@ func flowVersionByKey(ctx context.Context, tx pgx.Tx, key string) (*workflow.Flo
 		` FROM flows f JOIN flow_versions v ON v.flow_id = f.id
 		  WHERE v.idempotency_key = $1`, key))
 	if err != nil {
-		return nil, Translate(err, "versão do fluxo")
+		return nil, Translate(err, "the flow's version")
 	}
 	return f, nil
 }
@@ -457,9 +460,9 @@ func flowEvent(kind string, f *workflow.Flow) ports.Event {
 	}
 }
 
-// stageDoc é a forma no banco. Existe separada do tipo de domínio de propósito:
-// renomear um campo do domínio não pode reescrever silenciosamente o JSON de
-// versões que já estão congeladas há meses.
+// stageDoc is the shape in the database. It exists separately from the domain
+// type on purpose: renaming a domain field must not silently rewrite the JSON of
+// versions that have been frozen for months.
 type stageDoc struct {
 	Key       string   `json:"key"`
 	Name      string   `json:"name"`

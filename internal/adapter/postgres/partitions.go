@@ -8,65 +8,67 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PartitionedTables são as tabelas particionadas por mês, na coluna occurred_at.
+// PartitionedTables are the tables partitioned by month, on the occurred_at
+// column.
 //
-// Acrescentar tabela particionada e esquecer desta lista é o mesmo que agendar
-// uma falha para a virada do mês — por isso a lista mora junto do código que a
-// usa, e não espalhada em migração.
+// Adding a partitioned table and forgetting this list is the same as scheduling
+// a failure for the turn of the month — which is why the list lives next to the
+// code that uses it, and not scattered across migrations.
 var PartitionedTables = []string{"events", "cost_usage"}
 
-// EnsureMonthlyPartitions cria as partições dos próximos `ahead` meses.
+// EnsureMonthlyPartitions creates the partitions for the next `ahead` months.
 //
-// Existe porque as migrações criam partições FIXAS: `0001_foundation.sql` vai
-// até novembro de 2026 e para. Sem isto, no primeiro dia do mês seguinte TODA
-// escrita de evento falha com "no partition of relation found" — e falha no
-// caminho do outbox, ou seja, derruba qualquer operação que mude estado. É a
-// pior forma de bug: sem sintoma nenhum até uma data, e total depois dela.
+// It exists because the migrations create FIXED partitions:
+// `0001_foundation.sql` goes to November 2026 and stops. Without this, on the
+// first day of the following month EVERY event write fails with "no partition of
+// relation found" — and it fails on the outbox's path, that is, it brings down
+// any operation that changes state. It is the worst form of bug: no symptom at
+// all until a date, and total after it.
 //
-// Idempotente por `IF NOT EXISTS`: roda a cada ciclo do scheduler sem cuidado
-// especial, e várias réplicas rodando junto não brigam.
+// Idempotent through `IF NOT EXISTS`: it runs on every scheduler cycle with no
+// special care, and several replicas running together do not fight.
 //
-// `ahead` é folga, não previsão: com 3 meses, o scheduler pode ficar fora do ar
-// semanas inteiras sem que ninguém perceba a diferença.
+// `ahead` is slack, not a forecast: with 3 months, the scheduler can be down for
+// entire weeks without anyone noticing the difference.
 func EnsureMonthlyPartitions(ctx context.Context, pool *pgxpool.Pool, from time.Time, ahead int) ([]string, error) {
-	var criadas []string
+	var created []string
 	base := time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, time.UTC)
 
-	for _, tabela := range PartitionedTables {
+	for _, table := range PartitionedTables {
 		for i := 0; i <= ahead; i++ {
-			inicio := base.AddDate(0, i, 0)
-			fim := inicio.AddDate(0, 1, 0)
-			nome := fmt.Sprintf("%s_%04d_%02d", tabela, inicio.Year(), inicio.Month())
+			start := base.AddDate(0, i, 0)
+			end := start.AddDate(0, 1, 0)
+			name := fmt.Sprintf("%s_%04d_%02d", table, start.Year(), start.Month())
 
-			// Nome de tabela não é parametrizável em DDL; todos os componentes
-			// vêm de constantes e de aritmética de data, nunca de entrada
-			// externa — não há superfície de injeção aqui.
+			// A table name is not parameterizable in DDL; every component comes
+			// from constants and date arithmetic, never from external input —
+			// there is no injection surface here.
 			sql := fmt.Sprintf(
 				`CREATE TABLE IF NOT EXISTS %s PARTITION OF %s FOR VALUES FROM ('%s') TO ('%s')`,
-				nome, tabela, inicio.Format("2006-01-02"), fim.Format("2006-01-02"))
+				name, table, start.Format("2006-01-02"), end.Format("2006-01-02"))
 
-			antes, err := partitionExists(ctx, pool, nome)
+			before, err := partitionExists(ctx, pool, name)
 			if err != nil {
-				return criadas, err
+				return created, err
 			}
 			if _, err := pool.Exec(ctx, sql); err != nil {
-				return criadas, Translate(err, "partição "+nome)
+				return created, Translate(err, "partition "+name)
 			}
-			if !antes {
-				criadas = append(criadas, nome)
+			if !before {
+				created = append(created, name)
 			}
 		}
 	}
-	return criadas, nil
+	return created, nil
 }
 
-func partitionExists(ctx context.Context, pool *pgxpool.Pool, nome string) (bool, error) {
-	var existe bool
+func partitionExists(ctx context.Context, pool *pgxpool.Pool, name string) (bool, error) {
+	var exists bool
 	err := pool.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = 'r')`,
-		nome).Scan(&existe)
+		name).Scan(&exists)
 	if err != nil {
-		return false, Translate(err, "verificação de partição")
+		return false, Translate(err, "checking a partition")
 	}
-	return existe, nil
+	return exists, nil
 }

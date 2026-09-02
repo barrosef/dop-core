@@ -1,8 +1,9 @@
-// Outbox transacional — o mecanismo que dá atomicidade SEM 2PC (ADR-0019).
+// The transactional outbox — the mechanism that gives atomicity WITHOUT 2PC
+// (ADR-0019).
 //
-// A regra, em uma frase: toda mudança de estado grava, na MESMA transação, o
-// estado novo e o evento. Commit ⇒ atômico por construção. Nunca "gravei mas
-// não publiquei".
+// The rule, in one sentence: every state change writes, in the SAME transaction,
+// the new state and the event. A commit ⇒ atomic by construction. Never "I
+// wrote it but did not publish it".
 package postgres
 
 import (
@@ -24,9 +25,10 @@ type Outbox struct{ pool *pgxpool.Pool }
 
 func NewOutbox(pool *pgxpool.Pool) *Outbox { return &Outbox{pool: pool} }
 
-// Emit grava evento + outbox dentro de uma transação JÁ ABERTA pelo caso de uso.
-// Recebe pgx.Tx de propósito: se aceitasse o pool, alguém acabaria publicando
-// fora da transação — que é exatamente a janela de perda que o outbox fecha.
+// Emit writes the event + the outbox row inside a transaction ALREADY OPENED by
+// the use case. It takes a pgx.Tx on purpose: if it accepted the pool, somebody
+// would end up publishing outside the transaction — which is exactly the loss
+// window the outbox closes.
 func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 	call, _ := ctxutil.From(ctx)
 	if e.OccurredAt.IsZero() {
@@ -36,8 +38,9 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 		e.Payload = []byte(`{}`)
 	}
 
-	// Nem todo evento tem conta: `user.ensured` ocorre no primeiro login, antes
-	// de a conta pessoal existir. String vazia não é UUID — vai NULL.
+	// Not every event has an account: `user.ensured` happens on the first login,
+	// before the personal account exists. An empty string is not a UUID — it
+	// goes in as NULL.
 	var accountID any
 	if e.AccountID != "" {
 		accountID = e.AccountID
@@ -57,7 +60,7 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 		string(call.ActorKind), actorID, call.RequestID, e.OccurredAt,
 	).Scan(&id)
 	if err != nil {
-		return errs.Wrap(errs.KindInternal, err, "falha ao gravar evento")
+		return errs.Wrap(errs.KindInternal, err, "failed to write the event")
 	}
 
 	env, _ := json.Marshal(map[string]any{
@@ -66,25 +69,25 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 		"payload": json.RawMessage(e.Payload), "occurred_at": e.OccurredAt,
 	})
 
-	// Mesma transação. É o ponto inteiro do padrão.
+	// The same transaction. It is the entire point of the pattern.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO outbox (event_id, occurred_at, subject, payload)
 		VALUES ($1,$2,$3,$4)`,
 		id, e.OccurredAt, Subject(e.Type), env,
 	); err != nil {
-		return errs.Wrap(errs.KindInternal, err, "falha ao enfileirar evento no outbox")
+		return errs.Wrap(errs.KindInternal, err, "failed to enqueue the event in the outbox")
 	}
 	return nil
 }
 
-// Subject deriva o assunto NATS do tipo do evento: demand.stage.advanced
-// vira dop.demand.stage.advanced.
+// Subject derives the NATS subject from the event's type:
+// demand.stage.advanced becomes dop.demand.stage.advanced.
 func Subject(eventType string) string {
 	return "dop." + strings.TrimPrefix(eventType, "dop.")
 }
 
-// Relay lê o outbox e publica no broker, marcando o publicado.
-// Entrega ao-menos-uma-vez: consumidores DEVEM ser idempotentes.
+// Relay reads the outbox and publishes to the broker, marking what it
+// published. At-least-once delivery: consumers MUST be idempotent.
 type Relay struct {
 	pool  *pgxpool.Pool
 	bus   ports.EventBus
@@ -98,14 +101,14 @@ func NewRelay(pool *pgxpool.Pool, bus ports.EventBus, batch int) *Relay {
 	return &Relay{pool: pool, bus: bus, batch: batch}
 }
 
-// Drain publica um lote de pendentes. Devolve quantos foram publicados.
+// Drain publishes a batch of pending rows. It returns how many were published.
 //
-// FOR UPDATE SKIP LOCKED permite várias réplicas do relay sem publicar o mesmo
-// evento duas vezes — e sem uma travar a outra.
+// FOR UPDATE SKIP LOCKED allows several relay replicas without publishing the
+// same event twice — and without one blocking the other.
 func (r *Relay) Drain(ctx context.Context) (int, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return 0, errs.Wrap(errs.KindUnavailable, err, "falha ao abrir transação do relay")
+		return 0, errs.Wrap(errs.KindUnavailable, err, "failed to open the relay's transaction")
 	}
 	defer tx.Rollback(ctx)
 
@@ -117,7 +120,7 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 		 LIMIT $1
 		 FOR UPDATE SKIP LOCKED`, r.batch)
 	if err != nil {
-		return 0, errs.Wrap(errs.KindInternal, err, "falha ao ler o outbox")
+		return 0, errs.Wrap(errs.KindInternal, err, "failed to read the outbox")
 	}
 
 	type pending struct {
@@ -131,7 +134,7 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 		var p pending
 		if err := rows.Scan(&p.id, &p.subject, &p.payload, &p.at); err != nil {
 			rows.Close()
-			return 0, errs.Wrap(errs.KindInternal, err, "linha do outbox ilegível")
+			return 0, errs.Wrap(errs.KindInternal, err, "unreadable outbox row")
 		}
 		batch = append(batch, p)
 	}
@@ -144,8 +147,8 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 	for _, p := range batch {
 		ev := ports.Event{ID: p.id, Type: p.subject, Payload: p.payload, OccurredAt: p.at}
 		if err := r.bus.Publish(ctx, ev); err != nil {
-			// Falha de publicação não perde o evento: fica pendente e o
-			// próximo ciclo tenta de novo.
+			// A publication failure does not lose the event: it stays pending
+			// and the next cycle tries again.
 			_, _ = tx.Exec(ctx, `
 				UPDATE outbox SET attempts = attempts + 1, last_error = $2
 				 WHERE event_id = $1`, p.id, err.Error())
@@ -158,16 +161,16 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 		if _, err := tx.Exec(ctx,
 			`UPDATE outbox SET published_at = now() WHERE event_id = ANY($1)`, published,
 		); err != nil {
-			return 0, errs.Wrap(errs.KindInternal, err, "falha ao marcar publicados")
+			return 0, errs.Wrap(errs.KindInternal, err, "failed to mark rows as published")
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, errs.Wrap(errs.KindInternal, err, "falha ao confirmar o relay")
+		return 0, errs.Wrap(errs.KindInternal, err, "failed to commit the relay")
 	}
 	return len(published), nil
 }
 
-// Run mantém o relay drenando até o contexto encerrar.
+// Run keeps the relay draining until the context ends.
 func (r *Relay) Run(ctx context.Context, interval time.Duration) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -182,7 +185,7 @@ func (r *Relay) Run(ctx context.Context, interval time.Duration) error {
 					return fmt.Errorf("relay: %w", err)
 				}
 				if n < r.batch {
-					break // esvaziou o lote; espera o próximo tick
+					break // the batch is empty; wait for the next tick
 				}
 			}
 		}

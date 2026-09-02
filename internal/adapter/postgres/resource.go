@@ -11,17 +11,17 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
 )
 
-// ResourceRepo implementa resource.Repository. É o ÚNICO lugar com SQL de
-// recurso — o domínio nunca vê uma query.
+// ResourceRepo implements resource.Repository. It is the ONLY place with
+// resource SQL — the domain never sees a query.
 //
-// Duas coisas valem por toda a leitura deste arquivo:
+// Two things hold for this whole file:
 //
-//   - account_id entra em TODA cláusula WHERE, inclusive nas concessões (via
-//     join com resources). Isolamento multi-tenant é constraint, não confiança
-//     no chamador;
-//   - toda mudança de estado grava o evento na MESMA transação, por InTx +
-//     Emit. É o outbox transacional: commit ⇒ estado e evento, ou nenhum dos
-//     dois (ADR-0019).
+//   - account_id goes into EVERY WHERE clause, including the grants' (through a
+//     join with resources). Multi-tenant isolation is a constraint, not trust in
+//     the caller;
+//   - every state change writes the event in the SAME transaction, through InTx
+//   - Emit. It is the transactional outbox: a commit ⇒ state and event, or
+//     neither (ADR-0019).
 type ResourceRepo struct{ pool *pgxpool.Pool }
 
 func NewResourceRepo(pool *pgxpool.Pool) *ResourceRepo { return &ResourceRepo{pool: pool} }
@@ -44,7 +44,7 @@ func scanResource(row pgx.Row) (*resource.Resource, error) {
 	return &r, nil
 }
 
-// List filtra por conta e, opcionalmente, por tipo. Tipo vazio = todos.
+// List filters by account and, optionally, by kind. An empty kind = all.
 func (r *ResourceRepo) List(ctx context.Context, accountID string, kind resource.Kind) ([]resource.Resource, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+resourceCols+`
@@ -53,7 +53,7 @@ func (r *ResourceRepo) List(ctx context.Context, accountID string, kind resource
 		   AND ($2::text = '' OR kind::text = $2::text)
 		 ORDER BY kind, name`, accountID, string(kind))
 	if err != nil {
-		return nil, Translate(err, "recursos")
+		return nil, Translate(err, "resources")
 	}
 	defer rows.Close()
 
@@ -61,15 +61,16 @@ func (r *ResourceRepo) List(ctx context.Context, accountID string, kind resource
 	for rows.Next() {
 		res, err := scanResource(rows)
 		if err != nil {
-			return nil, Translate(err, "recursos")
+			return nil, Translate(err, "resources")
 		}
 		out = append(out, *res)
 	}
 	return out, rows.Err()
 }
 
-// ByID devolve (nil, nil) quando não há linha: "não encontrado" é decisão do
-// domínio, não do adaptador — é lá que se sabe se a ausência é erro.
+// ByID returns (nil, nil) when there is no row: "not found" is the domain's
+// decision, not the adapter's — it is there that one knows whether the absence
+// is an error.
 func (r *ResourceRepo) ByID(ctx context.Context, accountID, id string) (*resource.Resource, error) {
 	res, err := scanResource(r.pool.QueryRow(ctx,
 		`SELECT `+resourceCols+` FROM resources WHERE id = $1 AND account_id = $2`, id, accountID))
@@ -77,7 +78,7 @@ func (r *ResourceRepo) ByID(ctx context.Context, accountID, id string) (*resourc
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "recurso")
+		return nil, Translate(err, "resource")
 	}
 	return res, nil
 }
@@ -94,9 +95,10 @@ func (r *ResourceRepo) Create(ctx context.Context, res *resource.Resource) (*res
 		var err error
 		saved, err = scanResource(row)
 		if err != nil {
-			// UNIQUE (account_id, kind, name) vira 409, não 500 — repetir o
-			// mesmo nome é erro do cliente, com resposta útil.
-			return Translate(err, "recurso")
+			// UNIQUE (account_id, kind, name) becomes a 409, not a 500 —
+			// repeating the same name is the client's error, with a useful
+			// answer.
+			return Translate(err, "resource")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "resource", AggregateID: saved.ID,
@@ -109,9 +111,9 @@ func (r *ResourceRepo) Create(ctx context.Context, res *resource.Resource) (*res
 	return saved, err
 }
 
-// Update grava a configuração nova. bumpVersion incrementa a versão no MESMO
-// UPDATE — dois comandos abririam janela para leitura ver versão e config
-// desencontradas.
+// Update writes the new configuration. bumpVersion increments the version in
+// the SAME UPDATE — two commands would open a window for a read to see a version
+// and a config that do not match.
 func (r *ResourceRepo) Update(ctx context.Context, accountID, id string, config map[string]any, bumpVersion bool) (*resource.Resource, error) {
 	var saved *resource.Resource
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -126,7 +128,7 @@ func (r *ResourceRepo) Update(ctx context.Context, accountID, id string, config 
 		var err error
 		saved, err = scanResource(row)
 		if err != nil {
-			return Translate(err, "recurso")
+			return Translate(err, "resource")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "resource", AggregateID: saved.ID,
@@ -146,7 +148,7 @@ func (r *ResourceRepo) Delete(ctx context.Context, accountID, id string) error {
 		if err := tx.QueryRow(ctx, `
 			DELETE FROM resources WHERE id = $1 AND account_id = $2
 			RETURNING kind::text, name`, id, accountID).Scan(&kind, &name); err != nil {
-			return Translate(err, "recurso")
+			return Translate(err, "resource")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: accountID, Aggregate: "resource", AggregateID: id,
@@ -156,8 +158,8 @@ func (r *ResourceRepo) Delete(ctx context.Context, accountID, id string) error {
 	})
 }
 
-// SetCredentialRef grava o PONTEIRO, nunca o segredo. O evento também carrega
-// apenas a referência opaca: o log de eventos é lido por muita gente.
+// SetCredentialRef writes the POINTER, never the secret. The event too carries
+// only the opaque reference: the event log is read by a lot of people.
 func (r *ResourceRepo) SetCredentialRef(ctx context.Context, accountID, id, ref string) (*resource.Resource, error) {
 	var saved *resource.Resource
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -168,7 +170,7 @@ func (r *ResourceRepo) SetCredentialRef(ctx context.Context, accountID, id, ref 
 		var err error
 		saved, err = scanResource(row)
 		if err != nil {
-			return Translate(err, "recurso")
+			return Translate(err, "resource")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "resource", AggregateID: saved.ID,
@@ -181,7 +183,7 @@ func (r *ResourceRepo) SetCredentialRef(ctx context.Context, accountID, id, ref 
 	return saved, err
 }
 
-// ── concessões ───────────────────────────────────────────────────────────────
+// ── grants ───────────────────────────────────────────────────────────────────
 
 const grantCols = `g.id, g.resource_id, g.user_id, g.level,
 	COALESCE(g.granted_by::text,''), g.created_at`
@@ -196,8 +198,8 @@ func scanGrant(row pgx.Row) (*resource.Grant, error) {
 	return &g, nil
 }
 
-// GrantsOfUser traz todas as concessões do ator na conta de uma vez — é o que
-// permite ao domínio filtrar uma lista inteira sem uma consulta por linha.
+// GrantsOfUser brings all the actor's grants in the account at once — it is what
+// allows the domain to filter a whole list without one query per row.
 func (r *ResourceRepo) GrantsOfUser(ctx context.Context, accountID, userID string) ([]resource.Grant, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+grantCols+`
@@ -205,7 +207,7 @@ func (r *ResourceRepo) GrantsOfUser(ctx context.Context, accountID, userID strin
 		  JOIN resources r ON r.id = g.resource_id
 		 WHERE r.account_id = $1 AND g.user_id = $2`, accountID, userID)
 	if err != nil {
-		return nil, Translate(err, "concessões")
+		return nil, Translate(err, "grants")
 	}
 	defer rows.Close()
 
@@ -213,7 +215,7 @@ func (r *ResourceRepo) GrantsOfUser(ctx context.Context, accountID, userID strin
 	for rows.Next() {
 		g, err := scanGrant(rows)
 		if err != nil {
-			return nil, Translate(err, "concessões")
+			return nil, Translate(err, "grants")
 		}
 		out = append(out, *g)
 	}
@@ -228,10 +230,10 @@ func (r *ResourceRepo) GrantOf(ctx context.Context, accountID, resourceID, userI
 		 WHERE r.account_id = $1 AND g.resource_id = $2 AND g.user_id = $3`,
 		accountID, resourceID, userID))
 	if NoRows(err) {
-		return nil, nil // sem concessão não é erro; quem decide é o domínio
+		return nil, nil // no grant is not an error; the domain decides
 	}
 	if err != nil {
-		return nil, Translate(err, "concessão")
+		return nil, Translate(err, "grant")
 	}
 	return g, nil
 }
@@ -246,15 +248,15 @@ func (r *ResourceRepo) GrantByID(ctx context.Context, accountID, grantID string)
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "concessão")
+		return nil, Translate(err, "grant")
 	}
 	return g, nil
 }
 
-// Grant é upsert sobre UNIQUE (resource_id, user_id): conceder de novo com
-// outro nível AJUSTA a concessão. O INSERT ... SELECT amarra a escrita à conta
-// ativa — recurso de outra conta simplesmente não produz linha, e o zero-rows
-// vira "não encontrado".
+// Grant is an upsert over UNIQUE (resource_id, user_id): granting again with
+// another level ADJUSTS the grant. The INSERT ... SELECT ties the write to the
+// active account — another account's resource simply produces no row, and the
+// zero-rows becomes "not found".
 func (r *ResourceRepo) Grant(ctx context.Context, accountID string, g *resource.Grant) (*resource.Grant, error) {
 	var saved *resource.Grant
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -270,7 +272,7 @@ func (r *ResourceRepo) Grant(ctx context.Context, accountID string, g *resource.
 		var err error
 		saved, err = scanGrant(row)
 		if err != nil {
-			return Translate(err, "concessão")
+			return Translate(err, "grant")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: accountID, Aggregate: "resource", AggregateID: saved.ResourceID,
@@ -292,7 +294,7 @@ func (r *ResourceRepo) RevokeGrant(ctx context.Context, accountID, grantID strin
 			 WHERE g.id = $2 AND r.id = g.resource_id AND r.account_id = $1
 			 RETURNING g.resource_id, g.user_id, g.level`, accountID, grantID).
 			Scan(&resourceID, &userID, &level); err != nil {
-			return Translate(err, "concessão")
+			return Translate(err, "grant")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: accountID, Aggregate: "resource", AggregateID: resourceID,

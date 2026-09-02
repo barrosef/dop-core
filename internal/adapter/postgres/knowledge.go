@@ -14,31 +14,31 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// KnowledgeRepo implementa knowledge.Repository. É o ÚNICO lugar com SQL de
-// conhecimento — o domínio nunca vê uma query.
+// KnowledgeRepo implements knowledge.Repository. It is the ONLY place with
+// knowledge SQL — the domain never sees a query.
 //
-// Duas coisas valem por toda a leitura deste arquivo:
+// Two things hold for this whole file:
 //
-//   - account_id abre TODA cláusula WHERE, inclusive as de busca. Conhecimento
-//     que atravessa de uma conta para outra é o pior defeito concebível nesta
-//     plataforma, e o isolamento é constraint da query, não confiança no
-//     chamador;
-//   - a escrita grava estado e evento na MESMA transação, por InTx + Emit, com
-//     a marca de idempotência fechada dentro dela (ADR-0017/0019).
+//   - account_id opens EVERY WHERE clause, the search ones included. Knowledge
+//     crossing from one account into another is the worst defect conceivable on
+//     this platform, and the isolation is a constraint of the query, not trust
+//     in the caller;
+//   - the write stores state and event in the SAME transaction, through InTx +
+//     Emit, with the idempotency mark closed inside it (ADR-0017/0019).
 type KnowledgeRepo struct{ pool *pgxpool.Pool }
 
 func NewKnowledgeRepo(pool *pgxpool.Pool) *KnowledgeRepo { return &KnowledgeRepo{pool: pool} }
 
-// A coluna embedding fica de fora da leitura de propósito: são 1536 floats por
-// linha que ninguém consome fora do índice — trazê-los seria pagar o vetor
-// inteiro em toda montagem de pacote.
+// The embedding column is left out of the read on purpose: it is 1536 floats
+// per row that nobody consumes outside the index — bringing them would mean
+// paying for the whole vector on every package assembly.
 const knowledgeCols = `k.id, k.account_id, k.scope::text,
 	COALESCE(k.workspace_id::text,''), COALESCE(k.project_id::text,''),
 	k.kind::text, k.name, k.version, k.body, k.object_ref, k.size_bytes,
 	k.est_tokens, k.meta, COALESCE(k.created_by::text,''), k.created_at, k.updated_at`
 
-// knowledgeColsUpsert é a mesma lista sem o apelido da tabela: o RETURNING do
-// upsert enxerga a tabela pelo nome, não pelo alias do SELECT.
+// knowledgeColsUpsert is the same list without the table's alias: the upsert's
+// RETURNING sees the table by name, not by the SELECT's alias.
 var knowledgeColsUpsert = strings.ReplaceAll(knowledgeCols, "k.", "knowledge_artifacts.")
 
 func scanArtifact(row pgx.Row, extra ...any) (*knowledge.Artifact, error) {
@@ -60,12 +60,13 @@ func scanArtifact(row pgx.Row, extra ...any) (*knowledge.Artifact, error) {
 	return &a, nil
 }
 
-// scopeReach é o predicado da HERANÇA, escrito UMA vez.
+// scopeReach is INHERITANCE's predicate, written ONCE.
 //
-// Alcança o projeto tudo que está no projeto, no workspace que o contém e na
-// conta. O workspace é resolvido por subconsulta filtrada pela conta — sem
-// esse filtro, um id de projeto de outra conta traria as regras do workspace
-// dela. $1 é a conta; $2 é o projeto (vazio = só o escopo de conta).
+// What reaches the project is everything in the project, in the workspace that
+// contains it and in the account. The workspace is resolved by a subquery
+// filtered by the account — without that filter, a project id from another
+// account would bring that account's workspace rules. $1 is the account; $2 is
+// the project (empty = the account scope only).
 const scopeReach = `(
 	   k.scope = 'account'
 	OR (k.scope = 'project'   AND k.project_id = NULLIF($2,'')::uuid)
@@ -74,9 +75,9 @@ const scopeReach = `(
 	       WHERE p.id = NULLIF($2,'')::uuid AND p.account_id = $1))
 )`
 
-// RulesFor traz as CANDIDATAS; a precedência da herança é resolvida no domínio
-// (knowledge.ResolveRules), para que a regra de "o mais específico ganha"
-// exista em um lugar só.
+// RulesFor brings the CANDIDATES; the inheritance's precedence is resolved in
+// the domain (knowledge.ResolveRules), so that the "the most specific wins" rule
+// exists in a single place.
 func (r *KnowledgeRepo) RulesFor(ctx context.Context, accountID, projectID string) ([]knowledge.Artifact, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+knowledgeCols+`
@@ -84,15 +85,15 @@ func (r *KnowledgeRepo) RulesFor(ctx context.Context, accountID, projectID strin
 		 WHERE k.account_id = $1 AND k.kind = 'rule' AND `+scopeReach+`
 		 ORDER BY k.name`, accountID, projectID)
 	if err != nil {
-		return nil, Translate(err, "regras")
+		return nil, Translate(err, "rules")
 	}
 	defer rows.Close()
-	return collectArtifacts(rows, "regras")
+	return collectArtifacts(rows, "rules")
 }
 
-// IndexFor traz o índice DOS REPOSITÓRIOS PEDIDOS. Lista vazia devolve nada —
-// e não "tudo", que é o erro que transformaria o pacote de contexto num
-// despejo do projeto inteiro.
+// IndexFor brings the index OF THE REQUESTED REPOSITORIES. An empty list
+// returns nothing — and not "everything", which is the mistake that would turn
+// the context package into a dump of the whole project.
 func (r *KnowledgeRepo) IndexFor(ctx context.Context, accountID, projectID string, repos []string) ([]knowledge.Artifact, error) {
 	if len(repos) == 0 || projectID == "" {
 		return nil, nil
@@ -104,14 +105,14 @@ func (r *KnowledgeRepo) IndexFor(ctx context.Context, accountID, projectID strin
 		   AND k.kind = 'index' AND k.name = ANY($3::text[])
 		 ORDER BY k.name`, accountID, projectID, repos)
 	if err != nil {
-		return nil, Translate(err, "índice")
+		return nil, Translate(err, "the index")
 	}
 	defer rows.Close()
-	return collectArtifacts(rows, "índice")
+	return collectArtifacts(rows, "the index")
 }
 
-// IndexOf devolve (nil, nil) quando não há mapa: quem decide se a ausência é
-// erro é o caso de uso.
+// IndexOf returns (nil, nil) when there is no map: whether the absence is an
+// error is the use case's decision.
 func (r *KnowledgeRepo) IndexOf(ctx context.Context, accountID, projectID, repo string) (*knowledge.Artifact, error) {
 	a, err := scanArtifact(r.pool.QueryRow(ctx, `
 		SELECT `+knowledgeCols+`
@@ -122,21 +123,21 @@ func (r *KnowledgeRepo) IndexOf(ctx context.Context, accountID, projectID, repo 
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "índice")
+		return nil, Translate(err, "the index")
 	}
 	return a, nil
 }
 
-// SearchMemory tem dois caminhos, e o domínio escolhe qual pedindo (ou não) um
-// vetor na consulta.
+// SearchMemory has two paths, and the domain chooses which by supplying (or not)
+// a vector in the query.
 //
-// SEMÂNTICO: distância de cosseno com o índice HNSW. O score devolvido é
-// 1 - distância, para que "maior é melhor" valha nos dois caminhos — score que
-// inverte de sentido conforme o caminho é convite a bug na ordenação.
+// SEMANTIC: cosine distance with the HNSW index. The score returned is
+// 1 - distance, so that "higher is better" holds on both paths — a score that
+// flips meaning depending on the path is an invitation to an ordering bug.
 //
-// LEXICAL: word_similarity, não similarity. A consulta é curta e o corpo da
-// memória é longo; similarity() normaliza pelo texto inteiro e afunda para
-// qualquer documento grande, devolvendo zero justamente onde há mais conteúdo.
+// LEXICAL: word_similarity, not similarity. The query is short and the memory's
+// body is long; similarity() normalizes by the whole text and sinks for any
+// large document, returning zero exactly where there is the most content.
 func (r *KnowledgeRepo) SearchMemory(ctx context.Context, q knowledge.MemoryQuery) ([]knowledge.ScoredArtifact, error) {
 	limit := q.Limit
 	if limit <= 0 {
@@ -163,7 +164,7 @@ func (r *KnowledgeRepo) SearchMemory(ctx context.Context, q knowledge.MemoryQuer
 			 LIMIT $4`, q.AccountID, q.ProjectID, q.Text, limit)
 	}
 	if err != nil {
-		return nil, Translate(err, "memória")
+		return nil, Translate(err, "memory")
 	}
 	defer rows.Close()
 
@@ -172,33 +173,34 @@ func (r *KnowledgeRepo) SearchMemory(ctx context.Context, q knowledge.MemoryQuer
 		var score float32
 		a, err := scanArtifact(rows, &score)
 		if err != nil {
-			return nil, Translate(err, "memória")
+			return nil, Translate(err, "memory")
 		}
 		out = append(out, knowledge.ScoredArtifact{Artifact: *a, Score: score})
 	}
 	return out, rows.Err()
 }
 
-// Put grava o artefato, a marca de idempotência e o evento na MESMA transação.
+// Put writes the artifact, the idempotency mark and the event in the SAME
+// transaction.
 //
-// O upsert é sobre (account_id, kind, scope_id, name): regravar o mesmo nome no
-// mesmo escopo BUMPA a versão. Conhecimento é conteúdo, e conteúdo é
-// versionado — alguém vai precisar saber com qual versão do índice aquela
-// demanda rodou.
+// The upsert is over (account_id, kind, scope_id, name): rewriting the same name
+// in the same scope BUMPS the version. Knowledge is content, and content is
+// versioned — somebody will need to know which version of the index that demand
+// ran with.
 func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowledge.Idempotency) (*knowledge.Artifact, error) {
 	var saved *knowledge.Artifact
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		// A reserva acontece DENTRO da transação: duas escritas simultâneas
-		// com a mesma chave disputam a linha de idempotência, e a segunda
-		// espera em vez de gravar uma versão a mais.
-		if resposta, pronto, err := reserveIdempotency(ctx, tx, id); err != nil {
+		// The reservation happens INSIDE the transaction: two simultaneous
+		// writes with the same key contend for the idempotency row, and the
+		// second waits instead of writing one more version.
+		if stored, done, err := reserveIdempotency(ctx, tx, id); err != nil {
 			return err
-		} else if pronto {
-			var gravado struct {
+		} else if done {
+			var previous struct {
 				ArtifactID string `json:"artifact_id"`
 			}
-			if err := json.Unmarshal(resposta, &gravado); err == nil && gravado.ArtifactID != "" {
-				saved, err = loadArtifact(ctx, tx, a.Scope.AccountID, gravado.ArtifactID)
+			if err := json.Unmarshal(stored, &previous); err == nil && previous.ArtifactID != "" {
+				saved, err = loadArtifact(ctx, tx, a.Scope.AccountID, previous.ArtifactID)
 				return err
 			}
 		}
@@ -215,9 +217,9 @@ func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowl
 			       object_ref = EXCLUDED.object_ref,
 			       size_bytes = EXCLUDED.size_bytes,
 			       est_tokens = EXCLUDED.est_tokens,
-			       -- Vetor novo só substitui o antigo se existir: apagar o
-			       -- embedding porque o serviço estava fora tiraria a memória
-			       -- da busca semântica em silêncio.
+			       -- A new vector only replaces the old one if it exists:
+			       -- erasing the embedding because the service was down would
+			       -- take the memory out of semantic search in silence.
 			       embedding  = COALESCE(EXCLUDED.embedding, knowledge_artifacts.embedding),
 			       meta       = EXCLUDED.meta,
 			       version    = knowledge_artifacts.version + 1,
@@ -230,7 +232,7 @@ func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowl
 		var err error
 		saved, err = scanArtifact(row)
 		if err != nil {
-			return Translate(err, "artefato de conhecimento")
+			return Translate(err, "knowledge artifact")
 		}
 
 		if err := Emit(ctx, tx, ports.Event{
@@ -239,8 +241,8 @@ func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowl
 			Payload: mustJSON(map[string]any{
 				"kind": saved.Kind, "name": saved.Name, "scope": saved.Scope.Level,
 				"project_id": saved.Scope.ProjectID, "version": saved.Version,
-				// A referência, nunca o conteúdo: o log de eventos é lido por
-				// muita gente e não é lugar de guardar documento.
+				// The reference, never the content: the event log is read by a
+				// lot of people and is no place to keep a document.
 				"externalized": saved.Externalized(), "size_bytes": saved.SizeBytes,
 				"est_tokens": saved.EstTokens,
 			}),
@@ -252,12 +254,14 @@ func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowl
 	return saved, err
 }
 
-// RecordContextBuild publica a MEDIÇÃO da montagem (ADR-0009 §3, ADR-0012 §1).
+// RecordContextBuild publishes the assembly's MEASUREMENT (ADR-0009 §3,
+// ADR-0012 §1).
 //
-// Não muda estado: emite. Ainda assim vai por InTx, porque Emit grava evento e
-// outbox e os dois precisam entrar juntos — é o mesmo mecanismo, não um atalho.
-// O evento é do agregado DEMANDA: quem investiga um agente que não sabia o que
-// devia saber lê a timeline da demanda, não a do conhecimento.
+// It changes no state: it emits. It still goes through InTx, because Emit writes
+// the event and the outbox and the two have to go in together — it is the same
+// mechanism, not a shortcut. The event belongs to the DEMAND aggregate: whoever
+// investigates an agent that did not know what it should have known reads the
+// demand's timeline, not knowledge's.
 func (r *KnowledgeRepo) RecordContextBuild(ctx context.Context, accountID, demandID string, m knowledge.PackageMetrics) error {
 	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		return Emit(ctx, tx, ports.Event{
@@ -267,8 +271,9 @@ func (r *KnowledgeRepo) RecordContextBuild(ctx context.Context, accountID, deman
 				"estimated_tokens": m.EstimatedTokens, "budget": m.Budget,
 				"rules": m.Rules, "findings": m.Findings,
 				"index": m.Index, "memories": m.Memories,
-				// Truncado é o número que vira alerta: teto batendo com
-				// frequência é demanda grande demais ou memória mal podada.
+				// Truncated is the number that becomes an alert: a ceiling hit
+				// often means a demand that is too large or a badly pruned
+				// memory.
 				"truncated": m.Dropped.Any(),
 				"dropped": map[string]any{
 					"rules": m.Dropped.Rules, "findings": m.Dropped.Findings,
@@ -299,45 +304,46 @@ func loadArtifact(ctx context.Context, tx pgx.Tx, accountID, id string) (*knowle
 		  FROM knowledge_artifacts k
 		 WHERE k.account_id = $1 AND k.id = $2::uuid`, accountID, id))
 	if err != nil {
-		return nil, Translate(err, "artefato de conhecimento")
+		return nil, Translate(err, "knowledge artifact")
 	}
 	return a, nil
 }
 
-// reserveIdempotency reserva a chave DENTRO da transação do caso de uso.
+// reserveIdempotency reserves the key INSIDE the use case's transaction.
 //
-// Mesma semântica de postgres.Idempotency.Begin, mas sobre a tx: a marca de
-// concluído só passa a existir se a escrita inteira for confirmada, e a chave
-// repetida com CONTEÚDO diferente é conflito — senão um bug de cliente
-// reaproveitando chave viraria corrupção silenciosa da base de conhecimento.
+// The same semantics as postgres.Idempotency.Begin, but over the tx: the
+// completion mark only comes to exist if the whole write is committed, and the
+// key repeated with different CONTENT is a conflict — otherwise a client bug
+// reusing a key would become silent corruption of the knowledge base.
 func reserveIdempotency(ctx context.Context, tx pgx.Tx, id knowledge.Idempotency) ([]byte, bool, error) {
 	if id.Key == "" {
-		return nil, false, nil // sem chave: segue sem proteção
+		return nil, false, nil // no key: it goes on unprotected
 	}
-	var hashGravado string
-	var resposta []byte
-	var concluido *string
+	var storedHash string
+	var stored []byte
+	var completed *string
 	err := tx.QueryRow(ctx, `
 		INSERT INTO idempotency (key, request_hash, expires_at)
 		VALUES ($1, $2, now() + interval '24 hours')
 		ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key
 		RETURNING request_hash, response, completed_at::text`,
-		id.Key, id.RequestHash).Scan(&hashGravado, &resposta, &concluido)
+		id.Key, id.RequestHash).Scan(&storedHash, &stored, &completed)
 	if err != nil {
-		return nil, false, errs.Wrap(errs.KindInternal, err, "falha no controle de idempotência")
+		return nil, false, errs.Wrap(errs.KindInternal, err, "failure in the idempotency control")
 	}
-	if hashGravado != id.RequestHash {
-		return nil, false, errs.Conflict("a chave de idempotência já foi usada com outro conteúdo")
+	if storedHash != id.RequestHash {
+		return nil, false, errs.Conflict("the idempotency key has already been used with different content")
 	}
-	return resposta, concluido != nil && len(resposta) > 0, nil
+	return stored, completed != nil && len(stored) > 0, nil
 }
 
-// vectorLiteral serializa o embedding no formato textual do pgvector.
+// vectorLiteral serializes the embedding into pgvector's textual format.
 //
-// Vai como TEXTO e é convertido por cast na query ($n::vector): o driver não
-// conhece o tipo `vector`, e registrar um codec só para isto acoplaria o pool
-// inteiro a uma extensão. String vazia vira NULL pelo NULLIF — artefato sem
-// embedding é o caso normal quando não há Embedder ligado.
+// It goes as TEXT and is converted by a cast in the query ($n::vector): the
+// driver does not know the `vector` type, and registering a codec just for this
+// would couple the whole pool to an extension. An empty string becomes NULL
+// through the NULLIF — an artifact with no embedding is the normal case when
+// there is no Embedder wired.
 func vectorLiteral(v []float32) string {
 	if len(v) == 0 {
 		return ""

@@ -11,8 +11,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// HierarchyRepo implementa hierarchy.Repository. É o ÚNICO lugar com SQL de
-// workspaces e projetos — o domínio nunca vê uma query.
+// HierarchyRepo implements hierarchy.Repository. It is the ONLY place with
+// workspace and project SQL — the domain never sees a query.
 type HierarchyRepo struct{ pool *pgxpool.Pool }
 
 func NewHierarchyRepo(pool *pgxpool.Pool) *HierarchyRepo { return &HierarchyRepo{pool: pool} }
@@ -50,8 +50,9 @@ func (r *HierarchyRepo) ListWorkspaces(ctx context.Context, accountID string) ([
 	return out, rows.Err()
 }
 
-// WorkspaceByID filtra por conta DENTRO do WHERE: workspace de outra conta
-// devolve "não encontrado", não "sem permissão" — a existência do id não vaza.
+// WorkspaceByID filters by account INSIDE the WHERE: another account's
+// workspace returns "not found", not "forbidden" — the id's existence does not
+// leak.
 func (r *HierarchyRepo) WorkspaceByID(ctx context.Context, accountID, id string) (*hierarchy.Workspace, error) {
 	w, err := scanWorkspace(r.pool.QueryRow(ctx,
 		`SELECT `+workspaceCols+` FROM workspaces WHERE id = $1 AND account_id = $2`, id, accountID))
@@ -74,7 +75,7 @@ func (r *HierarchyRepo) CreateWorkspace(ctx context.Context, w *hierarchy.Worksp
 		if err != nil {
 			return Translate(err, "workspace")
 		}
-		// Evento na MESMA transação — outbox transacional (ADR-0019).
+		// The event in the SAME transaction — the transactional outbox (ADR-0019).
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "workspace", AggregateID: saved.ID,
 			Type:    "dop.hierarchy.workspace.created",
@@ -108,7 +109,7 @@ func (r *HierarchyRepo) UpdateWorkspace(ctx context.Context, w *hierarchy.Worksp
 	return saved, err
 }
 
-// ── projetos ─────────────────────────────────────────────────────────────────
+// ── projects ─────────────────────────────────────────────────────────────────
 
 const projectCols = `id, account_id, workspace_id, name, COALESCE(description,''),
 	rules, created_at, updated_at`
@@ -145,7 +146,7 @@ func (r *HierarchyRepo) ProjectByID(ctx context.Context, accountID, id string) (
 	p, err := scanProject(r.pool.QueryRow(ctx,
 		`SELECT `+projectCols+` FROM projects WHERE id = $1 AND account_id = $2`, id, accountID))
 	if err != nil {
-		return nil, Translate(err, "projeto")
+		return nil, Translate(err, "project")
 	}
 	one := []hierarchy.Project{*p}
 	if err := r.attachChildren(ctx, one); err != nil {
@@ -165,7 +166,7 @@ func (r *HierarchyRepo) CreateProject(ctx context.Context, p *hierarchy.Project)
 		var err error
 		saved, err = scanProject(row)
 		if err != nil {
-			return Translate(err, "projeto")
+			return Translate(err, "project")
 		}
 		saved.Repos, saved.Resources, saved.TaskManager = p.Repos, p.Resources, p.TaskManager
 		if err := writeProjectChildren(ctx, tx, saved); err != nil {
@@ -195,7 +196,7 @@ func (r *HierarchyRepo) UpdateProject(ctx context.Context, p *hierarchy.Project)
 		var err error
 		saved, err = scanProject(row)
 		if err != nil {
-			return Translate(err, "projeto")
+			return Translate(err, "project")
 		}
 		saved.Repos, saved.Resources, saved.TaskManager = p.Repos, p.Resources, p.TaskManager
 		if err := writeProjectChildren(ctx, tx, saved); err != nil {
@@ -213,11 +214,11 @@ func (r *HierarchyRepo) UpdateProject(ctx context.Context, p *hierarchy.Project)
 	return saved, err
 }
 
-// ── árvore ───────────────────────────────────────────────────────────────────
+// ── the tree ─────────────────────────────────────────────────────────────────
 
-// Tree monta a árvore com TRÊS varreduras fixas — workspaces, projetos e os
-// filhos dos projetos — em vez de uma consulta por workspace. É o ponto inteiro
-// de a operação existir na porta.
+// Tree builds the tree with THREE fixed sweeps — workspaces, projects and the
+// projects' children — instead of one query per workspace. It is the entire
+// point of the operation existing on the port.
 func (r *HierarchyRepo) Tree(ctx context.Context, accountID string) ([]hierarchy.TreeNode, error) {
 	workspaces, err := r.ListWorkspaces(ctx, accountID)
 	if err != nil {
@@ -239,8 +240,9 @@ func (r *HierarchyRepo) Tree(ctx context.Context, accountID string) ([]hierarchy
 	return nodes, nil
 }
 
-// ResourceAccounts responde de quem é cada recurso. Ids inexistentes ficam de
-// fora do mapa — a ausência é resposta, e quem decide o que fazer é o domínio.
+// ResourceAccounts answers whose each resource is. Nonexistent ids stay out of
+// the map — the absence is an answer, and the domain decides what to do with
+// it.
 func (r *HierarchyRepo) ResourceAccounts(ctx context.Context, ids []string) (map[string]string, error) {
 	out := make(map[string]string, len(ids))
 	if len(ids) == 0 {
@@ -249,13 +251,13 @@ func (r *HierarchyRepo) ResourceAccounts(ctx context.Context, ids []string) (map
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, account_id FROM resources WHERE id = ANY($1::uuid[])`, ids)
 	if err != nil {
-		return nil, Translate(err, "recursos")
+		return nil, Translate(err, "resources")
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id, accountID string
 		if err := rows.Scan(&id, &accountID); err != nil {
-			return nil, Translate(err, "recursos")
+			return nil, Translate(err, "resources")
 		}
 		out[id] = accountID
 	}
@@ -267,22 +269,22 @@ func (r *HierarchyRepo) ResourceAccounts(ctx context.Context, ids []string) (map
 func (r *HierarchyRepo) queryProjects(ctx context.Context, sql string, args ...any) ([]hierarchy.Project, error) {
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, Translate(err, "projetos")
+		return nil, Translate(err, "projects")
 	}
 	defer rows.Close()
 	var out []hierarchy.Project
 	for rows.Next() {
 		p, err := scanProject(rows)
 		if err != nil {
-			return nil, Translate(err, "projetos")
+			return nil, Translate(err, "projects")
 		}
 		out = append(out, *p)
 	}
 	return out, rows.Err()
 }
 
-// attachChildren carrega repositórios e recursos de TODOS os projetos de uma
-// vez — duas consultas, e não duas por projeto.
+// attachChildren loads the repositories and resources of ALL the projects at
+// once — two queries, and not two per project.
 func (r *HierarchyRepo) attachChildren(ctx context.Context, projects []hierarchy.Project) error {
 	if len(projects) == 0 {
 		return nil
@@ -306,7 +308,7 @@ func (r *HierarchyRepo) attachChildren(ctx context.Context, projects []hierarchy
 		SELECT project_id, id, integration_id, external_id, name, default_branch, pr_targets
 		  FROM project_repos WHERE project_id = ANY($1::uuid[]) ORDER BY name`, ids)
 	if err != nil {
-		return Translate(err, "repositórios do projeto")
+		return Translate(err, "the project's repositories")
 	}
 	defer repos.Close()
 	for repos.Next() {
@@ -314,26 +316,26 @@ func (r *HierarchyRepo) attachChildren(ctx context.Context, projects []hierarchy
 		var pr hierarchy.ProjectRepo
 		if err := repos.Scan(&projectID, &pr.ID, &pr.IntegrationID, &pr.ExternalID,
 			&pr.Name, &pr.DefaultBranch, &pr.PRTargets); err != nil {
-			return Translate(err, "repositórios do projeto")
+			return Translate(err, "the project's repositories")
 		}
 		if i, ok := index[projectID]; ok {
 			projects[i].Repos = append(projects[i].Repos, pr)
 		}
 	}
 	if err := repos.Err(); err != nil {
-		return Translate(err, "repositórios do projeto")
+		return Translate(err, "the project's repositories")
 	}
 
 	res, err := r.pool.Query(ctx,
 		`SELECT project_id, resource_id FROM project_resources WHERE project_id = ANY($1::uuid[])`, ids)
 	if err != nil {
-		return Translate(err, "recursos do projeto")
+		return Translate(err, "the project's resources")
 	}
 	defer res.Close()
 	for res.Next() {
 		var projectID, resourceID string
 		if err := res.Scan(&projectID, &resourceID); err != nil {
-			return Translate(err, "recursos do projeto")
+			return Translate(err, "the project's resources")
 		}
 		if i, ok := index[projectID]; ok {
 			projects[i].Resources = append(projects[i].Resources, resourceID)
@@ -342,12 +344,13 @@ func (r *HierarchyRepo) attachChildren(ctx context.Context, projects []hierarchy
 	return res.Err()
 }
 
-// writeProjectChildren reescreve os filhos do projeto: a atualização é do
-// CONJUNTO, não incremental — o cliente manda a lista que quer ver, e apagar e
-// regravar dentro da transação evita a divergência de um diff mal feito.
+// writeProjectChildren rewrites the project's children: the update is of the
+// SET, not incremental — the client sends the list it wants to see, and deleting
+// and rewriting inside the transaction avoids the divergence of a badly made
+// diff.
 func writeProjectChildren(ctx context.Context, tx pgx.Tx, p *hierarchy.Project) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM project_repos WHERE project_id = $1`, p.ID); err != nil {
-		return Translate(err, "repositórios do projeto")
+		return Translate(err, "the project's repositories")
 	}
 	for i := range p.Repos {
 		branch := p.Repos[i].DefaultBranch
@@ -362,32 +365,32 @@ func writeProjectChildren(ctx context.Context, tx pgx.Tx, p *hierarchy.Project) 
 			p.ID, p.Repos[i].IntegrationID, p.Repos[i].ExternalID, p.Repos[i].Name,
 			branch, tagsOf(p.Repos[i].PRTargets)).
 			Scan(&p.Repos[i].ID); err != nil {
-			return Translate(err, "repositório do projeto")
+			return Translate(err, "a project repository")
 		}
 	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM project_resources WHERE project_id = $1`, p.ID); err != nil {
-		return Translate(err, "recursos do projeto")
+		return Translate(err, "the project's resources")
 	}
 	for _, id := range p.Resources {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO project_resources (project_id, resource_id)
 			VALUES ($1,$2) ON CONFLICT DO NOTHING`, p.ID, id); err != nil {
-			return Translate(err, "recurso do projeto")
+			return Translate(err, "a project resource")
 		}
 	}
 	return writeProjectTaskManager(ctx, tx, p)
 }
 
-// writeProjectTaskManager grava o vínculo com o quadro do provedor.
+// writeProjectTaskManager writes the link to the provider's board.
 //
-// Nil apaga: um projeto que perdeu o quadro não fica com o vínculo velho
-// pendurado. As FKs impedem apontar para integração inexistente — era
-// exatamente isso que o envelope JSON não conseguia garantir.
+// Nil deletes: a project that lost its board is not left with the old link
+// hanging. The FKs prevent pointing at a nonexistent integration — which is
+// exactly what the JSON envelope could not guarantee.
 func writeProjectTaskManager(ctx context.Context, tx pgx.Tx, p *hierarchy.Project) error {
 	if p.TaskManager == nil {
 		_, err := tx.Exec(ctx, `DELETE FROM project_task_managers WHERE project_id = $1`, p.ID)
-		return Translate(err, "quadro do projeto")
+		return Translate(err, "the project's board")
 	}
 	tm := p.TaskManager
 	_, err := tx.Exec(ctx, `
@@ -401,11 +404,12 @@ func writeProjectTaskManager(ctx context.Context, tx pgx.Tx, p *hierarchy.Projec
 		       card_types          = EXCLUDED.card_types,
 		       updated_at          = now()`,
 		p.ID, tm.IntegrationID, tm.ExternalSpaceID, tm.ExternalProjectID, tagsOf(tm.CardTypes))
-	return Translate(err, "quadro do projeto")
+	return Translate(err, "the project's board")
 }
 
-// loadProjectTaskManagers preenche TaskManager de um lote de projetos numa
-// única consulta — a árvore do cockpit traz N projetos e não pode virar N+1.
+// loadProjectTaskManagers fills in TaskManager for a batch of projects in a
+// single query — the cockpit's tree brings N projects and must not become
+// N+1.
 func loadProjectTaskManagers(ctx context.Context, q pgxQuerier, projects []*hierarchy.Project) error {
 	if len(projects) == 0 {
 		return nil
@@ -420,7 +424,7 @@ func loadProjectTaskManagers(ctx context.Context, q pgxQuerier, projects []*hier
 		SELECT project_id, integration_id, external_space_id, external_project_id, card_types
 		  FROM project_task_managers WHERE project_id = ANY($1::uuid[])`, ids)
 	if err != nil {
-		return Translate(err, "quadros dos projetos")
+		return Translate(err, "the projects' boards")
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -428,23 +432,23 @@ func loadProjectTaskManagers(ctx context.Context, q pgxQuerier, projects []*hier
 		tm := &hierarchy.ProjectTaskManager{}
 		if err := rows.Scan(&pid, &tm.IntegrationID, &tm.ExternalSpaceID,
 			&tm.ExternalProjectID, &tm.CardTypes); err != nil {
-			return Translate(err, "quadro do projeto")
+			return Translate(err, "the project's board")
 		}
 		if p, ok := byID[pid]; ok {
 			p.TaskManager = tm
 		}
 	}
-	return Translate(rows.Err(), "quadros dos projetos")
+	return Translate(rows.Err(), "the projects' boards")
 }
 
-// projectDoc: MANTIDO apenas para ler dados gravados antes da migração 0004.
-// Escrita nova usa a tabela project_task_managers.
+// projectDoc: KEPT only to read data written before migration 0004. New writes
+// use the project_task_managers table.
 //
-// O schema atual não tem coluna para o vínculo do gerenciador de tarefas — que
-// é POR PROJETO (a mesma integração serve muitos projetos, com espaços e
-// quadros diferentes). Até a migração existir, o vínculo viaja junto das regras
-// neste envelope, e a leitura aceita as duas formas: o envelope e o array puro
-// do DEFAULT '[]'. Assim nada se perde e nada quebra quando a coluna nascer.
+// The old schema had no column for the task manager's link — which is PER
+// PROJECT (the same integration serves many projects, with different spaces and
+// boards). Until the migration existed, the link travelled alongside the rules
+// in this envelope, and the read accepts both shapes: the envelope and the plain
+// array from the DEFAULT '[]'. That way nothing is lost and nothing breaks.
 type projectDoc struct {
 	Rules       []string        `json:"rules"`
 	TaskManager *taskManagerDoc `json:"task_manager,omitempty"`
@@ -458,8 +462,9 @@ type taskManagerDoc struct {
 }
 
 func encodeProjectDoc(p *hierarchy.Project) []byte {
-	// A partir da migração 0004 a coluna guarda SÓ as regras; o vínculo do
-	// task manager tem tabela própria, com FK — ver writeProjectTaskManager.
+	// From migration 0004 on the column stores ONLY the rules; the task
+	// manager's link has a table of its own, with an FK — see
+	// writeProjectTaskManager.
 	if len(p.Rules) == 0 {
 		return []byte(`[]`)
 	}
@@ -483,14 +488,14 @@ func decodeProjectDoc(raw []byte) ([]string, *hierarchy.ProjectTaskManager) { //
 		}
 		return doc.Rules, tm
 	}
-	// Forma antiga: array puro de regras, como manda o DEFAULT da coluna.
+	// The old shape: a plain array of rules, as the column's DEFAULT requires.
 	var rules []string
 	_ = json.Unmarshal(raw, &rules)
 	return rules, nil
 }
 
-// tagsOf garante array vazio em vez de NULL: as colunas são NOT NULL DEFAULT
-// '{}' e nil viraria violação em vez de lista vazia.
+// tagsOf guarantees an empty array instead of NULL: the columns are NOT NULL
+// DEFAULT '{}' and nil would become a violation instead of an empty list.
 func tagsOf(v []string) []string {
 	if v == nil {
 		return []string{}

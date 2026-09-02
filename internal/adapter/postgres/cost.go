@@ -11,24 +11,24 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// CostRepo implementa cost.Repository. É o ÚNICO lugar com SQL de custo — o
-// domínio nunca vê uma query.
+// CostRepo implements cost.Repository. It is the ONLY place with cost SQL — the
+// domain never sees a query.
 //
-// Três coisas valem por todo o arquivo:
+// Three things hold for the whole file:
 //
-//   - account_id entra em TODA cláusula WHERE, sem exceção. Isolamento
-//     multi-tenant é constraint, não confiança no chamador;
-//   - toda mudança de estado grava o evento na MESMA transação, por InTx +
-//     Emit: commit ⇒ estado e evento, ou nenhum dos dois (ADR-0019);
-//   - a decisão de QUANDO emitir estouro é do domínio
-//     (cost.BudgetState.JustExceeded), não deste arquivo. Regra de negócio em
-//     SQL é regra que ninguém encontra depois.
+//   - account_id goes into EVERY WHERE clause, with no exception. Multi-tenant
+//     isolation is a constraint, not trust in the caller;
+//   - every state change writes the event in the SAME transaction, through InTx
+//   - Emit: a commit ⇒ state and event, or neither (ADR-0019);
+//   - deciding WHEN to emit an overrun belongs to the domain
+//     (cost.BudgetState.JustExceeded), not to this file. A business rule in SQL
+//     is a rule nobody finds later.
 type CostRepo struct{ pool *pgxpool.Pool }
 
-// rowQuerier é o mínimo de uma leitura de linha única: pool e tx satisfazem os
-// dois. Existe para que o MESMO carregador de orçamento sirva dentro e fora de
-// transação — ler o orçamento por dois caminhos diferentes é como as duas
-// leituras acabam divergindo.
+// rowQuerier is the minimum for a single-row read: both the pool and a tx
+// satisfy it. It exists so the SAME budget loader works inside and outside a
+// transaction — reading the budget through two different paths is how the two
+// reads end up diverging.
 type rowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
@@ -37,15 +37,16 @@ func NewCostRepo(pool *pgxpool.Pool) *CostRepo { return &CostRepo{pool: pool} }
 
 // ── registro de uso ──────────────────────────────────────────────────────────
 
-// RecordUsage é o caminho quente da plataforma e o único ponto em que a
-// idempotência é a diferença entre orçamento e ficção.
+// RecordUsage is the platform's hot path and the one point where idempotency is
+// the difference between a budget and fiction.
 //
-// A guarda é o INSERT em cost_usage_keys: ele é a primeira coisa da transação
-// e, quando não devolve linha, a chave já foi usada — a transação segue apenas
-// para LER o estado corrente, sem gravar nada e sem acumular orçamento. A
-// tabela de chaves é separada de cost_usage porque cost_usage é particionada e
-// toda UNIQUE de tabela particionada precisa conter a chave de partição; a
-// justificativa longa está em migrations/0008_cost.sql.
+// The guard is the INSERT into cost_usage_keys: it is the transaction's first
+// thing and, when it returns no row, the key has already been used — the
+// transaction goes on only to READ the current state, writing nothing and
+// accumulating no budget. The key table is separate from cost_usage because
+// cost_usage is partitioned and every UNIQUE on a partitioned table has to
+// contain the partition key; the long justification is in
+// migrations/0008_cost.sql.
 func (r *CostRepo) RecordUsage(ctx context.Context, u *cost.UsageEvent, idempotencyKey string) (*cost.RecordResult, error) {
 	out := &cost.RecordResult{}
 
@@ -60,13 +61,14 @@ func (r *CostRepo) RecordUsage(ctx context.Context, u *cost.UsageEvent, idempote
 			u.AccountID, idempotencyKey, u.At).Scan(&usageID, &at)
 
 		if NoRows(err) {
-			// Repetição legítima. Devolve o que foi gravado da primeira vez e
-			// o orçamento COMO ESTÁ — antes = depois, então nada "acabou de
-			// estourar", mas quem perguntou continua sabendo se está estourado.
+			// A legitimate repetition. It returns what was written the first
+			// time and the budget AS IT IS — before = after, so nothing "has
+			// just blown", but whoever asked still learns whether it is
+			// blown.
 			return carregarRepeticao(ctx, tx, u, idempotencyKey, out)
 		}
 		if err != nil {
-			return Translate(err, "chave de uso")
+			return Translate(err, "usage key")
 		}
 
 		saved, err := insertUsage(ctx, tx, usageID, at, u)
@@ -99,7 +101,7 @@ func carregarRepeticao(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent,
 		SELECT usage_id, occurred_at FROM cost_usage_keys
 		 WHERE account_id = $1 AND idempotency_key = $2`,
 		u.AccountID, idempotencyKey).Scan(&usageID, &at); err != nil {
-		return Translate(err, "chave de uso")
+		return Translate(err, "usage key")
 	}
 
 	saved, err := usageByID(ctx, tx, u.AccountID, usageID, at)
@@ -114,7 +116,7 @@ func carregarRepeticao(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent,
 		if err != nil {
 			return err
 		}
-		// Antes = depois: a escrita não aconteceu, logo não houve transição.
+		// Before = after: the write did not happen, so there was no transition.
 		out.Budgets = append(out.Budgets, cost.BudgetState{Before: *b, After: *b})
 	}
 	return nil
@@ -136,12 +138,12 @@ func scanUsage(row pgx.Row) (*cost.UsageEvent, error) {
 	return &u, nil
 }
 
-// insertUsage grava a linha com o id que a guarda já reservou — é o que amarra
-// a chave de idempotência ao registro correspondente.
+// insertUsage writes the row with the id the guard has already reserved — it is
+// what ties the idempotency key to the corresponding record.
 //
-// occurred_at fora das partições declaradas falha aqui, com violação de
-// restrição. É o comportamento certo: melhor recusar o registro do que gravar
-// custo num mês que ninguém varre.
+// An occurred_at outside the declared partitions fails here, with a constraint
+// violation. That is the right behaviour: better to refuse the record than to
+// write a cost into a month nobody sweeps.
 func insertUsage(ctx context.Context, tx pgx.Tx, id string, at time.Time, u *cost.UsageEvent) (*cost.UsageEvent, error) {
 	row := tx.QueryRow(ctx, `
 		INSERT INTO cost_usage (id, account_id, demand_id, thread_id, model,
@@ -160,8 +162,8 @@ func insertUsage(ctx context.Context, tx pgx.Tx, id string, at time.Time, u *cos
 	return saved, nil
 }
 
-// usageByID lê pela PK completa (id, occurred_at): sem a chave de partição o
-// planejador varreria TODAS as partições para achar uma linha.
+// usageByID reads by the full PK (id, occurred_at): without the partition key
+// the planner would scan ALL the partitions to find one row.
 func usageByID(ctx context.Context, tx pgx.Tx, accountID, id string, at time.Time) (*cost.UsageEvent, error) {
 	saved, err := scanUsage(tx.QueryRow(ctx,
 		`SELECT `+usageCols+` FROM cost_usage
@@ -177,9 +179,10 @@ type scopeRef struct {
 	id    string
 }
 
-// affectedScopes: todo consumo toca o orçamento da conta; consumo com demanda
-// toca também o dela. A ordem é fixa para que o evento de estouro saia sempre
-// na mesma sequência — log de eventos com ordem instável é log difícil de ler.
+// affectedScopes: every consumption touches the account's budget; a consumption
+// with a demand touches that demand's too. The order is fixed so the overrun
+// event always comes out in the same sequence — an event log with an unstable
+// order is a log that is hard to read.
 func affectedScopes(u *cost.UsageEvent) []scopeRef {
 	scopes := []scopeRef{{cost.ScopeAccount, u.AccountID}}
 	if u.DemandID != "" {
@@ -188,11 +191,12 @@ func affectedScopes(u *cost.UsageEvent) []scopeRef {
 	return scopes
 }
 
-// accumulate soma o consumo em cada escopo e devolve o ANTES e o DEPOIS.
+// accumulate adds the consumption in each scope and returns the BEFORE and the
+// AFTER.
 //
-// O antes sai do mesmo UPDATE (spent_micros - $delta), e não de um SELECT
-// anterior: dois comandos abririam janela para duas escritas concorrentes
-// lerem o mesmo "antes" e nenhuma das duas enxergar a transição de estouro.
+// The before comes out of the same UPDATE (spent_micros - $delta), and not of an
+// earlier SELECT: two commands would open a window for two concurrent writes to
+// read the same "before" and for neither to see the overrun's transition.
 func accumulate(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent) ([]cost.BudgetState, error) {
 	delta := int64(u.CostMicros)
 	var out []cost.BudgetState
@@ -210,7 +214,7 @@ func accumulate(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent) ([]cost.Budg
 			RETURNING limit_micros, spent_micros - $4, spent_micros, currency, updated_at`,
 			u.AccountID, string(sc.scope), sc.id, delta, u.Currency,
 		).Scan(&limit, &before, &after, &currency, &updatedAt); err != nil {
-			return nil, Translate(err, "orçamento")
+			return nil, Translate(err, "budget")
 		}
 
 		base := cost.Budget{
@@ -225,12 +229,13 @@ func accumulate(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent) ([]cost.Budg
 	return out, nil
 }
 
-// emitUsageEvents grava os eventos na transação da escrita.
+// emitUsageEvents writes the events in the write's transaction.
 //
-// São dois tipos e eles têm leitores diferentes: `dop.cost.recorded` alimenta
-// medição e calibração (P-7); `dop.cost.budget.exceeded` é o que faz a demanda
-// PAUSAR e virar item da caixa de atenção (ADR-0011 §2). Por isso o segundo sai
-// só na TRANSIÇÃO — um evento por estouro, não um por turno depois dele.
+// There are two kinds and they have different readers: `dop.cost.recorded` feeds
+// measurement and calibration (P-7); `dop.cost.budget.exceeded` is what makes
+// the demand PAUSE and become an attention-box item (ADR-0011 §2). That is why
+// the second only comes out on the TRANSITION — one event per overrun, not one
+// per turn after it.
 func emitUsageEvents(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent, states []cost.BudgetState) error {
 	aggregate, aggregateID := "account", u.AccountID
 	if u.DemandID != "" {
@@ -246,9 +251,9 @@ func emitUsageEvents(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent, states 
 			"input_tokens": u.InputTokens, "output_tokens": u.OutputTokens,
 			"cache_read_tokens": u.CacheReadTokens, "cache_creation_tokens": u.CacheCreationTokens,
 			"cost_micros": int64(u.CostMicros), "currency": u.Currency,
-			// Cache zerado em prompt grande é o invalidador silencioso da
-			// ADR-0012 §1 — vai no evento para virar alerta sem que ninguém
-			// precise reprocessar a tabela inteira para descobrir.
+			// Zero cache on a large prompt is ADR-0012 §1's silent invalidator
+			// — it goes in the event so it can become an alert without anyone
+			// having to reprocess the whole table to find out.
 			"suspect_cache_miss": u.SuspectCacheMiss(),
 		}),
 	}); err != nil {
@@ -282,18 +287,18 @@ func emitExceeded(ctx context.Context, tx pgx.Tx, b cost.Budget) error {
 	})
 }
 
-// ── orçamento ────────────────────────────────────────────────────────────────
+// ── budget ───────────────────────────────────────────────────────────────────
 
 func (r *CostRepo) BudgetOf(ctx context.Context, accountID string, scope cost.Scope, scopeID string) (*cost.Budget, error) {
 	return budgetOf(ctx, r.pool, accountID, scope, scopeID)
 }
 
-// budgetOf serve pool e transação pelo mesmo caminho.
+// budgetOf serves the pool and a transaction through the same path.
 //
-// Escopo sem linha em cost_budgets NÃO é "não encontrado": significa que
-// ninguém definiu teto ainda, e o gasto real continua sendo pergunta legítima.
-// A soma sobre cost_usage só roda nesse caso — no caminho normal existe linha
-// com o acumulado, e a maior tabela do sistema não é tocada.
+// A scope with no row in cost_budgets is NOT "not found": it means nobody has
+// set a ceiling yet, and the real spend is still a legitimate question. The sum
+// over cost_usage only runs in that case — on the normal path there is a row
+// with the accumulated total, and the system's largest table is not touched.
 func budgetOf(ctx context.Context, q rowQuerier, accountID string, scope cost.Scope, scopeID string) (*cost.Budget, error) {
 
 	b := cost.Budget{AccountID: accountID, Scope: scope, ScopeID: scopeID}
@@ -310,7 +315,7 @@ func budgetOf(ctx context.Context, q rowQuerier, accountID string, scope cost.Sc
 		return budgetFromUsage(ctx, q, accountID, scope, scopeID)
 	}
 	if err != nil {
-		return nil, Translate(err, "orçamento")
+		return nil, Translate(err, "budget")
 	}
 	b.LimitMicros, b.SpentMicros = cost.Micros(limit), cost.Micros(spent)
 	return &b, nil
@@ -326,17 +331,17 @@ func budgetFromUsage(ctx context.Context, q rowQuerier, accountID string, scope 
 		 WHERE account_id = $1
 		   AND ($2::uuid IS NULL OR demand_id = $2::uuid)`,
 		accountID, demandFilter(scope, scopeID)).Scan(&spent, &currency); err != nil {
-		return nil, Translate(err, "orçamento")
+		return nil, Translate(err, "budget")
 	}
-	// LimitMicros zero: SEM TETO. Ausência de orçamento nunca vira teto zero.
+	// LimitMicros zero: NO CEILING. An absent budget never becomes a zero ceiling.
 	return &cost.Budget{
 		AccountID: accountID, Scope: scope, ScopeID: scopeID,
 		SpentMicros: cost.Micros(spent), Currency: currency,
 	}, nil
 }
 
-// demandFilter devolve nil no escopo de conta — o `$n::uuid IS NULL` das
-// consultas transforma isso em "sem filtro de demanda" sem montar SQL na mão.
+// demandFilter returns nil in the account scope — the queries' `$n::uuid IS
+// NULL` turns that into "no demand filter" without assembling SQL by hand.
 func demandFilter(scope cost.Scope, scopeID string) any {
 	if scope == cost.ScopeDemand && scopeID != "" {
 		return scopeID
@@ -344,11 +349,12 @@ func demandFilter(scope cost.Scope, scopeID string) any {
 	return nil
 }
 
-// SetBudget grava o teto preservando o acumulado, e devolve antes/depois.
+// SetBudget writes the ceiling preserving the accumulated total, and returns
+// before/after.
 //
-// A CTE `antes` lê a linha ANTIGA: dentro do mesmo comando ela enxerga o
-// snapshot anterior ao upsert, que é exatamente o que se precisa para saber se
-// rebaixar o teto acabou de estourar o orçamento.
+// The `antes` CTE reads the OLD row: within the same command it sees the
+// snapshot prior to the upsert, which is exactly what is needed to know whether
+// lowering the ceiling has just blown the budget.
 func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetState, error) {
 	var st cost.BudgetState
 
@@ -376,7 +382,7 @@ func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetS
 			  FROM upsert u`,
 			b.AccountID, string(b.Scope), b.ScopeID, int64(b.LimitMicros), b.Currency,
 		).Scan(&limAntes, &gastoAntes, &limDepois, &gastoDepois, &currency, &updatedAt); err != nil {
-			return Translate(err, "orçamento")
+			return Translate(err, "budget")
 		}
 
 		st.Before = cost.Budget{
@@ -402,8 +408,8 @@ func (r *CostRepo) SetBudget(ctx context.Context, b *cost.Budget) (*cost.BudgetS
 			return err
 		}
 
-		// Teto rebaixado abaixo do gasto é estouro de verdade, e precisa
-		// pausar a demanda pelo mesmo caminho do estouro por consumo.
+		// A ceiling lowered below the spend is a real overrun, and it has to
+		// pause the demand through the same path as an overrun by consumption.
 		if st.JustExceeded() {
 			return emitExceeded(ctx, tx, st.After)
 		}
@@ -422,17 +428,17 @@ func budgetAggregate(s cost.Scope) string {
 	return "account"
 }
 
-// ── agregação ────────────────────────────────────────────────────────────────
+// ── aggregation ──────────────────────────────────────────────────────────────
 
-// Summarize agrega no BANCO, não em memória: trazer as linhas do período para
-// somar em Go seria mover milhões de registros pela rede para produzir seis
-// números.
+// Summarize aggregates in the DATABASE, not in memory: bringing the period's
+// rows over to sum them in Go would mean moving millions of records across the
+// network to produce six numbers.
 func (r *CostRepo) Summarize(ctx context.Context, accountID string, scope cost.Scope, scopeID string,
 	since, until time.Time, recentLimit int) (*cost.Summary, error) {
 
 	s := cost.Summary{Scope: scope, ScopeID: scopeID, Since: since, Until: until}
 	var total int64
-	demanda := demandFilter(scope, scopeID)
+	demand := demandFilter(scope, scopeID)
 
 	if err := r.pool.QueryRow(ctx, `
 		SELECT COALESCE(SUM(cost_micros), 0), COUNT(*),
@@ -443,10 +449,10 @@ func (r *CostRepo) Summarize(ctx context.Context, accountID string, scope cost.S
 		 WHERE account_id = $1
 		   AND occurred_at >= $2 AND occurred_at < $3
 		   AND ($4::uuid IS NULL OR demand_id = $4::uuid)`,
-		accountID, since, until, demanda,
+		accountID, since, until, demand,
 	).Scan(&total, &s.Calls, &s.InputTokens, &s.OutputTokens,
 		&s.CacheReadTokens, &s.CacheCreationTokens, &s.Currency); err != nil {
-		return nil, Translate(err, "resumo de custo")
+		return nil, Translate(err, "cost summary")
 	}
 	s.TotalMicros = cost.Micros(total)
 
@@ -461,16 +467,16 @@ func (r *CostRepo) Summarize(ctx context.Context, accountID string, scope cost.S
 		   AND occurred_at >= $2 AND occurred_at < $3
 		   AND ($4::uuid IS NULL OR demand_id = $4::uuid)
 		 ORDER BY occurred_at DESC
-		 LIMIT $5`, accountID, since, until, demanda, recentLimit)
+		 LIMIT $5`, accountID, since, until, demand, recentLimit)
 	if err != nil {
-		return nil, Translate(err, "resumo de custo")
+		return nil, Translate(err, "cost summary")
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		u, err := scanUsage(rows)
 		if err != nil {
-			return nil, Translate(err, "resumo de custo")
+			return nil, Translate(err, "cost summary")
 		}
 		s.Recent = append(s.Recent, *u)
 	}

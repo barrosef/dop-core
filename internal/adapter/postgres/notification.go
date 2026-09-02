@@ -11,9 +11,9 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// NotificationRepo grava o REGISTRO de envio e responde as duas perguntas de
-// leitura do gatilho: quem recebe aviso desta conta, e o que da caixa já
-// esperou o bastante para virar e-mail.
+// NotificationRepo writes the SEND RECORD and answers the trigger's two read
+// questions: who receives notices for this account, and what in the box has
+// already waited long enough to become an email.
 type NotificationRepo struct{ pool *pgxpool.Pool }
 
 func NewNotificationRepo(pool *pgxpool.Pool) *NotificationRepo {
@@ -22,19 +22,19 @@ func NewNotificationRepo(pool *pgxpool.Pool) *NotificationRepo {
 
 var _ notification.Repository = (*NotificationRepo)(nil)
 
-// Claim é a idempotência, e ela é UMA INSTRUÇÃO — não um SELECT seguido de um
-// INSERT.
+// Claim is the idempotency, and it is ONE STATEMENT — not a SELECT followed by
+// an INSERT.
 //
-// A diferença não é de estilo: com duas instruções, dois workers processando a
-// reentrega do mesmo evento leem "não existe" ao mesmo tempo e mandam dois
-// e-mails. O `ON CONFLICT` transforma a corrida numa decisão do índice único, e
-// o índice é `(event_id, rule_name, action_name)` — a chave composta da
-// ADR-0025.
+// The difference is not stylistic: with two statements, two workers processing
+// the same event's redelivery read "it does not exist" at the same time and send
+// two emails. The `ON CONFLICT` turns the race into a decision of the unique
+// index, and the index is `(event_id, rule_name, action_name)` — ADR-0025's
+// composite key.
 //
-// O `WHERE` do DO UPDATE é a outra metade: só linha em `error` é retomada.
-// Linha em `sent` nunca reenvia (e-mail duplicado não tem desfazer) e linha
-// parada em `pending` também não — ela significa que o processo morreu entre o
-// envio e o registro, e reenviar seria apostar que a mensagem NÃO saiu.
+// The DO UPDATE's `WHERE` is the other half: only a row in `error` is resumed. A
+// row in `sent` never resends (a duplicate email has no undo) and a row stuck in
+// `pending` does not either — it means the process died between the send and the
+// record, and resending would be betting the message did NOT go out.
 func (r *NotificationRepo) Claim(ctx context.Context, c notification.Claim, maxAttempts int) (bool, error) {
 	if maxAttempts <= 0 {
 		maxAttempts = notification.DefaultMaxAttempts
@@ -58,8 +58,9 @@ func (r *NotificationRepo) Claim(ctx context.Context, c notification.Claim, maxA
 		c.AccountID, c.EventID, c.Rule, string(c.Action), string(c.Kind),
 		naoVazioTexto(c.Channel, "email"), c.Recipients, maxAttempts).Scan(&id)
 	if NoRows(err) {
-		// Conflito que o WHERE recusou: a chave já foi atendida (ou esgotou as
-		// tentativas). É o caminho NORMAL da reentrega — não é erro.
+		// A conflict the WHERE refused: the key has already been served (or has
+		// exhausted its attempts). It is the redelivery's NORMAL path — it is
+		// not an error.
 		return false, nil
 	}
 	if err != nil {
@@ -68,36 +69,36 @@ func (r *NotificationRepo) Claim(ctx context.Context, c notification.Claim, maxA
 	return true, nil
 }
 
-// Settle grava o desfecho e emite o evento na MESMA transação.
+// Settle writes the outcome and emits the event in the SAME transaction.
 //
-// Mesma regra de toda mudança de estado desta casa (ADR-0019): commit ⇒ atômico
-// por construção, nunca "registrei mas não publiquei". Aqui isso vale duplo,
-// porque o evento `dop.notification.*` é o que o P-29 vai consumir quando a
-// reação virar dado — um registro sem evento seria uma reação invisível para a
-// própria máquina de reações.
+// The same rule as every state change in this house (ADR-0019): a commit ⇒
+// atomic by construction, never "I recorded it but did not publish it". Here
+// that counts double, because the `dop.notification.*` event is what P-29 will
+// consume when the reaction becomes data — a record with no event would be a
+// reaction invisible to the reaction machine itself.
 //
-// A RESERVA (Claim) não emite evento de propósito: reserva não é fato sobre o
-// mundo, é intenção. O fato é "avisamos fulano" ou "não conseguimos", e ele só
-// existe aqui.
+// The RESERVATION (Claim) emits no event on purpose: a reservation is not a fact
+// about the world, it is an intention. The fact is "we notified so-and-so" or
+// "we could not", and it only exists here.
 func (r *NotificationRepo) Settle(ctx context.Context, o notification.Outcome) (string, error) {
 	if len(o.Keys) == 0 {
 		return "", nil
 	}
-	eventos := make([]string, 0, len(o.Keys))
-	regras := make([]string, 0, len(o.Keys))
-	acoes := make([]string, 0, len(o.Keys))
+	events := make([]string, 0, len(o.Keys))
+	rules := make([]string, 0, len(o.Keys))
+	actions := make([]string, 0, len(o.Keys))
 	for _, k := range o.Keys {
-		eventos = append(eventos, k.EventID)
-		regras = append(regras, k.Rule)
-		acoes = append(acoes, string(k.Action))
+		events = append(events, k.EventID)
+		rules = append(rules, k.Rule)
+		actions = append(actions, string(k.Action))
 	}
 
 	var batchID string
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
-		// `lote` gera UM uuid para todas as linhas: é ele que amarra os N itens
-		// do resumo à UMA mensagem que os cobriu. Sem ele, "quantos e-mails
-		// saíram?" só teria como resposta "quantas linhas foram gravadas", que
-		// é outra pergunta.
+		// `lote` generates ONE uuid for every row: it is what ties the digest's
+		// N items to the ONE message that covered them. Without it, "how many
+		// emails went out?" could only be answered with "how many rows were
+		// written", which is a different question.
 		rows, err := tx.Query(ctx, `
 			WITH lote AS (SELECT gen_random_uuid() AS id),
 			     alvo AS (SELECT * FROM unnest($2::uuid[], $3::text[], $4::text[])
@@ -116,7 +117,7 @@ func (r *NotificationRepo) Settle(ctx context.Context, o notification.Outcome) (
 			   AND d.action_name = alvo.action_name
 			   AND d.state       = 'pending'
 			RETURNING lote.id::text`,
-			o.AccountID, eventos, regras, acoes,
+			o.AccountID, events, rules, actions,
 			string(o.State), o.Provider, o.Reference, truncarErro(o.Error))
 		if err != nil {
 			return Translate(err, "registro de aviso")
@@ -132,9 +133,10 @@ func (r *NotificationRepo) Settle(ctx context.Context, o notification.Outcome) (
 			return Translate(err, "registro de aviso")
 		}
 		if batchID == "" {
-			// Nenhuma linha em `pending`: outro processo liquidou antes. Não é
-			// erro e não emite evento — o evento já foi emitido por quem
-			// liquidou, e emitir de novo contaria a mesma coisa duas vezes.
+			// No row in `pending`: another process settled first. It is not an
+			// error and it emits no event — the event was already emitted by
+			// whoever settled, and emitting again would tell the same thing
+			// twice.
 			return nil
 		}
 
@@ -148,14 +150,14 @@ func (r *NotificationRepo) Settle(ctx context.Context, o notification.Outcome) (
 			Payload: mustJSON(map[string]any{
 				"kind": string(o.Kind), "state": string(o.State),
 				"provider": o.Provider, "reference": o.Reference,
-				// Os eventos COBERTOS: é o que liga o aviso de volta ao que o
-				// causou, e é o que o P-29 vai querer ler.
-				"event_ids": eventos, "rules": regras, "actions": acoes,
-				// Quantidade, não a lista: endereço de pessoa em payload de
-				// evento é dado pessoal em repouso, replicado para toda
-				// projeção que assinar `dop.>`.
+				// The events COVERED: it is what links the notice back to what
+				// caused it, and it is what P-29 will want to read.
+				"event_ids": events, "rules": rules, "actions": actions,
+				// The count, not the list: a person's address in an event
+				// payload is personal data at rest, replicated to every
+				// projection that subscribes to `dop.>`.
 				"recipients": len(o.Recipients),
-				// A mensagem já vem REDIGIDA do adaptador (garantia 4 da porta).
+				// The message arrives already REDACTED from the adapter (the port's guarantee 4).
 				"error": truncarErro(o.Error),
 			}),
 		})
@@ -166,19 +168,19 @@ func (r *NotificationRepo) Settle(ctx context.Context, o notification.Outcome) (
 	return batchID, nil
 }
 
-// Recipients devolve quem recebe aviso da conta.
+// Recipients returns who receives the account's notices.
 //
-// ── Por que só e-mail VERIFICADO ────────────────────────────────────────────
+// ── Why only a VERIFIED email ───────────────────────────────────────────────
 //
-// Porque o resumo carrega TÍTULO de item da caixa — nome de demanda, de PR, de
-// projeto. Mandar isso para um endereço que ninguém provou pertencer ao membro
-// é vazar trabalho da conta para quem quer que tenha digitado aquele endereço
-// no cadastro. A porta `IdentityProvider` já trata `email_verified` como falso
-// quando o emissor não afirma (garantia 5 dela), e essa cautela só vale se
-// alguém a consumir — este é o lugar.
+// Because the digest carries the TITLE of a box item — a demand's, a PR's, a
+// project's name. Sending that to an address nobody has proven belongs to the
+// member is leaking the account's work to whoever typed that address at sign-up.
+// The `IdentityProvider` port already treats `email_verified` as false when the
+// issuer does not assert it (its guarantee 5), and that caution is only worth
+// something if somebody consumes it — this is the place.
 //
-// A consequência é declarada: conta sem membro verificado não recebe resumo. É
-// preferível ao inverso.
+// The consequence is declared: an account with no verified member receives no
+// digest. It is preferable to the inverse.
 func (r *NotificationRepo) Recipients(ctx context.Context, accountID string) ([]notification.Recipient, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT u.email, COALESCE(u.name,'')
@@ -189,7 +191,7 @@ func (r *NotificationRepo) Recipients(ctx context.Context, accountID string) ([]
 		   AND u.email_verified
 		 ORDER BY u.email`, accountID)
 	if err != nil {
-		return nil, Translate(err, "destinatários da conta")
+		return nil, Translate(err, "the account's recipients")
 	}
 	defer rows.Close()
 
@@ -197,22 +199,24 @@ func (r *NotificationRepo) Recipients(ctx context.Context, accountID string) ([]
 	for rows.Next() {
 		var r notification.Recipient
 		if err := rows.Scan(&r.Email, &r.Name); err != nil {
-			return nil, Translate(err, "destinatário")
+			return nil, Translate(err, "recipient")
 		}
 		out = append(out, r)
 	}
-	return out, Translate(rows.Err(), "destinatários da conta")
+	return out, Translate(rows.Err(), "the account's recipients")
 }
 
-// ripeWhere é o predicado do ATRASO, escrito uma vez para as duas consultas.
+// ripeWhere is the DELAY's predicate, written once for both queries.
 //
-// É aqui que o "resumo com atraso" acontece, e ele é uma CLÁUSULA, não um
-// agendador: item ainda aberto (`resolved_at IS NULL`), aberto antes do corte,
-// e sem registro de aviso — ou com registro em `error` que ainda tem tentativa.
+// It is here that the "digest with a delay" happens, and it is a CLAUSE, not a
+// scheduler: an item still open (`resolved_at IS NULL`), opened before the
+// cut-off, and with no notice record — or with a record in `error` that still
+// has an attempt left.
 //
-// Item resolvido antes do corte some do resultado sozinho. Não há timer para
-// cancelar, e por isso não há caminho de cancelamento para errar — que é
-// justamente o caminho que só executa no caso raro e por isso quebra calado.
+// An item resolved before the cut-off disappears from the result on its own.
+// There is no timer to cancel, and therefore no cancellation path to get wrong —
+// which is precisely the path that only runs in the rare case and so breaks
+// quietly.
 const ripeWhere = `
 	  FROM attention_items a
 	  LEFT JOIN notification_deliveries d
@@ -232,7 +236,7 @@ func (r *NotificationRepo) AccountsWithRipeAttention(ctx context.Context, rule s
 		`SELECT DISTINCT a.account_id::text`+ripeWhere,
 		rule, string(action), olderThan, maxAttempts)
 	if err != nil {
-		return nil, Translate(err, "contas com pendência madura")
+		return nil, Translate(err, "accounts with a ripe pending item")
 	}
 	defer rows.Close()
 
@@ -240,11 +244,11 @@ func (r *NotificationRepo) AccountsWithRipeAttention(ctx context.Context, rule s
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, Translate(err, "conta com pendência madura")
+			return nil, Translate(err, "an account with a ripe pending item")
 		}
 		out = append(out, id)
 	}
-	return out, Translate(rows.Err(), "contas com pendência madura")
+	return out, Translate(rows.Err(), "accounts with a ripe pending item")
 }
 
 func (r *NotificationRepo) RipeAttention(ctx context.Context, accountID, rule string,
@@ -255,8 +259,8 @@ func (r *NotificationRepo) RipeAttention(ctx context.Context, accountID, rule st
 	if limit <= 0 {
 		limit = notification.DefaultDigestLimit
 	}
-	// Filtro por conta, como toda consulta desta casa. A varredura visita conta
-	// por conta justamente para que esta cláusula continue existindo.
+	// A filter by account, as in every query in this house. The sweep visits
+	// account by account precisely so this clause keeps existing.
 	rows, err := r.pool.Query(ctx, `
 		SELECT a.account_id::text, a.opened_by_event::text, a.id::text, a.kind,
 		       a.title, a.summary, COALESCE(a.demand_id::text,''), a.opened_at`+
@@ -266,7 +270,7 @@ func (r *NotificationRepo) RipeAttention(ctx context.Context, accountID, rule st
 		 LIMIT $6`,
 		rule, string(action), olderThan, maxAttempts, accountID, limit)
 	if err != nil {
-		return nil, Translate(err, "pendências maduras")
+		return nil, Translate(err, "ripe pending items")
 	}
 	defer rows.Close()
 
@@ -275,24 +279,24 @@ func (r *NotificationRepo) RipeAttention(ctx context.Context, accountID, rule st
 		var n notification.AttentionNotice
 		if err := rows.Scan(&n.AccountID, &n.EventID, &n.ItemID, &n.Kind,
 			&n.Title, &n.Summary, &n.DemandID, &n.OpenedAt); err != nil {
-			return nil, Translate(err, "pendência madura")
+			return nil, Translate(err, "a ripe pending item")
 		}
 		out = append(out, n)
 	}
-	return out, Translate(rows.Err(), "pendências maduras")
+	return out, Translate(rows.Err(), "ripe pending items")
 }
 
-// truncarErro limita o que vai para a coluna e para o payload do evento.
+// truncateError limits what goes into the column and into the event's payload.
 //
-// Mensagem de erro de fornecedor pode vir com o corpo HTTP inteiro dentro, e um
-// evento de 200 KB atravessa o outbox, o JetStream e TODA projeção que assina
-// `dop.>`. O que interessa para diagnosticar está no começo.
+// A provider's error message may come with the whole HTTP body inside, and a
+// 200 KB event crosses the outbox, JetStream and EVERY projection subscribing to
+// `dop.>`. What matters for diagnosis is at the start.
 func truncarErro(s string) string {
-	const teto = 500
-	if len(s) <= teto {
+	const limit = 500
+	if len(s) <= limit {
 		return s
 	}
-	return s[:teto] + "…"
+	return s[:limit] + "…"
 }
 
 func naoVazioTexto(v, padrao string) string {

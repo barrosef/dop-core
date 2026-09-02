@@ -12,14 +12,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// Attention constrói a caixa de atenção a partir do log.
+// Attention builds the attention box from the log.
 //
-// A DECISÃO de o que vira item mora no domínio (`attention.Apply`); aqui só
-// acontece a gravação. Foi de propósito: decidir o que exige decisão humana é
-// regra de negócio, e regra de negócio dentro de projeção é regra que ninguém
-// consegue testar sem subir banco.
+// The DECISION of what becomes an item lives in the domain (`attention.Apply`);
+// here only the write happens. It was on purpose: deciding what requires a human
+// decision is a business rule, and a business rule inside a projection is a rule
+// nobody can test without bringing up a database.
 //
-// Idempotente, como toda projeção precisa ser — a entrega é ao-menos-uma-vez.
+// Idempotent, as every projection has to be — delivery is at-least-once.
 type Attention struct{ pool *pgxpool.Pool }
 
 func NewAttention(pool *pgxpool.Pool) *Attention { return &Attention{pool: pool} }
@@ -35,11 +35,11 @@ func (a *Attention) Handle(ctx context.Context, e ports.Event) error {
 		OccurredAt  time.Time      `json:"occurred_at"`
 	}
 	if err := json.Unmarshal(e.Payload, &env); err != nil {
-		// Evento ilegível nunca melhora com retry.
+		// An unreadable event never improves with a retry.
 		return nil
 	}
-	// Evento sem conta (user.ensured, migração 0003) não pertence a caixa
-	// nenhuma — e a coluna tem FK para accounts.
+	// An event with no account (user.ensured, migration 0003) belongs to no box
+	// at all — and the column has an FK to accounts.
 	if env.AccountID == "" {
 		return nil
 	}
@@ -60,10 +60,10 @@ func (a *Attention) Handle(ctx context.Context, e ports.Event) error {
 }
 
 func (a *Attention) abrir(ctx context.Context, it attention.Item) error {
-	// Dois ON CONFLICT, e cada um protege de uma coisa diferente:
-	// `opened_by_event` faz a REENTREGA do mesmo evento ser inócua; o índice
-	// parcial de alvo aberto impede que um alvo que bloqueia, destrava e
-	// bloqueia de novo acumule itens fantasmas.
+	// Two ON CONFLICTs, and each protects against a different thing:
+	// `opened_by_event` makes the same event's REDELIVERY harmless; the partial
+	// index on an open target stops a target that blocks, unblocks and blocks
+	// again from accumulating ghost items.
 	_, err := a.pool.Exec(ctx, `
 		INSERT INTO attention_items
 		       (account_id, kind, target_kind, target_id, demand_id,
@@ -75,15 +75,15 @@ func (a *Attention) abrir(ctx context.Context, it attention.Item) error {
 	if err != nil {
 		return err
 	}
-	logging.From(ctx).Debug("item de atenção aberto",
+	logging.From(ctx).Debug("attention item opened",
 		"kind", string(it.Kind), "target", it.TargetID)
 	return nil
 }
 
 func (a *Attention) fechar(ctx context.Context, accountID string, c attention.CloseSpec, quando time.Time) error {
-	// Fecha por ALVO e só o que está aberto: reprocessar o log não pode mexer
-	// no instante de resolução já gravado, senão a métrica de tempo de resposta
-	// mudaria a cada reconstrução da projeção.
+	// It closes by TARGET and only what is open: reprocessing the log must not
+	// touch the resolution instant already written, or else the response-time
+	// metric would change on every rebuild of the projection.
 	tag, err := a.pool.Exec(ctx, `
 		UPDATE attention_items SET resolved_at = $5
 		 WHERE account_id = $1 AND kind = $2 AND target_kind = $3 AND target_id = $4
@@ -93,7 +93,7 @@ func (a *Attention) fechar(ctx context.Context, accountID string, c attention.Cl
 		return err
 	}
 	if tag.RowsAffected() > 0 {
-		logging.From(ctx).Debug("item de atenção resolvido",
+		logging.From(ctx).Debug("attention item resolved",
 			"kind", string(c.Kind), "target", c.TargetID)
 	}
 	return nil

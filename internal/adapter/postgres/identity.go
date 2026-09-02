@@ -13,8 +13,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// IdentityRepo implementa identity.Repository. É o ÚNICO lugar com SQL de
-// identidade — o domínio nunca vê uma query.
+// IdentityRepo implements identity.Repository. It is the ONLY place with
+// identity SQL — the domain never sees a query.
 type IdentityRepo struct{ pool *pgxpool.Pool }
 
 func NewIdentityRepo(pool *pgxpool.Pool) *IdentityRepo { return &IdentityRepo{pool: pool} }
@@ -43,7 +43,7 @@ func deref(s *string) string {
 func (r *IdentityRepo) UserBySubject(ctx context.Context, subject string) (*identity.User, error) {
 	u, err := scanUser(r.pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE subject = $1`, subject))
 	if err != nil {
-		return nil, Translate(err, "usuário")
+		return nil, Translate(err, "user")
 	}
 	return u, nil
 }
@@ -51,13 +51,13 @@ func (r *IdentityRepo) UserBySubject(ctx context.Context, subject string) (*iden
 func (r *IdentityRepo) UserByID(ctx context.Context, id string) (*identity.User, error) {
 	u, err := scanUser(r.pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE id = $1`, id))
 	if err != nil {
-		return nil, Translate(err, "usuário")
+		return nil, Translate(err, "user")
 	}
 	return u, nil
 }
 
-// UpsertUser é idempotente pela chave natural (subject) — EnsureUser roda em
-// todo login e não pode duplicar.
+// UpsertUser is idempotent by the natural key (subject) — EnsureUser runs on
+// every login and must not duplicate.
 func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*identity.User, error) {
 	var saved *identity.User
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -76,7 +76,7 @@ func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*ident
 		var err error
 		saved, err = scanUser(row)
 		if err != nil {
-			return Translate(err, "usuário")
+			return Translate(err, "user")
 		}
 		return Emit(ctx, tx, ports.Event{
 			Aggregate: "user", AggregateID: saved.ID, Type: "dop.identity.user.ensured",
@@ -104,7 +104,7 @@ func scanAccount(row pgx.Row) (*identity.Account, error) {
 func (r *IdentityRepo) AccountByID(ctx context.Context, id string) (*identity.Account, error) {
 	a, err := scanAccount(r.pool.QueryRow(ctx, `SELECT `+accountCols+` FROM accounts WHERE id = $1`, id))
 	if err != nil {
-		return nil, Translate(err, "conta")
+		return nil, Translate(err, "account")
 	}
 	return a, nil
 }
@@ -112,13 +112,14 @@ func (r *IdentityRepo) AccountByID(ctx context.Context, id string) (*identity.Ac
 func (r *IdentityRepo) AccountByHandle(ctx context.Context, h string) (*identity.Account, error) {
 	a, err := scanAccount(r.pool.QueryRow(ctx, `SELECT `+accountCols+` FROM accounts WHERE handle = $1`, h))
 	if err != nil {
-		return nil, Translate(err, "conta")
+		return nil, Translate(err, "account")
 	}
 	return a, nil
 }
 
-// CreateAccountWithOwner cria conta e vínculo de owner na MESMA transação.
-// A conta nunca existe sem dono — a invariante começa a valer no nascimento.
+// CreateAccountWithOwner creates the account and the owner membership in the
+// SAME transaction. The account never exists without an owner — the invariant
+// starts holding at birth.
 func (r *IdentityRepo) CreateAccountWithOwner(ctx context.Context, a *identity.Account, ownerUserID string) (*identity.Account, error) {
 	var saved *identity.Account
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -130,12 +131,12 @@ func (r *IdentityRepo) CreateAccountWithOwner(ctx context.Context, a *identity.A
 		var err error
 		saved, err = scanAccount(row)
 		if err != nil {
-			return Translate(err, "conta")
+			return Translate(err, "account")
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO memberships (user_id, account_id, role) VALUES ($1, $2, 'owner')`,
 			ownerUserID, saved.ID); err != nil {
-			return Translate(err, "vínculo")
+			return Translate(err, "membership")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.ID, Aggregate: "account", AggregateID: saved.ID,
@@ -157,7 +158,7 @@ func (r *IdentityRepo) AccountsOfUser(ctx context.Context, userID string) ([]ide
 		 WHERE m.user_id = $1
 		 ORDER BY a.kind, a.handle`, userID)
 	if err != nil {
-		return nil, nil, Translate(err, "contas do usuário")
+		return nil, nil, Translate(err, "the user's accounts")
 	}
 	defer rows.Close()
 
@@ -170,7 +171,7 @@ func (r *IdentityRepo) AccountsOfUser(ctx context.Context, userID string) ([]ide
 		if err := rows.Scan(&a.ID, &kind, &a.Handle, &a.DisplayName,
 			&a.LegalID, &a.LegalName, &a.VerifiedDomain, &a.CreatedAt, &a.UpdatedAt,
 			&m.ID, &role, &m.CreatedAt, &m.UpdatedAt); err != nil {
-			return nil, nil, Translate(err, "contas do usuário")
+			return nil, nil, Translate(err, "the user's accounts")
 		}
 		a.Kind = identity.AccountKind(kind)
 		m.Role, m.UserID, m.AccountID = identity.Role(role), userID, a.ID
@@ -185,7 +186,7 @@ func (r *IdentityRepo) MembershipsOfAccount(ctx context.Context, accountID strin
 		`SELECT id, user_id, account_id, role, created_at, updated_at
 		   FROM memberships WHERE account_id = $1 ORDER BY created_at`, accountID)
 	if err != nil {
-		return nil, Translate(err, "vínculos")
+		return nil, Translate(err, "memberships")
 	}
 	defer rows.Close()
 	var out []identity.Membership
@@ -193,7 +194,7 @@ func (r *IdentityRepo) MembershipsOfAccount(ctx context.Context, accountID strin
 		var m identity.Membership
 		var role string
 		if err := rows.Scan(&m.ID, &m.UserID, &m.AccountID, &role, &m.CreatedAt, &m.UpdatedAt); err != nil {
-			return nil, Translate(err, "vínculos")
+			return nil, Translate(err, "memberships")
 		}
 		m.Role = identity.Role(role)
 		out = append(out, m)
@@ -209,18 +210,18 @@ func (r *IdentityRepo) MembershipOf(ctx context.Context, userID, accountID strin
 		   FROM memberships WHERE user_id = $1 AND account_id = $2`, userID, accountID).
 		Scan(&m.ID, &m.UserID, &m.AccountID, &role, &m.CreatedAt, &m.UpdatedAt)
 	if NoRows(err) {
-		return nil, nil // sem vínculo não é erro; quem decide é o domínio
+		return nil, nil // no membership is not an error; the domain decides
 	}
 	if err != nil {
-		return nil, Translate(err, "vínculo")
+		return nil, Translate(err, "membership")
 	}
 	m.Role = identity.Role(role)
 	return &m, nil
 }
 
-// UpdateMembershipRole pode disparar a trigger de invariante do owner —
-// Translate converte a exceção da trigger em erro de precondição, com a
-// mensagem do banco chegando ao usuário.
+// UpdateMembershipRole may fire the owner invariant's trigger — Translate turns
+// the trigger's exception into a precondition error, with the database's message
+// reaching the user.
 func (r *IdentityRepo) UpdateMembershipRole(ctx context.Context, membershipID string, role identity.Role) (*identity.Membership, error) {
 	var m identity.Membership
 	var got string
@@ -232,7 +233,7 @@ func (r *IdentityRepo) UpdateMembershipRole(ctx context.Context, membershipID st
 			membershipID, string(role)).
 			Scan(&m.ID, &m.UserID, &m.AccountID, &got, &m.CreatedAt, &m.UpdatedAt)
 		if err != nil {
-			return Translate(err, "vínculo")
+			return Translate(err, "membership")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: m.AccountID, Aggregate: "membership", AggregateID: m.ID,
@@ -256,13 +257,13 @@ func (r *IdentityRepo) CreateInvite(ctx context.Context, inv *identity.Invite) (
 			RETURNING id, created_at`,
 			inv.AccountID, inv.Email, string(inv.Role), grants, inv.InvitedBy, inv.ExpiresAt).
 			Scan(&inv.ID, &inv.CreatedAt); err != nil {
-			return Translate(err, "convite")
+			return Translate(err, "invite")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: inv.AccountID, Aggregate: "invite", AggregateID: inv.ID,
 			Type: "dop.identity.invite.created",
-			// invite_id em texto claro é seguro AGORA: sozinho ele não concede
-			// nada — o aceite ainda exige a sessão do convidado.
+			// invite_id in clear text is safe NOW: on its own it grants nothing
+			// — acceptance still requires the invited person's session.
 			Payload: mustJSON(map[string]any{
 				"invite_id": inv.ID, "email": inv.Email, "role": inv.Role,
 				"expires_at": inv.ExpiresAt,
@@ -286,15 +287,15 @@ func (r *IdentityRepo) InviteByID(ctx context.Context, id string) (*identity.Inv
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "convite")
+		return nil, Translate(err, "invite")
 	}
 	inv.Role, inv.Status, inv.InvitedBy = identity.Role(role), identity.InviteStatus(status), deref(invitedBy)
 	_ = json.Unmarshal(grants, &inv.Grants)
 	return &inv, nil
 }
 
-// AcceptInvite cria o vínculo, aplica as concessões compostas no convite e
-// marca o convite — tudo numa transação.
+// AcceptInvite creates the membership, applies the grants composed in the invite
+// and marks the invite — all in one transaction.
 func (r *IdentityRepo) AcceptInvite(ctx context.Context, inviteID, userID string) (*identity.Membership, error) {
 	var m identity.Membership
 	var role string
@@ -306,7 +307,7 @@ func (r *IdentityRepo) AcceptInvite(ctx context.Context, inviteID, userID string
 			 WHERE id = $1 AND status = 'pending'
 			 RETURNING account_id, role, grants`, inviteID).
 			Scan(&accountID, &role, &grants); err != nil {
-			return Translate(err, "convite")
+			return Translate(err, "invite")
 		}
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO memberships (user_id, account_id, role)
@@ -315,7 +316,7 @@ func (r *IdentityRepo) AcceptInvite(ctx context.Context, inviteID, userID string
 			RETURNING id, user_id, account_id, role, created_at, updated_at`,
 			userID, accountID, role).
 			Scan(&m.ID, &m.UserID, &m.AccountID, &role, &m.CreatedAt, &m.UpdatedAt); err != nil {
-			return Translate(err, "vínculo")
+			return Translate(err, "membership")
 		}
 		var specs []identity.GrantSpec
 		_ = json.Unmarshal(grants, &specs)
@@ -324,7 +325,7 @@ func (r *IdentityRepo) AcceptInvite(ctx context.Context, inviteID, userID string
 				INSERT INTO resource_grants (resource_id, user_id, level)
 				VALUES ($1,$2,$3) ON CONFLICT (resource_id, user_id) DO UPDATE SET level = EXCLUDED.level`,
 				g.ResourceID, userID, g.Level); err != nil {
-				return Translate(err, "concessão")
+				return Translate(err, "grant")
 			}
 		}
 		return Emit(ctx, tx, ports.Event{
@@ -350,7 +351,7 @@ func (r *IdentityRepo) RevokeInvite(ctx context.Context, accountID, inviteID str
 		inviteID, accountID).
 		Scan(&inv.ID, &inv.AccountID, &inv.Email, &role, &status, &inv.ExpiresAt, &inv.CreatedAt)
 	if err != nil {
-		return nil, Translate(err, "convite")
+		return nil, Translate(err, "invite")
 	}
 	inv.Role, inv.Status = identity.Role(role), identity.InviteStatus(status)
 	return &inv, nil
@@ -364,12 +365,12 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// accountFromCtx é atalho usado pelos repositórios: toda consulta filtra por
-// conta ativa — isolamento é constraint, não convenção.
+// accountFromCtx is the shortcut the repositories use: every query filters by
+// the active account — isolation is a constraint, not a convention.
 func accountFromCtx(ctx context.Context) (string, error) {
 	id, err := ctxutil.MustAccount(ctx)
 	if err != nil {
-		return "", errs.Wrap(errs.KindInvalid, err, "conta ativa ausente")
+		return "", errs.Wrap(errs.KindInvalid, err, "no active account")
 	}
 	return id, nil
 }

@@ -9,10 +9,11 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 )
 
-// AttentionRepo é só LEITURA. A escrita mora na projeção
-// (adapter/postgres/projection/attention.go), porque item de atenção nasce e
-// morre de evento — e um repositório com Create seria um convite a criar item
-// à mão, que faria a caixa deixar de ser projeção.
+// AttentionRepo is READ-ONLY. The write lives in the projection
+// (adapter/postgres/projection/attention.go), because an attention item is born
+// from an event and dies from one — and a repository with a Create would be an
+// invitation to create an item by hand, which would stop the box being a
+// projection.
 type AttentionRepo struct{ pool *pgxpool.Pool }
 
 func NewAttentionRepo(pool *pgxpool.Pool) *AttentionRepo { return &AttentionRepo{pool: pool} }
@@ -22,9 +23,9 @@ const attentionCols = `id::text, account_id::text, kind, target_kind, target_id,
 	title, summary, opened_at, resolved_at, opened_by_event::text`
 
 func (r *AttentionRepo) List(ctx context.Context, accountID, demandID string, includeResolved bool, limit int) ([]attention.Item, error) {
-	// A ordenação FINAL é do domínio (a prioridade depende da idade, que muda
-	// sozinha). Aqui a ordem por opened_at existe só para o LIMIT recortar os
-	// mais antigos de forma determinística em vez de arbitrária.
+	// The FINAL ordering belongs to the domain (the priority depends on age,
+	// which changes on its own). Here the order by opened_at exists only so the
+	// LIMIT cuts the oldest ones deterministically instead of arbitrarily.
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+attentionCols+`
 		  FROM attention_items
@@ -34,11 +35,11 @@ func (r *AttentionRepo) List(ctx context.Context, accountID, demandID string, in
 		 ORDER BY opened_at
 		 LIMIT $4`, accountID, demandID, includeResolved, limit)
 	if err != nil {
-		return nil, Translate(err, "caixa de atenção")
+		return nil, Translate(err, "the attention box")
 	}
 	defer rows.Close()
 
-	var itens []attention.Item
+	var items []attention.Item
 	for rows.Next() {
 		var it attention.Item
 		var kind string
@@ -56,9 +57,9 @@ func (r *AttentionRepo) List(ctx context.Context, accountID, demandID string, in
 			_ = json.Unmarshal(params, &it.Params)
 		}
 		it.Kind = attention.Kind(kind)
-		itens = append(itens, it)
+		items = append(items, it)
 	}
-	return itens, Translate(rows.Err(), "caixa de atenção")
+	return items, Translate(rows.Err(), "the attention box")
 }
 
 func (r *AttentionRepo) OpenTotal(ctx context.Context, accountID string) (int, error) {
@@ -66,7 +67,7 @@ func (r *AttentionRepo) OpenTotal(ctx context.Context, accountID string) (int, e
 	err := r.pool.QueryRow(ctx, `
 		SELECT count(*) FROM attention_items
 		 WHERE account_id = $1 AND resolved_at IS NULL`, accountID).Scan(&total)
-	return total, Translate(err, "total da caixa de atenção")
+	return total, Translate(err, "the attention box's total")
 }
 
 var _ attention.Repository = (*AttentionRepo)(nil)

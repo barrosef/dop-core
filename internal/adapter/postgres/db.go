@@ -1,8 +1,8 @@
-// Infraestrutura compartilhada de acesso ao Postgres.
+// Shared Postgres access infrastructure.
 //
-// O padrão que TODO caso de uso segue: abrir transação, mudar estado, emitir
-// evento na MESMA transação, confirmar. É o que dá atomicidade sem 2PC
-// (ADR-0019) — e é por isso que Emit recebe pgx.Tx, não o pool.
+// The pattern EVERY use case follows: open a transaction, change state, emit the
+// event in the SAME transaction, commit. It is what gives atomicity without 2PC
+// (ADR-0019) — and it is why Emit takes a pgx.Tx, not the pool.
 package postgres
 
 import (
@@ -16,16 +16,16 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// InTx executa fn dentro de uma transação, com rollback automático em erro.
+// InTx runs fn inside a transaction, with an automatic rollback on error.
 //
 //	err := postgres.InTx(ctx, pool, func(tx pgx.Tx) error {
-//	    if err := gravarEstado(ctx, tx); err != nil { return err }
-//	    return postgres.Emit(ctx, tx, evento)   // mesma transação
+//	    if err := writeState(ctx, tx); err != nil { return err }
+//	    return postgres.Emit(ctx, tx, event)   // the same transaction
 //	})
 func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return errs.Wrap(errs.KindUnavailable, err, "falha ao abrir transação")
+		return errs.Wrap(errs.KindUnavailable, err, "failed to open a transaction")
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -33,51 +33,51 @@ func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error 
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return errs.Wrap(errs.KindInternal, err, "falha ao confirmar transação")
+		return errs.Wrap(errs.KindInternal, err, "failed to commit the transaction")
 	}
 	return nil
 }
 
-// Códigos do Postgres que precisamos distinguir.
+// The Postgres codes we need to tell apart.
 const (
 	codeUniqueViolation     = "23505"
 	codeForeignKeyViolation = "23503"
 	codeCheckViolation      = "23514"
-	codeRaiseException      = "P0001" // RAISE EXCEPTION das nossas triggers
+	codeRaiseException      = "P0001" // RAISE EXCEPTION from our triggers
 )
 
-// Translate converte erro do driver em erro de domínio. Sem isso, uma violação
-// de unicidade viraria 500 em vez de 409.
+// Translate converts a driver error into a domain error. Without it, a
+// uniqueness violation would become a 500 instead of a 409.
 func Translate(err error, what string) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		return errs.NotFound("%s não encontrado", what)
+		return errs.NotFound("%s not found", what)
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case codeUniqueViolation:
-			return errs.New(errs.KindAlreadyExists, "%s já existe", what)
+			return errs.New(errs.KindAlreadyExists, "%s already exists", what)
 		case codeForeignKeyViolation:
-			return errs.Invalid("referência inválida em %s", what)
+			return errs.Invalid("invalid reference in %s", what)
 		case codeCheckViolation:
-			return errs.Invalid("%s viola uma restrição de integridade", what)
+			return errs.Invalid("%s violates an integrity constraint", what)
 		case codeRaiseException:
-			// Mensagem das nossas triggers de invariante — é regra de negócio,
-			// então vai para o usuário como veio.
+			// The message from our invariant triggers — it is a business rule,
+			// so it goes to the user as it came.
 			return errs.Precondition("%s", pgErr.Message)
 		}
 	}
-	return errs.Wrap(errs.KindInternal, err, "falha ao acessar %s", what)
+	return errs.Wrap(errs.KindInternal, err, "failed to access %s", what)
 }
 
-// NoRows diz se o erro é "nada encontrado" — útil em consultas opcionais.
+// NoRows says whether the error is "nothing found" — useful in optional queries.
 func NoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
-// pgxQuerier é o mínimo que uma leitura precisa: pool e tx satisfazem os dois.
-// Existe para que um mesmo carregador sirva dentro e fora de transação.
+// pgxQuerier is the minimum a read needs: both the pool and a tx satisfy it. It
+// exists so the same loader works inside and outside a transaction.
 type pgxQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }

@@ -10,47 +10,48 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// EventRepo implementa event.Repository — a leitura do log para o replay.
-// É o ÚNICO lugar com SQL de `events`; o domínio nunca vê uma query.
+// EventRepo implements event.Repository — reading the log for the replay. It is
+// the ONLY place with `events` SQL; the domain never sees a query.
 type EventRepo struct{ pool *pgxpool.Pool }
 
 func NewEventRepo(pool *pgxpool.Pool) *EventRepo { return &EventRepo{pool: pool} }
 
-// eventCols traz os MESMOS campos de ports.Event, na mesma ordem.
+// eventCols brings the SAME fields as ports.Event, in the same order.
 //
-// id e account_id saem como texto porque o domínio trabalha com string e não
-// deve conhecer o tipo uuid do Postgres. O COALESCE existe porque account_id é
-// nullable desde a migração 0003 — embora o WHERE por conta já garanta que
-// nenhuma linha nula chegue até aqui.
+// id and account_id come out as text because the domain works with strings and
+// must not know Postgres's uuid type. The COALESCE exists because account_id has
+// been nullable since migration 0003 — although the WHERE by account already
+// guarantees no null row reaches here.
 const eventCols = `id::text, COALESCE(account_id::text,''), aggregate, aggregate_id,
 	type, payload, occurred_at`
 
-// Locate acha a posição do cursor.
+// Locate finds the cursor's position.
 //
-// account_id entra no WHERE: id de evento de outra conta devolve "não
-// encontrado", não a posição — a existência do id não vaza.
+// account_id goes into the WHERE: an event id from another account returns "not
+// found", not the position — the id's existence does not leak.
 func (r *EventRepo) Locate(ctx context.Context, accountID, eventID string) (event.Cursor, error) {
 	if !looksLikeUUID(eventID) {
-		// Sem isto o driver devolveria "invalid input syntax for type uuid",
-		// que viraria 500. Cursor malformado é erro do cliente.
-		return event.Cursor{}, errs.Invalid("cursor de evento inválido")
+		// Without this the driver would return "invalid input syntax for type
+		// uuid", which would become a 500. A malformed cursor is the client's
+		// error.
+		return event.Cursor{}, errs.Invalid("invalid event cursor")
 	}
 	var c event.Cursor
 	err := r.pool.QueryRow(ctx,
 		`SELECT id::text, occurred_at FROM events WHERE id = $1 AND account_id = $2`,
 		eventID, accountID).Scan(&c.ID, &c.OccurredAt)
 	if err != nil {
-		return event.Cursor{}, Translate(err, "evento do cursor")
+		return event.Cursor{}, Translate(err, "the cursor's event")
 	}
 	return c, nil
 }
 
-// EventsAfter lê a página seguinte do log, da conta, depois do cursor.
+// EventsAfter reads the log's next page, for the account, after the cursor.
 //
-// A comparação é pelo PAR (occurred_at, id): a chave primária de `events` é
-// composta e a tabela é particionada por occurred_at, então nem o instante
-// sozinho (empata) nem o id sozinho (não ordena) servem de cursor. A tupla
-// também casa com o índice events_account_idx.
+// The comparison is by the PAIR (occurred_at, id): `events`'s primary key is
+// composite and the table is partitioned by occurred_at, so neither the instant
+// alone (it ties) nor the id alone (it does not order) works as a cursor. The
+// tuple also matches the events_account_idx index.
 func (r *EventRepo) EventsAfter(ctx context.Context, accountID string, after event.Cursor, f event.Filter, limit int) ([]ports.Event, error) {
 	if limit <= 0 {
 		limit = 100
@@ -67,7 +68,7 @@ func (r *EventRepo) EventsAfter(ctx context.Context, accountID string, after eve
 		accountID, after.OccurredAt, after.ID,
 		notNil(f.Aggregates), notNil(f.Types), limit)
 	if err != nil {
-		return nil, Translate(err, "eventos")
+		return nil, Translate(err, "events")
 	}
 	defer rows.Close()
 
@@ -76,18 +77,18 @@ func (r *EventRepo) EventsAfter(ctx context.Context, accountID string, after eve
 		var e ports.Event
 		if err := rows.Scan(&e.ID, &e.AccountID, &e.Aggregate, &e.AggregateID,
 			&e.Type, &e.Payload, &e.OccurredAt); err != nil {
-			return nil, Translate(err, "eventos")
+			return nil, Translate(err, "events")
 		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, Translate(err, "eventos")
+		return nil, Translate(err, "events")
 	}
 	return out, nil
 }
 
-// notNil evita que uma lista vazia vire NULL no fio: cardinality(NULL) é NULL,
-// e a condição do filtro deixaria de casar com qualquer linha.
+// notNil stops an empty list from becoming NULL on the wire: cardinality(NULL)
+// is NULL, and the filter's condition would stop matching any row.
 func notNil(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -95,8 +96,8 @@ func notNil(s []string) []string {
 	return s
 }
 
-// looksLikeUUID checa a FORMA, não a versão: só o bastante para o driver não
-// precisar rejeitar a query.
+// looksLikeUUID checks the SHAPE, not the version: just enough for the driver
+// not to have to reject the query.
 func looksLikeUUID(s string) bool {
 	if len(s) != 36 {
 		return false

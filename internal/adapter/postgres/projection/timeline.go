@@ -1,8 +1,8 @@
-// Package projection constrói as LEITURAS derivadas do log de eventos.
+// Package projection builds the READS derived from the event log.
 //
-// Regra da ADR-0006: a verdade é o log; dossiê, timeline, caixa de atenção,
-// métricas e custo são PROJEÇÕES — computadas em código, custo de token zero.
-// Nenhuma projeção escreve verdade nova; todas podem ser reconstruídas.
+// ADR-0006's rule: the truth is the log; the dossier, the timeline, the
+// attention box, the metrics and the cost are PROJECTIONS — computed in code, at
+// zero token cost. No projection writes new truth; all of them can be rebuilt.
 package projection
 
 import (
@@ -15,11 +15,11 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// Timeline mantém a linha do tempo consultável por agregado.
+// Timeline keeps the timeline queryable by aggregate.
 //
-// O handler é IDEMPOTENTE — obrigatório, porque a entrega do JetStream é
-// ao-menos-uma-vez (ADR-0019). O ON CONFLICT DO NOTHING é o que faz a
-// reentrega ser inócua em vez de duplicar linha.
+// The handler is IDEMPOTENT — mandatory, because JetStream's delivery is
+// at-least-once (ADR-0019). The ON CONFLICT DO NOTHING is what makes the
+// redelivery harmless instead of duplicating a row.
 type Timeline struct{ pool *pgxpool.Pool }
 
 func NewTimeline(pool *pgxpool.Pool) *Timeline { return &Timeline{pool: pool} }
@@ -35,8 +35,8 @@ func (t *Timeline) Handle(ctx context.Context, e ports.Event) error {
 		OccurredAt  string          `json:"occurred_at"`
 	}
 	if err := json.Unmarshal(e.Payload, &env); err != nil {
-		// Evento ilegível nunca melhora com retry — o adaptador do NATS
-		// descarta com registro em vez de travar a fila.
+		// An unreadable event never improves with a retry — the NATS adapter
+		// discards it with a record instead of blocking the queue.
 		return nil
 	}
 
@@ -47,7 +47,7 @@ func (t *Timeline) Handle(ctx context.Context, e ports.Event) error {
 		env.ID, nullIfEmpty(env.AccountID), env.Aggregate, env.AggregateID,
 		env.Type, env.Payload, env.OccurredAt)
 	if err != nil {
-		// Erro real (banco fora, por exemplo) devolve para o NATS reentregar.
+		// A real error (the database being down, say) goes back for NATS to redeliver.
 		return err
 	}
 

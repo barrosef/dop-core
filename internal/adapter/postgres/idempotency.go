@@ -11,18 +11,18 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/idem"
 )
 
-// Idempotency guarda o resultado de cada escrita por chave.
+// Idempotency stores each write's result by key.
 //
-// Com eventos e retries, repetir uma chamada não pode duplicar efeito
-// (ADR-0017). A MESMA chave com corpo diferente é conflito, não repetição —
-// senão um bug de cliente viraria corrupção silenciosa de dados.
+// With events and retries, repeating a call must not duplicate an effect
+// (ADR-0017). The SAME key with a different body is a conflict, not a repetition
+// — otherwise a client bug would become silent data corruption.
 type Idempotency struct{ pool *pgxpool.Pool }
 
 func NewIdempotency(pool *pgxpool.Pool) *Idempotency { return &Idempotency{pool: pool} }
 
 func (i *Idempotency) Begin(ctx context.Context, key, requestHash string, ttl time.Duration) ([]byte, bool, error) {
 	if key == "" {
-		return nil, false, nil // sem chave: segue sem proteção
+		return nil, false, nil // no key: it goes on unprotected
 	}
 	if ttl <= 0 {
 		ttl = idem.DefaultTTL
@@ -40,17 +40,17 @@ func (i *Idempotency) Begin(ctx context.Context, key, requestHash string, ttl ti
 		key, requestHash, ttl.String(),
 	).Scan(&existingHash, &response, &completed)
 	if err != nil {
-		return nil, false, errs.Wrap(errs.KindInternal, err, "falha no controle de idempotência")
+		return nil, false, errs.Wrap(errs.KindInternal, err, "failure in the idempotency control")
 	}
 
 	if existingHash != requestHash {
 		return nil, false, errs.Conflict(
-			"a chave de idempotência já foi usada com outro conteúdo")
+			"the idempotency key has already been used with different content")
 	}
 	if completed != nil {
-		return response, true, nil // repetição legítima: devolve o gravado
+		return response, true, nil // a legitimate repetition: return what was stored
 	}
-	return nil, false, nil // primeira vez (ou anterior não concluída): executa
+	return nil, false, nil // the first time (or a previous unfinished one): run it
 }
 
 func (i *Idempotency) Complete(ctx context.Context, key string, response []byte) error {
@@ -60,11 +60,11 @@ func (i *Idempotency) Complete(ctx context.Context, key string, response []byte)
 	_, err := i.pool.Exec(ctx,
 		`UPDATE idempotency SET response = $2, completed_at = now() WHERE key = $1`,
 		key, response)
-	return Translate(err, "idempotência")
+	return Translate(err, "idempotency")
 }
 
-// CompleteTx grava dentro da transação do caso de uso — assim a marca de
-// concluído só existe se a operação inteira tiver sido confirmada.
+// CompleteTx writes inside the use case's transaction — that way the completion
+// mark only exists if the whole operation was committed.
 func CompleteTx(ctx context.Context, tx pgx.Tx, key string, response []byte) error {
 	if key == "" {
 		return nil
@@ -72,7 +72,7 @@ func CompleteTx(ctx context.Context, tx pgx.Tx, key string, response []byte) err
 	_, err := tx.Exec(ctx,
 		`UPDATE idempotency SET response = $2, completed_at = now() WHERE key = $1`,
 		key, response)
-	return Translate(err, "idempotência")
+	return Translate(err, "idempotency")
 }
 
 var _ idem.Store = (*Idempotency)(nil)

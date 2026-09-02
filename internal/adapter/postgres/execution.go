@@ -12,18 +12,19 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// ExecutionRepo implementa execution.Repository. É o ÚNICO lugar com SQL de
-// sandbox — o domínio nunca vê uma query.
+// ExecutionRepo implements execution.Repository. It is the ONLY place with
+// sandbox SQL — the domain never sees a query.
 //
-// Três coisas valem por toda a leitura deste arquivo:
+// Three things hold for this whole file:
 //
-//   - account_id entra em TODA cláusula WHERE. Isolamento multi-tenant é
-//     constraint, não confiança no chamador;
-//   - toda mudança de estado grava o evento na MESMA transação, por InTx +
-//     Emit. Commit ⇒ estado e evento, ou nenhum dos dois (ADR-0019);
-//   - a irreversibilidade da destruição NÃO é responsabilidade deste arquivo:
-//     ela é trigger no banco (migração 0010). Aqui só se traduz a exceção da
-//     trigger em erro de domínio, o que o Translate já faz por P0001.
+//   - account_id goes into EVERY WHERE clause. Multi-tenant isolation is a
+//     constraint, not trust in the caller;
+//   - every state change writes the event in the SAME transaction, through InTx
+//   - Emit. A commit ⇒ state and event, or neither (ADR-0019);
+//   - the destruction's irreversibility is NOT this file's responsibility: it is
+//     a trigger in the database (migration 0010). Here we only translate the
+//     trigger's exception into a domain error, which Translate already does
+//     through P0001.
 type ExecutionRepo struct{ pool *pgxpool.Pool }
 
 func NewExecutionRepo(pool *pgxpool.Pool) *ExecutionRepo { return &ExecutionRepo{pool: pool} }
@@ -56,8 +57,8 @@ func scanSandbox(row pgx.Row) (*execution.Sandbox, error) {
 	return &s, nil
 }
 
-// ByID devolve (nil, nil) quando não há linha: se a ausência é erro, quem
-// decide é o domínio.
+// ByID returns (nil, nil) when there is no row: whether the absence is an error
+// is the domain's decision.
 func (r *ExecutionRepo) ByID(ctx context.Context, accountID, id string) (*execution.Sandbox, error) {
 	s, err := scanSandbox(r.pool.QueryRow(ctx,
 		`SELECT `+sandboxCols+` FROM sandboxes WHERE id = $1 AND account_id = $2`, id, accountID))
@@ -86,8 +87,8 @@ func (r *ExecutionRepo) ByIdempotencyKey(ctx context.Context, accountID, key str
 	return s, nil
 }
 
-// LiveByDemand: vivo é tudo que não foi destruído. O índice parcial
-// sandboxes_demanda_viva_uniq garante que existe no máximo um.
+// LiveByDemand: alive is everything that was not destroyed. The partial index
+// sandboxes_demanda_viva_uniq guarantees there is at most one.
 func (r *ExecutionRepo) LiveByDemand(ctx context.Context, accountID, demandID string) (*execution.Sandbox, error) {
 	s, err := scanSandbox(r.pool.QueryRow(ctx,
 		`SELECT `+sandboxCols+` FROM sandboxes
@@ -102,11 +103,12 @@ func (r *ExecutionRepo) LiveByDemand(ctx context.Context, accountID, demandID st
 	return s, nil
 }
 
-// Create grava a INTENÇÃO de provisionar e emite o evento na mesma transação.
+// Create writes the INTENTION to provision and emits the event in the same
+// transaction.
 //
-// O evento sai antes de o substrato responder de propósito: é ele que permite
-// reconciliar um sandbox meio subido depois de uma queda. Emitir só no fim
-// deixaria uma microVM viva sem nenhum registro de que alguém a pediu.
+// The event goes out before the substrate answers on purpose: it is what allows
+// reconciling a half-started sandbox after a crash. Emitting only at the end
+// would leave a live microVM with no record that anybody asked for it.
 func (r *ExecutionRepo) Create(ctx context.Context, s *execution.Sandbox) (*execution.Sandbox, error) {
 	var saved *execution.Sandbox
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -121,8 +123,9 @@ func (r *ExecutionRepo) Create(ctx context.Context, s *execution.Sandbox) (*exec
 		var err error
 		saved, err = scanSandbox(row)
 		if err != nil {
-			// Chave repetida e "essa demanda já tem sandbox" viram 409, não
-			// 500: são erros do cliente, com resposta útil.
+			// A repeated key and "this demand already has a sandbox" become a
+			// 409, not a 500: they are the client's errors, with a useful
+			// answer.
 			return Translate(err, "sandbox")
 		}
 		return Emit(ctx, tx, ports.Event{
@@ -138,12 +141,12 @@ func (r *ExecutionRepo) Create(ctx context.Context, s *execution.Sandbox) (*exec
 	return saved, err
 }
 
-// MarkProvisioned registra o que o substrato ENTREGOU.
+// MarkProvisioned records what the substrate DELIVERED.
 //
-// O tier é gravado de novo, com o valor devolvido pelo launcher, porque é o que
-// o cliente de fato recebeu — e o contrato promete que ele vê o que recebeu, não
-// o que pediu. Quando os dois divergem, o serviço já descartou o sandbox antes
-// de chegar aqui.
+// The tier is written again, with the value the launcher returned, because it is
+// what the client actually got — and the contract promises they see what they
+// got, not what they asked for. When the two diverge, the service has already
+// discarded the sandbox before reaching here.
 func (r *ExecutionRepo) MarkProvisioned(ctx context.Context, accountID, id string, tier ports.IsolationTier, endpoints []execution.Endpoint) (*execution.Sandbox, error) {
 	var saved *execution.Sandbox
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -176,12 +179,12 @@ func (r *ExecutionRepo) MarkProvisioned(ctx context.Context, accountID, id strin
 	return saved, err
 }
 
-// Transition aplica a mudança de estado e emite o evento correspondente.
+// Transition applies the state change and emits the corresponding event.
 //
-// O evento carrega `preserva_trabalho`, e não só o estado novo, porque é essa a
-// pergunta que a auditoria vai fazer daqui a seis meses: "quando o sandbox
-// dessa demanda sumiu, o trabalho foi junto?". Deixar isso implícito no nome do
-// tipo obrigaria todo consumidor a redescobrir a regra.
+// The event carries `preserva_trabalho`, and not only the new state, because
+// that is the question the audit will ask six months from now: "when this
+// demand's sandbox went away, did the work go with it?". Leaving that implicit
+// in the type's name would force every consumer to rediscover the rule.
 func (r *ExecutionRepo) Transition(ctx context.Context, accountID, id string, t execution.Transition) (*execution.Sandbox, error) {
 	var saved *execution.Sandbox
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
@@ -198,8 +201,9 @@ func (r *ExecutionRepo) Transition(ctx context.Context, accountID, id string, t 
 		var err error
 		saved, err = scanSandbox(row)
 		if err != nil {
-			// A trigger de irreversibilidade fala por RAISE EXCEPTION (P0001):
-			// o Translate a devolve como Precondition, com a mensagem inteira.
+			// The irreversibility trigger speaks through RAISE EXCEPTION
+			// (P0001): Translate returns it as a Precondition, with the whole
+			// message.
 			return Translate(err, "sandbox")
 		}
 		return Emit(ctx, tx, ports.Event{
@@ -229,10 +233,10 @@ func transitionEvent(t execution.Transition) string {
 	return "dop.sandbox.changed"
 }
 
-// TouchActivity adia a suspensão por ociosidade. NÃO emite evento: batimento de
-// atividade é a coisa mais frequente que acontece com um sandbox, e no log de
-// eventos ele afogaria o dossiê da demanda — que existe para contar a história,
-// não para registrar cada vez que alguém abriu o terminal.
+// TouchActivity pushes back the idle suspension. It emits NO event: an activity
+// heartbeat is the most frequent thing that happens to a sandbox, and in the
+// event log it would drown the demand's dossier — which exists to tell the
+// story, not to record every time somebody opened the terminal.
 func (r *ExecutionRepo) TouchActivity(ctx context.Context, accountID, id string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE sandboxes SET last_active_at = now(), updated_at = now()
@@ -240,11 +244,11 @@ func (r *ExecutionRepo) TouchActivity(ctx context.Context, accountID, id string)
 	return Translate(err, "sandbox")
 }
 
-// ListIdle alimenta o varredor de economia. O corte vem do DOMÍNIO em segundos
-// — o SQL não tem opinião sobre quanto tempo é "ocioso".
-// AccountsWithIdle NÃO devolve sandbox nenhum — só as contas que têm algum
-// parado. Devolver as linhas aqui seria dar ao chamador de sistema a leitura
-// que a porta nega a todo mundo.
+// ListIdle feeds the cost-saving sweeper. The cut-off comes from the DOMAIN in
+// seconds — the SQL has no opinion about how long "idle" is.
+// AccountsWithIdle returns NO sandbox at all — only the accounts that have one
+// stopped. Returning the rows here would give the system caller the read the
+// port denies everyone.
 func (r *ExecutionRepo) AccountsWithIdle(ctx context.Context, olderThanSeconds int) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT account_id::text
@@ -252,19 +256,19 @@ func (r *ExecutionRepo) AccountsWithIdle(ctx context.Context, olderThanSeconds i
 		 WHERE state = 'active'
 		   AND last_active_at < now() - make_interval(secs => $1)`, olderThanSeconds)
 	if err != nil {
-		return nil, Translate(err, "contas com sandbox ocioso")
+		return nil, Translate(err, "accounts with an idle sandbox")
 	}
 	defer rows.Close()
 
-	var contas []string
+	var accounts []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, Translate(err, "conta com sandbox ocioso")
+			return nil, Translate(err, "an account with an idle sandbox")
 		}
-		contas = append(contas, id)
+		accounts = append(accounts, id)
 	}
-	return contas, Translate(rows.Err(), "contas com sandbox ocioso")
+	return accounts, Translate(rows.Err(), "accounts with an idle sandbox")
 }
 
 func (r *ExecutionRepo) ListIdle(ctx context.Context, accountID string, olderThanSeconds int) ([]execution.Sandbox, error) {

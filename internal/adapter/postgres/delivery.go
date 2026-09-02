@@ -13,25 +13,25 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// DeliveryRepo implementa delivery.Repository. É o ÚNICO lugar com SQL de
-// entrega — o domínio nunca vê uma query.
+// DeliveryRepo implements delivery.Repository. It is the ONLY place with
+// delivery SQL — the domain never sees a query.
 //
-// Três coisas valem para a leitura deste arquivo inteiro:
+// Three things hold for this whole file:
 //
-//   - account_id entra em TODA cláusula WHERE. Onde o filtro não cabe na
-//     tabela (o repositório vive em project_repos, que não tem conta), ele vem
-//     por join com projects. Isolamento multi-tenant é constraint, não
-//     confiança no chamador;
-//   - toda mudança de estado grava o evento na MESMA transação, por InTx +
-//     Emit: commit ⇒ estado e evento, ou nenhum dos dois (ADR-0019);
-//   - a chave de idempotência é consultada ANTES de escrever e gravada na
-//     linha, com índice único parcial por conta. Repetir a chamada devolve a
-//     mesma linha em vez de duplicar efeito (ADR-0017).
+//   - account_id goes into EVERY WHERE clause. Where the filter does not fit in
+//     the table (the repository lives in project_repos, which has no account),
+//     it comes through a join with projects. Multi-tenant isolation is a
+//     constraint, not trust in the caller;
+//   - every state change writes the event in the SAME transaction, through InTx
+//   - Emit: a commit ⇒ state and event, or neither (ADR-0019);
+//   - the idempotency key is looked up BEFORE writing and stored on the row,
+//     with a partial unique index per account. Repeating the call returns the
+//     same row instead of duplicating the effect (ADR-0017).
 type DeliveryRepo struct{ pool *pgxpool.Pool }
 
 func NewDeliveryRepo(pool *pgxpool.Pool) *DeliveryRepo { return &DeliveryRepo{pool: pool} }
 
-// ─────────────────────────── evidência ───────────────────────────
+// ─────────────────────────── evidence ────────────────────────────
 
 const verificationCols = `id, account_id, demand_id::text, repo_id::text, commit_sha,
 	kind::text, suite, outcome::text, total, passed, failed,
@@ -57,12 +57,12 @@ func scanVerification(row pgx.Row) (*delivery.VerificationRun, error) {
 	return &r, nil
 }
 
-// RecordVerification grava a execução. Rodar a MESMA suíte de novo no mesmo
-// commit atualiza a linha e incrementa attempts — quantas vezes se tentou é
-// parte da evidência, não ruído a esconder.
+// RecordVerification records the run. Running the SAME suite again on the same
+// commit updates the row and increments attempts — how many times it was tried
+// is part of the evidence, not noise to hide.
 func (d *DeliveryRepo) RecordVerification(ctx context.Context, run *delivery.VerificationRun, idemKey string) (*delivery.VerificationRun, error) {
-	// started_at é opcional: o instante zero de Go não é NULL de SQL, e gravar
-	// "ano 1" como início de execução seria dado falso.
+	// started_at is optional: Go's zero instant is not SQL's NULL, and writing
+	// "year 1" as a run's start would be false data.
 	var startedAt any
 	if !run.StartedAt.IsZero() {
 		startedAt = run.StartedAt
@@ -91,10 +91,10 @@ func (d *DeliveryRepo) RecordVerification(ctx context.Context, run *delivery.Ver
 		var err error
 		saved, err = scanVerification(row)
 		if err != nil {
-			return Translate(err, "execução de verificação")
+			return Translate(err, "a verification run")
 		}
-		// O resultado de cada execução é evento (ADR-0007 §1): é dele que a
-		// timeline e as métricas de qualidade da spec se alimentam.
+		// Each run's result is an event (ADR-0007 §1): it is what the timeline
+		// and the spec's quality metrics feed on.
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "delivery", AggregateID: saved.DemandID,
 			Type: "dop.delivery.verification.recorded",
@@ -108,8 +108,9 @@ func (d *DeliveryRepo) RecordVerification(ctx context.Context, run *delivery.Ver
 	return saved, err
 }
 
-// EvidenceFor devolve as execuções daquele commit exato. Ausência não é erro:
-// evidência vazia é resposta legítima — e é a que faz a fila recusar.
+// EvidenceFor returns the runs of that exact commit. Absence is not an error:
+// empty evidence is a legitimate answer — and it is the one that makes the queue
+// refuse.
 func (d *DeliveryRepo) EvidenceFor(ctx context.Context, accountID, demandID, repoID, commit string) (delivery.Evidence, error) {
 	ev := delivery.Evidence{DemandID: demandID, RepoID: repoID, Commit: commit}
 	rows, err := d.pool.Query(ctx, `
@@ -119,13 +120,13 @@ func (d *DeliveryRepo) EvidenceFor(ctx context.Context, accountID, demandID, rep
 		   AND repo_id = $3::uuid AND commit_sha = $4
 		 ORDER BY kind, suite`, accountID, demandID, repoID, commit)
 	if err != nil {
-		return ev, Translate(err, "evidência de verificação")
+		return ev, Translate(err, "verification evidence")
 	}
 	defer rows.Close()
 	for rows.Next() {
 		r, err := scanVerification(rows)
 		if err != nil {
-			return ev, Translate(err, "evidência de verificação")
+			return ev, Translate(err, "verification evidence")
 		}
 		ev.Runs = append(ev.Runs, *r)
 	}
@@ -161,16 +162,16 @@ func scanPR(row pgx.Row) (*delivery.PullRequest, error) {
 	return &pr, nil
 }
 
-// ListPullRequests filtra por conta sempre; projeto entra por join, porque o
-// vínculo PR→projeto passa pelo repositório.
+// ListPullRequests always filters by account; the project comes in through a
+// join, because the PR→project link goes through the repository.
 func (d *DeliveryRepo) ListPullRequests(ctx context.Context, accountID string, f delivery.PRFilter) ([]delivery.PullRequest, error) {
 	rows, err := d.pool.Query(ctx, `
 		SELECT `+prCols+`
 		  FROM pull_requests p
 		  JOIN project_repos r ON r.id = p.repo_id
 		 WHERE p.account_id = $1
-		   -- NULLIF antes do cast: filtro vazio precisa virar NULL, não
-		   -- ''::uuid. O Postgres não garante curto-circuito no OR, e um cast
+		   -- NULLIF before the cast: an empty filter has to become NULL, not
+		   -- ''::uuid. Postgres does not guarantee short-circuiting in an OR, and a cast
 		   -- de string vazia para uuid derrubaria a consulta sem filtro.
 		   AND ($2::text = '' OR p.demand_id  = NULLIF($2,'')::uuid)
 		   AND ($3::text = '' OR r.project_id = NULLIF($3,'')::uuid)
@@ -206,8 +207,8 @@ func (d *DeliveryRepo) PullRequestByID(ctx context.Context, accountID, id string
 	return pr, nil
 }
 
-// PullRequestOf devolve (nil, nil) quando não há PR: quem decide se a ausência
-// é erro é o domínio — e lá ela vira "sem verde, sem PR".
+// PullRequestOf returns (nil, nil) when there is no PR: whether the absence is
+// an error is the domain's decision — and there it becomes "no green, no PR".
 func (d *DeliveryRepo) PullRequestOf(ctx context.Context, accountID, demandID, repoID string) (*delivery.PullRequest, error) {
 	pr, err := scanPR(d.pool.QueryRow(ctx, `
 		SELECT `+prCols+`
@@ -223,10 +224,11 @@ func (d *DeliveryRepo) PullRequestOf(ctx context.Context, accountID, demandID, r
 	return pr, nil
 }
 
-// OpenPullRequest conta com a trigger `assert_pr_tem_verde` como último
-// anteparo: o serviço já recusou antes, com a mensagem que diz o que falta, mas
-// a regra da ADR-0007 não pode depender de nenhum caminho de código específico.
-// A exceção da trigger volta como failed_precondition pelo Translate.
+// OpenPullRequest relies on the `assert_pr_tem_verde` trigger as the last
+// backstop: the service has already refused earlier, with the message that says
+// what is missing, but ADR-0007's rule must not depend on any specific code
+// path. The trigger's exception comes back as failed_precondition through
+// Translate.
 func (d *DeliveryRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest, idemKey string) (*delivery.PullRequest, error) {
 	if existing, err := d.prByIdemKey(ctx, pr.AccountID, idemKey); err != nil {
 		return nil, err
@@ -263,8 +265,8 @@ func (d *DeliveryRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullReq
 	return saved, err
 }
 
-// prColsBare é o mesmo conjunto de prCols sem o alias — o RETURNING de um
-// INSERT não conhece o alias `p` do SELECT.
+// prColsBare is prCols's same set without the alias — an INSERT's RETURNING does
+// not know the SELECT's `p` alias.
 const prColsBare = `id, account_id, demand_id::text, repo_id::text, repo_name,
 	source_branch, target_branch, head_commit, url, external_id,
 	merged, has_conflict, reviewers, created_at, updated_at`
@@ -312,9 +314,9 @@ func scanQueueEntry(row pgx.Row) (*delivery.MergeQueueEntry, error) {
 	return &e, nil
 }
 
-// QueueOfRepo devolve a fila já em (priority, seq) — a mesma ordem que o
-// domínio reaplica. O ORDER BY aqui é conveniência do índice; a REGRA de quem
-// vai antes mora no domínio, onde é testável sem banco.
+// QueueOfRepo returns the queue already in (priority, seq) — the same order the
+// domain reapplies. The ORDER BY here is the index's convenience; the RULE of who
+// goes first lives in the domain, where it is testable without a database.
 func (d *DeliveryRepo) QueueOfRepo(ctx context.Context, accountID, repoID string, includeMerged bool) ([]delivery.MergeQueueEntry, error) {
 	rows, err := d.pool.Query(ctx, `
 		SELECT `+queueCols+`
@@ -346,19 +348,20 @@ func (d *DeliveryRepo) QueueEntryByID(ctx context.Context, accountID, id string)
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "entrada da fila de merge")
+		return nil, Translate(err, "a merge queue entry")
 	}
 	return e, nil
 }
 
-// Enqueue atribui a sequência do repositório SOB LOCK da linha do repositório.
+// Enqueue assigns the repository's sequence UNDER A LOCK on the repository's
+// row.
 //
-// É o lock que torna a ordem determinística sob concorrência: sem ele, dois
-// enfileiramentos simultâneos leriam o mesmo MAX(seq) e um dos dois quebraria
-// na UNIQUE (repo_id, seq) — a constraint salvaria a integridade, mas ao preço
-// de um erro que o cliente teria de reprocessar. O mesmo SELECT confirma que o
-// repositório é DA CONTA: project_repos não tem account_id, o vínculo vem por
-// projects.
+// It is the lock that makes the order deterministic under concurrency: without
+// it, two simultaneous enqueues would read the same MAX(seq) and one of the two
+// would break on the UNIQUE (repo_id, seq) — the constraint would save the
+// integrity, but at the price of an error the client would have to reprocess.
+// The same SELECT confirms the repository belongs to THE ACCOUNT: project_repos
+// has no account_id, the link comes through projects.
 func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry, idemKey string) (*delivery.MergeQueueEntry, error) {
 	if existing, err := d.queueByIdemKey(ctx, e.AccountID, idemKey); err != nil {
 		return nil, err
@@ -375,10 +378,10 @@ func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry,
 			 WHERE r.id = $1::uuid AND p.account_id = $2
 			 FOR UPDATE OF r`, e.RepoID, e.AccountID).Scan(&lockedRepo)
 		if NoRows(err) {
-			return errs.NotFound("repositório do projeto")
+			return errs.NotFound("project repository")
 		}
 		if err != nil {
-			return Translate(err, "repositório do projeto")
+			return Translate(err, "project repository")
 		}
 
 		row := tx.QueryRow(ctx, `
@@ -393,9 +396,9 @@ func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry,
 			e.Priority, string(e.State), e.OverlappingFiles, e.EnqueuedAt, idemKey)
 		saved, err = scanQueueEntry(row)
 		if err != nil {
-			// UNIQUE (repo_id, pull_request_id) vira 409: o mesmo PR entrando
-			// duas vezes é retry do cliente, não estado novo.
-			return Translate(err, "entrada da fila de merge")
+			// UNIQUE (repo_id, pull_request_id) becomes a 409: the same PR
+			// going in twice is the client's retry, not new state.
+			return Translate(err, "a merge queue entry")
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "merge_queue", AggregateID: saved.ID,
@@ -410,11 +413,11 @@ func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry,
 	return saved, err
 }
 
-// SetQueueState move a entrada e emite o evento correspondente.
+// SetQueueState moves the entry and emits the corresponding event.
 //
-// Conflito tem tipo de evento PRÓPRIO — é ele que alimenta a caixa de atenção
-// (ADR-0008 §2). Um `state_changed` genérico obrigaria todo consumidor a
-// inspecionar o payload para descobrir que ali havia gente para ser chamada.
+// A conflict has an event type of its OWN — it is what feeds the attention box
+// (ADR-0008 §2). A generic `state_changed` would force every consumer to inspect
+// the payload to discover that there was somebody to be called.
 func (d *DeliveryRepo) SetQueueState(ctx context.Context, accountID, entryID string, to delivery.QueueState, c *delivery.ConflictReport, idemKey string) (*delivery.MergeQueueEntry, error) {
 	var saved *delivery.MergeQueueEntry
 	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
@@ -437,7 +440,7 @@ func (d *DeliveryRepo) SetQueueState(ctx context.Context, accountID, entryID str
 		var err error
 		saved, err = scanQueueEntry(row)
 		if err != nil {
-			return Translate(err, "entrada da fila de merge")
+			return Translate(err, "a merge queue entry")
 		}
 
 		tipo := "dop.delivery.merge.state_changed"
@@ -468,10 +471,10 @@ const directiveCols = `id, account_id, project_id::text, kind::text, summary, pa
 	COALESCE(decided_option,''), COALESCE(rationale,''), COALESCE(decided_by::text,''),
 	decided_at, created_at, updated_at`
 
-// As chaves JSON abaixo são as MESMAS que a trigger
-// `assert_diretriz_coordena_sem_pausar` inspeciona. Divergir aqui faria a
-// trigger deixar passar instrução que ela deveria barrar — por isso ficam
-// declaradas em um só lugar.
+// The JSON keys below are the SAME ones the `assert_diretriz_coordena_sem_pausar`
+// trigger inspects. Diverging here would make the trigger let through an
+// instruction it ought to bar — which is why they are declared in a single
+// place.
 type instructionRow struct {
 	DemandID string         `json:"demand_id"`
 	Action   string         `json:"action"`
@@ -555,8 +558,8 @@ func (d *DeliveryRepo) DirectiveByID(ctx context.Context, accountID, id string) 
 	return dir, nil
 }
 
-// CreateDirective é o techlead acionando a caixa de atenção com item de
-// decisão pronto (ADR-0015 §3) — daí o evento próprio.
+// CreateDirective is the tech lead triggering the attention box with a
+// ready-made decision item (ADR-0015 §3) — hence the event of its own.
 func (d *DeliveryRepo) CreateDirective(ctx context.Context, dir *delivery.Directive, idemKey string) (*delivery.Directive, error) {
 	if existing, err := d.directiveByIdemKey(ctx, dir.AccountID, idemKey); err != nil {
 		return nil, err
@@ -593,14 +596,14 @@ func (d *DeliveryRepo) CreateDirective(ctx context.Context, dir *delivery.Direct
 	return saved, err
 }
 
-// DecideDirective grava a decisão E aplica, na MESMA transação, a única
-// coordenação que a entrega sabe executar sozinha: a ordem preferencial na fila
-// (ADR-0015 §6).
+// DecideDirective records the decision AND applies, in the SAME transaction, the
+// only coordination delivery knows how to carry out on its own: the preferred
+// order in the queue (ADR-0015 §6).
 //
-// Repare no que o UPDATE da fila faz e no que NÃO faz: mexe em `priority`. Não
-// há coluna de demanda para tocar, não há estado de demanda a mudar — a
-// coordenação reordena o merge e a demanda que perdeu a vez continua correndo.
-// As demais instruções viajam no evento, para quem é dono delas.
+// Note what the queue's UPDATE does and what it does NOT: it touches `priority`.
+// There is no demand column to touch, no demand state to change — the
+// coordination reorders the merge and the demand that lost its turn keeps
+// running. The other instructions travel in the event, to whoever owns them.
 func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string, dec delivery.Decision, ins []delivery.Instruction, idemKey string) (*delivery.Directive, error) {
 	var saved *delivery.Directive
 	err := InTx(ctx, d.pool, func(tx pgx.Tx) error {
@@ -623,7 +626,7 @@ func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string
 			if i.Action != delivery.DirectiveMergeOrder {
 				continue
 			}
-			prioridade, ok := numero(i.Payload["priority"])
+			priority, ok := numberOf(i.Payload["priority"])
 			if !ok {
 				continue
 			}
@@ -631,7 +634,7 @@ func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string
 				UPDATE merge_queue_entries
 				   SET priority = $3, updated_at = now()
 				 WHERE account_id = $1 AND demand_id = $2::uuid AND state <> 'merged'`,
-				accountID, i.DemandID, prioridade); err != nil {
+				accountID, i.DemandID, priority); err != nil {
 				return Translate(err, "ordem da fila de merge")
 			}
 		}
@@ -643,8 +646,9 @@ func (d *DeliveryRepo) DecideDirective(ctx context.Context, accountID, id string
 				"project_id": saved.ProjectID, "kind": saved.Kind,
 				"option": dec.Option, "rationale": dec.Rationale,
 				"decided_by": dec.DecidedBy, "actor_kind": dec.ActorKind,
-				// As instruções viajam no evento: é assim que a coordenação
-				// chega às demandas sem que a entrega escreva no estado delas.
+				// The instructions travel in the event: it is how the
+				// coordination reaches the demands without delivery writing
+				// into their state.
 				"instructions": instructionsJSON(ins),
 			}),
 		})
@@ -682,9 +686,9 @@ func chavesDasOpcoes(opts []delivery.DirectiveOption) []string {
 	return out
 }
 
-// numero aceita o que vier do Struct do contrato: JSON não tem int, e o
-// payload da instrução passa por jsonb no caminho de volta.
-func numero(v any) (int, bool) {
+// numberOf accepts whatever comes from the contract's Struct: JSON has no int,
+// and the instruction's payload goes through jsonb on the way back.
+func numberOf(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
 		return n, true
@@ -698,12 +702,12 @@ func numero(v any) (int, bool) {
 	return 0, false
 }
 
-// ── releitura por chave de idempotência ──
+// ── re-reading by idempotency key ──
 //
-// A repetição é lida ANTES de escrever. O índice único parcial por conta é o
-// que garante que duas tentativas simultâneas não criem duas linhas; esta
-// leitura é o que faz a segunda tentativa devolver a MESMA resposta em vez de
-// um conflito que o cliente teria de interpretar.
+// The repetition is read BEFORE writing. The partial unique index per account is
+// what guarantees two simultaneous attempts do not create two rows; this read is
+// what makes the second attempt return the SAME response instead of a conflict
+// the client would have to interpret.
 
 func (d *DeliveryRepo) prByIdemKey(ctx context.Context, accountID, idemKey string) (*delivery.PullRequest, error) {
 	if idemKey == "" {
@@ -732,7 +736,7 @@ func (d *DeliveryRepo) queueByIdemKey(ctx context.Context, accountID, idemKey st
 		return nil, nil
 	}
 	if err != nil {
-		return nil, Translate(err, "entrada da fila de merge")
+		return nil, Translate(err, "a merge queue entry")
 	}
 	return e, nil
 }
