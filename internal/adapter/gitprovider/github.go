@@ -432,11 +432,11 @@ func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery
 	}, nil
 }
 
-// looksLikeConflict is shared by both adapters. Portuguese and English because
-// the message comes from the provider, not from us.
+// looksLikeConflict is shared by both adapters. The wording comes from the
+// provider, not from us, so it matches on the phrases they publish.
 func looksLikeConflict(s string) bool {
 	l := strings.ToLower(s)
-	for _, m := range []string{"conflict", "conflito", "rebase failed", "not mergeable", "cannot be merged"} {
+	for _, m := range []string{"conflict", "rebase failed", "not mergeable", "cannot be merged"} {
 		if strings.Contains(l, m) {
 			return true
 		}

@@ -9,7 +9,7 @@ package contract_test
 // É esta execução que dá sentido ao duplo local. O duplo prova que os dois
 // adaptadores concordam com a MESMA leitura da documentação; só o provedor real
 // prova que a leitura estava certa. Os dois pontos em que a documentação é
-// omissa — o corpo do 422 de PR duplicado no GitHub e o texto do erro de
+// omissa — o body do 422 de PR duplicado no GitHub e o texto do fail de
 // GraphQL num rebase conflitado — só se resolvem AQUI.
 //
 // Sem credencial, PULA com a receita do que falta. `ok` com tudo pulado não
@@ -32,7 +32,7 @@ package contract_test
 //
 // ── E as que ESCREVEM ────────────────────────────────────────────────────────
 //
-//	GITHUB_TEST_BRANCHES / GITLAB_TEST_BRANCHES = "origem:destino[,origem:destino…]"
+//	GITHUB_TEST_BRANCHES / GITLAB_TEST_BRANCHES = "source:target[,source:target…]"
 //
 // Elas são separadas de propósito, e ficam desligadas por padrão. Os subtestes
 // que dependem delas ABREM PR E MERGEIAM — num repositório de verdade, com
@@ -57,11 +57,11 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// paresDe transforma "a:main,b:main" numa fábrica que entrega cada par uma vez
-// só. Devolve nil quando a variável está vazia — e campo nil na env faz a suíte
-// PULAR o subteste com registro, que é o comportamento certo: contra um
-// provedor real não dá para fabricar branch sob demanda.
-func paresDe(t *testing.T, env string) func(*testing.T) (string, string) {
+// pairsFrom turns "a:main,b:main" into a factory that hands each pair out once
+// only. It returns nil when the variable is empty — and a nil field in the env
+// makes the suite SKIP the subtest with a record, which is the right behaviour:
+// against a real provider you cannot fabricate a branch on demand.
+func pairsFrom(t *testing.T, env string) func(*testing.T) (string, string) {
 	bruto := strings.TrimSpace(os.Getenv(env))
 	if bruto == "" {
 		return nil
@@ -71,7 +71,7 @@ func paresDe(t *testing.T, env string) func(*testing.T) (string, string) {
 	for _, item := range strings.Split(bruto, ",") {
 		p := strings.SplitN(strings.TrimSpace(item), ":", 2)
 		if len(p) != 2 || p[0] == "" || p[1] == "" {
-			t.Fatalf("%s malformada em %q: use \"origem:destino,origem:destino\"", env, item)
+			t.Fatalf("%s malformada em %q: use \"source:target,source:target\"", env, item)
 		}
 		pares = append(pares, [2]string{p[0], p[1]})
 	}
@@ -80,13 +80,13 @@ func paresDe(t *testing.T, env string) func(*testing.T) (string, string) {
 		mu.Lock()
 		defer mu.Unlock()
 		if usados >= len(pares) {
-			t.Skipf("%s ofereceu %d par(es) e todos já foram consumidos — "+
-				"acrescente mais pares de branches DESCARTÁVEIS para cobrir este caso",
+			t.Skipf("%s offered %d pair(s) and all of them have been consumed — "+
+				"add more DISPOSABLE branch pairs to cover this case",
 				env, len(pares))
 		}
 		p := pares[usados]
 		usados++
-		t.Logf("usando branches reais %s → %s (este subteste ESCREVE no repositório)", p[0], p[1])
+		t.Logf("using real branches %s → %s (this subtest WRITES to the repository)", p[0], p[1])
 		return p[0], p[1]
 	}
 }
@@ -96,11 +96,11 @@ func TestGitProviderContractGitHubReal(t *testing.T) {
 	repo := os.Getenv("GITHUB_TEST_REPO")
 	ator := os.Getenv("GITHUB_TEST_ACTOR")
 	if token == "" || repo == "" {
-		t.Skip("GITHUB_TOKEN e GITHUB_TEST_REPO (\"dono/nome\") não definidas — " +
-			"sem elas não há GitHub para exercitar. Um token com leitura do " +
-			"repositório já cobre os subtestes de fila nativa, ausência, " +
-			"credencial e vazamento; para os que abrem PR e mergeiam, defina " +
-			"também GITHUB_TEST_BRANCHES com branches DESCARTÁVEIS.")
+		t.Skip("GITHUB_TOKEN and GITHUB_TEST_REPO (\"owner/name\") are not set — " +
+			"without them there is no GitHub to exercise. A token with read access " +
+			"to the repository already covers the native-queue, absence, credential " +
+			"and leak subtests; for the ones that open PRs and merge, also set " +
+			"GITHUB_TEST_BRANCHES with DISPOSABLE branches.")
 	}
 	if ator == "" {
 		ator = "ator-de-teste"
@@ -117,17 +117,17 @@ func TestGitProviderContractGitHubReal(t *testing.T) {
 			Timeout: 30 * time.Second, RebaseTimeout: 3 * time.Minute,
 		})
 	}
-	// Sonda barata antes da suíte: se o token não alcança o repositório, PULA
-	// com o motivo em vez de deixar dezesseis subtestes falharem parecendo
-	// defeito do adaptador.
+	// A cheap probe before the suite: if the token cannot reach the repository,
+	// it SKIPS with the reason instead of letting sixteen subtests fail looking
+	// like a defect of the adapter.
 	if _, err := novo(ator, token).HasNativeQueue(t.Context(), repo); err != nil {
-		t.Skipf("o GitHub em %s não respondeu por %s: %v", base, repo, err)
+		t.Skipf("GitHub at %s did not answer for %s: %v", base, repo, err)
 	}
 
-	pares := paresDe(t, "GITHUB_TEST_BRANCHES")
+	pares := pairsFrom(t, "GITHUB_TEST_BRANCHES")
 	if pares == nil {
-		t.Log("GITHUB_TEST_BRANCHES não definida: os subtestes que ABREM PR e " +
-			"MERGEIAM serão PULADOS. O que roda aqui é o caminho somente-leitura.")
+		t.Log("GITHUB_TEST_BRANCHES is not set: the subtests that OPEN PRs and " +
+			"MERGE will be SKIPPED. What runs here is the read-only path.")
 	}
 	contract.GitProviderSuite(t, "github-real", func(t *testing.T) contract.GitProviderEnv {
 		return contract.GitProviderEnv{
@@ -136,18 +136,19 @@ func TestGitProviderContractGitHubReal(t *testing.T) {
 			Actor:                  ator,
 			SentinelToken:        token,
 			Repo:                  repo,
-			InvisibleRepo:         env("GITHUB_TEST_REPO_INVISIVEL", "dop-nao-existe/repo-nao-existe-"+t.Name()),
+			InvisibleRepo:         env("GITHUB_TEST_REPO_INVISIVEL", "dop-does-not-exist/repo-does-not-exist-"+t.Name()),
 			RepoWithNativeQueue:     os.Getenv("GITHUB_TEST_REPO_COM_FILA"),
 			RepoWithoutNativeQueue:     os.Getenv("GITHUB_TEST_REPO_SEM_FILA"),
 			RepoWithUnreadableQueue:      os.Getenv("GITHUB_TEST_REPO_SEM_PERMISSAO_DE_REGRAS"),
 			Pair:                   pares,
-			// Conflito e bloqueio de verdade exigem branches PREPARADOS (um que
-			// diverge do destino, outro coberto por checagem obrigatória). Não
-			// há como fabricá-los pela porta, então ficam de fora até que
-			// alguém os prepare — e o subteste PULA dizendo isso.
-			ConflictingPair: paresDe(t, "GITHUB_TEST_BRANCHES_CONFLITANTES"),
-			BlockedPair:   paresDe(t, "GITHUB_TEST_BRANCHES_BLOQUEADAS"),
-			PairWithNoCommits:  paresDe(t, "GITHUB_TEST_BRANCHES_SEM_COMMITS"),
+			// A real conflict and a real block require PREPARED branches (one
+			// that diverges from the target, another covered by a required
+			// check). There is no way to fabricate them through the port, so
+			// they stay out until somebody prepares them — and the subtest SKIPS
+			// saying so.
+			ConflictingPair: pairsFrom(t, "GITHUB_TEST_BRANCHES_CONFLITANTES"),
+			BlockedPair:   pairsFrom(t, "GITHUB_TEST_BRANCHES_BLOQUEADAS"),
+			PairWithNoCommits:  pairsFrom(t, "GITHUB_TEST_BRANCHES_SEM_COMMITS"),
 			Wait:         3 * time.Minute,
 		}
 	})
@@ -158,10 +159,10 @@ func TestGitProviderContractGitLabReal(t *testing.T) {
 	proj := os.Getenv("GITLAB_TEST_PROJECT")
 	ator := os.Getenv("GITLAB_TEST_ACTOR")
 	if token == "" || proj == "" {
-		t.Skip("GITLAB_TOKEN e GITLAB_TEST_PROJECT (\"grupo/projeto\" ou id numérico) " +
-			"não definidas — sem elas não há GitLab para exercitar. Para os " +
-			"subtestes que abrem MR e mergeiam, defina também GITLAB_TEST_BRANCHES " +
-			"com branches DESCARTÁVEIS.")
+		t.Skip("GITLAB_TOKEN and GITLAB_TEST_PROJECT (\"group/project\" or a numeric id) " +
+			"are not set — without them there is no GitLab to exercise. For the " +
+			"subtests that open MRs and merge, also set GITLAB_TEST_BRANCHES " +
+			"with DISPOSABLE branches.")
 	}
 	if ator == "" {
 		ator = "ator-de-teste"
@@ -176,14 +177,14 @@ func TestGitProviderContractGitLabReal(t *testing.T) {
 		})
 	}
 	if _, err := novo(ator, token).HasNativeQueue(t.Context(), proj); err != nil {
-		t.Skipf("o GitLab em %s não respondeu por %s: %v — se a credencial for de "+
+		t.Skipf("GitLab at %s did not answer for %s: %v — if the credential is an "+
 			"OAuth em vez de token pessoal, defina GITLAB_TOKEN_OAUTH=1", base, proj, err)
 	}
 
-	pares := paresDe(t, "GITLAB_TEST_BRANCHES")
+	pares := pairsFrom(t, "GITLAB_TEST_BRANCHES")
 	if pares == nil {
-		t.Log("GITLAB_TEST_BRANCHES não definida: os subtestes que ABREM MR e " +
-			"MERGEIAM serão PULADOS.")
+		t.Log("GITLAB_TEST_BRANCHES is not set: the subtests that OPEN MRs and " +
+			"MERGE will be SKIPPED.")
 	}
 	contract.GitProviderSuite(t, "gitlab-real", func(t *testing.T) contract.GitProviderEnv {
 		return contract.GitProviderEnv{
@@ -192,14 +193,14 @@ func TestGitProviderContractGitLabReal(t *testing.T) {
 			Actor:                  ator,
 			SentinelToken:        token,
 			Repo:                  proj,
-			InvisibleRepo:         env("GITLAB_TEST_PROJECT_INVISIVEL", "dop-nao-existe/projeto-nao-existe"),
+			InvisibleRepo:         env("GITLAB_TEST_PROJECT_INVISIVEL", "dop-does-not-exist/project-does-not-exist"),
 			RepoWithNativeQueue:     os.Getenv("GITLAB_TEST_PROJECT_COM_TREM"),
 			RepoWithoutNativeQueue:     os.Getenv("GITLAB_TEST_PROJECT_SEM_TREM"),
 			RepoWithUnreadableQueue:      os.Getenv("GITLAB_TEST_PROJECT_SEM_ESCOPO"),
 			Pair:                   pares,
-			ConflictingPair:        paresDe(t, "GITLAB_TEST_BRANCHES_CONFLITANTES"),
-			BlockedPair:          paresDe(t, "GITLAB_TEST_BRANCHES_BLOQUEADAS"),
-			PairWithNoCommits:         paresDe(t, "GITLAB_TEST_BRANCHES_SEM_COMMITS"),
+			ConflictingPair:        pairsFrom(t, "GITLAB_TEST_BRANCHES_CONFLITANTES"),
+			BlockedPair:          pairsFrom(t, "GITLAB_TEST_BRANCHES_BLOQUEADAS"),
+			PairWithNoCommits:         pairsFrom(t, "GITLAB_TEST_BRANCHES_SEM_COMMITS"),
 			Wait:                3 * time.Minute,
 		}
 	})

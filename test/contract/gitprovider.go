@@ -51,7 +51,7 @@ type GitProviderEnv struct {
 
 	// RepoWithNativeQueue and RepoWithoutNativeQueue are repositories whose
 	// HasNativeQueue answer is KNOWN. Empty = the subtest is skipped.
-	RepoWithNativeQueue string
+	RepoWithNativeQueue    string
 	RepoWithoutNativeQueue string
 	// RepoWithUnreadableQueue is the repository the adapter CANNOT look at (no
 	// permission, a plan feature absent). It is guarantee 15's case: it has to
@@ -62,16 +62,16 @@ type GitProviderEnv struct {
 	// integrates cleanly. New on every call is mandatory: against a real
 	// provider the suite's second run would find the first run's PR, and the
 	// idempotency subtest would pass by accident.
-	Pair func(t *testing.T) (origem, target string)
+	Pair func(t *testing.T) (source, target string)
 	// ConflictingPair returns a pair the provider REFUSES over a conflict.
-	ConflictingPair func(t *testing.T) (origem, target string)
+	ConflictingPair func(t *testing.T) (source, target string)
 	// BlockedPair returns a pair whose merge is refused for a reason that is NOT
 	// a conflict — a running pipeline, a missing approval (guarantee 8).
-	BlockedPair func(t *testing.T) (origem, target string)
+	BlockedPair func(t *testing.T) (source, target string)
 	// PairWithNoCommits returns a pair whose source does not exist or has
 	// nothing to integrate: the case where opening a PR has to FAIL, and fail
 	// with an error (not with a PR whose ExternalID is empty).
-	PairWithNoCommits func(t *testing.T) (origem, target string)
+	PairWithNoCommits func(t *testing.T) (source, target string)
 
 	// Wait is how long to tolerate an asynchronous rebase.
 	Wait time.Duration
@@ -103,7 +103,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("this environment cannot fabricate a conflict — the case is not verifiable here")
 			}
 			p := conectar(t)
-			origem, target := e.ConflictingPair(t)
+			source, target := e.ConflictingPair(t)
 			ctx, cancel := context.WithTimeout(context.Background(), e.Wait)
 			defer cancel()
 
@@ -113,10 +113,10 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			// reapplies an MR's branch (through a REST route), ALWAYS on top of
 			// that PR/MR's target. `RebaseSpec` looks like a git operation and
 			// is not.
-			openForRebase(t, p, e, origem, target)
+			openForRebase(t, p, e, source, target)
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: target})
+				RepoExternalID: e.Repo, Branch: source, Onto: target})
 			if err != nil {
 				t.Fatalf("A CONFLICT BECAME AN ERROR: ADR-0008 §2's flow depends on the "+
 					"conflict arriving as data so it can become the agent's task and an "+
@@ -144,13 +144,13 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			ctx, cancel := context.WithTimeout(context.Background(), e.Wait)
 			defer cancel()
-			openForRebase(t, p, e, origem, target)
+			openForRebase(t, p, e, source, target)
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: target})
+				RepoExternalID: e.Repo, Branch: source, Onto: target})
 			if err != nil {
 				t.Fatalf("Rebase: %v", err)
 			}
@@ -172,11 +172,11 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			ctx := context.Background()
 
 			spec := delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 				Title:   "demanda 1: primeira tentativa",
 				Body:    "acceptance: 12/12; critic: approved; trace: dop://t/1",
 				ActorID: e.Actor,
@@ -219,9 +219,9 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 				Title: "identity", Body: "evidence", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
@@ -246,9 +246,9 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("this environment cannot fabricate a branch with nothing to integrate")
 			}
 			p := conectar(t)
-			origem, target := e.PairWithNoCommits(t)
+			source, target := e.PairWithNoCommits(t)
 			pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 				Title: "no commits", ActorID: e.Actor})
 			if err == nil {
 				t.Fatalf("a PR opened on a branch that does not exist or has nothing to integrate: %+v", pr)
@@ -268,10 +268,10 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 				Title: "merge idempotente", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
@@ -321,11 +321,11 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("this environment cannot fabricate a PR blocked for a reason that is not a conflict")
 			}
 			p := conectar(t)
-			origem, target := e.BlockedPair(t)
+			source, target := e.BlockedPair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
-				Title: "bloqueado", ActorID: e.Actor})
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
+				Title: "blocked", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
 			}
@@ -355,12 +355,12 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel() // it is born cancelled
 
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
-				RepoExternalID: e.Repo, Branch: origem, Onto: target})
+				RepoExternalID: e.Repo, Branch: source, Onto: target})
 			if err == nil {
 				t.Fatalf("contexto cancelado e o rebase respondeu assim mesmo: %+v — "+
 					"Conflicted=false would mean 'it did not conflict' when what happened "+
@@ -378,10 +378,10 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Skip("an environment with no branch factory")
 			}
 			p := conectar(t)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			ctx := context.Background()
 			pr, err := p.OpenPullRequest(ctx, delivery.OpenPRSpec{
-				RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+				RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 				Title: "opacidade", ActorID: e.Actor})
 			if err != nil {
 				t.Fatalf("OpenPullRequest: %v", err)
@@ -601,7 +601,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			var wg sync.WaitGroup
 			ids := make([]string, n)
 			errList := make([]error, n)
-			origem, target := e.Pair(t)
+			source, target := e.Pair(t)
 			for i := 0; i < n; i++ {
 				wg.Add(1)
 				go func(i int) {
@@ -611,7 +611,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 					// under concurrency — which is how it really happens in a
 					// fleet of agents with retries.
 					pr, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-						RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+						RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 						Title: fmt.Sprintf("concorrente %d", i), ActorID: e.Actor})
 					ids[i], errList[i] = pr.ExternalID, err
 				}(i)
@@ -637,10 +637,10 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 // It is here, and not in the environment, because the requirement is the
 // PROVIDERS' and holds for both — it is part of what the suite discovered, not
 // configuration from whoever assembles it.
-func openForRebase(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, target string) {
+func openForRebase(t *testing.T, p delivery.GitProvider, e GitProviderEnv, source, target string) {
 	t.Helper()
 	if _, err := p.OpenPullRequest(context.Background(), delivery.OpenPRSpec{
-		RepoExternalID: e.Repo, SourceBranch: origem, TargetBranch: target,
+		RepoExternalID: e.Repo, SourceBranch: source, TargetBranch: target,
 		Title: "the rebase's prerequisite", ActorID: e.Actor,
 	}); err != nil {
 		t.Fatalf("could not prepare the PR the rebase requires: %v", err)
@@ -652,10 +652,10 @@ func openForRebase(t *testing.T, p delivery.GitProvider, e GitProviderEnv, orige
 // from the main suite because it only makes sense where the environment can
 // guarantee there is NO PR for the pair — against a real provider, that requires
 // a virgin branch.
-func GitProviderRebaseSemPR(t *testing.T, p delivery.GitProvider, e GitProviderEnv, origem, target string) {
+func GitProviderRebaseSemPR(t *testing.T, p delivery.GitProvider, e GitProviderEnv, source, target string) {
 	t.Helper()
 	_, err := p.Rebase(context.Background(), delivery.RebaseSpec{
-		RepoExternalID: e.Repo, Branch: origem, Onto: target})
+		RepoExternalID: e.Repo, Branch: source, Onto: target})
 	if err == nil {
 		t.Fatal("it reapplied a branch with no open PR: neither provider does that, " +
 			"so whatever happened was not what the domain asked for")
