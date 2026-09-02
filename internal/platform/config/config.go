@@ -149,6 +149,21 @@ type Config struct {
 	SendGridAPIKey string
 	SMTPPassword   string
 	SMTPStartTLS   bool
+	// SMSBackend chooses the SMSer port's adapter (ADR-0027 §4). An empty
+	// credential turns on the LOCAL REHEARSAL, the same gesture as SMTP's: the
+	// adapter prints the message instead of sending it, which is the local
+	// environment's only mode — there is no SMS emulator (P-35).
+	SMSBackend string // twilio | zenvia
+	SMSFrom    string
+	// TwilioAccountSID/TwilioAuthToken and ZenviaToken are the INSTALLATION's
+	// credentials. They are read here and go into the adapter's constructor,
+	// which captures them in a CLOSURE — never as a field, so a %+v of the
+	// adapter cannot print them.
+	TwilioAPI        string
+	TwilioAccountSID string
+	TwilioAuthToken  string
+	ZenviaAPI        string
+	ZenviaToken      string
 	// CockpitBaseURL is the base of the links in emails. Empty makes the notice
 	// go out with no link — a declared degradation: a broken link costs more
 	// trust than a missing one.
@@ -201,17 +216,24 @@ func Load(mode string) (*Config, error) {
 			envInt("GIT_TIMEOUT_SECONDS", 30)) * time.Second,
 		GitRebaseTimeout: time.Duration(
 			envInt("GIT_REBASE_TIMEOUT_SECONDS", 180)) * time.Second,
-		GitMergeMethod: env("GIT_MERGE_METHOD", "merge"),
-		MailBackend:    env("MAIL_BACKEND", "smtp"),
-		MailFrom:       env("MAIL_FROM", "noreply@dop.local"),
-		MailFromName:   env("MAIL_FROM_NAME", "DOP"),
-		SendGridAPI:    env("SENDGRID_API", "https://api.sendgrid.com"),
-		SMTPAddr:       env("SMTP_ADDR", ""),
-		SMTPUser:       env("SMTP_USER", ""),
-		SendGridAPIKey: env("SENDGRID_API_KEY", ""),
-		SMTPPassword:   env("SMTP_PASSWORD", ""),
-		SMTPStartTLS:   env("SMTP_STARTTLS", "") == "true",
-		CockpitBaseURL: env("COCKPIT_BASE_URL", ""),
+		GitMergeMethod:   env("GIT_MERGE_METHOD", "merge"),
+		MailBackend:      env("MAIL_BACKEND", "smtp"),
+		MailFrom:         env("MAIL_FROM", "noreply@dop.local"),
+		MailFromName:     env("MAIL_FROM_NAME", "DOP"),
+		SendGridAPI:      env("SENDGRID_API", "https://api.sendgrid.com"),
+		SMTPAddr:         env("SMTP_ADDR", ""),
+		SMTPUser:         env("SMTP_USER", ""),
+		SendGridAPIKey:   env("SENDGRID_API_KEY", ""),
+		SMTPPassword:     env("SMTP_PASSWORD", ""),
+		SMTPStartTLS:     env("SMTP_STARTTLS", "") == "true",
+		SMSBackend:       env("SMS_BACKEND", "twilio"),
+		SMSFrom:          env("SMS_FROM", ""),
+		TwilioAPI:        env("TWILIO_API", ""),
+		TwilioAccountSID: env("TWILIO_ACCOUNT_SID", ""),
+		TwilioAuthToken:  env("TWILIO_AUTH_TOKEN", ""),
+		ZenviaAPI:        env("ZENVIA_API", ""),
+		ZenviaToken:      env("ZENVIA_TOKEN", ""),
+		CockpitBaseURL:   env("COCKPIT_BASE_URL", ""),
 		DigestDelay: time.Duration(
 			envInt("DIGEST_DELAY_SECONDS", 900)) * time.Second,
 		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,

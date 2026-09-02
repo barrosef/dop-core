@@ -17,6 +17,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/smser"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/config"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
@@ -33,6 +34,7 @@ type Deps struct {
 	Identity ports.IdentityProvider
 	Launcher ports.SandboxLauncher
 	Mailer   ports.Mailer
+	SMS      ports.SMSer
 	Cfg      *config.Config
 }
 
@@ -41,7 +43,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao abrir o pool do Postgres")
+		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "failed to open the Postgres pool")
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
@@ -132,7 +134,28 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// Ponte STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST (ADR-0020).
+	// The SMS channel, the port ADR-0025 foresaw and the second factor brought
+	// into being. Two real adapters for ADR-0001's same reason — and with no
+	// credential either of them REHEARSES: locally there is no gateway, so the
+	// path is exercised and the delivery is not (P-35).
+	var texto ports.SMSer
+	switch cfg.SMSBackend {
+	case "zenvia":
+		texto = smser.NewZenvia(smser.ZenviaConfig{
+			BaseURL: cfg.ZenviaAPI,
+			Token:   cfg.ZenviaToken,
+			From:    cfg.SMSFrom,
+		})
+	default:
+		texto = smser.NewTwilio(smser.TwilioConfig{
+			BaseURL:    cfg.TwilioAPI,
+			AccountSID: cfg.TwilioAccountSID,
+			AuthToken:  cfg.TwilioAuthToken,
+			From:       cfg.SMSFrom,
+		})
+	}
+
+	// The STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST bridge (ADR-0020).
 	// Without it, a local upload goes to the REAL bucket.
 	if ep := objectstore.ResolveEmulatorHost(); ep != "" {
 		log.Info("storage pointed at the emulator", "endpoint", ep)
@@ -167,7 +190,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
-		Identity: idp, Launcher: launcher, Mailer: correio, Cfg: cfg}
+		Identity: idp, Launcher: launcher, Mailer: correio, SMS: texto, Cfg: cfg}
 	cleanup := func() {
 		// Adapters that open a connection of their own register the close here.
 		// The port has no Close — closing is the concern of whoever ASSEMBLES,

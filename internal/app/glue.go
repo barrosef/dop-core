@@ -13,6 +13,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 )
 
@@ -240,3 +241,27 @@ func (a attentionWatcher) Watch(ctx context.Context, since string, aggregates, t
 		})
 	})
 }
+
+// ── identity → secondfactor ─────────────────────────────────────────────────
+
+// secondFactorUsers is the NARROW slice of identity the second factor needs:
+// who the person is (to address the code and to label the QR) and which scope
+// their seed lives in.
+//
+// It does not receive the whole identity service by accident — the second factor
+// must not be able to change a role or read an invite.
+type secondFactorUsers struct{ id *identity.Service }
+
+func (u secondFactorUsers) UserProfile(ctx context.Context, userID string) (string, string, bool, error) {
+	usr, err := u.id.GetUser(ctx, userID)
+	if err != nil {
+		return "", "", false, err
+	}
+	return usr.Email, usr.Name, usr.EmailVerified, nil
+}
+
+func (u secondFactorUsers) PersonalAccountOf(ctx context.Context, userID string) (string, error) {
+	return u.id.PersonalAccountOf(ctx, userID)
+}
+
+var _ secondfactor.Users = secondFactorUsers{}

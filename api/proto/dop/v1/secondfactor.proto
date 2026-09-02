@@ -1,0 +1,163 @@
+syntax = "proto3";
+package dop.v1;
+
+import "dop/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// The second factor (ADR-0027).
+//
+// A service of its own, and not more RPCs on IdentityService, because they are
+// two questions: identity answers WHO the person is (the first factor); this one
+// answers whether they PROVED it a second time. Keeping them apart is what lets
+// the gate be read in one place.
+//
+// Note what does NOT travel here: the TOTP seed after enrolment, the code sent,
+// and the whole destination. The seed exists once, in the enrolment's response;
+// the code only exists in the channel; the destination comes back masked.
+
+enum SecondFactorKind {
+  SECOND_FACTOR_KIND_UNSPECIFIED = 0;
+  SECOND_FACTOR_KIND_TOTP        = 1;
+  SECOND_FACTOR_KIND_EMAIL       = 2;
+  SECOND_FACTOR_KIND_SMS         = 3;
+}
+
+message SecondFactor {
+  string id    = 1;
+  SecondFactorKind kind = 2;
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // PENDING is registered and NOT proven. It grants nothing — which is why it
+    // is a state and not a boolean `confirmed`.
+    STATUS_PENDING = 1;
+    STATUS_ACTIVE  = 2;
+    STATUS_REVOKED = 3;
+  }
+  Status status = 3;
+  string label  = 4;
+  // MASKED ("j***@acme.com", "*********9999"). The whole value is stored because
+  // it has to be reachable; what a screen needs is enough to recognize it.
+  string masked_destination = 5;
+  google.protobuf.Timestamp confirmed_at = 6;
+  google.protobuf.Timestamp last_used_at = 7;
+  AuditStamp audit = 8;
+}
+
+// ── enrolment ───────────────────────────────────────────────────────────────
+
+message EnrollSecondFactorRequest {
+  CallContext ctx = 1;
+  SecondFactorKind kind = 2;
+  string label = 3;
+  // destination is required for email and sms, and refused for totp.
+  string destination = 4;
+  string idempotency_key = 5;
+}
+
+message EnrollSecondFactorResponse {
+  SecondFactor factor = 1;
+  // challenge_id is the row that counts the confirmation's attempts. Both
+  // enrolments return one, so the confirmation has ONE shape.
+  string challenge_id = 2;
+  // secret and uri come ONLY for TOTP, and ONLY here. The platform keeps the
+  // seed to VERIFY, not to show: an endpoint that gave it back would turn every
+  // session into an enrolment of a new device.
+  string secret = 3;
+  string uri    = 4;
+}
+
+message ConfirmSecondFactorRequest {
+  CallContext ctx = 1;
+  string factor_id    = 2;
+  string challenge_id = 3;
+  string code         = 4;
+}
+
+message ConfirmSecondFactorResponse {
+  SecondFactor factor = 1;
+  // recovery_codes come back ONLY on the FIRST active factor, and only once.
+  // Generating them at that moment is what stops the account from being one lost
+  // phone away from a support ticket.
+  repeated string recovery_codes = 2;
+}
+
+message RevokeSecondFactorRequest {
+  CallContext ctx = 1;
+  string id = 2;
+}
+
+message ListSecondFactorsRequest  { CallContext ctx = 1; }
+message ListSecondFactorsResponse { repeated SecondFactor factors = 1; }
+
+// ── the challenge ───────────────────────────────────────────────────────────
+
+message ChallengeSecondFactorRequest {
+  CallContext ctx = 1;
+  // Empty uses the person's only active factor. With more than one it REFUSES:
+  // choosing for them would send an SMS — and a charge — to somebody who wanted
+  // TOTP.
+  string factor_id = 2;
+}
+
+message ChallengeSecondFactorResponse {
+  string challenge_id = 1;
+  SecondFactorKind kind = 2;
+  string masked_destination = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message VerifySecondFactorRequest {
+  CallContext ctx = 1;
+  string challenge_id = 2;
+  string code = 3;
+}
+
+message VerifyRecoveryCodeRequest {
+  CallContext ctx = 1;
+  string code = 2;
+}
+
+message StepUp {
+  SecondFactorKind method = 1;
+  // recovery is set when what answered was a recovery code, which is not a Kind:
+  // it is the way back, and the timeline has to be able to tell them apart.
+  bool recovery = 2;
+  google.protobuf.Timestamp verified_at = 3;
+  google.protobuf.Timestamp expires_at  = 4;
+}
+
+// ── state and recovery ──────────────────────────────────────────────────────
+
+message GetSecondFactorStateRequest { CallContext ctx = 1; }
+
+message GetSecondFactorStateResponse {
+  // required is the ACTIVE ACCOUNT's policy, not the person's preference.
+  bool required = 1;
+  bool enrolled = 2;
+  bool stepped_up = 3;
+  // needs_setup is required && !enrolled: the cockpit's screen depends on this
+  // combination, and computing it at the edge would put the policy in two
+  // places.
+  bool needs_setup = 4;
+  repeated SecondFactorKind allowed = 5;
+  repeated SecondFactor factors = 6;
+  int32 recovery_codes_left = 7;
+  google.protobuf.Timestamp step_up_expires_at = 8;
+}
+
+message RegenerateRecoveryCodesRequest  { CallContext ctx = 1; }
+message RegenerateRecoveryCodesResponse { repeated string codes = 1; }
+
+service SecondFactorService {
+  rpc ListSecondFactors   (ListSecondFactorsRequest)   returns (ListSecondFactorsResponse);
+  rpc EnrollSecondFactor  (EnrollSecondFactorRequest)  returns (EnrollSecondFactorResponse);
+  rpc ConfirmSecondFactor (ConfirmSecondFactorRequest) returns (ConfirmSecondFactorResponse);
+  rpc RevokeSecondFactor  (RevokeSecondFactorRequest)  returns (SecondFactor);
+
+  rpc ChallengeSecondFactor(ChallengeSecondFactorRequest) returns (ChallengeSecondFactorResponse);
+  rpc VerifySecondFactor   (VerifySecondFactorRequest)    returns (StepUp);
+  rpc VerifyRecoveryCode   (VerifyRecoveryCodeRequest)    returns (StepUp);
+
+  rpc GetSecondFactorState     (GetSecondFactorStateRequest)     returns (GetSecondFactorStateResponse);
+  rpc RegenerateRecoveryCodes  (RegenerateRecoveryCodesRequest)  returns (RegenerateRecoveryCodesResponse);
+}

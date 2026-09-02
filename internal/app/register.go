@@ -25,6 +25,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
+	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
@@ -47,6 +48,20 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), relogio)
 	dopv1.RegisterIdentityServiceServer(srv, appgrpc.NewIdentityServer(identitySvc))
 
+	// The second factor is born right after identity, and BEFORE the domains
+	// that consume it: it is the gate the sensitive operations call, and a gate
+	// wired after its callers is a gate that is nil on the first call.
+	secondFactorSvc := secondfactor.NewService(
+		postgres.NewSecondFactorRepo(deps.Pool),
+		secondFactorUsers{identitySvc},
+		deps.Secrets,
+		deps.Mailer,
+		deps.SMS,
+		relogio,
+	)
+	dopv1.RegisterSecondFactorServiceServer(srv, appgrpc.NewSecondFactorServer(secondFactorSvc))
+	identitySvc.WithStepUp(secondFactorSvc)
+
 	hierarchySvc := hierarchy.NewService(postgres.NewHierarchyRepo(deps.Pool))
 	dopv1.RegisterHierarchyServiceServer(srv, appgrpc.NewHierarchyServer(hierarchySvc))
 
@@ -54,6 +69,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// the resource domain stores a credential without knowing whether the vault
 	// is k8s's or GCP's.
 	resourceSvc := resource.NewService(postgres.NewResourceRepo(deps.Pool), identitySvc, deps.Secrets)
+	resourceSvc.WithStepUp(secondFactorSvc)
 	dopv1.RegisterResourceServiceServer(srv, appgrpc.NewResourceServer(resourceSvc))
 
 	// Live events: ONE subscription on the bus per process, with an in-memory

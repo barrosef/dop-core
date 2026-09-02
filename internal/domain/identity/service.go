@@ -14,8 +14,36 @@ import (
 
 // Service concentrates the identity rules. It takes only PORTS.
 type Service struct {
-	repo  Repository
-	clock ports.Clock
+	repo   Repository
+	clock  ports.Clock
+	stepUp StepUpGate
+}
+
+// StepUpGate is the second factor's gate, in the narrowest possible shape: one
+// question, one answer (ADR-0027 §5).
+//
+// It is declared here, in the language of what is being asked, instead of this
+// domain importing `secondfactor` — the same rule as the rest of the glue.
+type StepUpGate interface {
+	RequireStepUp(ctx context.Context) error
+}
+
+// WithStepUp wires the gate. A service assembled WITHOUT it has no second
+// factor, and that is explicit: the domain tests build it without a gate on
+// purpose, and the composition root always wires one (internal/app/register.go).
+func (s *Service) WithStepUp(g StepUpGate) *Service {
+	s.stepUp = g
+	return s
+}
+
+// requireStepUp is the single call site of the gate in this domain. With no gate
+// wired it lets through — the alternative would be a domain that cannot be
+// tested without the second factor's whole machinery.
+func (s *Service) requireStepUp(ctx context.Context) error {
+	if s.stepUp == nil {
+		return nil
+	}
+	return s.stepUp.RequireStepUp(ctx)
 }
 
 // Translation keys for the refusals a person reads.
@@ -263,6 +291,13 @@ func (s *Service) CreateInvite(ctx context.Context, email string, role Role, gra
 		return nil, errs.Permission("only an owner or admin may invite").
 			WithCode(KeyOnlyAdminsInvite, nil)
 	}
+	// The second factor's gate (ADR-0027 §5): whoever invites is handing out a
+	// key to the account. It comes AFTER the role check, so somebody with no
+	// business inviting learns that first — the second factor is not a way to
+	// hide what the permission already refuses.
+	if err := s.requireStepUp(ctx); err != nil {
+		return nil, err
+	}
 
 	inv := &Invite{
 		AccountID: accountID,
@@ -355,6 +390,9 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) (*Invite, e
 		return nil, errs.Permission("only an owner or admin may revoke invites").
 			WithCode(KeyOnlyAdminsRevoke, nil)
 	}
+	if err := s.requireStepUp(ctx); err != nil {
+		return nil, err
+	}
 	return s.repo.RevokeInvite(ctx, accountID, inviteID)
 }
 
@@ -380,6 +418,9 @@ func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string,
 	if !actor.Role.CanManageMembers() {
 		return nil, errs.Permission("only an owner or admin may change memberships").
 			WithCode(KeyOnlyAdminsSetRole, nil)
+	}
+	if err := s.requireStepUp(ctx); err != nil {
+		return nil, err
 	}
 	return s.repo.UpdateMembershipRole(ctx, membershipID, role)
 }

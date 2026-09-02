@@ -20,6 +20,34 @@ type Service struct {
 	repo    Repository
 	access  Access
 	secrets ports.SecretStore
+	stepUp  StepUpGate
+}
+
+// StepUpGate is the second factor's gate, in the narrowest possible shape: one
+// question, one answer (ADR-0027 §5).
+//
+// It is declared here, in the language of what is being asked, instead of this
+// domain importing `secondfactor` — the same rule as the rest of the glue.
+type StepUpGate interface {
+	RequireStepUp(ctx context.Context) error
+}
+
+// WithStepUp wires the gate. A service assembled WITHOUT it has no second
+// factor, and that is explicit: the domain tests build it without a gate on
+// purpose, and the composition root always wires one (internal/app/register.go).
+func (s *Service) WithStepUp(g StepUpGate) *Service {
+	s.stepUp = g
+	return s
+}
+
+// requireStepUp is the single call site of the gate in this domain. With no gate
+// wired it lets through — the alternative would be a domain that cannot be
+// tested without the second factor's whole machinery.
+func (s *Service) requireStepUp(ctx context.Context) error {
+	if s.stepUp == nil {
+		return nil
+	}
+	return s.stepUp.RequireStepUp(ctx)
 }
 
 func NewService(repo Repository, access Access, secrets ports.SecretStore) *Service {
@@ -328,6 +356,13 @@ func (s *Service) SetCredential(ctx context.Context, resourceID string, secret [
 	}
 	if len(secret) == 0 {
 		return "", errs.Invalid("empty credential").WithCode(KeyCredentialEmpty, nil)
+	}
+	// The second factor's gate: this is the operation that puts a third party's
+	// key into the vault (ADR-0027 §5). It comes AFTER the cheap validation and
+	// BEFORE the authorization, so that a caller with no session does not learn
+	// which resources exist.
+	if err := s.requireStepUp(ctx); err != nil {
+		return "", err
 	}
 	r, err := s.authorize(ctx, a, resourceID, LevelManage)
 	if err != nil {

@@ -498,3 +498,73 @@ func TestAcceptanceToleratesCaseAndSpaceInTheUserRow(t *testing.T) {
 		t.Fatalf("the same email in a different case should be accepted: %v", err)
 	}
 }
+
+// ── the second factor's gate (ADR-0027 §5) ──────────────────────────────────
+
+type refusingGate struct{ calls int }
+
+func (g *refusingGate) RequireStepUp(context.Context) error {
+	g.calls++
+	return errs.Permission("this operation requires the second factor")
+}
+
+func TestTheSensitiveOperationsAskTheStepUpGate(t *testing.T) {
+	// Inviting, changing a role and revoking hand out — or take away — a key to
+	// the account. They are the three the ADR lists on the identity side, and
+	// the test exists so a fourth one added tomorrow is a deliberate decision,
+	// not an omission.
+	for _, c := range []struct {
+		name string
+		call func(t *testing.T, svc *identity.Service, ctx context.Context, acct *identity.Account) error
+	}{
+		{"invite", func(_ *testing.T, svc *identity.Service, ctx context.Context, _ *identity.Account) error {
+			_, err := svc.CreateInvite(ctx, "new@dop.local", identity.RoleDeveloper, nil)
+			return err
+		}},
+		{"revoke", func(_ *testing.T, svc *identity.Service, ctx context.Context, _ *identity.Account) error {
+			_, err := svc.RevokeInvite(ctx, "inv-1")
+			return err
+		}},
+		{"change role", func(_ *testing.T, svc *identity.Service, ctx context.Context, _ *identity.Account) error {
+			_, err := svc.UpdateMembershipRole(ctx, "mem-1", identity.RoleAdmin)
+			return err
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := newFakeRepo()
+			gate := &refusingGate{}
+			svc := identity.NewService(repo, fixedClock{now}).WithStepUp(gate)
+			u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+				Subject: "s1", Email: "owner@x.com", EmailVerified: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+				ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID, SessionID: "sess-1"})
+
+			err = c.call(t, svc, ctx, acct)
+			if errs.KindOf(err) != errs.KindPermission {
+				t.Fatalf("with the gate refusing it gave %v (%s)", err, errs.KindOf(err))
+			}
+			if gate.calls == 0 {
+				t.Error("the operation did not ask the gate")
+			}
+		})
+	}
+}
+
+func TestWithNoGateWiredTheDomainWorksOnItsOwn(t *testing.T) {
+	// A service assembled WITHOUT a gate has no second factor, and that is
+	// explicit: it is what lets this domain be tested without the second
+	// factor's whole machinery. The composition root always wires one.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	u, acct, _ := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s1", Email: "owner@x.com", EmailVerified: true})
+	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+
+	if _, err := svc.CreateInvite(ctx, "new@dop.local", identity.RoleDeveloper, nil); err != nil {
+		t.Fatalf("with no gate it refused: %v", err)
+	}
+}
