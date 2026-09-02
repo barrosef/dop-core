@@ -64,9 +64,9 @@ func attentionToProto(it attention.Item, prioridade int32) *dopv1.AttentionItem 
 		Priority:   prioridade,
 		OpenedAt:   timestamppb.New(it.OpenedAt),
 	}
-	// Ausente ≠ zerado: item de conta (integração quebrada) não pertence a
-	// demanda nenhuma, e um DemandRef vazio faria o cockpit agrupar sob uma
-	// demanda inexistente.
+	// Absent ≠ zeroed: an account item (a broken integration) belongs to no
+	// demand at all, and an empty DemandRef would make the cockpit group it
+	// under a nonexistent demand.
 	if it.DemandID != "" {
 		msg.Demand = &dopv1.DemandRef{Id: it.DemandID}
 	}
@@ -97,7 +97,7 @@ func attentionKindToProto(k attention.Kind) dopv1.AttentionItem_Kind {
 	}
 }
 
-// timeNow existe para a prioridade ser calculada uma vez por resposta, e não
-// uma vez por item: itens da mesma resposta ordenados contra relógios
-// diferentes poderiam sair fora de ordem.
+// timeNow exists so the priority is computed once per response, and not once
+// per item: items of the same response ordered against different clocks could
+// come out out of order.
 func timeNow() time.Time { return time.Now().UTC() }

@@ -9,8 +9,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 )
 
-// WorkflowServer é a BORDA do domínio de fluxo: traduz proto para domínio e
-// devolve. Nenhuma regra mora aqui — o que decide é o Service.
+// WorkflowServer is the flow domain's EDGE: it translates proto into domain and
+// back. No rule lives here — what decides is the Service.
 type WorkflowServer struct {
 	dopv1.UnimplementedWorkflowServiceServer
 	svc *workflow.Service
@@ -48,9 +48,10 @@ func (s *WorkflowServer) CreateFlow(ctx context.Context, req *dopv1.CreateFlowRe
 	return flowToProto(f), nil
 }
 
-// UpdateFlow GERA VERSÃO NOVA. O `version` que vem no corpo é a versão sobre a
-// qual o autor editou — é o que permite recusar uma gravação feita em cima de
-// um documento desatualizado em vez de apagar o trabalho de quem gravou antes.
+// UpdateFlow GENERATES A NEW VERSION. The `version` coming in the body is the
+// version the author edited against — it is what allows refusing a write made on
+// top of an outdated document instead of erasing the work of whoever wrote
+// before.
 func (s *WorkflowServer) UpdateFlow(ctx context.Context, req *dopv1.UpdateFlowRequest) (*dopv1.Flow, error) {
 	f, err := s.svc.Update(ctx, flowFromProto(req.GetFlow()))
 	if err != nil {
@@ -59,9 +60,9 @@ func (s *WorkflowServer) UpdateFlow(ctx context.Context, req *dopv1.UpdateFlowRe
 	return flowToProto(f), nil
 }
 
-// ValidateFlow devolve o relatório, não um erro: o cliente pediu um ensaio, e a
-// tela precisa da lista de problemas para marcar as etapas — não de uma
-// mensagem de falha para exibir num toast.
+// ValidateFlow returns the report, not an error: the client asked for a dry run,
+// and the screen needs the list of problems to mark the stages — not a failure
+// message to show in a toast.
 func (s *WorkflowServer) ValidateFlow(ctx context.Context, req *dopv1.ValidateFlowRequest) (*dopv1.ValidateFlowResponse, error) {
 	rep, err := s.svc.Validate(ctx, flowFromProto(req.GetFlow()))
 	if err != nil {
@@ -79,10 +80,10 @@ func (s *WorkflowServer) ResolveFlow(ctx context.Context, req *dopv1.ResolveFlow
 	if err != nil {
 		return nil, err
 	}
-	// A procedência sai ESTRUTURADA, além da frase. A frase continua para log
-	// e mensagem de erro; a estrutura existe para o consumidor não ter que
-	// interpretar texto — contrato que obriga parsing quebra no dia em que
-	// alguém melhora a redação.
+	// The provenance goes out STRUCTURED, besides the sentence. The sentence
+	// stays for logs and error messages; the structure exists so the consumer
+	// does not have to interpret text — a contract that forces parsing breaks
+	// the day somebody improves the wording.
 	contribuintes := make([]*dopv1.ScopeRef, 0, len(eff.Contributors))
 	for _, c := range eff.Contributors {
 		contribuintes = append(contribuintes, &dopv1.ScopeRef{Scope: string(c.Scope), Id: c.ID})
@@ -110,7 +111,7 @@ func (s *WorkflowServer) PromoteFlow(ctx context.Context, req *dopv1.PromoteFlow
 	return flowToProto(f), nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func flowToProto(f *workflow.Flow) *dopv1.Flow {
 	if f == nil {
@@ -150,9 +151,10 @@ func flowToProto(f *workflow.Flow) *dopv1.Flow {
 	return out
 }
 
-// flowFromProto NÃO lê a conta do proto — Flow nem a carrega, e é assim que
-// deve ser: quem manda é a conta ativa do contexto. Também ignora o carimbo de
-// auditoria: quem escreve created_at é o servidor, não o cliente.
+// flowFromProto does NOT read the account from the proto — Flow does not even
+// carry it, and that is how it should be: what rules is the context's active
+// account. It also ignores the audit stamp: the one who writes created_at is the
+// server, not the client.
 func flowFromProto(f *dopv1.Flow) workflow.Flow {
 	if f == nil {
 		return workflow.Flow{}
@@ -183,10 +185,10 @@ func flowFromProto(f *dopv1.Flow) workflow.Flow {
 	}
 }
 
-// As tabelas abaixo são a fronteira do vocabulário: o enum é do CONTRATO, a
-// string é do domínio. Um valor que o contrato não conhece vira o zero do enum
-// (UNSPECIFIED) e volta ao cliente como tipo desconhecido — que é a verdade,
-// e não um valor plausível inventado na borda.
+// The tables below are the vocabulary's frontier: the enum belongs to the
+// CONTRACT, the string to the domain. A value the contract does not know becomes
+// the enum's zero (UNSPECIFIED) and goes back to the client as an unknown type —
+// which is the truth, and not a plausible value invented at the edge.
 var flowStageTypes = map[workflow.StageType]dopv1.StageType{
 	workflow.TypeContext:         dopv1.StageType_STAGE_TYPE_CONTEXT,
 	workflow.TypeSpec:            dopv1.StageType_STAGE_TYPE_SPEC,
@@ -233,9 +235,9 @@ func flowArtifactFromProto(a dopv1.ArtifactKind) workflow.ArtifactKind {
 	return ""
 }
 
-// Portão não declarado vira "nenhum": é o mesmo default do domínio, e ter os
-// dois lados concordando evita que o silêncio signifique coisas diferentes na
-// borda e no núcleo.
+// An undeclared gate becomes "none": it is the domain's same default, and having
+// both sides agree stops silence from meaning different things at the edge and
+// in the core.
 func flowGateToProto(g workflow.GateKind) dopv1.Gate {
 	if g == workflow.GateHuman {
 		return dopv1.Gate_GATE_HUMAN

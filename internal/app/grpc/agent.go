@@ -7,16 +7,16 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
 )
 
-// AgentServer expõe o runtime de agente no contrato gRPC.
+// AgentServer exposes the agent runtime on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Nenhuma regra
-// aqui — nem qual modelo atende qual trabalho, nem o que é conclusão válida, nem
-// quem assina a resposta. Se um `if` de política aparecer neste arquivo, ele está
-// no lugar errado, e o lugar certo é internal/domain/agent.
+// A THIN layer: it converts types, calls the service, converts back. No rule
+// here — not which model serves which work, not what a valid conclusion is, not
+// who signs the reply. If an `if` of policy shows up in this file, it is in the
+// wrong place, and the right place is internal/domain/agent.
 //
-// E, sobretudo: a CREDENCIAL não passa por aqui em direção nenhuma. Ela é lida do
-// cofre pelo composition root e usada no mesmo processo (ADR-0023) — é por isso
-// que `RunTurnRequest` tem `resource_id` e não tem chave.
+// And, above all: the CREDENTIAL does not pass through here in any direction. It
+// is read from the vault by the composition root and used in the same process
+// (ADR-0023) — which is why `RunTurnRequest` has a `resource_id` and no key.
 type AgentServer struct {
 	dopv1.UnimplementedAgentServiceServer
 	svc *agent.Service
@@ -69,9 +69,10 @@ func turnOutcomeToProto(o *agent.TurnOutcome) *dopv1.TurnOutcome {
 				Currency:     o.Usage.Currency,
 				AmountMicros: int64(o.Usage.CostMicros),
 			},
-			// Os dois booleanos viajam SEMPRE: sem eles, um zero em custo ou em
-			// criação de cache é indistinguível de "foi de graça" e "nada foi
-			// escrito no cache" — que são afirmações que ninguém pode fazer.
+			// Both booleans travel ALWAYS: without them, a zero in cost or in
+			// cache creation is indistinguishable from "it was free" and
+			// "nothing was written to the cache" — assertions nobody can
+			// make.
 			CacheCreationKnown: o.Usage.CacheCreationKnown,
 			CostKnown:          o.Usage.CostKnown,
 		},

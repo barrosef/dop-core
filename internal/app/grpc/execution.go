@@ -10,12 +10,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// ExecutionServer expõe o substrato no contrato gRPC.
+// ExecutionServer exposes the substrate on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Repare no
-// que NÃO acontece aqui: min_tier UNSPECIFIED não vira um default. Ele desce
-// como está e o domínio recusa — porque a regra "declarado, nunca presumido"
-// morreria se a borda gentilmente preenchesse o vazio antes de perguntar.
+// A THIN layer: it converts types, calls the service, converts back. Note what
+// does NOT happen here: an UNSPECIFIED min_tier does not become a default. It
+// goes down as it is and the domain refuses — because the rule "declared, never
+// presumed" would die if the edge kindly filled the blank in before asking.
 type ExecutionServer struct {
 	dopv1.UnimplementedExecutionServiceServer
 	svc *execution.Service
@@ -66,12 +66,12 @@ func (s *ExecutionServer) DescribeSandbox(ctx context.Context, req *dopv1.Descri
 	return sandboxToProto(sb), nil
 }
 
-// StreamLogs é server-side streaming puro, no mesmo desenho de WatchEvents.
+// StreamLogs is pure server-side streaming, in WatchEvents's same design.
 //
-// O contexto de chamada JÁ chega preenchido: quem faz isso é o interceptador
-// StreamCallContext. Sem ele, o isolamento multi-tenant do fluxo passaria a
-// depender do CallContext declarado no corpo do pedido — campo que o servidor
-// NÃO lê (ADR-0017, conv. 5).
+// The call context arrives ALREADY filled in: the one who does that is the
+// StreamCallContext interceptor. Without it, the stream's multi-tenant isolation
+// would come to depend on the CallContext declared in the request's body — a
+// field the server does NOT read (ADR-0017, conv. 5).
 func (s *ExecutionServer) StreamLogs(req *dopv1.StreamLogsRequest, stream dopv1.ExecutionService_StreamLogsServer) error {
 	ctx := stream.Context()
 
@@ -81,9 +81,10 @@ func (s *ExecutionServer) StreamLogs(req *dopv1.StreamLogsRequest, stream dopv1.
 		TestType: execution.TestType(req.GetTestType()),
 	}
 	return s.svc.StreamLogs(ctx, req.GetSandboxId(), f, func(l execution.LogLine) error {
-		// Send devolve erro quando o cliente sumiu; o erro sobe pelo emit, o
-		// domínio interrompe o Tail e o adaptador fecha o corpo da resposta no
-		// defer. É assim que a goroutine morre junto, sem vazar.
+		// Send returns an error when the client is gone; the error goes up
+		// through emit, the domain interrupts the Tail and the adapter closes
+		// the response's body in its defer. That is how the goroutine dies along
+		// with it, with no leak.
 		return stream.Send(&dopv1.LogLine{
 			Source:  string(l.Source),
 			Service: l.Service,
@@ -93,7 +94,7 @@ func (s *ExecutionServer) StreamLogs(req *dopv1.StreamLogsRequest, stream dopv1.
 	})
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func sandboxToProto(s *execution.Sandbox) *dopv1.Sandbox {
 	if s == nil {
@@ -136,8 +137,8 @@ func stateToProto(s execution.State) dopv1.Sandbox_State {
 	return dopv1.Sandbox_STATE_UNSPECIFIED
 }
 
-// tierFromProto NÃO tem default. UNSPECIFIED atravessa como não declarado, e é
-// o domínio que recusa — com a mensagem que diz o que fazer.
+// tierFromProto has NO default. UNSPECIFIED crosses as undeclared, and it is the
+// domain that refuses — with the message that says what to do.
 func tierFromProto(t dopv1.IsolationTier) ports.IsolationTier {
 	switch t {
 	case dopv1.IsolationTier_ISOLATION_TIER_HARDWARE:

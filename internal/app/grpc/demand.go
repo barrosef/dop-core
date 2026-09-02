@@ -11,12 +11,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// DemandServer expõe o domínio de demanda no contrato gRPC.
+// DemandServer exposes the demand domain on the gRPC contract.
 //
-// Camada FINA: traduz tipos, chama o serviço, traduz de volta. Nenhuma regra
-// de transição de etapa, de portão ou de conclusão de thread aparece aqui —
-// elas moram no domínio, e precisam continuar morando, senão passam a existir
-// em dois lugares que divergem no primeiro cliente novo.
+// A THIN layer: it translates types, calls the service, translates back. No rule
+// about stage transitions, gates or thread conclusion appears here — they live
+// in the domain, and they have to keep living there, or else they come to exist
+// in two places that diverge with the first new client.
 type DemandServer struct {
 	dopv1.UnimplementedDemandServiceServer
 	svc *demand.Service
@@ -113,28 +113,31 @@ func (s *DemandServer) PublishFinding(ctx context.Context, req *dopv1.PublishFin
 }
 
 func (s *DemandServer) ListFindings(ctx context.Context, req *dopv1.ListFindingsRequest) (*dopv1.ListFindingsResponse, error) {
-	achados, err := s.svc.Findings(ctx, req.GetDemandId())
+	findings, err := s.svc.Findings(ctx, req.GetDemandId())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*dopv1.Finding, 0, len(achados))
-	for i := range achados {
-		// O filtro por thread mora AQUI e não no repositório de propósito: a
-		// consulta é por demanda, e a thread é um recorte da mesma resposta.
-		// Uma segunda consulta ao banco por um filtro barato não se paga.
-		if t := req.GetThreadId(); t != "" && achados[i].ThreadID != t {
+	out := make([]*dopv1.Finding, 0, len(findings))
+	for i := range findings {
+		// The filter by thread lives HERE and not in the repository, on
+		// purpose: the query is by demand, and the thread is a slice of the same
+		// response. A second database query for a cheap filter does not pay for
+		// itself.
+		if t := req.GetThreadId(); t != "" && findings[i].ThreadID != t {
 			continue
 		}
-		out = append(out, findingToProto(&achados[i]))
+		out = append(out, findingToProto(&findings[i]))
 	}
 	return &dopv1.ListFindingsResponse{Findings: out}, nil
 }
 
-// WatchDemand é streaming server-side puro: o BFF converte em SSE (ADR-0017).
+// WatchDemand is pure server-side streaming: the BFF converts it into SSE
+// (ADR-0017).
 //
-// A política de replay, de isolamento por conta e de consumidor lento é do
-// serviço de eventos, atrás da porta — aqui só se envia. Send devolve erro
-// quando o cliente some; o erro sobe e o domínio desmonta a assinatura.
+// The replay, per-account isolation and slow-consumer policies belong to the
+// event service, behind the port — here we only send. Send returns an error when
+// the client is gone; the error goes up and the domain tears the subscription
+// down.
 func (s *DemandServer) WatchDemand(req *dopv1.WatchDemandRequest, stream dopv1.DemandService_WatchDemandServer) error {
 	ctx := stream.Context() // contexto de chamada posto por StreamCallContext
 	return s.svc.Watch(ctx, req.GetDemandId(), func(e ports.Event) error {
@@ -147,7 +150,7 @@ func (s *DemandServer) WatchDemand(req *dopv1.WatchDemandRequest, stream dopv1.D
 	})
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func demandToProto(d *demand.Demand) *dopv1.Demand {
 	if d == nil {
@@ -217,9 +220,9 @@ func threadToProto(t *demand.Thread) *dopv1.Thread {
 			Purpose: t.Card.Purpose, Tools: t.Card.Tools, Model: t.Card.Model,
 			Effort: t.Card.Effort, BudgetMicros: t.Card.BudgetMicros,
 		},
-		// A tela lê `blocked` para a caixa de atenção; o estado completo da
-		// thread (aberta/ativa/bloqueada/concluída) ainda não tem campo no
-		// contrato — quando tiver, sai daqui sem tocar no domínio.
+		// The screen reads `blocked` for the attention box; the thread's full
+		// state (open/active/blocked/concluded) has no field in the contract yet
+		// — when it has one, it comes out of here without touching the domain.
 		Blocked: t.Blocked(),
 		Audit: &dopv1.AuditStamp{
 			CreatedAt: timestamppb.New(t.CreatedAt),
@@ -258,9 +261,10 @@ func findingToProto(f *demand.Finding) *dopv1.Finding {
 	}
 	payload, err := structpb.NewStruct(f.Payload)
 	if err != nil {
-		// Achado com payload que não vira Struct (NaN, tipo exótico) não
-		// derruba a resposta: o título e a autoria já valem por si, e perder o
-		// achado inteiro seria pior que perder o detalhe.
+		// A finding whose payload does not become a Struct (NaN, an exotic type)
+		// does not bring the response down: the title and the authorship are
+		// worth something on their own, and losing the whole finding would be
+		// worse than losing the detail.
 		payload = nil
 	}
 	return &dopv1.Finding{
@@ -278,9 +282,9 @@ func findingToProto(f *demand.Finding) *dopv1.Finding {
 
 // ── enums ────────────────────────────────────────────────────────────────────
 //
-// Tradução explícita, sem tabela genérica: o vocabulário do contrato e o do
-// domínio evoluem em ritmos diferentes, e um `switch` que não compila quando
-// alguém acrescenta um tipo é justamente o aviso que queremos.
+// An explicit translation, with no generic table: the contract's vocabulary and
+// the domain's evolve at different rates, and a `switch` that does not compile
+// when somebody adds a type is exactly the warning we want.
 
 func dopStatusToProto(s demand.DopStatus) dopv1.DopStatus {
 	switch s {
@@ -310,9 +314,9 @@ func stageStatusToProto(s demand.StageStatus) dopv1.StageStatus {
 	return dopv1.StageStatus_STAGE_STATUS_UNSPECIFIED
 }
 
-// stageStatusFromProto devolve string vazia para UNSPECIFIED de propósito: o
-// domínio recusa status desconhecido com uma mensagem que diz o que veio, e
-// escolher um default aqui seria a borda decidindo transição de etapa.
+// stageStatusFromProto returns an empty string for UNSPECIFIED on purpose: the
+// domain refuses an unknown status with a message that says what arrived, and
+// choosing a default here would be the edge deciding a stage transition.
 func stageStatusFromProto(s dopv1.StageStatus) demand.StageStatus {
 	switch s {
 	case dopv1.StageStatus_STAGE_STATUS_PENDING:

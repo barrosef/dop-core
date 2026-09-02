@@ -10,12 +10,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
 )
 
-// ResourceServer expõe o domínio de recurso no contrato gRPC.
+// ResourceServer exposes the resource domain on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Repare que
-// nenhuma decisão de acesso aparece aqui — quem pode ver, usar ou gerenciar é
-// resposta do domínio, e precisa continuar sendo, senão a regra passa a existir
-// em dois lugares que divergem com o tempo.
+// A THIN layer: it converts types, calls the service, converts back. Note that
+// no access decision appears here — who may see, use or manage is the domain's
+// answer, and it has to stay that way, or else the rule comes to exist in two
+// places that diverge over time.
 type ResourceServer struct {
 	dopv1.UnimplementedResourceServiceServer
 	svc *resource.Service
@@ -34,8 +34,8 @@ func (s *ResourceServer) ListResources(ctx context.Context, req *dopv1.ListResou
 	for i := range list {
 		out = append(out, resourceToProto(&list[i]))
 	}
-	// A lista já vem filtrada pelo que o ator pode usar — o total reflete o
-	// que ele vê, não o que existe na conta.
+	// The list arrives already filtered by what the actor may use — the total
+	// reflects what they see, not what exists in the account.
 	return &dopv1.ListResourcesResponse{
 		Resources: out,
 		Page:      &dopv1.PageResponse{Total: int32(len(out))},
@@ -50,10 +50,10 @@ func (s *ResourceServer) GetResource(ctx context.Context, req *dopv1.GetResource
 	return resourceToProto(r), nil
 }
 
-// CreateResource ignora idempotency_key de propósito: a proteção contra
-// repetição é do interceptador de idempotência (ADR-0017), e o último anteparo
-// é a UNIQUE (account_id, kind, name) do banco, que devolve conflito em vez de
-// criar recurso duplicado.
+// CreateResource ignores idempotency_key on purpose: the protection against
+// repetition belongs to the idempotency interceptor (ADR-0017), and the last
+// backstop is the database's UNIQUE (account_id, kind, name), which returns a
+// conflict instead of creating a duplicate resource.
 func (s *ResourceServer) CreateResource(ctx context.Context, req *dopv1.CreateResourceRequest) (*dopv1.Resource, error) {
 	r, err := s.svc.Create(ctx,
 		resourceKindFromProto(req.GetKind()), req.GetName(), req.GetConfig().AsMap())
@@ -93,9 +93,9 @@ func (s *ResourceServer) RevokeGrant(ctx context.Context, req *dopv1.RevokeGrant
 	return &dopv1.RevokeGrantResponse{Revoked: true}, nil
 }
 
-// SetCredential devolve a REFERÊNCIA, nunca o valor. O segredo entra por esta
-// RPC e não sai por nenhuma: não existe GetCredential no contrato, e é assim
-// que tem de ser (ADR-0001).
+// SetCredential returns the REFERENCE, never the value. The secret goes in
+// through this RPC and comes out through none: there is no GetCredential in the
+// contract, and that is how it has to be (ADR-0001).
 func (s *ResourceServer) SetCredential(ctx context.Context, req *dopv1.SetCredentialRequest) (*dopv1.SetCredentialResponse, error) {
 	ref, err := s.svc.SetCredential(ctx, req.GetResourceId(), req.GetSecret())
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *ResourceServer) SetCredential(ctx context.Context, req *dopv1.SetCreden
 	return &dopv1.SetCredentialResponse{CredentialRef: ref}, nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func resourceToProto(r *resource.Resource) *dopv1.Resource {
 	if r == nil {
@@ -117,7 +117,7 @@ func resourceToProto(r *resource.Resource) *dopv1.Resource {
 		Name:    r.Name,
 		Version: r.Version,
 		Config:  resourceConfigToProto(r.Config),
-		// Ponteiro opaco: diz que a integração TEM credencial, não qual é.
+		// An opaque pointer: it says the integration HAS a credential, not which one.
 		CredentialRef: r.CredentialRef,
 		Audit: &dopv1.AuditStamp{
 			CreatedAt: timestamppb.New(r.CreatedAt),
@@ -139,8 +139,9 @@ func grantToProto(g *resource.Grant) *dopv1.ResourceGrant {
 	}
 }
 
-// resourceConfigToProto: config que não vira Struct é config que não veio de
-// JSON — impossível pelo caminho do banco, então o nil aqui é defesa, não caso.
+// resourceConfigToProto: a config that does not become a Struct is a config that
+// did not come from JSON — impossible through the database's path, so the nil
+// here is a defence, not a case.
 func resourceConfigToProto(cfg map[string]any) *structpb.Struct {
 	if len(cfg) == 0 {
 		return nil
@@ -166,9 +167,10 @@ func resourceKindToProto(k resource.Kind) dopv1.Resource_Kind {
 	return dopv1.Resource_KIND_UNSPECIFIED
 }
 
-// resourceKindFromProto devolve "" para KIND_UNSPECIFIED: em ListResources isso
-// significa "todos os tipos"; em CreateResource o domínio recusa, porque criar
-// recurso sem tipo não é omissão razoável, é requisição incompleta.
+// resourceKindFromProto returns "" for KIND_UNSPECIFIED: in ListResources that
+// means "every kind"; in CreateResource the domain refuses, because creating a
+// resource with no kind is not a reasonable omission, it is an incomplete
+// request.
 func resourceKindFromProto(k dopv1.Resource_Kind) resource.Kind {
 	switch k {
 	case dopv1.Resource_KIND_INTEGRATION:

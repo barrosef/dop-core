@@ -10,12 +10,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
 )
 
-// CostServer expõe o domínio de custo no contrato gRPC.
+// CostServer exposes the cost domain on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Nenhuma
-// regra aqui — nem o que é estouro, nem qual modelo atende qual trabalho. Se
-// um `if` de política aparecer neste arquivo, ele está no lugar errado, e o
-// lugar certo é cost/router.go ou cost/service.go.
+// A THIN layer: it converts types, calls the service, converts back. No rule
+// here — not what an overrun is, not which model serves which work. If an `if`
+// of policy shows up in this file, it is in the wrong place, and the right place
+// is cost/router.go or cost/service.go.
 type CostServer struct {
 	dopv1.UnimplementedCostServiceServer
 	svc *cost.Service
@@ -23,17 +23,18 @@ type CostServer struct {
 
 func NewCostServer(svc *cost.Service) *CostServer { return &CostServer{svc: svc} }
 
-// RecordUsage propaga a chave de idempotência do CORPO da requisição, e não do
-// interceptador: aqui ela não é só proteção contra retentativa, é a garantia de
-// que orçamento não conta duas vezes (ADR-0011). O domínio a exige.
+// RecordUsage propagates the idempotency key from the request's BODY, and not
+// from the interceptor: here it is not merely retry protection, it is the
+// guarantee that a budget does not count twice (ADR-0011). The domain requires
+// it.
 func (s *CostServer) RecordUsage(ctx context.Context, req *dopv1.RecordUsageRequest) (*dopv1.RecordUsageResponse, error) {
 	out, err := s.svc.RecordUsage(ctx, usageFromProto(req.GetUsage()), req.GetIdempotencyKey())
 	if err != nil {
 		return nil, err
 	}
-	// recorded=true também na repetição: do ponto de vista do chamador o
-	// consumo ESTÁ registrado. Devolver false o levaria a tentar de novo, que
-	// é exatamente o contrário do que a idempotência resolve.
+	// recorded=true on the repetition too: from the caller's point of view the
+	// consumption IS recorded. Returning false would lead them to try again,
+	// which is exactly the opposite of what idempotency solves.
 	return &dopv1.RecordUsageResponse{
 		Recorded:       true,
 		BudgetExceeded: out.BudgetExceeded,
@@ -54,8 +55,9 @@ func (s *CostServer) SetBudget(ctx context.Context, req *dopv1.SetBudgetRequest)
 		Scope:       cost.Scope(in.GetScope()),
 		ScopeID:     in.GetScopeId(),
 		LimitMicros: cost.Micros(in.GetLimitMicros()),
-		// spent_micros do corpo é IGNORADO de propósito: o acumulado é do
-		// sistema, não do cliente. Aceitá-lo permitiria zerar o gasto pedindo.
+		// The body's spent_micros is IGNORED on purpose: the accumulated total
+		// belongs to the system, not to the client. Accepting it would allow
+		// zeroing the spend by asking.
 	})
 	if err != nil {
 		return nil, err
@@ -72,24 +74,25 @@ func (s *CostServer) RouteModel(ctx context.Context, req *dopv1.RouteModelReques
 		TaskKind: string(d.TaskKind),
 		Model:    d.Model,
 		Effort:   string(d.Effort),
-		// A justificativa vai INTEIRA para o cliente. É o que permite auditar
-		// ("por que esta demanda rodou no modelo caro?") e recalibrar sem ler
-		// o código — e ela diz, em toda decisão, que a política ainda é
-		// rascunho da ADR-0011 (P-7).
+		// The justification goes to the client WHOLE. It is what allows auditing
+		// ("why did this demand run on the expensive model?") and recalibrating
+		// without reading the code — and it says, in every decision, that the
+		// policy is still ADR-0011's draft (P-7).
 		Reason: d.Reason,
 	}, nil
 }
 
-// SummarizeCost usa o período PADRÃO (mês corrente).
+// SummarizeCost uses the DEFAULT period (the current month).
 //
-// O contrato ainda não tem campos de período — SummarizeCostRequest carrega só
-// escopo. Quando tiver, o domínio já recebe since/until e só a conversão muda:
-// é por isso que o serviço não fixa o mês por dentro.
+// The contract has no period fields yet — SummarizeCostRequest carries only the
+// scope. When it has them, the domain already takes since/until and only the
+// conversion changes: that is why the service does not pin the month
+// internally.
 func (s *CostServer) SummarizeCost(ctx context.Context, req *dopv1.SummarizeCostRequest) (*dopv1.SummarizeCostResponse, error) {
-	// Período zerado = padrão do domínio (mês corrente).
-	var padrão time.Time
+	// A zeroed period = the domain's default (the current month).
+	var defaultPeriod time.Time
 	sum, err := s.svc.Summarize(ctx, cost.Scope(req.GetScope()), req.GetScopeId(),
-		padrão, padrão, recentInSummary)
+		defaultPeriod, defaultPeriod, recentInSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +108,12 @@ func (s *CostServer) SummarizeCost(ctx context.Context, req *dopv1.SummarizeCost
 	}, nil
 }
 
-// recentInSummary: a tela mostra os últimos consumos ao lado do total. Vinte
-// cabem sem paginar; a tabela de uso é a que mais cresce e não se varre inteira
-// para desenhar uma lista lateral.
+// recentInSummary: the screen shows the latest consumptions next to the total.
+// Twenty fit without paging; the usage table is the one that grows the most and
+// is not swept whole to draw a side list.
 const recentInSummary = 20
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func usageFromProto(u *dopv1.UsageEvent) cost.UsageEvent {
 	if u == nil {
@@ -127,12 +130,13 @@ func usageFromProto(u *dopv1.UsageEvent) cost.UsageEvent {
 		CostMicros:          cost.Micros(u.GetCost().GetAmountMicros()),
 		Currency:            u.GetCost().GetCurrency(),
 	}
-	// `at` ausente NÃO vira o zero de time: o serviço preenche pelo relógio.
-	// Gravar 0001-01-01 mandaria o registro para uma partição inexistente.
+	// An absent `at` does NOT become time's zero: the service fills it in from
+	// the clock. Writing 0001-01-01 would send the record to a nonexistent
+	// partition.
 	if ts := u.GetAt(); ts != nil {
 		out.At = ts.AsTime()
 	}
-	// account_id não vem do corpo: o serviço o toma do contexto de chamada.
+	// account_id does not come from the body: the service takes it from the call context.
 	return out
 }
 
@@ -166,9 +170,9 @@ func budgetToProto(b *cost.Budget) *dopv1.Budget {
 		ScopeId:     b.ScopeID,
 		LimitMicros: int64(b.LimitMicros),
 		SpentMicros: int64(b.SpentMicros),
-		// Micros sem moeda é número sem unidade. A borda estava tendo que
-		// inventar ou deixar em branco — e valor monetário sem unidade é como
-		// se soma dólar com real sem ninguém perceber.
+		// Micros with no currency is a number with no unit. The edge was having
+		// to invent one or leave it blank — and a monetary value with no unit is
+		// how dollars get summed with reais without anyone noticing.
 		Currency: b.Currency,
 	}
 }

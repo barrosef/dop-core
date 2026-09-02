@@ -12,13 +12,13 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
 )
 
-// DeliveryServer expõe o domínio de entrega no contrato gRPC.
+// DeliveryServer exposes the delivery domain on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Nenhuma
-// regra de entrega aparece aqui — nem a recusa por falta de verde, nem a ordem
-// da fila, nem o que uma diretriz pode instruir. Se qualquer uma delas
-// aparecesse nesta camada, passaria a existir em dois lugares que divergem com
-// o tempo, e o BFF poderia contorná-la chamando outro caminho.
+// A THIN layer: it converts types, calls the service, converts back. No delivery
+// rule appears here — not the refusal for want of green, not the queue's order,
+// not what a directive may instruct. If any of them appeared in this layer, it
+// would come to exist in two places that diverge over time, and the BFF could
+// work around it by calling another path.
 type DeliveryServer struct {
 	dopv1.UnimplementedDeliveryServiceServer
 	svc *delivery.Service
@@ -43,8 +43,9 @@ func (s *DeliveryServer) ListPullRequests(ctx context.Context, req *dopv1.ListPu
 	return &dopv1.ListPullRequestsResponse{PullRequests: out}, nil
 }
 
-// GetMergeQueue devolve a fila do repositório JÁ ordenada e numerada pelo
-// domínio — o servidor não reordena, nem por conveniência de apresentação.
+// GetMergeQueue returns the repository's queue ALREADY ordered and numbered by
+// the domain — the server does not reorder, not even for presentation's
+// convenience.
 func (s *DeliveryServer) GetMergeQueue(ctx context.Context, req *dopv1.GetMergeQueueRequest) (*dopv1.GetMergeQueueResponse, error) {
 	fila, err := s.svc.GetMergeQueue(ctx, req.GetRepoId())
 	if err != nil {
@@ -57,10 +58,11 @@ func (s *DeliveryServer) GetMergeQueue(ctx context.Context, req *dopv1.GetMergeQ
 	return &dopv1.GetMergeQueueResponse{Entries: out}, nil
 }
 
-// EnqueueMerge é a RPC que a ADR-0007 protege: sem evidência de verde do commit
-// atual do PR, a resposta é FailedPrecondition dizendo exatamente o que falta.
-// A chave de idempotência do pedido desce até o repositório — repetir a chamada
-// devolve a MESMA entrada, não uma segunda posição na fila.
+// EnqueueMerge is the RPC ADR-0007 protects: with no green evidence for the PR's
+// current commit, the answer is FailedPrecondition saying exactly what is
+// missing. The request's idempotency key goes all the way down to the repository
+// — repeating the call returns the SAME entry, not a second position in the
+// queue.
 func (s *DeliveryServer) EnqueueMerge(ctx context.Context, req *dopv1.EnqueueMergeRequest) (*dopv1.MergeQueueEntry, error) {
 	e, err := s.svc.EnqueueMerge(ctx, req.GetRepoId(), req.GetDemandId(), req.GetIdempotencyKey())
 	if err != nil {
@@ -81,9 +83,9 @@ func (s *DeliveryServer) ListDirectives(ctx context.Context, req *dopv1.ListDire
 	return &dopv1.ListDirectivesResponse{Directives: out}, nil
 }
 
-// DecideDirective recebe a decisão como Struct — o contrato deixa o formato
-// aberto de propósito, e é o domínio que exige as duas chaves obrigatórias
-// (`option` e `rationale`). Validar aqui seria duplicar a regra.
+// DecideDirective takes the decision as a Struct — the contract leaves the
+// format open on purpose, and it is the domain that requires the two mandatory
+// keys (`option` and `rationale`). Validating here would duplicate the rule.
 func (s *DeliveryServer) DecideDirective(ctx context.Context, req *dopv1.DecideDirectiveRequest) (*dopv1.Directive, error) {
 	d, err := s.svc.DecideDirective(ctx,
 		req.GetDirectiveId(), req.GetDecision().AsMap(), req.GetIdempotencyKey())
@@ -93,7 +95,7 @@ func (s *DeliveryServer) DecideDirective(ctx context.Context, req *dopv1.DecideD
 	return directiveToProto(d), nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func pullRequestToProto(pr *delivery.PullRequest) *dopv1.PullRequest {
 	if pr == nil {
@@ -150,14 +152,14 @@ func queueStateToProto(s delivery.QueueState) dopv1.MergeQueueEntry_State {
 	return dopv1.MergeQueueEntry_STATE_UNSPECIFIED
 }
 
-// directiveToProto acomoda no `payload` o que a mensagem do contrato não tem
-// campo próprio para carregar: enunciado, opções, recomendação, status e a
-// decisão tomada.
+// directiveToProto fits into the `payload` what the contract's message has no
+// field of its own to carry: the statement, the options, the recommendation, the
+// status and the decision taken.
 //
-// O contrato é a fonte da verdade (ADR-0017) — não se inventa campo aqui. E é
-// justamente para isso que a mensagem tem um google.protobuf.Struct: a caixa de
-// atenção precisa das opções e da recomendação para renderizar um item de
-// decisão em vez de um alarme cru, e elas chegam por aqui.
+// The contract is the source of truth (ADR-0017) — no field is invented here.
+// And it is precisely what the message has a google.protobuf.Struct for: the
+// attention box needs the options and the recommendation in order to render a
+// decision item instead of a raw alarm, and they arrive through here.
 func directiveToProto(d *delivery.Directive) *dopv1.Directive {
 	if d == nil {
 		return nil
@@ -195,11 +197,11 @@ func directiveToProto(d *delivery.Directive) *dopv1.Directive {
 	}
 }
 
-// directiveOptionsPayload escreve as opções em snake_case, com as MESMAS
-// chaves que o banco guarda (`key`, `summary`, `instructions`, `demand_id`,
-// `action`, `when`). Quem lê a diretriz pelo evento e quem a lê pela RPC
-// precisa enxergar a mesma forma — nomes diferentes nos dois caminhos é como o
-// cockpit e a caixa de atenção passam a discordar.
+// directiveOptionsPayload writes the options in snake_case, with the SAME keys
+// the database stores (`key`, `summary`, `instructions`, `demand_id`, `action`,
+// `when`). Whoever reads the directive through the event and whoever reads it
+// through the RPC has to see the same shape — different names on the two paths
+// is how the cockpit and the attention box come to disagree.
 func directiveOptionsPayload(opts []delivery.DirectiveOption) []any {
 	out := make([]any, 0, len(opts))
 	for _, o := range opts {
@@ -233,10 +235,10 @@ func directiveKindToProto(k delivery.DirectiveKind) dopv1.Directive_Kind {
 	return dopv1.Directive_KIND_UNSPECIFIED
 }
 
-// deliveryActorKindToProto tem prefixo porque o pacote grpc já tem um
-// conversor de ator com outra assinatura: dois domínios chegaram ao mesmo
-// nome, e renomear aqui é mais barato do que amarrar este arquivo à forma que
-// o outro escolheu.
+// deliveryActorKindToProto carries a prefix because the grpc package already has
+// an actor converter with a different signature: two domains arrived at the same
+// name, and renaming here is cheaper than tying this file to the shape the other
+// one chose.
 func deliveryActorKindToProto(k ctxutil.ActorKind) dopv1.ActorRef_Kind {
 	switch k {
 	case ctxutil.ActorUser:
@@ -251,10 +253,11 @@ func deliveryActorKindToProto(k ctxutil.ActorKind) dopv1.ActorRef_Kind {
 	return dopv1.ActorRef_KIND_UNSPECIFIED
 }
 
-// deliveryStruct converte via JSON porque structpb.NewStruct só aceita os tipos
-// primitivos do Struct: uma volta por JSON normaliza slices de struct e tipos
-// numéricos de uma vez. Estrutura que não serializa vira Struct vazio em vez de
-// derrubar a resposta — o payload é informativo, não é o dado de verdade.
+// deliveryStruct converts through JSON because structpb.NewStruct only accepts
+// the Struct's primitive types: a round trip through JSON normalizes struct
+// slices and numeric types at once. A structure that does not serialize becomes
+// an empty Struct instead of bringing the response down — the payload is
+// informative, it is not the real data.
 func deliveryStruct(v map[string]any) *structpb.Struct {
 	raw, err := json.Marshal(v)
 	if err != nil {

@@ -1,8 +1,8 @@
-// Package grpc traduz entre o contrato (.proto) e o domínio.
+// Package grpc translates between the contract (.proto) and the domain.
 //
-// Esta camada é FINA de propósito: converte tipos, chama o serviço, converte de
-// volta. Nenhuma regra de negócio mora aqui — se aparecer um `if` de regra
-// neste pacote, ele está no lugar errado.
+// This layer is THIN on purpose: it converts types, calls the service, converts
+// back. No business rule lives here — if an `if` of business rule shows up in
+// this package, it is in the wrong place.
 package grpc
 
 import (
@@ -105,8 +105,8 @@ func (s *IdentityServer) CreateInvite(ctx context.Context, req *dopv1.CreateInvi
 	if err != nil {
 		return nil, err
 	}
-	// Não há token para devolver: o convite não tem segredo. O e-mail (P-11)
-	// leva só o id, e o aceite confere quem está logado.
+	// There is no token to return: the invite has no secret. The email (P-11)
+	// carries only the id, and acceptance checks who is logged in.
 	return inviteToProto(inv), nil
 }
 
@@ -135,7 +135,7 @@ func (s *IdentityServer) UpdateMembership(ctx context.Context, req *dopv1.Update
 	return membershipToProto(m), nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func userToProto(u *identity.User) *dopv1.User {
 	if u == nil {

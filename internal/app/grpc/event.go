@@ -19,18 +19,19 @@ type EventServer struct {
 
 func NewEventServer(svc *event.Service) *EventServer { return &EventServer{svc: svc} }
 
-// WatchEvents é o único método do serviço: server-side streaming puro.
+// WatchEvents is the service's only method: pure server-side streaming.
 //
-// A camada continua fina — traduz o pedido, entrega o Emitter e devolve o que o
-// domínio decidir. A política de replay, de isolamento e de consumidor lento
-// mora no domínio, não aqui.
+// The layer stays thin — it translates the request, hands over the Emitter and
+// returns whatever the domain decides. The replay, isolation and slow-consumer
+// policies live in the domain, not here.
 func (s *EventServer) WatchEvents(req *dopv1.WatchEventsRequest, stream dopv1.EventService_WatchEventsServer) error {
 	ctx := stream.Context() // contexto de chamada posto por StreamCallContext
 
 	f := event.Filter{Aggregates: req.GetAggregate(), Types: req.GetTypes()}
 	return s.svc.Watch(ctx, req.GetSinceEventId(), f, func(e ports.Event) error {
-		// Send devolve erro quando o cliente sumiu; o erro sobe e o domínio
-		// desmonta a assinatura no defer. É assim que a goroutine morre junto.
+		// Send returns an error when the client is gone; the error goes up and
+		// the domain tears the subscription down in its defer. That is how the
+		// goroutine dies along with it.
 		return stream.Send(eventToProto(e))
 	})
 }
@@ -47,11 +48,12 @@ func eventToProto(e ports.Event) *dopv1.EventEnvelope {
 	}
 }
 
-// payloadToStruct converte o payload jsonb em Struct.
+// payloadToStruct converts the jsonb payload into a Struct.
 //
-// Payload ilegível ou que não seja objeto JSON não derruba o fluxo: o evento
-// vale por si (id, tipo, agregado, instante) e o cockpit já sabe reagir a ele.
-// Perder o stream inteiro por causa de um payload torto seria pior.
+// A payload that is unreadable or is not a JSON object does not bring the stream
+// down: the event is worth something on its own (id, type, aggregate, instant)
+// and the cockpit already knows how to react to it. Losing the whole stream over
+// a crooked payload would be worse.
 func payloadToStruct(raw []byte) *structpb.Struct {
 	if len(raw) == 0 || !json.Valid(raw) {
 		return nil

@@ -10,12 +10,12 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
 )
 
-// KnowledgeServer expõe o domínio de conhecimento no contrato gRPC.
+// KnowledgeServer exposes the knowledge domain on the gRPC contract.
 //
-// Camada FINA: converte tipos, chama o serviço, converte de volta. Nenhuma
-// decisão de curadoria aparece aqui — o que entra no pacote de contexto é
-// resposta do domínio, e precisa continuar sendo: a regra de seleção duplicada
-// na borda é a regra que diverge no primeiro ajuste de orçamento.
+// A THIN layer: it converts types, calls the service, converts back. No curation
+// decision appears here — what goes into the context package is the domain's
+// answer, and it has to stay that way: the selection rule duplicated at the edge
+// is the rule that diverges on the first budget adjustment.
 type KnowledgeServer struct {
 	dopv1.UnimplementedKnowledgeServiceServer
 	svc *knowledge.Service
@@ -25,10 +25,10 @@ func NewKnowledgeServer(svc *knowledge.Service) *KnowledgeServer {
 	return &KnowledgeServer{svc: svc}
 }
 
-// BuildContextPackage passa orçamento zerado: o teto é o do serviço, escolhido
-// na fiação. O contrato não tem campo de orçamento de propósito — quem chama é
-// o provisionamento do sandbox, e deixá-lo escolher o próprio teto tornaria a
-// governança de custo (ADR-0011) uma sugestão.
+// BuildContextPackage passes a zeroed budget: the ceiling is the service's,
+// chosen in the wiring. The contract has no budget field on purpose — the caller
+// is the sandbox provisioning, and letting it choose its own ceiling would turn
+// the cost governance (ADR-0011) into a suggestion.
 func (s *KnowledgeServer) BuildContextPackage(ctx context.Context, req *dopv1.BuildContextPackageRequest) (*dopv1.ContextPackage, error) {
 	pkg, err := s.svc.BuildContextPackage(ctx, req.GetDemandId(), knowledge.Budget{})
 	if err != nil {
@@ -46,8 +46,9 @@ func (s *KnowledgeServer) SearchMemory(ctx context.Context, req *dopv1.SearchMem
 		Artifacts: make([]*dopv1.KnowledgeArtifact, 0, len(hits)),
 		Scores:    make([]float32, 0, len(hits)),
 	}
-	// Artefatos e scores viajam em listas PARALELAS (é o que o contrato pede):
-	// os dois laços precisam produzir a mesma ordem, então são o mesmo laço.
+	// Artifacts and scores travel in PARALLEL lists (it is what the contract
+	// asks for): the two loops have to produce the same order, so they are the
+	// same loop.
 	for i := range hits {
 		out.Artifacts = append(out.Artifacts, artifactToProto(&hits[i].Artifact))
 		out.Scores = append(out.Scores, hits[i].Score)
@@ -63,10 +64,11 @@ func (s *KnowledgeServer) ReadIndex(ctx context.Context, req *dopv1.ReadIndexReq
 	return artifactToProto(a), nil
 }
 
-// PutArtifact carrega a chave de idempotência até o domínio, e de lá até a
-// transação. Diferente de outras escritas, aqui ela NÃO é redundante com uma
-// UNIQUE: regravar o mesmo nome no mesmo escopo é operação legítima (bumpa a
-// versão), então sem a chave um retry de rede viraria versão nova silenciosa.
+// PutArtifact carries the idempotency key down to the domain, and from there to
+// the transaction. Unlike other writes, here it is NOT redundant with a UNIQUE:
+// rewriting the same name in the same scope is a legitimate operation (it bumps
+// the version), so without the key a network retry would become a silent new
+// version.
 func (s *KnowledgeServer) PutArtifact(ctx context.Context, req *dopv1.PutArtifactRequest) (*dopv1.KnowledgeArtifact, error) {
 	in := req.GetArtifact()
 	a, err := s.svc.PutArtifact(ctx, knowledge.PutInput{
@@ -91,15 +93,15 @@ func (s *KnowledgeServer) ListRules(ctx context.Context, req *dopv1.ListRulesReq
 	return &dopv1.ListRulesResponse{Rules: rules}, nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
-// metaBodyKey e metaScopeKey são chaves NOSSAS dentro do meta do artefato.
+// metaBodyKey and metaScopeKey are OUR keys inside the artifact's meta.
 //
-// O contrato do KnowledgeArtifact tem object_ref e não tem campo de conteúdo —
-// o que está certo para o artefato grande, que o sandbox lê direto do storage.
-// Mas o artefato pequeno mora na linha, e devolvê-lo sem o texto obrigaria o
-// chamador a uma segunda RPC que não existe. O prefixo "dop." evita colisão com
-// o meta que o autor do artefato escreveu.
+// The KnowledgeArtifact contract has an object_ref and no content field — which
+// is right for the large artifact, which the sandbox reads straight from
+// storage. But the small artifact lives in the row, and returning it without the
+// text would force the caller into a second RPC that does not exist. The "dop."
+// prefix avoids colliding with the meta the artifact's author wrote.
 const (
 	metaBodyKey  = "dop.body"
 	metaScopeKey = "dop.scope"
@@ -131,17 +133,17 @@ func artifactToProto(a *knowledge.Artifact) *dopv1.KnowledgeArtifact {
 			CreatedBy: &dopv1.ActorRef{Kind: dopv1.ActorRef_KIND_USER, Id: a.CreatedBy},
 		},
 	}
-	// Artefato de escopo de conta ou de workspace não tem projeto — e o campo
-	// fica vazio em vez de mentir com um id qualquer.
+	// An artifact in the account or workspace scope has no project — and the
+	// field stays empty instead of lying with some id.
 	if a.Scope.ProjectID != "" {
 		out.Project = &dopv1.ProjectRef{Id: a.Scope.ProjectID}
 	}
 	return out
 }
 
-// packageToProto não inventa timestamp nem id volátil: o pacote entra no
-// prefixo cacheado do prompt, e um byte que muda a cada montagem queima o
-// desconto de cache em silêncio (ADR-0012 §1).
+// packageToProto invents no timestamp and no volatile id: the package enters the
+// prompt's cached prefix, and a byte that changes on every assembly burns the
+// cache discount in silence (ADR-0012 §1).
 func packageToProto(p *knowledge.Package) *dopv1.ContextPackage {
 	if p == nil {
 		return nil
@@ -153,10 +155,10 @@ func packageToProto(p *knowledge.Package) *dopv1.ContextPackage {
 		Memories:        make([]*dopv1.KnowledgeArtifact, 0, len(p.Memories)),
 		Findings:        make([]*dopv1.Finding, 0, len(p.Findings)),
 		EstimatedTokens: int32(p.EstimatedTokens),
-		// O descarte por camada viaja SEMPRE, inclusive zerado: "nada foi
-		// descartado" e "não sei dizer" são fatos diferentes, e o mapa vazio
-		// já significa o segundo. Sem isto a tela não tem como avisar que o
-		// contexto foi truncado, e finge que coube tudo.
+		// What was dropped per layer travels ALWAYS, zeroed included: "nothing
+		// was dropped" and "I cannot say" are different facts, and the empty map
+		// already means the second. Without this the screen has no way to warn
+		// that the context was truncated, and pretends everything fitted.
 		Dropped: map[string]int32{
 			"rules":    int32(p.Dropped.Rules),
 			"findings": int32(p.Dropped.Findings),
@@ -182,8 +184,9 @@ func packageToProto(p *knowledge.Package) *dopv1.ContextPackage {
 	return out
 }
 
-// knowledgeMetaToProto: meta que não vira Struct é meta que não veio de JSON —
-// impossível pelo caminho do banco, então o nil aqui é defesa, não caso.
+// knowledgeMetaToProto: meta that does not become a Struct is meta that did not
+// come from JSON — impossible through the database's path, so the nil here is a
+// defence, not a case.
 func knowledgeMetaToProto(m map[string]any) *structpb.Struct {
 	if len(m) == 0 {
 		return nil
@@ -207,9 +210,10 @@ func knowledgeKindToProto(k knowledge.Kind) dopv1.KnowledgeArtifact_Kind {
 	return dopv1.KnowledgeArtifact_KIND_UNSPECIFIED
 }
 
-// knowledgeKindFromProto devolve "" para KIND_UNSPECIFIED, e o domínio recusa:
-// gravar conhecimento sem dizer se é regra, índice ou memória não é omissão
-// razoável — é a diferença entre o que o agente obedece e o que ele consulta.
+// knowledgeKindFromProto returns "" for KIND_UNSPECIFIED, and the domain
+// refuses: writing knowledge without saying whether it is a rule, an index or a
+// memory is not a reasonable omission — it is the difference between what the
+// agent obeys and what it consults.
 func knowledgeKindFromProto(k dopv1.KnowledgeArtifact_Kind) knowledge.Kind {
 	switch k {
 	case dopv1.KnowledgeArtifact_KIND_RULE:

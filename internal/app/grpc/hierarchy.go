@@ -89,8 +89,8 @@ func (s *HierarchyServer) UpdateProject(ctx context.Context, req *dopv1.UpdatePr
 	return projectToProto(p), nil
 }
 
-// GetTree é uma chamada só de propósito: a árvore do cockpit não pode custar
-// uma requisição por workspace.
+// GetTree is a single call on purpose: the cockpit's tree must not cost one
+// request per workspace.
 func (s *HierarchyServer) GetTree(ctx context.Context, _ *dopv1.GetTreeRequest) (*dopv1.GetTreeResponse, error) {
 	nodes, err := s.svc.GetTree(ctx)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *HierarchyServer) GetTree(ctx context.Context, _ *dopv1.GetTreeRequest) 
 	return &dopv1.GetTreeResponse{Nodes: out}, nil
 }
 
-// ── conversões ───────────────────────────────────────────────────────────────
+// ── conversions ──────────────────────────────────────────────────────────────
 
 func workspaceToProto(w *hierarchy.Workspace) *dopv1.Workspace {
 	if w == nil {
@@ -130,8 +130,9 @@ func workspaceToProto(w *hierarchy.Workspace) *dopv1.Workspace {
 	}
 }
 
-// workspaceFromProto NÃO lê a conta do proto: quem manda é a conta ativa do
-// contexto. Aceitar a conta do corpo seria deixar o chamador escolher o tenant.
+// workspaceFromProto does NOT read the account from the proto: what rules is the
+// context's active account. Accepting the body's account would let the caller
+// choose the tenant.
 func workspaceFromProto(w *dopv1.Workspace) hierarchy.Workspace {
 	if w == nil {
 		return hierarchy.Workspace{}
