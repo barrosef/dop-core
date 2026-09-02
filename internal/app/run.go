@@ -18,7 +18,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// RunServe sobe o servidor gRPC do domínio.
+// RunServe brings up the domain's gRPC server.
 func RunServe(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
 	deps, cleanup, err := Build(ctx, cfg)
@@ -31,14 +31,14 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 		grpc.ChainUnaryInterceptor(UnaryLogging(), UnaryCallContext(), UnaryRecover()),
 		grpc.ChainStreamInterceptor(StreamLogging(), StreamCallContext()),
 	)
-	// Registro dos serviços de domínio entra aqui conforme forem implementados.
+	// The domain services are registered here as they are implemented.
 	if err := RegisterServices(ctx, srv, deps); err != nil {
 		return err
 	}
 
 	hs := health.NewServer()
 	healthpb.RegisterHealthServer(srv, hs)
-	reflection.Register(srv) // permite grpcurl e Bruno explorarem a superfície
+	reflection.Register(srv) // lets grpcurl and Bruno explore the surface
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
@@ -48,7 +48,7 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 
 	go func() {
 		<-ctx.Done()
-		log.Info("SIGTERM recebido, drenando conexões")
+		log.Info("SIGTERM received, draining connections")
 		srv.GracefulStop()
 	}()
 
@@ -56,7 +56,7 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 	return srv.Serve(lis)
 }
 
-// RunWorker consome eventos e constrói projeções.
+// RunWorker consumes events and builds projections.
 func RunWorker(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
 	deps, cleanup, err := Build(ctx, cfg)
@@ -65,8 +65,8 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	}
 	defer cleanup()
 
-	// O relay do outbox roda junto do worker: é ele que leva o evento gravado
-	// na transação até o broker (ADR-0019).
+	// The outbox's relay runs alongside the worker: it is what takes the event
+	// written in the transaction to the broker (ADR-0019).
 	relay := postgres.NewRelay(deps.Pool, deps.Bus, 100)
 	go func() {
 		if err := relay.Run(ctx, cfg.RelayInterval); err != nil && ctx.Err() == nil {
@@ -87,7 +87,7 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	return ctx.Err()
 }
 
-// RunSched executa tarefas periódicas.
+// RunSched runs the periodic tasks.
 func RunSched(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
 	deps, cleanup, err := Build(ctx, cfg)
@@ -110,7 +110,7 @@ func RunSched(ctx context.Context, cfg *config.Config) error {
 	}
 }
 
-// RunLauncher provisiona sandboxes no cluster de execução.
+// RunLauncher provisions sandboxes on the execution cluster.
 func RunLauncher(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
 	deps, cleanup, err := Build(ctx, cfg)
@@ -119,8 +119,8 @@ func RunLauncher(ctx context.Context, cfg *config.Config) error {
 	}
 	defer cleanup()
 
-	// Assina os comandos de sandbox. Conexão sempre de dentro para fora: o
-	// cluster do cliente não abre porta de entrada nenhuma.
+	// It subscribes to the sandbox commands. The connection is always
+	// outbound: the client's cluster opens no inbound port at all.
 	if err := RegisterLauncher(ctx, deps); err != nil {
 		return err
 	}

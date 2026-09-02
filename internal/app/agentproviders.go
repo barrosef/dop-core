@@ -11,29 +11,29 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// agentProviders resolve QUAL provedor de agente atende um turno, e com qual
-// credencial. É o gêmeo de `gitProviders`, e de propósito: o caminho é o mesmo.
+// agentProviders resolves WHICH agent provider serves a turn, and with which
+// credential. It is `gitProviders`'s twin, and on purpose: the path is the same.
 //
-// É o único lugar do sistema que conhece as três pontas — o turno, a integração
-// e o cofre — e por isso mora aqui, no composition root. O adaptador de provedor
-// não conhece o cofre; o domínio de agente não conhece Anthropic nem OpenAI; o
-// domínio de recursos não sabe que existe turno.
+// It is the only place in the system that knows all three ends — the turn, the
+// integration and the vault — and that is why it lives here, in the composition
+// root. The provider adapter does not know the vault; the agent domain does not
+// know Anthropic or OpenAI; the resource domain does not know turns exist.
 //
-// ── E É AQUI QUE A ADR-0023 ACONTECE ────────────────────────────────────────
+// ── AND IT IS HERE THAT ADR-0023 HAPPENS ────────────────────────────────────
 //
-// A credencial é lida do cofre e entregue ao adaptador DENTRO DO MESMO PROCESSO.
-// Ela não vira resposta de RPC, não entra em envelope de evento, não passa pelo
-// BFF. Enquanto o runtime vivia do outro lado (ADR-0016), não havia caminho
-// honesto: ou o BFF ganhava cofre próprio — e comprometer a camada exposta à
-// internet passaria a entregar as credenciais de agente de TODAS as contas —, ou
-// o núcleo ganhava uma RPC que devolve segredo, desfazendo o isolamento que a
-// plataforma inteira construiu. As duas foram recusadas; esta função é a terceira
-// saída.
+// The credential is read from the vault and handed to the adapter WITHIN THE
+// SAME PROCESS. It does not become an RPC response, does not enter an event
+// envelope, does not go through the BFF. While the runtime lived on the other
+// side (ADR-0016), there was no honest path: either the BFF got a vault of its
+// own — and compromising the layer exposed to the internet would start handing
+// over the agent credentials of ALL the accounts — or the core got an RPC that
+// returns a secret, undoing the isolation the whole platform had built. Both were
+// refused; this function is the third way out.
 //
-// A escolha é POR REQUISIÇÃO, não de boot (ADR-0013): provedor de agente é
-// recurso de conta, e várias contas convivem no mesmo processo. Um provedor único
-// escolhido por configuração tornaria multi-tenant impossível — em silêncio, que
-// é o pior jeito.
+// The choice is PER REQUEST, not at boot (ADR-0013): an agent provider is an
+// account resource, and several accounts coexist in the same process. A single
+// provider chosen by configuration would make multi-tenancy impossible —
+// silently, which is the worst way.
 type agentProviders struct {
 	resources *resource.Service
 	secrets   ports.SecretStore
@@ -41,50 +41,52 @@ type agentProviders struct {
 
 var _ agent.Providers = agentProviders{}
 
-// For devolve o adaptador do recurso pedido, ou o único provedor de agente da
-// conta quando o chamador não escolheu.
+// For returns the requested resource's adapter, or the account's only agent
+// provider when the caller did not choose.
 func (g agentProviders) For(ctx context.Context, resourceID string) (agent.AgentProvider, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 1. Qual recurso. Sem escolha do chamador, o padrão da conta — e o padrão
-	// só existe quando é ÚNICO (ver padraoDaConta).
+	// 1. Which resource. With no choice from the caller, the account's default
+	// — and the default only exists when it is the ONLY one (see
+	// accountDefault).
 	res := (*resource.Resource)(nil)
 	if resourceID != "" {
 		res, err = g.resources.Get(ctx, resourceID)
 	} else {
-		res, err = g.padraoDaConta(ctx)
+		res, err = g.accountDefault(ctx)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Da integração sai o provedor e a base da API.
+	// 2. The integration gives the provider and the API's base.
 	spec, err := resource.ParseIntegration(res.Config)
 	if err != nil {
 		return nil, err
 	}
 	if spec.Category != resource.CategoryAgent {
-		// Recusa explícita: usar uma integração de git como provedor de agente
-		// mandaria a credencial do GitHub para a API de um modelo.
+		// An explicit refusal: using a git integration as an agent provider
+		// would send GitHub's credential to a model's API.
 		return nil, errs.Precondition(
-			"a integração %q é de categoria %q, não agent", res.Name, spec.Category)
+			"integration %q is of category %q, not agent", res.Name, spec.Category)
 	}
 
-	// 3. Do cofre sai a credencial — e é AQUI que ela é lida, no núcleo, que é
-	// quem tem o cofre. O adaptador recebe a chave pronta e nunca soube que
-	// existe um cofre.
+	// 3. The vault gives the credential — and it is HERE that it is read, in
+	// the core, which is the one that has the vault. The adapter receives the
+	// key ready-made and never knew a vault exists.
 	valor, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
 	if err != nil {
 		return nil, err
 	}
 	if len(valor) == 0 {
-		// Credencial ausente é PRECONDIÇÃO com nome de recurso — nunca com o
-		// valor, que não existe, nem com a referência do cofre, que é caminho.
+		// A missing credential is a PRECONDITION with the resource's name —
+		// never with the value, which does not exist, nor with the vault's
+		// reference, which is a path.
 		return nil, agent.Unavailability(spec.Provider, agent.ReasonMissingCredential,
-			"a integração "+res.Name+" não tem credencial configurada")
+			"integration "+res.Name+" has no credential configured")
 	}
 
 	switch spec.Provider {
@@ -92,29 +94,29 @@ func (g agentProviders) For(ctx context.Context, resourceID string) (agent.Agent
 		return agentprovider.NewAnthropic(agentprovider.AnthropicConfig{
 			APIBase: spec.BaseURL,
 			APIKey:  string(valor),
-			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogAnthropic()),
+			Catalog: resourceCatalog(res.Config, agentprovider.CatalogAnthropic()),
 		}), nil
 	case agentprovider.NameOpenAI:
 		return agentprovider.NewOpenAI(agentprovider.OpenAIConfig{
 			APIBase: spec.BaseURL,
 			APIKey:  string(valor),
-			Catalog: catalogoDoRecurso(res.Config, agentprovider.CatalogOpenAI()),
+			Catalog: resourceCatalog(res.Config, agentprovider.CatalogOpenAI()),
 		}), nil
 	}
-	// Provedor desconhecido é recusa explícita, NUNCA uma queda para o padrão:
-	// cair para outro fornecedor sem avisar trocaria o modelo, o preço e a
-	// semântica de cache de uma demanda inteira, e o único lugar onde isso
-	// apareceria seria a fatura.
+	// An unknown provider is an explicit refusal, NEVER a fallback to the
+	// default: falling back to another provider without warning would change the
+	// model, the price and the cache semantics of a whole demand, and the only
+	// place it would show up is the invoice.
 	return nil, agent.Unavailability(spec.Provider, agent.ReasonUnknownProvider, "")
 }
 
-// padraoDaConta é o provedor de agente quando o chamador não escolheu.
+// accountDefault is the agent provider when the caller did not choose.
 //
-// Só existe quando é ÚNICO. Duas integrações de agente e nenhuma escolha é
-// AMBIGUIDADE, e escolher por conta própria trocaria o fornecedor de uma demanda
-// no meio do caminho — com o prefixo cacheado, o preço e a semântica de cache
-// junto. Recusar com a lista é a única resposta honesta.
-func (g agentProviders) padraoDaConta(ctx context.Context) (*resource.Resource, error) {
+// It only exists when it is the ONLY one. Two agent integrations and no choice
+// is AMBIGUITY, and choosing on our own would swap a demand's provider midway —
+// along with the cached prefix, the price and the cache semantics. Refusing with
+// the list is the only honest answer.
+func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource, error) {
 	todos, err := g.resources.List(ctx, resource.KindIntegration)
 	if err != nil {
 		return nil, err
@@ -123,9 +125,9 @@ func (g agentProviders) padraoDaConta(ctx context.Context) (*resource.Resource, 
 	for _, r := range todos {
 		spec, err := resource.ParseIntegration(r.Config)
 		if err != nil {
-			// Integração mal configurada não derruba a busca: ela apenas não é
-			// candidata. Derrubar aqui faria uma linha ruim de outra categoria
-			// impedir o turno inteiro.
+			// A badly configured integration does not bring the search down: it
+			// simply is not a candidate. Failing here would let one bad row of
+			// another category block the whole turn.
 			continue
 		}
 		if spec.Category == resource.CategoryAgent {
@@ -135,7 +137,7 @@ func (g agentProviders) padraoDaConta(ctx context.Context) (*resource.Resource, 
 	switch len(candidatos) {
 	case 0:
 		return nil, errs.Precondition(
-			"esta conta não tem integração de categoria 'agent' (ADR-0013): " +
+			"this account has no 'agent'-category integration (ADR-0013): " +
 				"conecte um provedor de agente antes de rodar um turno")
 	case 1:
 		return &candidatos[0], nil
@@ -145,18 +147,19 @@ func (g agentProviders) padraoDaConta(ctx context.Context) (*resource.Resource, 
 			nomes = append(nomes, c.Name)
 		}
 		return nil, errs.Invalid(
-			"esta conta tem %d provedores de agente (%v): informe qual deve atender o turno",
+			"this account has %d agent providers (%v): say which one should serve the turn",
 			len(candidatos), nomes)
 	}
 }
 
-// catalogoDoRecurso lê o cardápio declarado na configuração da integração.
+// resourceCatalog reads the menu declared in the integration's configuration.
 //
-// É o que a ADR-0013 promete: o cardápio de modelos é do RECURSO, não do código.
-// Configuração ausente ou malformada cai no catálogo de partida do adaptador —
-// nunca em catálogo vazio, que faria `ResolveModel` devolver nome vazio e o
-// fornecedor recusar a chamada por um motivo que não é o real.
-func catalogoDoRecurso(config map[string]any, padrao map[agent.ModelClass]string) map[agent.ModelClass]string {
+// It is what ADR-0013 promises: the model menu belongs to the RESOURCE, not to
+// the code. An absent or malformed configuration falls back to the adapter's
+// starting catalog — never to an empty catalog, which would make `ResolveModel`
+// return an empty name and the provider refuse the call for a reason that is not
+// the real one.
+func resourceCatalog(config map[string]any, padrao map[agent.ModelClass]string) map[agent.ModelClass]string {
 	bruto, ok := config["catalog"].(map[string]any)
 	if !ok || len(bruto) == 0 {
 		return padrao

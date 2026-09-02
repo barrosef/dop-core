@@ -13,18 +13,18 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// gitProviders resolve QUAL provedor atende cada repositório, e com qual
-// credencial.
+// gitProviders resolves WHICH provider serves each repository, and with which
+// credential.
 //
-// É o único lugar do sistema que conhece as três pontas — repositório,
-// integração e cofre — e por isso ele mora aqui, no composition root. O
-// adaptador de git não conhece o cofre; o domínio de entrega não conhece
-// GitHub nem GitLab; o domínio de recursos não sabe que existe PR.
+// It is the only place in the system that knows all three ends — repository,
+// integration and vault — and that is why it lives here, in the composition
+// root. The git adapter does not know the vault; the delivery domain does not
+// know GitHub or GitLab; the resource domain does not know PRs exist.
 //
-// A escolha é POR REPOSITÓRIO, não de boot (ADR-0013): é para isso que
-// `ProjectRepo.IntegrationID` existe. Um projeto com um repo no GitHub e outro
-// no GitLab tem que funcionar, e um provedor único escolhido por configuração
-// tornaria isso impossível — em silêncio, que é o pior jeito.
+// The choice is PER REPOSITORY, not at boot (ADR-0013): that is what
+// `ProjectRepo.IntegrationID` exists for. A project with one repo on GitHub and
+// another on GitLab has to work, and a single provider chosen by configuration
+// would make that impossible — silently, which is the worst way.
 type gitProviders struct {
 	pool      *pgxpool.Pool
 	resources *resource.Service
@@ -33,9 +33,9 @@ type gitProviders struct {
 }
 
 func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delivery.GitProvider, error) {
-	// 1. Do repositório sai a integração. A consulta é direta porque
-	// `project_repos` não é entidade do domínio de entrega, e fazer o domínio
-	// de hierarquia expor um caminho só para isto seria acoplar os dois.
+	// 1. The repository gives the integration. The query is direct because
+	// `project_repos` is not an entity of the delivery domain, and making the
+	// hierarchy domain expose a path just for this would couple the two.
 	var integrationID, externalID string
 	err := g.pool.QueryRow(ctx, `
 		SELECT r.integration_id::text, r.external_id
@@ -44,10 +44,10 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 		 WHERE r.id = $1 AND p.account_id = $2`, repoID, accountID).
 		Scan(&integrationID, &externalID)
 	if err != nil {
-		return nil, errs.NotFound("repositório %s não encontrado nesta conta", repoID)
+		return nil, errs.NotFound("repository %s not found in this account", repoID)
 	}
 
-	// 2. Da integração sai o provedor e a base da API.
+	// 2. The integration gives the provider and the API's base.
 	res, err := g.resources.Get(ctx, integrationID)
 	if err != nil {
 		return nil, err
@@ -58,19 +58,19 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 	}
 	if spec.Category != resource.CategoryGit {
 		return nil, errs.Precondition(
-			"a integração do repositório é de categoria %q, não git", spec.Category)
+			"the repository's integration is of category %q, not git", spec.Category)
 	}
 
-	// 3. Do cofre sai a credencial — e é AQUI que ela é lida, no núcleo, que é
-	// quem tem o cofre. O adaptador recebe o token pronto e nunca soube que
-	// existe um cofre.
+	// 3. The vault gives the credential — and it is HERE that it is read, in
+	// the core, which is the one that has the vault. The adapter receives the
+	// token ready-made and never knew a vault exists.
 	valor, err := g.secrets.Get(ctx, resource.SecretRefFor(accountID, res.ID))
 	if err != nil {
 		return nil, err
 	}
 	if len(valor) == 0 {
 		return nil, errs.Precondition(
-			"a integração %q não tem credencial configurada", res.Name)
+			"integration %q has no credential configured", res.Name)
 	}
 
 	switch spec.Provider {
@@ -98,7 +98,7 @@ func (g gitProviders) For(ctx context.Context, accountID, repoID string) (delive
 			MergeMethod: g.cfg.GitMergeMethod,
 		}), nil
 	}
-	// Provedor desconhecido é recusa explícita, nunca um default: abrir PR no
-	// lugar errado é pior que não abrir.
-	return nil, errs.Invalid("provedor de git não suportado: %q", spec.Provider)
+	// An unknown provider is an explicit refusal, never a default: opening a PR
+	// in the wrong place is worse than not opening one.
+	return nil, errs.Invalid("unsupported git provider: %q", spec.Provider)
 }

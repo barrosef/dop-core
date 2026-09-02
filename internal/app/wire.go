@@ -1,8 +1,8 @@
-// Package app é o COMPOSITION ROOT: onde as portas recebem seus adaptadores.
+// Package app is the COMPOSITION ROOT: where the ports receive their adapters.
 //
-// É o único lugar do sistema que conhece as duas pontas. O domínio conhece
-// apenas as portas; os adaptadores conhecem apenas sua tecnologia. A escolha
-// acontece aqui, por configuração — nunca por condicional espalhada no código
+// It is the only place in the system that knows both ends. The domain knows only
+// the ports; the adapters know only their technology. The choice happens here,
+// by configuration — never through a conditional scattered across the code
 // (ADR-0001).
 package app
 
@@ -23,8 +23,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// Deps reúne tudo que os casos de uso precisam — sempre como PORTA, nunca como
-// tipo concreto de adaptador.
+// Deps gathers everything the use cases need — always as a PORT, never as an
+// adapter's concrete type.
 type Deps struct {
 	Pool     *pgxpool.Pool
 	Bus      ports.EventBus
@@ -45,7 +45,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "Postgres inacessível")
+		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "Postgres unreachable")
 	}
 
 	bus, err := eventbus.NewNATS(ctx, cfg.NATSUrl)
@@ -54,8 +54,8 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		return nil, nil, err
 	}
 
-	// ── escolha dos adaptadores por configuração ──
-	// closers acumula o que precisa ser fechado no cleanup do processo.
+	// ── choosing the adapters by configuration ──
+	// closers accumulates what has to be closed in the process's cleanup.
 	var closers []func() error
 
 	var secrets ports.SecretStore
@@ -63,11 +63,12 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	case "memory":
 		secrets = secretstore.NewMemory()
 	case "gcp":
-		// A garantia 1 da porta (leitura-após-escrita) NÃO é cumprível no GCP
-		// real com este desenho — ver ADR-0021. O adaptador confirma por número
-		// de versão, que é forte, e depois espera o alias `latest` alcançar;
-		// se não convergir, recusa com KindUnavailable em vez de devolver
-		// "não existe" para uma credencial que acabou de ser gravada.
+		// The port's guarantee 1 (read-after-write) is NOT deliverable on real
+		// GCP with this design — see ADR-0021. The adapter confirms by version
+		// number, which is strong, and then waits for the `latest` alias to
+		// catch up; if it does not converge, it refuses with KindUnavailable
+		// instead of returning "it does not exist" for a credential that was
+		// just written.
 		gcp, err := secretstore.NewGCP(ctx, secretstore.GCPConfig{
 			ProjectID:   cfg.SecretProject,
 			Endpoint:    cfg.SecretEndpoint,
@@ -79,9 +80,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		}
 		closers = append(closers, gcp.Close)
 		secrets = gcp
-	default: // k8s — usado no local e em self-hosted; não há emulador do Secret Manager
-		// Sem Client: quem sabe que o apiserver usa a CA do cluster é o
-		// adaptador, não o composition root. O campo existe para teste.
+	default: // k8s — used locally and in self-hosted; there is no Secret Manager emulator
+		// No Client: the one who knows the apiserver uses the cluster's CA is
+		// the adapter, not the composition root. The field exists for tests.
 		secrets = secretstore.NewK8s(secretstore.K8sConfig{
 			APIServer: cfg.K8sAPIServer,
 			Token:     cfg.K8sToken,
@@ -89,9 +90,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// O substrato de execução também é porta com dois adaptadores REAIS
-	// (ADR-0001): Docker para o desenvolvimento local sem cluster, k8s para o
-	// cluster de execução. Os dois passam pela mesma suíte de contrato.
+	// The execution substrate is also a port with two REAL adapters (ADR-0001):
+	// Docker for local development with no cluster, k8s for the execution
+	// cluster. Both pass the same contract suite.
 	var launcher ports.SandboxLauncher
 	switch cfg.SandboxBackend {
 	case "docker":
@@ -105,11 +106,11 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// O canal de e-mail também é porta com dois adaptadores reais: SendGrid
-	// para quem usa serviço gerenciado, SMTP para self-hosted — o mesmo par
-	// GCP/OKD das outras. Com SMTP_ADDR vazio o adaptador entra em ENSAIO
-	// LOCAL: imprime em vez de enviar, e o pipeline inteiro fica testável sem
-	// gastar envio nem poluir caixa de ninguém.
+	// The email channel is also a port with two real adapters: SendGrid for
+	// whoever uses a managed service, SMTP for self-hosted — the same GCP/OKD
+	// pairing as the others. With an empty SMTP_ADDR the adapter enters the
+	// LOCAL DRY RUN: it prints instead of sending, and the whole pipeline stays
+	// testable without spending a send or polluting anybody's inbox.
 	var correio ports.Mailer
 	switch cfg.MailBackend {
 	case "sendgrid":
@@ -138,9 +139,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	}
 	objects := objectstore.NewGCS(objectstore.GCSConfig{Endpoint: cfg.StorageEndpoint})
 
-	// Identidade também é porta com dois adaptadores reais (ADR-0001): Firebase
-	// para GCP, OIDC genérico (Keycloak, Dex, Authentik) para self-hosted. Os
-	// dois passam pela mesma suíte de contrato.
+	// Identity is also a port with two real adapters (ADR-0001): Firebase for
+	// GCP, generic OIDC (Keycloak, Dex, Authentik) for self-hosted. Both pass
+	// the same contract suite.
 	var idp ports.IdentityProvider
 	switch cfg.IdentityBackend {
 	case "oidc":
@@ -153,13 +154,14 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		log.Info("identidade por OIDC", "emissor", cfg.OIDCIssuer)
 	default:
 		fb := identity.NewFirebase(cfg.FirebaseProject)
-		// O emulador emite `alg: none`, então a verificação de ASSINATURA é
-		// pulada nesse modo — e só nele. Vale registrar no boot: é a diferença
-		// entre o ambiente local e a produção, e foi exatamente esse tipo de
-		// diferença silenciosa que já deixou passar um bypass de autenticação.
+		// The emulator issues `alg: none`, so the SIGNATURE verification is
+		// skipped in that mode — and only in it. It is worth recording at boot:
+		// it is the difference between the local environment and production, and
+		// it was exactly this kind of silent difference that has let an
+		// authentication bypass through before.
 		if fb.UsingEmulator() {
-			log.Warn("identidade no EMULADOR: assinatura de token NÃO é verificada",
-				"projeto", cfg.FirebaseProject)
+			log.Warn("identity on the EMULATOR: token signature is NOT verified",
+				"project", cfg.FirebaseProject)
 		}
 		idp = fb
 	}
@@ -167,9 +169,10 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
 		Identity: idp, Launcher: launcher, Mailer: correio, Cfg: cfg}
 	cleanup := func() {
-		// Adaptadores que abrem conexão própria registram o fechamento aqui.
-		// A porta não tem Close — fechar é preocupação de quem MONTA, não do
-		// domínio, que não deve saber que existe conexão no meio.
+		// Adapters that open a connection of their own register the close here.
+		// The port has no Close — closing is the concern of whoever ASSEMBLES,
+		// not of the domain, which must not know there is a connection in the
+		// middle.
 		for _, fechar := range closers {
 			_ = fechar()
 		}

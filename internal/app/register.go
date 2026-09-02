@@ -29,19 +29,19 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// RegisterServices liga os serviços de domínio ao servidor gRPC.
+// RegisterServices wires the domain services to the gRPC server.
 //
-// Este é o composition root em ação: o domínio recebe PORTAS (repositório,
-// SecretStore), os adaptadores concretos são escolhidos aqui.
-// Recebe ctx porque o serviço de eventos abre UMA assinatura por processo, e
-// essa assinatura vive enquanto o processo viver — é o contexto do servidor
-// que a encerra, não o de um cliente.
+// This is the composition root in action: the domain receives PORTS (repository,
+// SecretStore), and the concrete adapters are chosen here. It takes a ctx
+// because the event service opens ONE subscription per process, and that
+// subscription lives as long as the process does — it is the server's context
+// that ends it, not a client's.
 func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
-	// identity é a raiz: hierarquia e recursos autorizam CONTRA ela. Por isso
-	// nasce primeiro e é passada adiante como porta (resource.Access), não
-	// como dependência concreta.
-	// O relógio é porta, e agora é obrigatório: o serviço recusa nil, porque
-	// aceitar nil era o que mantinha a abstração de enfeite.
+	// identity is the root: hierarchy and resources authorize AGAINST it. That
+	// is why it is born first and passed on as a port (resource.Access), not as
+	// a concrete dependency.
+	// The clock is a port, and it is now mandatory: the service refuses nil,
+	// because accepting nil was what kept the abstraction decorative.
 	relogio := clock.NewSystem()
 
 	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), relogio)
@@ -50,36 +50,39 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	hierarchySvc := hierarchy.NewService(postgres.NewHierarchyRepo(deps.Pool))
 	dopv1.RegisterHierarchyServiceServer(srv, appgrpc.NewHierarchyServer(hierarchySvc))
 
-	// O SecretStore chega aqui já escolhido por configuração (wire.go): o
-	// domínio de recursos guarda credencial sem saber se o cofre é k8s ou GCP.
+	// The SecretStore arrives here already chosen by configuration (wire.go):
+	// the resource domain stores a credential without knowing whether the vault
+	// is k8s's or GCP's.
 	resourceSvc := resource.NewService(postgres.NewResourceRepo(deps.Pool), identitySvc, deps.Secrets)
 	dopv1.RegisterResourceServiceServer(srv, appgrpc.NewResourceServer(resourceSvc))
 
-	// Eventos ao vivo: UMA assinatura no barramento por processo, com fan-out
-	// em memória para os assinantes. Uma assinatura POR CLIENTE criaria um
-	// consumidor durável no broker por aba aberta do cockpit — e a porta não
-	// tem como removê-los.
+	// Live events: ONE subscription on the bus per process, with an in-memory
+	// fan-out to the subscribers. A subscription PER CLIENT would create a
+	// durable consumer on the broker for every open cockpit tab — and the port
+	// has no way to remove them.
 	eventSvc := event.NewService(postgres.NewEventRepo(deps.Pool), deps.Bus, relogio)
 	if err := eventSvc.Start(ctx, "", []string{"dop.>"}); err != nil {
 		return err
 	}
 	dopv1.RegisterEventServiceServer(srv, appgrpc.NewEventServer(eventSvc))
 
-	// O repositório de fluxo satisfaz DUAS portas — o conteúdo e a cadeia de
-	// ancestrais. São perguntas diferentes que a mesma tabela responde; separar
-	// as portas mantém o domínio dizendo o que precisa, não de quem precisa.
+	// The flow repository satisfies TWO ports — the content and the chain of
+	// ancestors. They are different questions the same table answers; separating
+	// the ports keeps the domain saying what it needs, not who it needs it
+	// from.
 	wfRepo := postgres.NewWorkflowRepo(deps.Pool)
 	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio)
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
-	// O roteador é POLÍTICA deste pacote, não porta: nil escolhe o padrão
-	// escrito na ADR-0011, que é rascunho a calibrar com telemetria (P-7).
+	// The router is this package's POLICY, not a port: nil chooses the default
+	// written in ADR-0011, which is a draft to be calibrated with telemetry
+	// (P-7).
 	costSvc := cost.NewService(postgres.NewCostRepo(deps.Pool), relogio, cost.NewRouter(nil))
 	dopv1.RegisterCostServiceServer(srv, appgrpc.NewCostServer(costSvc))
 
-	// A demanda congela o fluxo resolvido e assiste ao próprio log de eventos.
-	// Nenhuma das duas coisas ela sabe fazer sozinha — e nenhuma das duas ela
-	// precisa saber de quem vem (ver internal/app/glue.go).
+	// The demand freezes the resolved flow and watches its own event log. It
+	// knows how to do neither on its own — and it needs to know where neither
+	// comes from (see internal/app/glue.go).
 	demandSvc := demand.NewService(
 		postgres.NewDemandRepo(deps.Pool),
 		demandFlows{workflowSvc},
@@ -88,9 +91,9 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterDemandServiceServer(srv, appgrpc.NewDemandServer(demandSvc))
 
-	// Embedder nulo é DECLARADO, não esquecido: sem serviço de embedding
-	// ligado, a busca cai no caminho lexical (trigrama). O dia em que houver
-	// um, é aqui que ele entra — e só aqui.
+	// A nil Embedder is DECLARED, not forgotten: with no embedding service
+	// wired, the search falls back to the lexical path (trigram). The day there
+	// is one, this is where it goes in — and only here.
 	knowledgeSvc := knowledge.NewService(
 		postgres.NewKnowledgeRepo(deps.Pool),
 		deps.Objects,
@@ -101,8 +104,8 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterKnowledgeServiceServer(srv, appgrpc.NewKnowledgeServer(knowledgeSvc))
 
-	// O provedor de git é resolvido POR REPOSITÓRIO (ADR-0013), não escolhido
-	// no boot — ver internal/app/gitproviders.go.
+	// The git provider is resolved PER REPOSITORY (ADR-0013), not chosen at
+	// boot — see internal/app/gitproviders.go.
 	deliverySvc := delivery.NewService(
 		postgres.NewDeliveryRepo(deps.Pool),
 		deliveryDemands{demandSvc},
@@ -111,13 +114,15 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterDeliveryServiceServer(srv, appgrpc.NewDeliveryServer(deliverySvc))
 
-	// O launcher chega já escolhido por configuração (wire.go): o domínio
-	// provisiona sandbox sem saber se o substrato é Docker ou Kubernetes.
+	// The launcher arrives already chosen by configuration (wire.go): the domain
+	// provisions a sandbox without knowing whether the substrate is Docker or
+	// Kubernetes.
 	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
 	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
-	// A caixa de atenção é PROJEÇÃO, e o serviço dela é só leitura + streaming:
-	// item nasce e morre de evento, nunca de RPC.
+	// The attention box is a PROJECTION, and its service is read + streaming
+	// only: an item is born from an event and dies from one, never from an
+	// RPC.
 	attentionSvc := attention.NewService(
 		postgres.NewAttentionRepo(deps.Pool),
 		attentionWatcher{eventSvc},
@@ -125,18 +130,20 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterAttentionServiceServer(srv, appgrpc.NewAttentionServer(attentionSvc))
 
-	// O runtime de agente vive AQUI, e não no BFF (ADR-0023): a credencial do
-	// provedor sai do cofre e é usada no mesmo processo, sem atravessar rede
-	// nenhuma. O BFF é a camada exposta à internet — e comprometê-la não pode
-	// entregar as credenciais de agente de todas as contas.
+	// The agent runtime lives HERE, and not in the BFF (ADR-0023): the
+	// provider's credential comes out of the vault and is used in the same
+	// process, crossing no network at all. The BFF is the layer exposed to the
+	// internet — and compromising it must not hand over every account's agent
+	// credentials.
 	agentSvc := agent.NewService(
 		agentProviders{resourceSvc, deps.Secrets},
 		agentKnowledge{knowledgeSvc},
 		agentRouting{costSvc},
 		agentConversation{demandSvc},
-		// Com o sandbox ligado, o agente deixa de só conversar e passa a AGIR:
-		// o laço de ferramentas roda comando dentro do ambiente isolado da
-		// demanda. É a peça que separa modelar trabalho de executar trabalho.
+		// With the sandbox wired, the agent stops merely conversing and starts
+		// ACTING: the tool loop runs a command inside the demand's isolated
+		// environment. It is the piece that separates modelling work from
+		// executing work.
 		agent.WithSandbox(agentSandbox{executionSvc}),
 	)
 	dopv1.RegisterAgentServiceServer(srv, appgrpc.NewAgentServer(agentSvc))
@@ -144,11 +151,12 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	return nil
 }
 
-// buildNotification monta o gatilho de comunicação.
+// buildNotification assembles the communication trigger.
 //
-// Como buildExecution, existe porque DOIS processos precisam dele: o worker,
-// que reage a evento, e o sched, que varre o resumo atrasado da caixa de
-// atenção. Montar nos dois lugares separadamente é como as montagens divergem.
+// Like buildExecution, it exists because TWO processes need it: the worker,
+// which reacts to an event, and sched, which sweeps the attention box's delayed
+// digest. Assembling it separately in both places is how the assemblies
+// diverge.
 func buildNotification(deps *Deps) *notification.Service {
 	return notification.NewService(
 		postgres.NewNotificationRepo(deps.Pool),
@@ -161,12 +169,12 @@ func buildNotification(deps *Deps) *notification.Service {
 	)
 }
 
-// buildExecution monta o serviço de execução.
+// buildExecution assembles the execution service.
 //
-// Existe como função porque DOIS processos precisam dele: o `serve`, que atende
-// as RPCs, e o `sched`, que varre sandboxes ociosos. Construir nos dois lugares
-// separadamente é como as duas montagens divergem — uma ganha uma dependência
-// nova e a outra não, e o comportamento passa a depender do modo.
+// It exists as a function because TWO processes need it: `serve`, which serves
+// the RPCs, and `sched`, which sweeps idle sandboxes. Building it separately in
+// both places is how the two assemblies diverge — one gains a new dependency and
+// the other does not, and the behaviour starts depending on the mode.
 func buildExecution(deps *Deps, id *identity.Service, dm *demand.Service, relogio ports.Clock) *execution.Service {
 	return execution.NewService(
 		postgres.NewExecutionRepo(deps.Pool),
@@ -181,119 +189,121 @@ func buildExecution(deps *Deps, id *identity.Service, dm *demand.Service, relogi
 	)
 }
 
-// RegisterProjections assina os consumidores que constroem as projeções:
-// dossiê, timeline, caixa de atenção, métricas e custo (ADR-0006).
+// RegisterProjections subscribes the consumers that build the projections: the
+// dossier, the timeline, the attention box, the metrics and the cost
+// (ADR-0006).
 func RegisterProjections(ctx context.Context, deps *Deps) error {
 	log := logging.From(ctx)
 
-	// Timeline: a linha do tempo por agregado. Consumidor idempotente — a
-	// entrega do JetStream é ao-menos-uma-vez (ADR-0019).
+	// Timeline: the timeline per aggregate. An idempotent consumer —
+	// JetStream's delivery is at-least-once (ADR-0019).
 	timeline := projection.NewTimeline(deps.Pool)
 	if err := deps.Bus.Subscribe(ctx, "", "timeline", []string{"dop.>"}, timeline.Handle); err != nil {
 		return err
 	}
 
-	// Caixa de atenção: assina SÓ os assuntos que a regra sabe traduzir. Assinar
-	// `dop.>` e descartar a maioria seria desperdiçar entrega; assinar de menos
-	// faria o item nunca chegar, em silêncio — há teste no domínio garantindo
-	// que os assuntos cobrem todos os eventos tratados.
-	caixa := projection.NewAttention(deps.Pool)
-	if err := deps.Bus.Subscribe(ctx, "", "attention", attention.Subjects(), caixa.Handle); err != nil {
+	// The attention box: it subscribes ONLY to the subjects the rule knows how
+	// to translate. Subscribing to `dop.>` and discarding most would waste
+	// deliveries; subscribing to too few would make the item never arrive, in
+	// silence — there is a test in the domain guaranteeing the subjects cover
+	// every handled event.
+	attentionProj := projection.NewAttention(deps.Pool)
+	if err := deps.Bus.Subscribe(ctx, "", "attention", attention.Subjects(), attentionProj.Handle); err != nil {
 		return err
 	}
 
-	// Comunicação: o GATILHO (ADR-0025). Assina só os assuntos que a regra sabe
-	// traduzir, e o decisor é tabela — quando a reação virar dado (P-29), troca
-	// o carregador, não quem chama.
+	// Communication: the TRIGGER (ADR-0025). It subscribes only to the subjects
+	// the rule knows how to translate, and the decider is a table — when the
+	// reaction becomes data (P-29), you swap the loader, not the caller.
 	//
-	// Nada de caso de uso chama o Mailer direto: se chamasse, ele viraria o
-	// gatilho, difuso por quantos casos de uso mandassem e-mail.
+	// No use case calls the Mailer directly: if one did, it would become the
+	// trigger, diffused across as many use cases as sent email.
 	notificacao := buildNotification(deps)
 	if err := deps.Bus.Subscribe(ctx, "", "notification",
 		notification.Subjects(), notifier.NewConsumer(notificacao).Handle); err != nil {
 		return err
 	}
 
-	log.Info("projeções registradas", "total", 3,
+	log.Info("projections registered", "total", 3,
 		"consumidores", []string{"timeline", "attention", "notification"})
 	return nil
 }
 
-// RegisterLauncher assina os comandos de sandbox no cluster de execução.
-// RegisterLauncher prepara o substrato de execução no processo de launcher.
+// RegisterLauncher prepares the execution substrate in the launcher process.
 //
-// Hoje o ciclo de vida do sandbox é dirigido por CHAMADA (ProvisionSandbox e
-// companhia) e por VARREDURA (o scheduler suspende os ociosos). Não há
-// assinatura de evento: provisionar automaticamente ao iniciar demanda é
-// política que ainda não foi decidida, e criar sandbox — que custa dinheiro —
-// por evento sem essa decisão seria inventar governança de gasto.
+// Today the sandbox's life cycle is driven by CALLS (ProvisionSandbox and
+// company) and by SWEEPS (the scheduler suspends the idle ones). There is no
+// event subscription: provisioning automatically when a demand starts is a
+// policy that has not been decided, and creating a sandbox — which costs money —
+// per event without that decision would be inventing spend governance.
 //
-// Quando a política existir, é aqui que a assinatura entra.
+// When the policy exists, this is where the subscription goes.
 func RegisterLauncher(ctx context.Context, deps *Deps) error {
 	log := logging.From(ctx)
 	tiers, err := deps.Launcher.SupportedTiers(ctx)
 	if err != nil {
-		// Não saber qual isolamento o substrato oferece é motivo para NÃO
-		// subir: `isolationTier` é declarado e conferido, e um launcher que
-		// não sabe responder aceitaria qualquer coisa mais tarde.
+		// Not knowing which isolation the substrate offers is a reason NOT to
+		// come up: `isolationTier` is declared and checked, and a launcher that
+		// cannot answer would accept anything later on.
 		return err
 	}
 	log.Info("launcher pronto", "substrato", deps.Cfg.SandboxBackend, "isolamentos", tiers)
 	return nil
 }
 
-// RunScheduledTasks executa o ciclo periódico: polling de PRs, suspensão de
-// sandboxes ociosos, criação de partições futuras de events, expiração de
-// convites e limpeza da tabela de idempotência.
+// RunScheduledTasks runs the periodic cycle: PR polling, suspension of idle
+// sandboxes, creation of future event partitions, invite expiry and cleanup of
+// the idempotency table.
 func RunScheduledTasks(ctx context.Context, deps *Deps) {
 	log := logging.From(ctx)
 
-	// Partições futuras PRIMEIRO, antes de qualquer outra tarefa: sem elas,
-	// na virada do mês toda escrita de evento falha — e falha no caminho do
-	// outbox, derrubando qualquer operação que mude estado. As migrações
-	// criam partições fixas e param; quem continua daqui é isto.
-	criadas, err := postgres.EnsureMonthlyPartitions(ctx, deps.Pool, time.Now().UTC(), partitionsAhead)
+	// Future partitions FIRST, before any other task: without them, at the turn
+	// of the month every event write fails — and it fails on the outbox's path,
+	// bringing down any operation that changes state. The migrations create
+	// fixed partitions and stop; what carries on from here is this.
+	created, err := postgres.EnsureMonthlyPartitions(ctx, deps.Pool, time.Now().UTC(), partitionsAhead)
 	if err != nil {
-		// Não derruba o ciclo: o próximo tenta de novo, e há meses de folga
-		// antes de a falta virar problema. Mas sobe como ERRO, porque é o
-		// aviso que separa "meses de folga" de "amanhã para tudo".
-		log.Error("falha ao garantir partições futuras", logging.FieldError, err.Error())
+		// It does not bring the cycle down: the next one tries again, and there
+		// are months of slack before the absence becomes a problem. But it goes
+		// up as an ERROR, because it is the warning that separates "months of
+		// slack" from "tomorrow everything stops".
+		log.Error("failed to ensure the future partitions", logging.FieldError, err.Error())
 	}
-	if len(criadas) > 0 {
-		log.Info("partições criadas", "particoes", criadas)
+	if len(created) > 0 {
+		log.Info("partitions created", "partitions", created)
 	}
 
-	// Varredura de economia: sandbox parado além do limite suspende. O pod
-	// morre, o workspace sobrevive no volume. A spec do substrato é direta
-	// sobre o custo de não fazer isso — "sandbox ocioso é o que separa
-	// paralelismo real de máquina afogada".
+	// The cost-saving sweep: a sandbox stopped beyond the limit is suspended.
+	// The pod dies, the workspace survives on the volume. The substrate's spec
+	// is blunt about the cost of not doing this — "an idle sandbox is what
+	// separates real parallelism from a drowned machine".
 	{
-		varredor := execution.NewSweeper(
+		sweeper := execution.NewSweeper(
 			postgres.NewExecutionRepo(deps.Pool), deps.Launcher, clock.NewSystem())
-		contas, suspensos, err := varredor.SweepAllAccounts(ctx)
+		accounts, suspended, err := sweeper.SweepAllAccounts(ctx)
 		if err != nil {
 			log.Error("varredura de sandboxes ociosos falhou", logging.FieldError, err.Error())
-		} else if suspensos > 0 {
-			log.Info("sandboxes ociosos suspensos", "contas", contas, "sandboxes", suspensos)
+		} else if suspended > 0 {
+			log.Info("idle sandboxes suspended", "accounts", accounts, "sandboxes", suspended)
 		}
 	}
 
-	// Resumo atrasado da caixa de atenção (ADR-0025): item aberto há mais que o
-	// atraso, e ainda aberto, vira e-mail. O que foi resolvido antes do corte
-	// não vira — quem estava no cockpit já resolveu.
+	// The attention box's delayed digest (ADR-0025): an item open for longer
+	// than the delay, and still open, becomes an email. What was resolved before
+	// the cut-off does not — whoever was in the cockpit has already resolved it.
 	//
-	// O atraso é PREDICADO DE CONSULTA, não agendador: não há timer para
-	// cancelar quando o item fecha, e caminho de cancelamento só roda no caso
-	// raro, que é onde ele quebra calado.
-	if contas, avisos, err := buildNotification(deps).SweepDigest(ctx); err != nil {
-		log.Error("varredura do resumo de atenção falhou", logging.FieldError, err.Error())
-	} else if avisos > 0 {
-		log.Info("resumos de atenção enviados", "contas", contas, "avisos", avisos)
+	// The delay is a QUERY PREDICATE, not a scheduler: there is no timer to
+	// cancel when the item closes, and a cancellation path only runs in the rare
+	// case, which is where it breaks quietly.
+	if accounts, notices, err := buildNotification(deps).SweepDigest(ctx); err != nil {
+		log.Error("the attention digest sweep failed", logging.FieldError, err.Error())
+	} else if notices > 0 {
+		log.Info("attention digests sent", "accounts", accounts, "notices", notices)
 	}
 
 	log.Debug("ciclo do scheduler")
 }
 
-// partitionsAhead é folga, não previsão: com 3 meses o scheduler pode ficar
-// fora do ar semanas sem que ninguém perceba a diferença.
+// partitionsAhead is slack, not a forecast: with 3 months the scheduler can be
+// down for weeks without anyone noticing the difference.
 const partitionsAhead = 3

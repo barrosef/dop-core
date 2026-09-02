@@ -15,8 +15,8 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
-// UnaryLogging registra entrada, saída, duração e erro de toda chamada — em
-// JSON, com os mesmos campos do BFF.
+// UnaryLogging records the entry, the exit, the duration and the error of every
+// call — in JSON, with the BFF's same fields.
 func UnaryLogging() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
 		start := time.Now()
@@ -37,7 +37,7 @@ func UnaryLogging() grpc.UnaryServerInterceptor {
 			log.Error("rpc falhou", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
 			return nil, toStatus(err)
 		}
-		log.Info("rpc concluída", logging.FieldDurationMs, ms)
+		log.Info("rpc finished", logging.FieldDurationMs, ms)
 		return resp, nil
 	}
 }
@@ -57,40 +57,42 @@ func StreamLogging() grpc.StreamServerInterceptor {
 	}
 }
 
-// UnaryCallContext extrai o contexto de chamada dos metadados e o coloca no
-// context.Context. A BORDA preenche; o domínio confia (ADR-0016).
+// UnaryCallContext extracts the call context from the metadata and puts it into
+// the context.Context. The EDGE fills it in; the domain trusts it (ADR-0016).
 func UnaryCallContext() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
 		return h(callFromMD(ctx), req)
 	}
 }
 
-// StreamCallContext faz pelo streaming o que UnaryCallContext faz pelo unário.
+// StreamCallContext does for streaming what UnaryCallContext does for unary
+// calls.
 //
-// Sem ele, uma RPC de streaming não enxerga x-account-id nenhum, e o isolamento
-// multi-tenant do fluxo passaria a depender do CallContext declarado no corpo
-// do pedido — campo que o servidor NÃO lê (ADR-0017, conv. 5). Ou seja: o
-// buraco não seria "stream sem contexto", seria "stream com contexto que o
-// cliente escolhe". Contexto é preocupação transversal nos dois tipos de RPC.
+// Without it, a streaming RPC sees no x-account-id at all, and the stream's
+// multi-tenant isolation would come to depend on the CallContext declared in the
+// request's body — a field the server does NOT read (ADR-0017, conv. 5). That
+// is: the hole would not be "a stream with no context", it would be "a stream
+// with the context the client chooses". Context is a cross-cutting concern in
+// both kinds of RPC.
 //
-// grpc.ServerStream não deixa trocar o Context, então embrulhamos o stream.
+// grpc.ServerStream does not let you swap the Context, so we wrap the stream.
 func StreamCallContext() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
-		return h(srv, &streamComContexto{ServerStream: ss, ctx: callFromMD(ss.Context())})
+		return h(srv, &streamWithContext{ServerStream: ss, ctx: callFromMD(ss.Context())})
 	}
 }
 
-// streamComContexto existe só para sobrescrever Context(): é o único ponto de
-// extensão que a interface oferece.
-type streamComContexto struct {
+// streamWithContext exists only to override Context(): it is the only extension
+// point the interface offers.
+type streamWithContext struct {
 	grpc.ServerStream
 	ctx context.Context
 }
 
-func (s *streamComContexto) Context() context.Context { return s.ctx }
+func (s *streamWithContext) Context() context.Context { return s.ctx }
 
-// callFromMD é a leitura dos metadados, compartilhada pelos dois interceptores
-// — duplicá-la é como as duas pontas divergem sem ninguém notar.
+// callFromMD is the metadata read, shared by both interceptors — duplicating it
+// is how the two ends diverge without anyone noticing.
 func callFromMD(ctx context.Context) context.Context {
 	md, _ := metadata.FromIncomingContext(ctx)
 	call := ctxutil.Call{
@@ -106,14 +108,14 @@ func callFromMD(ctx context.Context) context.Context {
 	return ctxutil.Into(ctx, call)
 }
 
-// UnaryRecover impede que um pânico derrube o processo inteiro.
+// UnaryRecover stops a panic from bringing the whole process down.
 func UnaryRecover() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, h grpc.UnaryHandler) (resp any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				logging.From(ctx).Error("pânico na RPC",
+				logging.From(ctx).Error("panic in the RPC",
 					"rpc", info.FullMethod, "panic", r, "stack", string(debug.Stack()))
-				err = status.Error(codes.Internal, "erro interno")
+				err = status.Error(codes.Internal, "internal error")
 			}
 		}()
 		return h(ctx, req)
@@ -127,8 +129,8 @@ func first(md metadata.MD, k string) string {
 	return ""
 }
 
-// toStatus traduz erro de domínio para status gRPC. A tradução vive AQUI, na
-// borda — o domínio nunca importa google.golang.org/grpc.
+// toStatus translates a domain error into a gRPC status. The translation lives
+// HERE, at the edge — the domain never imports google.golang.org/grpc.
 func toStatus(err error) error {
 	if _, ok := status.FromError(err); ok && status.Code(err) != codes.Unknown {
 		return err

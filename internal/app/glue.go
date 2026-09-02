@@ -16,45 +16,45 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 )
 
-// Cola entre domínios.
+// The glue between domains.
 //
-// Cada domínio declara a porta ESTREITA do que precisa do vizinho, em vez de
-// importar o pacote dele. O preço é este arquivo; o que se compra é que
-// `demand` não sabe que `workflow` existe, e nenhum dos dois quebra quando o
-// outro mudar de forma internamente.
+// Each domain declares the NARROW port of what it needs from its neighbour,
+// instead of importing that neighbour's package. The price is this file; what it
+// buys is that `demand` does not know `workflow` exists, and neither breaks when
+// the other changes shape internally.
 //
-// É deliberado que a cola seja chata e mecânica: no dia em que uma destas
-// funções precisar de um `if` de regra, a regra está no domínio errado.
+// It is deliberate that the glue is dull and mechanical: on the day one of these
+// functions needs an `if` of business rule, the rule is in the wrong domain.
 
 // ── workflow → demand ───────────────────────────────────────────────────────
 
-// demandFlows resolve o fluxo efetivo para a demanda congelar.
+// demandFlows resolves the effective flow for the demand to freeze.
 //
-// Os dois vocabulários batem STRING A STRING (`StageType`, `ArtifactKind`,
-// portão e escopo), então a conversão é troca de tipo nomeado, não tradução.
-// Se um dia divergirem, é aqui que quebra — e quebrar aqui é melhor do que
-// silenciosamente congelar um fluxo com etapa de tipo desconhecido.
+// The two vocabularies match STRING FOR STRING (`StageType`, `ArtifactKind`,
+// gate and scope), so the conversion is a named-type swap, not a translation. If
+// they ever diverge, this is where it breaks — and breaking here is better than
+// silently freezing a flow with a stage of an unknown type.
 type demandFlows struct{ wf *workflow.Service }
 
 func (a demandFlows) Resolve(ctx context.Context, _ string, scope, scopeID string) (demand.Flow, error) {
-	// A conta vem do contexto no serviço de fluxo — o parâmetro accountID da
-	// porta existe para o caso de outro adaptador precisar dele.
+	// The account comes from the context in the flow service — the port's
+	// accountID parameter exists in case another adapter needs it.
 	ef, err := a.wf.Resolve(ctx, workflow.Scope(scope), scopeID)
 	if err != nil {
 		return demand.Flow{}, err
 	}
-	etapas := make([]demand.StageSpec, 0, len(ef.Flow.Stages))
+	stages := make([]demand.StageSpec, 0, len(ef.Flow.Stages))
 	for _, s := range ef.Flow.Stages {
-		artefatos := make([]demand.ArtifactKind, 0, len(s.Artifacts))
+		artifacts := make([]demand.ArtifactKind, 0, len(s.Artifacts))
 		for _, a := range s.Artifacts {
-			artefatos = append(artefatos, demand.ArtifactKind(a))
+			artifacts = append(artifacts, demand.ArtifactKind(a))
 		}
-		etapas = append(etapas, demand.StageSpec{
+		stages = append(stages, demand.StageSpec{
 			Key:       s.Key,
 			Name:      s.Name,
 			Type:      demand.StageType(s.Type),
 			Gate:      demand.Gate(s.Gate),
-			Artifacts: artefatos,
+			Artifacts: artifacts,
 			Subtypes:  s.Subtypes,
 		})
 	}
@@ -63,16 +63,16 @@ func (a demandFlows) Resolve(ctx context.Context, _ string, scope, scopeID strin
 		Name:         ef.Flow.Name,
 		Version:      ef.Flow.Version,
 		ResolvedFrom: ef.ResolvedFrom,
-		Stages:       etapas,
+		Stages:       stages,
 	}, nil
 }
 
 // ── event → demand ──────────────────────────────────────────────────────────
 
-// demandWatcher entrega ao domínio de demanda o fan-out que o domínio de
-// evento já tem — replay, isolamento por conta e política de consumidor lento
-// incluídos. Uma segunda implementação de fan-out seria uma segunda chance de
-// errar isolamento entre contas.
+// demandWatcher hands the demand domain the fan-out the event domain already
+// has — replay, per-account isolation and slow-consumer policy included. A
+// second fan-out implementation would be a second chance to get isolation
+// between accounts wrong.
 type demandWatcher struct{ ev *event.Service }
 
 func (a demandWatcher) Watch(ctx context.Context, since string, aggregates, types []string, emit func(ports.Event) error) error {
@@ -81,10 +81,10 @@ func (a demandWatcher) Watch(ctx context.Context, since string, aggregates, type
 
 // ── identity → workflow ─────────────────────────────────────────────────────
 
-// workflowAccess adapta identidade à porta estreita do domínio de fluxo, que
-// fala PAPEL como string simples: o vocabulário de papel é do domínio de
-// identidade, e importá-lo dentro de workflow acoplaria dois domínios que não
-// precisam se conhecer.
+// workflowAccess adapts identity to the flow domain's narrow port, which speaks
+// ROLE as a plain string: the role vocabulary belongs to the identity domain, and
+// importing it inside workflow would couple two domains that do not need to know
+// each other.
 type workflowAccess struct{ id *identity.Service }
 
 func (a workflowAccess) RoleOf(ctx context.Context, userID, accountID string) (string, error) {
@@ -97,11 +97,11 @@ func (a workflowAccess) RoleOf(ctx context.Context, userID, accountID string) (s
 
 // ── demand → knowledge ──────────────────────────────────────────────────────
 
-// knowledgeDemands responde "o que esta demanda é" para o montador de contexto.
+// knowledgeDemands answers "what this demand is" for the context assembler.
 //
-// O domínio de conhecimento recebe só um `demand_id` e precisa de projeto,
-// título, spec, repositórios e achados — que moram em três lugares. Juntar isso
-// é trabalho de composição, não de nenhum dos dois domínios.
+// The knowledge domain receives only a `demand_id` and needs the project, the
+// title, the spec, the repositories and the findings — which live in three
+// places. Putting that together is composition's work, not either domain's.
 type knowledgeDemands struct {
 	demands   *demand.Service
 	hierarchy *hierarchy.Service
@@ -113,26 +113,28 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 		return nil, err
 	}
 
-	// Os achados JÁ publicados são a camada de retomada: sem eles, um agente
-	// que pega a demanda no meio refaz investigação que outro concluiu — o
-	// desperdício exato que o quadro de achados existe para evitar (ADR-0009).
-	achados, err := a.demands.Findings(ctx, demandID)
+	// The findings ALREADY published are the resumption layer: without them, an
+	// agent that picks the demand up midway redoes an investigation another has
+	// concluded — the exact waste the board of findings exists to avoid
+	// (ADR-0009).
+	findings, err := a.demands.Findings(ctx, demandID)
 	if err != nil {
 		return nil, err
 	}
-	convertidos := make([]knowledge.Finding, 0, len(achados))
-	for _, f := range achados {
-		convertidos = append(convertidos, knowledge.Finding{
+	converted := make([]knowledge.Finding, 0, len(findings))
+	for _, f := range findings {
+		converted = append(converted, knowledge.Finding{
 			ID:       f.ID,
 			ThreadID: f.ThreadID,
 			Title:    f.Title,
-			Summary:  resumoDoAchado(f),
+			Summary:  findingSummary(f),
 		})
 	}
 
-	// Os repositórios recortam o índice de código: o pacote traz o índice DOS
-	// REPOS DA DEMANDA, nunca do projeto inteiro. Falhar aqui não vale a
-	// viagem — sem a lista, o índice sai vazio em vez de sair errado.
+	// The repositories carve out the code index: the package brings the index OF
+	// THE DEMAND'S REPOS, never of the whole project. Failing here is not worth
+	// the trip — without the list, the index comes out empty instead of coming
+	// out wrong.
 	var repos []string
 	if p, err := a.hierarchy.GetProject(ctx, d.ProjectID); err == nil {
 		for _, r := range p.Repos {
@@ -144,23 +146,23 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 		DemandID:  d.ID,
 		ProjectID: d.ProjectID,
 		Title:     d.Title,
-		// Spec continua vazia: ela é ARTEFATO de etapa, e o armazenamento de
-		// artefato por etapa ainda não existe. Degradação declarada, não
-		// esquecimento — o pacote perde a spec, não fica incorreto.
+		// Spec stays empty: it is a stage ARTIFACT, and per-stage artifact
+		// storage does not exist yet. A declared degradation, not an oversight —
+		// the package loses the spec, it does not become incorrect.
 		Repos:    repos,
-		Findings: convertidos,
+		Findings: converted,
 	}, nil
 }
 
-// resumoDoAchado extrai o texto do achado do payload livre.
+// findingSummary extracts the finding's text from the free-form payload.
 //
-// O payload é `map[string]any` porque o formato do achado é do agente que o
-// publicou, não da plataforma. Aceitar as duas chaves mais prováveis e cair no
-// título é melhor do que exigir esquema — achado sem resumo ainda vale mais no
-// contexto do que achado ausente.
-func resumoDoAchado(f demand.Finding) string {
-	for _, chave := range []string{"summary", "resumo"} {
-		if v, ok := f.Payload[chave].(string); ok && v != "" {
+// The payload is a `map[string]any` because the finding's format belongs to the
+// agent that published it, not to the platform. Accepting the two likeliest keys
+// and falling back to the title is better than demanding a schema — a finding
+// with no summary is still worth more in the context than an absent finding.
+func findingSummary(f demand.Finding) string {
+	for _, key := range []string{"summary", "resumo"} {
+		if v, ok := f.Payload[key].(string); ok && v != "" {
 			return v
 		}
 	}
@@ -169,11 +171,10 @@ func resumoDoAchado(f demand.Finding) string {
 
 // ── demand → delivery ───────────────────────────────────────────────────────
 
-// deliveryDemands é somente LEITURA, e isso é a regra da ADR-0015 §5 virada
-// tipo: a entrega não tem como parar demanda nenhuma, porque a porta não
-// oferece um jeito. `Active` existe para o evento contar a verdade — "a
-// diretriz foi decidida e a demanda 1 continua andando" —, nunca para decidir
-// se ela para.
+// deliveryDemands is READ-ONLY, and that is ADR-0015 §5's rule turned into a
+// type: delivery has no way to stop any demand, because the port offers none.
+// `Active` exists so the event tells the truth — "the directive was decided and
+// demand 1 keeps running" — never to decide whether it stops.
 type deliveryDemands struct{ d *demand.Service }
 
 func (a deliveryDemands) Demand(ctx context.Context, _ string, id string) (*delivery.DemandInfo, error) {
@@ -190,11 +191,12 @@ func (a deliveryDemands) Demand(ctx context.Context, _ string, id string) (*deli
 
 // ── demand → execution ──────────────────────────────────────────────────────
 
-// executionDemands responde de quem é a demanda, e só isso.
+// executionDemands answers whose the demand is, and nothing else.
 //
-// Demanda inexistente e demanda de OUTRA conta chegam aqui como o MESMO erro,
-// porque `demand.Service.Get` já filtra por conta: distinguir os dois casos
-// vazaria a existência de ids alheios para quem ficasse tentando.
+// A nonexistent demand and a demand from ANOTHER account arrive here as the SAME
+// error, because `demand.Service.Get` already filters by account: telling the
+// two cases apart would leak the existence of other people's ids to whoever kept
+// trying.
 type executionDemands struct{ d *demand.Service }
 
 func (a executionDemands) DemandAccount(ctx context.Context, demandID string) (string, error) {
@@ -207,15 +209,15 @@ func (a executionDemands) DemandAccount(ctx context.Context, demandID string) (s
 
 // ── event → attention ───────────────────────────────────────────────────────
 
-// attentionWatcher entrega à caixa o mesmo fan-out do domínio de evento, com
-// replay, isolamento por conta e política de consumidor lento já resolvidos.
+// attentionWatcher hands the box the event domain's same fan-out, with replay,
+// per-account isolation and the slow-consumer policy already solved.
 type attentionWatcher struct{ ev *event.Service }
 
 func (a attentionWatcher) Watch(ctx context.Context, since string, aggregates, types []string, emit func(attention.Event) error) error {
 	return a.ev.Watch(ctx, since, event.Filter{Aggregates: aggregates, Types: types}, func(e ports.Event) error {
-		// O payload chega como bytes do envelope; a regra da caixa trabalha com
-		// mapa. Decodificar aqui — e não no domínio — mantém o domínio sem
-		// saber que existe JSON no meio do caminho.
+		// The payload arrives as the envelope's bytes; the box's rule works with
+		// a map. Decoding here — and not in the domain — keeps the domain from
+		// knowing there is JSON along the way.
 		var env struct {
 			ID          string         `json:"id"`
 			AccountID   string         `json:"account_id"`
@@ -226,7 +228,7 @@ func (a attentionWatcher) Watch(ctx context.Context, since string, aggregates, t
 			OccurredAt  time.Time      `json:"occurred_at"`
 		}
 		if err := json.Unmarshal(e.Payload, &env); err != nil {
-			return nil // ilegível não melhora com retry
+			return nil // unreadable does not improve with a retry
 		}
 		return emit(attention.Event{
 			ID: env.ID, AccountID: env.AccountID, Aggregate: env.Aggregate,

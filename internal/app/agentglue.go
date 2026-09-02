@@ -12,24 +12,25 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Cola entre o runtime de agente e os três domínios que ele usa.
+// The glue between the agent runtime and the three domains it uses.
 //
-// Mesma disciplina de glue.go, e mora em arquivo próprio só para não misturar a
-// cola nova com a que já existia: cada domínio declara a porta ESTREITA do que
-// precisa do vizinho, em vez de importar o pacote dele. O preço é este arquivo; o
-// que se compra é que `agent` não sabe que `knowledge`, `cost` e `demand` existem.
+// The same discipline as glue.go, and it lives in a file of its own only so as
+// not to mix the new glue with the one that already existed: each domain
+// declares the NARROW port of what it needs from its neighbour, instead of
+// importing that neighbour's package. The price is this file; what it buys is
+// that `agent` does not know `knowledge`, `cost` and `demand` exist.
 //
-// É deliberado que a cola seja chata e mecânica: no dia em que uma destas funções
-// precisar de um `if` de regra, a regra está no domínio errado.
+// It is deliberate that the glue is dull and mechanical: on the day one of these
+// functions needs an `if` of business rule, the rule is in the wrong domain.
 
 // ── knowledge → agent ───────────────────────────────────────────────────────
 
-// agentKnowledge entrega ao runtime a bagagem de bordo da demanda.
+// agentKnowledge hands the runtime the demand's carry-on luggage.
 //
-// O orçamento vai ZERADO de propósito: `BuildContextPackage` lê zero como "use o
-// teto do serviço" (ver knowledge.Budget.Normalize). Escolher um teto aqui
-// colocaria política de custo de contexto no composition root, longe do lugar
-// onde ela é decidida e medida.
+// The budget goes in as ZERO on purpose: `BuildContextPackage` reads zero as "use
+// the service's ceiling" (see knowledge.Budget.Normalize). Choosing a ceiling
+// here would put context cost policy in the composition root, far from where it
+// is decided and measured.
 type agentKnowledge struct{ k *knowledge.Service }
 
 var _ agent.Knowledge = agentKnowledge{}
@@ -41,8 +42,8 @@ func (a agentKnowledge) ContextPackage(ctx context.Context, demandID string) (ag
 	}
 	return agent.ContextPackage{
 		Rules:    pkg.Rules,
-		Index:    artefatosDoPacote(pkg.Index),
-		Memories: artefatosDoPacote(pkg.Memories),
+		Index:    packageArtifacts(pkg.Index),
+		Memories: packageArtifacts(pkg.Memories),
 		Findings: achadosDoPacote(pkg.Findings),
 		Dropped: agent.ContextDropped{
 			Rules:    pkg.Dropped.Rules,
@@ -53,14 +54,15 @@ func (a agentKnowledge) ContextPackage(ctx context.Context, demandID string) (ag
 	}, nil
 }
 
-// artefatosDoPacote converte preservando a ORDEM da curadoria: ela é a
-// prioridade do `SelectPackage` (ADR-0009 §3), e reordenar aqui desfaria a
-// seleção que consumiu o orçamento inteiro.
+// packageArtifacts converts while preserving the curation's ORDER: it is
+// `SelectPackage`'s priority (ADR-0009 §3), and reordering here would undo the
+// selection that consumed the whole budget.
 //
-// `ID` e `Version` ficam para trás porque a porta do runtime nem os tem: eles
-// mudam quando o núcleo regrava o artefato sem que o conteúdo mude, e entrariam
-// no prefixo cacheado para invalidá-lo à toa (ADR-0012 §1).
-func artefatosDoPacote(itens []knowledge.Artifact) []agent.ContextArtifact {
+// `ID` and `Version` are left behind because the runtime's port does not even
+// have them: they change when the core rewrites the artifact without the content
+// changing, and they would enter the cached prefix and invalidate it for nothing
+// (ADR-0012 §1).
+func packageArtifacts(itens []knowledge.Artifact) []agent.ContextArtifact {
 	out := make([]agent.ContextArtifact, 0, len(itens))
 	for _, a := range itens {
 		out = append(out, agent.ContextArtifact{
@@ -80,11 +82,11 @@ func achadosDoPacote(itens []knowledge.Finding) []agent.ContextFinding {
 
 // ── cost → agent ────────────────────────────────────────────────────────────
 
-// agentRouting liga a decisão e a medição do domínio de custo.
+// agentRouting wires the cost domain's decision and measurement.
 //
-// A CLASSE atravessa aqui — é o campo que a fronteira de rede comia quando o
-// runtime vivia no BFF, e é ele que aposenta a tabela de tradução inversa que
-// existia lá (ADR-0023).
+// The CLASS crosses here — it is the field the network boundary used to eat when
+// the runtime lived in the BFF, and it is what retires the reverse translation
+// table that existed there (ADR-0023).
 type agentRouting struct{ c *cost.Service }
 
 var _ agent.Routing = agentRouting{}
@@ -94,10 +96,10 @@ func (a agentRouting) Route(ctx context.Context, taskKind, demandID string) (age
 	if err != nil {
 		return agent.Decision{}, err
 	}
-	// Os vocabulários batem STRING A STRING (classe e effort). A conversão é
-	// troca de tipo nomeado, não tradução; se um dia divergirem, é aqui que
-	// quebra — e quebrar aqui é melhor do que rotear em silêncio para o modelo
-	// errado.
+	// The vocabularies match STRING FOR STRING (class and effort). The
+	// conversion is a named-type swap, not a translation; if they ever diverge,
+	// this is where it breaks — and breaking here is better than silently
+	// routing to the wrong model.
 	return agent.Decision{
 		TaskKind: string(d.TaskKind),
 		Class:    agent.ModelClass(d.Class),
@@ -118,9 +120,10 @@ func (a agentRouting) RecordUsage(ctx context.Context, c agent.Consumption, idem
 		CacheCreationTokens: c.CacheCreationTokens,
 		CostMicros:          cost.Micros(c.CostMicros),
 		Currency:            c.Currency,
-		// AccountID e At ficam de fora: o serviço de custo os toma do contexto
-		// e do relógio dele. Preenchê-los aqui permitiria lançar consumo na
-		// conta do vizinho e gravar na partição errada.
+		// AccountID and At are left out: the cost service takes them from the
+		// context and from its own clock. Filling them in here would allow
+		// posting consumption to the neighbour's account and writing into the
+		// wrong partition.
 	}, idemKey)
 	if err != nil {
 		return agent.Accounting{}, err
@@ -140,13 +143,14 @@ func (a agentRouting) RecordUsage(ctx context.Context, c agent.Consumption, idem
 
 // ── demand → agent ──────────────────────────────────────────────────────────
 
-// agentConversation liga a thread, a mensagem e o achado.
+// agentConversation wires the thread, the message and the finding.
 //
-// Repare no que NÃO passa por aqui: a AUTORIA. `demand.Service` a lê do
-// `ctxutil.Call`, e é o runtime que troca o ator para o agente antes de publicar
-// a resposta. Se a autoria fosse parâmetro desta cola, ela viraria algo que se
-// pode esquecer de passar — e a fala do agente entraria no log como fala de
-// humano, que é a única coisa que este sistema não pode confundir.
+// Note what does NOT pass through here: AUTHORSHIP. `demand.Service` reads it
+// from `ctxutil.Call`, and it is the runtime that swaps the actor for the agent
+// before publishing the reply. If authorship were a parameter of this glue, it
+// would become something one can forget to pass — and the agent's utterance
+// would enter the log as a human's, which is the one thing this system must not
+// confuse.
 type agentConversation struct{ d *demand.Service }
 
 var _ agent.Conversation = agentConversation{}
@@ -171,10 +175,11 @@ func (a agentConversation) Thread(ctx context.Context, demandID, threadID string
 			}, nil
 		}
 	}
-	// Thread inexistente e thread de OUTRA demanda saem como o MESMO erro:
-	// `ListThreads` já filtra por conta e por demanda, e distinguir os dois
-	// casos vazaria a existência de ids alheios para quem ficasse tentando.
-	return agent.Thread{}, errs.NotFound("thread %s nesta demanda", threadID)
+	// A nonexistent thread and a thread from ANOTHER demand come out as the
+	// SAME error: `ListThreads` already filters by account and by demand, and
+	// telling the two cases apart would leak the existence of other people's ids
+	// to whoever kept trying.
+	return agent.Thread{}, errs.NotFound("thread %s in this demand", threadID)
 }
 
 func (a agentConversation) PostMessage(ctx context.Context, threadID, text, idemKey string) (string, error) {
@@ -196,18 +201,18 @@ func (a agentConversation) PublishFinding(ctx context.Context, demandID, threadI
 
 // ── execution → agent ───────────────────────────────────────────────────────
 
-// agentSandbox liga o laço de ferramentas ao substrato.
+// agentSandbox wires the tool loop to the substrate.
 //
-// A conversão é mecânica de propósito: o domínio de agente fala
-// `SandboxCommand`, o de execução fala `ports.ExecRequest`, e nenhum dos dois
-// precisa conhecer o vocabulário do outro. Se um `if` de regra aparecer aqui,
-// a regra está no domínio errado.
+// The conversion is mechanical on purpose: the agent domain speaks
+// `SandboxCommand`, the execution one speaks `ports.ExecRequest`, and neither
+// needs to know the other's vocabulary. If an `if` of business rule shows up
+// here, the rule is in the wrong domain.
 //
-// O CONTRATO DE ERRO desta cola é o ponto delicado: erro só quando o SUBSTRATO
-// falhou. Código de saída diferente de zero, prazo estourado e saída cortada
-// são RESULTADO — o modelo precisa vê-los para corrigir, e transformá-los em
-// erro do turno tiraria dele justamente a informação que o faria acertar na
-// volta seguinte.
+// This glue's ERROR CONTRACT is the delicate point: an error only when the
+// SUBSTRATE failed. A non-zero exit code, a blown deadline and a cut output are
+// a RESULT — the model needs to see them in order to fix things, and turning
+// them into a turn error would take from it exactly the information that would
+// make it get the next round right.
 type agentSandbox struct{ exec *execution.Service }
 
 func (a agentSandbox) RunCommand(ctx context.Context, demandID string, cmd agent.SandboxCommand) (agent.SandboxOutput, error) {
