@@ -1,170 +1,176 @@
-// Adaptador de SecretStore sobre o Google Cloud Secret Manager.
+// A SecretStore adapter over Google Cloud Secret Manager.
 //
-// É o segundo adaptador REAL da porta (ADR-0001): serve a plataforma quando ela
-// roda em GCP, enquanto o irmão k8s serve o cluster self-hosted. O MESMO
-// conjunto de testes de contrato roda contra os dois — é isso, e não a
-// intenção, que torna a troca possível.
+// It is the port's second REAL adapter (ADR-0001): it serves the platform when
+// it runs on GCP, while its k8s sibling serves the self-hosted cluster. The SAME
+// set of contract tests runs against both — that, and not the intention, is what
+// makes the swap possible.
 //
-// Como o k8s, fala com o serviço pela API, e usa a biblioteca OFICIAL: um
-// cliente escrito à mão acertaria os casos felizes e erraria exatamente os que
-// importam (código de erro, retry, checksum, resolução de alias).
+// Like the k8s one, it talks to the service through the API, and uses the
+// OFFICIAL library: a hand-written client would get the happy cases right and
+// get exactly the ones that matter wrong (error code, retry, checksum, alias
+// resolution).
 //
-// ─────────────────── MAPEAMENTO PORTA → SECRET MANAGER ───────────────────
+// ─────────────────── PORT → SECRET MANAGER MAPPING ───────────────────
 //
-// A porta tem Put/Get/Delete/Exists sobre um SecretRef PLANO. O Secret Manager
-// tem duas camadas: o SEGREDO (contêiner, com política de réplica e IAM) e as
-// VERSÕES (o material, imutável, numerado). Versionamento está FORA da porta de
-// propósito (ver ports.SecretStore) — então o adaptador precisa esconder a
-// segunda camada por completo. A decisão:
+// The port has Put/Get/Delete/Exists over a FLAT SecretRef. Secret Manager has
+// two layers: the SECRET (a container, with a replication policy and IAM) and
+// the VERSIONS (the material, immutable, numbered). Versioning is OUT of the
+// port on purpose (see ports.SecretStore) — so the adapter has to hide the
+// second layer completely. The decision:
 //
-//	Put    → CreateSecret (ignorando AlreadyExists)
+//	Put    → CreateSecret (ignoring AlreadyExists)
 //	         + AddSecretVersion
-//	         + confirmação POR NÚMERO (forte)
-//	         + espera do alias `latest` (eventual)
-//	         + destruição das versões anteriores.
-//	Get    → AccessSecretVersion em ".../versions/latest".
-//	Delete → DeleteSecret (leva o contêiner e TODAS as versões).
+//	         + confirmation BY NUMBER (strong)
+//	         + waiting for the `latest` alias (eventual)
+//	         + destruction of the previous versions.
+//	Get    → AccessSecretVersion on ".../versions/latest".
+//	Delete → DeleteSecret (takes the container and ALL the versions).
 //	Exists → Get != nil.
 //
-// Por que Get lê `latest` e não uma versão nomeada: a porta não tem onde
-// guardar número de versão — SecretRef é plano e o domínio não conhece versão.
-// `latest` é o único endereço estável derivável só da referência. O preço disso
-// está na seção de consistência, mais abaixo, e é a descoberta mais importante
-// deste arquivo.
+// Why Get reads `latest` and not a named version: the port has nowhere to keep a
+// version number — SecretRef is flat and the domain knows no version. `latest`
+// is the only stable address derivable from the reference alone. The price of
+// that is in the consistency section, further down, and it is the most important
+// discovery in this file.
 //
-// Por que Put destrói as versões anteriores. A garantia 4 diz que Put
-// SUBSTITUI. No adaptador k8s isso é literal: o valor antigo deixa de existir.
-// Se aqui as versões antigas ficassem, a mesma referência continuaria
-// resolvendo o segredo ANTIGO por número de versão — e "rotacionei a credencial
-// vazada" passaria a significar coisas diferentes em cada adaptador. Uma porta
-// cujo significado depende de quem a implementa não é porta.
+// Why Put destroys the previous versions. Guarantee 4 says Put REPLACES. In the
+// k8s adapter that is literal: the old value stops existing. If the old versions
+// stayed here, the same reference would keep resolving the OLD secret by version
+// number — and "I rotated the leaked credential" would start meaning different
+// things in each adapter. A port whose meaning depends on who implements it is
+// not a port.
 //
-// Por que Delete apaga o SEGREDO e não só a versão. A porta manda Delete ser
-// idempotente e a ausência ser estado normal. Destruir só a versão deixaria
-// para trás um contêiner vazio com IAM próprio — estado invisível pela porta,
-// que ninguém limpa e que reaparece como "existe mas não tem valor".
+// Why Delete erases the SECRET and not just the version. The port requires
+// Delete to be idempotent and absence to be a normal state. Destroying only the
+// version would leave behind an empty container with its own IAM — state
+// invisible through the port, which nobody cleans up and which comes back as
+// "it exists but has no value".
 //
-// Isolamento entre contas (garantia 5) sai do NOME, como no k8s: ver secretID.
+// Isolation between accounts (guarantee 5) comes out of the NAME, as in k8s: see
+// secretID.
 //
-// ───────── CONSISTÊNCIA: A GARANTIA 1 NÃO É CUMPRÍVEL NO GCP REAL ─────────
+// ───────── CONSISTENCY: GUARANTEE 1 IS NOT DELIVERABLE ON REAL GCP ─────────
 //
-// A porta promete leitura-após-escrita IMEDIATA. O Google documenta o oposto,
-// em https://cloud.google.com/secret-manager/docs/reference/consistency :
+// The port promises IMMEDIATE read-after-write. Google documents the opposite,
+// in https://cloud.google.com/secret-manager/docs/reference/consistency :
 //
 //   - "adding a secret version and then immediately accessing that secret
 //     version BY VERSION NUMBER is a strongly consistent operation";
 //   - "This doesn't apply when you access a secret version using aliases or
 //     latest";
 //   - "Other operations within Secret Manager are eventually consistent",
-//     e convergem "typically within minutes, but may take a few hours".
+//     and they converge "typically within minutes, but may take a few hours".
 //
-// Ou seja: o único caminho fortemente consistente é o que a porta NÃO pode
-// usar, porque exige carregar o número da versão — e versão é justamente o que
-// o SecretRef não tem. Um Get logo depois de um Put pode, legitimamente,
-// devolver (nil, nil) no GCP real, que pela porta significa "não existe": a
-// credencial recém-gravada apareceria como ausente.
+// That is: the only strongly consistent path is the one the port CANNOT use,
+// because it requires carrying the version number — and the version is exactly
+// what SecretRef does not have. A Get right after a Put can legitimately return
+// (nil, nil) on real GCP, which through the port means "it does not exist": the
+// just-written credential would show up as absent.
 //
-// Isto NÃO é defeito de implementação e não se conserta dentro deste arquivo.
-// É decisão de arquitetura pendente — ou a porta passa a devolver um
-// identificador de versão no Put para o domínio guardar (e Get lê por número,
-// forte), ou a garantia 1 vira "leitura-após-escrita dentro do processo que
-// escreveu" e o domínio precisa tolerar ausência transitória.
+// This is NOT an implementation defect and it is not fixable inside this file.
+// It is a pending architecture decision — either the port starts returning a
+// version identifier from Put for the domain to keep (and Get reads by number,
+// strongly), or guarantee 1 becomes "read-after-write within the process that
+// wrote" and the domain has to tolerate transient absence.
 //
-// O que este adaptador faz enquanto isso, e por quê:
+// What this adapter does meanwhile, and why:
 //
-//  1. confirma a gravação POR NÚMERO (forte, sempre funciona) — prova que o
-//     material foi aceito e voltou byte a byte;
-//  2. ESPERA o alias `latest` alcançar a versão nova, com teto configurável.
-//     O Put não retorna antes disso. Se não convergir no teto, devolve
-//     KindUnavailable dizendo exatamente isso.
+//  1. it confirms the write BY NUMBER (strong, always works) — proving the
+//     material was accepted and came back byte for byte;
+//  2. it WAITS for the `latest` alias to reach the new version, with a
+//     configurable ceiling. Put does not return before that. If it does not
+//     converge within the ceiling, it returns KindUnavailable saying exactly
+//     that.
 //
-// O passo 2 é caro e pode falhar no GCP real. É deliberado: um Put lento e um
-// erro explícito são preferíveis a um Get silencioso devolvendo "não existe"
-// para uma credencial que acabou de ser gravada. No emulador ele termina na
-// primeira tentativa — e é por isso que ele não pode ser confundido com prova
-// de que a garantia vale em produção.
+// Step 2 is expensive and may fail on real GCP. It is deliberate: a slow Put and
+// an explicit error are preferable to a silent Get returning "it does not exist"
+// for a credential that was just written. On the emulator it finishes on the
+// first attempt — and that is why it must not be mistaken for proof that the
+// guarantee holds in production.
 //
-// ─────────────── ONDE O EMULADOR LOCAL É MAIS PERMISSIVO ───────────────
+// ─────────────── WHERE THE LOCAL EMULATOR IS MORE PERMISSIVE ───────────────
 //
-// O ambiente local usa um emulador da COMUNIDADE (o Google não publica nenhum;
-// ver P-17 no ROADMAP). Ele é mais frouxo que o GCP em pontos que fariam a
-// suíte passar aqui e QUEBRAR em produção. Cada divergência abaixo foi
-// verificada contra o emulador rodando, e cada uma tem uma defesa NESTE
-// arquivo — a defesa é o que impede o ambiente local de esconder o caminho de
-// produção:
+// The local environment uses a COMMUNITY emulator (Google publishes none; see
+// P-17 in the ROADMAP). It is looser than GCP in ways that would make the suite
+// pass here and BREAK in production. Each divergence below was verified against
+// the running emulator, and each has a defence IN THIS FILE — the defence is
+// what stops the local environment from hiding the production path:
 //
-//  1. RÉPLICA. O emulador aceita CreateSecret SEM o campo `replication` e
-//     inventa "automatic". A referência REST do Google marca o campo como
-//     "Required" (o .proto, mais novo, diz "Optional" por causa dos segredos
-//     regionais — os dois discordam entre si). Defesa: mandamos
-//     Replication_Automatic SEMPRE, explicitamente. Nunca dependemos do
-//     default de ninguém, muito menos de um default sobre o qual a própria
-//     documentação do fornecedor está dividida.
+//  1. REPLICATION. The emulator accepts CreateSecret WITHOUT the `replication`
+//     field and invents "automatic". Google's REST reference marks the field as
+//     "Required" (the .proto, newer, says "Optional" because of regional
+//     secrets — the two disagree with each other). Defence: we send
+//     Replication_Automatic ALWAYS, explicitly. We never depend on anybody's
+//     default, least of all a default the vendor's own documentation is split
+//     about.
 //
-//  2. FORMATO DO NOME. O emulador aceita QUALQUER secretId — ponto, espaço,
-//     barra, maiúscula, 300 caracteres, tudo respondeu 200. O GCP real
-//     documenta "maximum length of 255 characters ... letters, numerals, and
-//     the hyphen (-) and underscore (_)". Defesa: validateSecretID roda ANTES
-//     de cada chamada, e o nome que construímos já nasce dentro do alfabeto.
+//  2. NAME FORMAT. The emulator accepts ANY secretId — a dot, a space, a
+//     slash, an uppercase letter, 300 characters, all answered 200. Real GCP
+//     documents "maximum length of 255 characters ... letters, numerals, and
+//     the hyphen (-) and underscore (_)". Defence: validateSecretID runs BEFORE
+//     every call, and the name we build is born inside the alphabet.
 //
-//  3. TAMANHO DO VALOR. O emulador guardou 128 KiB sem reclamar. O GCP real
-//     documenta 64 KiB por versão. Defesa: maxPayloadBytes, checado antes de
-//     sair da máquina.
+//  3. VALUE SIZE. The emulator stored 128 KiB without complaining. Real GCP
+//     documents 64 KiB per version. Defence: maxPayloadBytes, checked before
+//     anything leaves the machine.
 //
-//  4. CHECKSUM. O emulador devolve dataCrc32c = 0 SEMPRE (não calcula) e ignora
-//     o checksum enviado. O GCP real verifica na escrita e SEMPRE devolve o
-//     valor na leitura — gera um se o cliente não mandou. Defesa: enviamos o
-//     CRC (o real valida) e, na leitura, só verificamos quando ele vem
-//     diferente de zero. Ficaria uma assimetria — integridade conferida só em
-//     produção — se não fosse a confirmação do Put, que compara os BYTES lidos
-//     com os gravados e vale nos dois ambientes.
+//  4. CHECKSUM. The emulator returns dataCrc32c = 0 ALWAYS (it does not compute
+//     one) and ignores the checksum sent. Real GCP verifies it on write and
+//     ALWAYS returns the value on read — generating one if the client did not
+//     send it. Defence: we send the CRC (the real one validates it) and, on
+//     read, we only verify when it comes back non-zero. That would leave an
+//     asymmetry — integrity checked only in production — were it not for Put's
+//     confirmation, which compares the BYTES read against the ones written and
+//     holds in both environments.
 //
-//  5. ALIAS "latest". No emulador, `latest` CAI PARA TRÁS: com as versões 3
-//     (desabilitada) e 2 (destruída), ele serve a versão 1, e a mensagem de
-//     ausência é "No enabled versions found". No GCP real `latest` é "an alias
-//     to the most recently CREATED SecretVersion", sem olhar o estado: se ela
-//     estiver desabilitada ou destruída, o acesso falha. Defesa possível apenas
-//     parcial: pelo desenho acima, a versão de maior número deste adaptador
-//     está SEMPRE habilitada (Put destrói as anteriores, Delete leva tudo),
-//     então os dois ambientes coincidem. A divergência aparece se alguém
-//     desabilitar uma versão POR FORA — console, Terraform, resposta a
-//     incidente. Aí, e só aí, o local devolve o valor ANTIGO e a produção
-//     devolve ausência. É o ponto em que a suíte passa aqui e pode falhar lá.
+//  5. THE "latest" ALIAS. In the emulator, `latest` FALLS BACK: with versions 3
+//     (disabled) and 2 (destroyed), it serves version 1, and the absence
+//     message is "No enabled versions found". On real GCP `latest` is "an alias
+//     to the most recently CREATED SecretVersion", regardless of state: if it
+//     is disabled or destroyed, the access fails. Only a partial defence is
+//     possible: by the design above, this adapter's highest-numbered version is
+//     ALWAYS enabled (Put destroys the previous ones, Delete takes everything),
+//     so the two environments coincide. The divergence appears if somebody
+//     disables a version FROM OUTSIDE — the console, Terraform, an incident
+//     response. There, and only there, local returns the OLD value and
+//     production returns absence. It is the point where the suite passes here
+//     and may fail there.
 //
-//  6. PROPAGAÇÃO. O emulador é uma tabela em memória e anuncia "0ms". O GCP
-//     real é eventualmente consistente para tudo que não seja acesso por
-//     número — ver a seção de consistência acima. NENHUM teste local exercita
-//     esse atraso, e é dele que sai a única garantia da porta que não se
-//     sustenta em produção.
+//  6. PROPAGATION. The emulator is an in-memory table and announces "0ms". Real
+//     GCP is eventually consistent for everything that is not access by number
+//     — see the consistency section above. NO local test exercises that delay,
+//     and it is where the port's only guarantee that does not hold in
+//     production comes from.
 //
-//  7. COTAS. O emulador não tem nenhuma. O GCP real publica, entre outras:
-//     AddSecretVersion a 2 qps / 120 qpm POR SEGREDO; Destroy/Disable/Enable a
-//     1 qps / 60 qpm POR VERSÃO; e, por projeto, 90.000 acessos/min mas apenas
-//     600 leituras/min e 600 ESCRITAS/min. Um Put deste adaptador gasta de 3 a
-//     5 dessas operações (create + addVersion + access + list + destroys), o
-//     que coloca o teto prático em torno de 150 gravações por minuto no
-//     projeto inteiro. E a própria suíte de contrato grava a MESMA referência
-//     várias vezes em sequência, o que no GCP real esbarra no limite por
-//     segredo. Defesa: erros de cota viram KindUnavailable (retryável) — mas
-//     nada aqui simula a cota, e nenhum teste local vai encontrá-la.
+//  7. QUOTAS. The emulator has none. Real GCP publishes, among others:
+//     AddSecretVersion at 2 qps / 120 qpm PER SECRET; Destroy/Disable/Enable at
+//     1 qps / 60 qpm PER VERSION; and, per project, 90,000 accesses/min but
+//     only 600 reads/min and 600 WRITES/min. One Put of this adapter spends 3
+//     to 5 of those operations (create + addVersion + access + list +
+//     destroys), which puts the practical ceiling around 150 writes per minute
+//     across the whole project. And the contract suite itself writes the SAME
+//     reference several times in a row, which on real GCP hits the per-secret
+//     limit. Defence: quota errors become KindUnavailable (retryable) — but
+//     nothing here simulates the quota, and no local test will ever meet it.
 //
-//  8. IAM. O emulador não tem controle de acesso NENHUM: qualquer chamador lê
-//     qualquer segredo. Em produção o isolamento por nome é a PRIMEIRA barreira
-//     e a política de IAM da conta de serviço é a segunda — e é a segunda que
-//     nenhum teste local exercita. O que a suíte prova localmente sobre
-//     isolamento (garantia 5) é só a metade que vive no nome.
+//  8. IAM. The emulator has NO access control at all: any caller reads any
+//     secret. In production the isolation by name is the FIRST barrier and the
+//     service account's IAM policy is the second — and it is the second that no
+//     local test exercises. What the suite proves locally about isolation
+//     (guarantee 5) is only the half that lives in the name.
 //
-//  9. REUSO DE NOME APÓS DELETE. No emulador, apagar e recriar com o mesmo
-//     nome funciona no ato. No GCP real DeleteSecret é irreversível e imediato,
-//     mas os METADADOS são eventualmente consistentes: recriar em seguida pode
-//     bater em AlreadyExists ou criar um segredo que ainda não aparece. A suíte
-//     de contrato faz exatamente esse ciclo.
+//  9. NAME REUSE AFTER DELETE. In the emulator, deleting and recreating with
+//     the same name works immediately. On real GCP DeleteSecret is irreversible
+//     and immediate, but the METADATA is eventually consistent: recreating
+//     right after may hit AlreadyExists or create a secret that does not show
+//     up yet. The contract suite does exactly that cycle.
 //
-//  10. DURABILIDADE. O emulador é memória pura: o /data que a imagem declara
-//     fica vazio, não há flag de import/export e um restart apaga TUDO —
-//     verificado. Reiniciar o pod some com toda credencial do ambiente local.
-//     No GCP real o segredo é durável e replicado. Nenhuma defesa é possível
-//     aqui; a consequência está em dop-infra/docs/ambiente-local.md.
+//  10. DURABILITY. The emulator is pure memory: the /data the image declares
+//     stays empty, there is no import/export flag and a restart erases
+//     EVERYTHING — verified. Restarting the pod takes every credential of the
+//     local environment with it. On real GCP the secret is durable and
+//     replicated. No defence is possible here; the consequence is recorded in
+//     dop-infra/docs/ambiente-local.md.
 package secretstore
 
 import (
@@ -193,13 +199,14 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// maxPayloadBytes é o teto documentado do GCP real (64 KiB por versão).
-// Checado AQUI porque o emulador aceita mais — divergência 3.
+// maxPayloadBytes is real GCP's documented ceiling (64 KiB per version).
+// Checked HERE because the emulator accepts more — divergence 3.
 const maxPayloadBytes = 64 * 1024
 
-// defaultPropagation é quanto o Put espera o alias `latest` alcançar a versão
-// recém-gravada. No emulador a primeira tentativa já basta. No GCP real este é
-// o teto da tentativa de honrar a garantia 1 — ver a seção de consistência.
+// defaultPropagation is how long Put waits for the `latest` alias to reach the
+// just-written version. On the emulator the first attempt is enough. On real GCP
+// this is the ceiling of the attempt to honour guarantee 1 — see the consistency
+// section.
 const defaultPropagation = 30 * time.Second
 
 type GCP struct {
@@ -209,36 +216,38 @@ type GCP struct {
 }
 
 type GCPConfig struct {
-	// ProjectID é o projeto que HOSPEDA os segredos. Obrigatório: sem ele os
-	// nomes sairiam como "projects//secrets/..." e a falha apareceria longe da
-	// causa, na primeira credencial gravada.
+	// ProjectID is the project that HOSTS the secrets. Mandatory: without it
+	// the names would come out as "projects//secrets/..." and the failure would
+	// appear far from the cause, on the first credential written.
 	ProjectID string
-	// Endpoint aponta para o EMULADOR ("host:porta"). Vazio = GCP real, com
-	// credencial padrão do ambiente (ADC). Preenchido = sem autenticação e sem
-	// TLS, que é o que o emulador oferece — e é por isso que preenchê-lo em
-	// produção seria mandar segredo em texto claro para um endereço arbitrário.
+	// Endpoint points at the EMULATOR ("host:port"). Empty = real GCP, with the
+	// environment's default credential (ADC). Filled in = no authentication and
+	// no TLS, which is what the emulator offers — and that is why filling it in
+	// in production would be sending a secret in clear text to an arbitrary
+	// address.
 	//
-	// Não existe variável oficial de emulador para o Secret Manager (o Google
-	// tem STORAGE_EMULATOR_HOST, PUBSUB_EMULATOR_HOST e afins, mas nenhuma
-	// aqui — a biblioteca oficial não lê nenhuma). Esta é NOSSA.
+	// There is no official emulator variable for Secret Manager (Google has
+	// STORAGE_EMULATOR_HOST, PUBSUB_EMULATOR_HOST and the like, but none here —
+	// the official library reads none). This one is OURS.
 	Endpoint string
-	// Propagation é o teto da espera de leitura-após-escrita. Zero = padrão.
+	// Propagation is the ceiling of the read-after-write wait. Zero = default.
 	Propagation time.Duration
 }
 
-// NewGCP abre o cliente. Devolve erro porque montar o cliente resolve
-// credencial (ADC) e pode falhar — e falhar no BOOT é melhor que falhar na
-// primeira credencial gravada, com o processo já se dizendo saudável.
+// NewGCP opens the client. It returns an error because building the client
+// resolves the credential (ADC) and may fail — and failing at BOOT is better
+// than failing on the first credential written, with the process already calling
+// itself healthy.
 func NewGCP(ctx context.Context, cfg GCPConfig) (*GCP, error) {
 	if strings.TrimSpace(cfg.ProjectID) == "" {
-		return nil, errs.Invalid("SECRET_PROJECT é obrigatória quando SECRET_BACKEND=gcp")
+		return nil, errs.Invalid("SECRET_PROJECT is mandatory when SECRET_BACKEND=gcp")
 	}
 	var opts []option.ClientOption
 	if cfg.Endpoint != "" {
-		// As três opções andam JUNTAS. Só WithEndpoint faria a biblioteca
-		// continuar procurando ADC e exigindo TLS, e o erro apareceria como
-		// "transport: authentication handshake failed" — que não diz nada
-		// sobre a causa real.
+		// The three options travel TOGETHER. WithEndpoint alone would make the
+		// library keep looking for ADC and demanding TLS, and the error would
+		// show up as "transport: authentication handshake failed" — which says
+		// nothing about the real cause.
 		opts = append(opts,
 			option.WithEndpoint(cfg.Endpoint),
 			option.WithoutAuthentication(),
@@ -247,7 +256,7 @@ func NewGCP(ctx context.Context, cfg GCPConfig) (*GCP, error) {
 	}
 	c, err := secretmanager.NewClient(ctx, opts...)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindUnavailable, err, "falha ao abrir o cliente do Secret Manager")
+		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to open the Secret Manager client")
 	}
 	prop := cfg.Propagation
 	if prop <= 0 {
@@ -256,36 +265,37 @@ func NewGCP(ctx context.Context, cfg GCPConfig) (*GCP, error) {
 	return &GCP{client: c, parent: "projects/" + cfg.ProjectID, propagation: prop}, nil
 }
 
-// Close libera a conexão gRPC. A porta não tem Close (o k8s e o em memória não
-// precisam de um); quem fecha é o composition root, junto do resto.
+// Close releases the gRPC connection. The port has no Close (neither k8s nor
+// the in-memory one needs one); the composition root closes it, along with the
+// rest.
 func (g *GCP) Close() error { return g.client.Close() }
 
-// ───────────────────────── nome e isolamento ─────────────────────────
+// ───────────────────────── name and isolation ─────────────────────────
 
-// gcpSecretID é o alfabeto que o GCP real aceita. O emulador aceita qualquer
-// coisa (divergência 2), então esta expressão é a única coisa entre um nome
-// inválido e uma falha que só apareceria em produção.
+// gcpSecretID is the alphabet real GCP accepts. The emulator accepts anything
+// (divergence 2), so this expression is the only thing between an invalid name
+// and a failure that would only show up in production.
 var gcpSecretID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,255}$`)
 
-// compMax limita cada pedaço legível do nome para o total caber em 255.
+// compMax limits each readable piece of the name so the total fits in 255.
 const compMax = 60
 
-// secretID mapeia a referência lógica para o nome do segredo. O isolamento
-// entre contas está AQUI — referência da conta A jamais resolve segredo da
-// conta B (garantia 5).
+// secretID maps the logical reference to the secret's name. Isolation between
+// accounts lives HERE — account A's reference never resolves account B's secret
+// (guarantee 5).
 //
-// Duas diferenças deliberadas em relação ao irmão k8s:
+// Two deliberate differences from the k8s sibling:
 //
-//   - o separador é "_", que sanitize NUNCA produz. No k8s o separador é "-",
-//     que sanitize produz o tempo todo, e por isso lá os nomes são AMBÍGUOS:
-//     conta "a-b" com tipo "c" e conta "a" com tipo "b-c" geram o MESMO nome.
-//     É um vazamento entre contas latente, relatado à parte;
+//   - the separator is "_", which sanitize NEVER produces. In k8s the separator
+//     is "-", which sanitize produces all the time, and that is why the names
+//     there are AMBIGUOUS: account "a-b" with kind "c" and account "a" with kind
+//     "b-c" generate the SAME name. It is a latent cross-account leak, reported
+//     separately;
 //
-//   - o nome termina com uma impressão digital da tupla CRUA. sanitize é
-//     lossy ("a.b" e "a-b" viram a mesma coisa), então a parte legível sozinha
-//     não basta. A impressão digital é o que torna a garantia 5 uma
-//     propriedade do CÓDIGO, e não do formato que os identificadores por acaso
-//     têm hoje.
+//   - the name ends with a fingerprint of the RAW tuple. sanitize is lossy
+//     ("a.b" and "a-b" become the same thing), so the readable part alone is not
+//     enough. The fingerprint is what makes guarantee 5 a property of the CODE,
+//     and not of the shape the identifiers happen to have today.
 func (g *GCP) secretID(ref ports.SecretRef) string {
 	return fmt.Sprintf("dop_%s_%s_%s_%s",
 		clamp(sanitize(ref.AccountID)),
@@ -301,8 +311,8 @@ func clamp(s string) string {
 	return s
 }
 
-// fingerprint distingue tuplas que sanitize confundiria. O COMPRIMENTO de cada
-// campo entra no hash: sem ele, {"ab",""} e {"a","b"} teriam a mesma digestão.
+// fingerprint tells apart tuples sanitize would confuse. Each field's LENGTH
+// goes into the hash: without it, {"ab",""} and {"a","b"} would digest the same.
 func fingerprint(r ports.SecretRef) string {
 	h := sha256.New()
 	for _, s := range []string{r.AccountID, r.Kind, r.OwnerID} {
@@ -312,24 +322,24 @@ func fingerprint(r ports.SecretRef) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// validateSecretID nunca cita o valor do segredo, só a forma do nome.
+// validateSecretID never quotes the secret's value, only the name's shape.
 func validateSecretID(id string) error {
 	if !gcpSecretID.MatchString(id) {
 		return errs.Invalid(
-			"nome de segredo fora do formato aceito pelo Secret Manager (%d caracteres)", len(id))
+			"secret name outside the format Secret Manager accepts (%d characters)", len(id))
 	}
 	return nil
 }
 
 func (g *GCP) secretName(id string) string { return g.parent + "/secrets/" + id }
 
-// ───────────────────────── operações da porta ─────────────────────────
+// ───────────────────────── the port's operations ─────────────────────────
 
 var crcTable = crc32.MakeTable(crc32.Castagnoli)
 
 func (g *GCP) Put(ctx context.Context, ref ports.SecretRef, v ports.SecretValue) error {
 	if len(v) > maxPayloadBytes {
-		return errs.Invalid("segredo maior que o limite do Secret Manager (%d bytes; máximo %d)",
+		return errs.Invalid("secret larger than Secret Manager's limit (%d bytes; maximum %d)",
 			len(v), maxPayloadBytes)
 	}
 	id := g.secretID(ref)
@@ -337,8 +347,9 @@ func (g *GCP) Put(ctx context.Context, ref ports.SecretRef, v ports.SecretValue)
 		return err
 	}
 
-	// 1. o contêiner. AlreadyExists é o caminho NORMAL do segundo Put — não é
-	//    erro, é o segredo já existir. Replication vai explícito (divergência 1).
+	// 1. the container. AlreadyExists is the NORMAL path of the second Put — it
+	//    is not an error, it is the secret already existing. Replication goes
+	//    explicitly (divergence 1).
 	_, err := g.client.CreateSecret(ctx, &secretmanagerpb.CreateSecretRequest{
 		Parent:   g.parent,
 		SecretId: id,
@@ -352,62 +363,63 @@ func (g *GCP) Put(ctx context.Context, ref ports.SecretRef, v ports.SecretValue)
 		},
 	})
 	if err != nil && status.Code(err) != codes.AlreadyExists {
-		return wrapGCP(err, "falha ao criar o segredo no Secret Manager")
+		return wrapGCP(err, "failed to create the secret in Secret Manager")
 	}
 
-	// 2. o material. O CRC é conferido pelo GCP real na escrita; o emulador o
-	//    ignora (divergência 4).
+	// 2. the material. The CRC is checked by real GCP on write; the emulator
+	//    ignores it (divergence 4).
 	crc := int64(crc32.Checksum(v, crcTable))
 	ver, err := g.client.AddSecretVersion(ctx, &secretmanagerpb.AddSecretVersionRequest{
 		Parent:  g.secretName(id),
 		Payload: &secretmanagerpb.SecretPayload{Data: v, DataCrc32C: &crc},
 	})
 	if err != nil {
-		return wrapGCP(err, "falha ao gravar a versão do segredo")
+		return wrapGCP(err, "failed to write the secret version")
 	}
 	n, err := versionNumber(ver.GetName())
 	if err != nil {
 		return err
 	}
 
-	// 3. confirmação FORTE, por número: é o único acesso que o Google promete
-	//    ser imediato. Prova que o material foi aceito e volta idêntico.
+	// 3. STRONG confirmation, by number: it is the only access Google promises
+	//    to be immediate. It proves the material was accepted and comes back
+	//    identical.
 	if err := g.confirmByNumber(ctx, ver.GetName(), v); err != nil {
 		return err
 	}
 
-	// 4. confirmação EVENTUAL, pelo caminho que o Get usa. Ver a seção de
-	//    consistência: é aqui que a garantia 1 é honrada — ou falha alto.
+	// 4. EVENTUAL confirmation, through the path Get uses. See the consistency
+	//    section: this is where guarantee 1 is honoured — or fails loudly.
 	if err := g.awaitLatest(ctx, id, n); err != nil {
 		return err
 	}
 
-	// 5. "Put SUBSTITUI" (garantia 4): o valor anterior deixa de ser legível.
+	// 5. "Put REPLACES" (guarantee 4): the previous value stops being readable.
 	return g.destroyOlder(ctx, id, n)
 }
 
-// confirmByNumber lê a versão recém-criada pelo nome COMPLETO e compara os
-// bytes. É a integridade ponta a ponta que não depende do checksum — que o
-// emulador não calcula (divergência 4).
+// confirmByNumber reads the just-created version by its FULL name and compares
+// the bytes. It is the end-to-end integrity that does not depend on the checksum
+// — which the emulator does not compute (divergence 4).
 func (g *GCP) confirmByNumber(ctx context.Context, name string, v ports.SecretValue) error {
 	resp, err := g.client.AccessSecretVersion(ctx,
 		&secretmanagerpb.AccessSecretVersionRequest{Name: name})
 	if err != nil {
-		return wrapGCP(err, "falha ao confirmar a versão recém-gravada do segredo")
+		return wrapGCP(err, "failed to confirm the just-written secret version")
 	}
 	if !bytes.Equal(resp.GetPayload().GetData(), v) {
-		// Sem citar nenhum dos dois valores (garantia 6).
-		return errs.Internal("o Secret Manager devolveu conteúdo diferente do que foi gravado")
+		// Without quoting either value (guarantee 6).
+		return errs.Internal("Secret Manager returned content different from what was written")
 	}
 	return nil
 }
 
-// awaitLatest espera o alias `latest` alcançar a versão gravada.
+// awaitLatest waits for the `latest` alias to reach the written version.
 //
-// Sem isto, "grava e volta" seria leitura-após-escrita apenas no emulador: no
-// GCP real o alias é eventualmente consistente, e um Get logo depois do Put
-// devolveria (nil, nil) — que pela porta significa "não existe". Uma
-// credencial recém-gravada apareceria como ausente, em silêncio.
+// Without this, "write and return" would be read-after-write only on the
+// emulator: on real GCP the alias is eventually consistent, and a Get right
+// after the Put would return (nil, nil) — which through the port means "it does
+// not exist". A just-written credential would show up as absent, in silence.
 func (g *GCP) awaitLatest(ctx context.Context, id string, want int64) error {
 	deadline := time.Now().Add(g.propagation)
 	wait := 25 * time.Millisecond
@@ -421,27 +433,27 @@ func (g *GCP) awaitLatest(ctx context.Context, id string, want int64) error {
 			if verr != nil {
 				return verr
 			}
-			// >= e não ==: outro Put concorrente pode já ter passado na
-			// frente, e nesse caso a propagação alcançou de sobra.
+			// >= and not ==: another concurrent Put may already have gone
+			// ahead, and in that case propagation has more than caught up.
 			if got >= want {
 				return nil
 			}
 		case status.Code(err) == codes.NotFound, status.Code(err) == codes.FailedPrecondition:
-			// ainda não propagou — é exatamente o caso que esta espera cobre
+			// not propagated yet — exactly the case this wait covers
 		default:
-			return wrapGCP(err, "falha ao confirmar a visibilidade do segredo")
+			return wrapGCP(err, "failed to confirm the secret's visibility")
 		}
 
 		if !time.Now().Before(deadline) {
 			return errs.New(errs.KindUnavailable,
-				"o Secret Manager não tornou a versão %d visível por `latest` em %s: "+
-					"a gravação foi aceita, mas a leitura-após-escrita não se confirmou",
+				"Secret Manager did not make version %d visible through `latest` within %s: "+
+					"the write was accepted, but read-after-write was not confirmed",
 				want, g.propagation)
 		}
 		select {
 		case <-ctx.Done():
 			return errs.Wrap(errs.KindUnavailable, ctx.Err(),
-				"contexto encerrado antes de confirmar a visibilidade do segredo")
+				"context ended before confirming the secret's visibility")
 		case <-time.After(wait):
 		}
 		if wait < time.Second {
@@ -450,14 +462,14 @@ func (g *GCP) awaitLatest(ctx context.Context, id string, want int64) error {
 	}
 }
 
-// destroyOlder apaga o material das versões anteriores. Roda DEPOIS das
-// confirmações: primeiro o valor novo está de pé, só então o antigo cai.
+// destroyOlder erases the previous versions' material. It runs AFTER the
+// confirmations: the new value stands first, only then the old one falls.
 //
-// O erro SOBE em vez de ser engolido. Se a destruição falhar, o valor antigo
-// continua legível por número de versão e a garantia 4 não foi cumprida por
-// inteiro — silenciar isso seria a plataforma achar que rotacionou uma
-// credencial que continua valendo. A mensagem diz que o valor novo já está
-// ativo, para o operador saber que repetir o Put é seguro.
+// The error GOES UP instead of being swallowed. If the destruction fails, the
+// old value stays readable by version number and guarantee 4 was not delivered
+// in full — silencing that would be the platform believing it rotated a
+// credential that still works. The message says the new value is already active,
+// so the operator knows repeating the Put is safe.
 func (g *GCP) destroyOlder(ctx context.Context, id string, keep int64) error {
 	it := g.client.ListSecretVersions(ctx, &secretmanagerpb.ListSecretVersionsRequest{
 		Parent: g.secretName(id),
@@ -469,8 +481,8 @@ func (g *GCP) destroyOlder(ctx context.Context, id string, keep int64) error {
 			break
 		}
 		if err != nil {
-			return wrapGCP(err, "o valor novo do segredo já está ativo, mas não foi "+
-				"possível listar as versões anteriores para destruí-las")
+			return wrapGCP(err, "the secret's new value is already active, but the "+
+				"previous versions could not be listed to be destroyed")
 		}
 		if v.GetState() == secretmanagerpb.SecretVersion_DESTROYED {
 			continue
@@ -486,12 +498,12 @@ func (g *GCP) destroyOlder(ctx context.Context, id string, keep int64) error {
 	for _, name := range stale {
 		_, err := g.client.DestroySecretVersion(ctx,
 			&secretmanagerpb.DestroySecretVersionRequest{Name: name})
-		// FailedPrecondition/NotFound = já destruída, provavelmente por uma
-		// corrida com outro Put. O estado desejado é esse mesmo.
+		// FailedPrecondition/NotFound = already destroyed, probably through a
+		// race with another Put. That is the desired state anyway.
 		if err != nil && status.Code(err) != codes.FailedPrecondition &&
 			status.Code(err) != codes.NotFound {
-			return wrapGCP(err, "o valor novo do segredo já está ativo, mas o valor "+
-				"anterior NÃO foi destruído e continua legível")
+			return wrapGCP(err, "the secret's new value is already active, but the "+
+				"previous value was NOT destroyed and stays readable")
 		}
 	}
 	return nil
@@ -508,31 +520,32 @@ func (g *GCP) Get(ctx context.Context, ref ports.SecretRef) (ports.SecretValue, 
 	switch {
 	case err == nil:
 	case status.Code(err) == codes.NotFound:
-		// garantia 2: ausente devolve nil, não erro. Cobre tanto "o segredo não
-		// existe" quanto "o segredo existe e não tem versão utilizável".
+		// guarantee 2: absent returns nil, not an error. It covers both "the
+		// secret does not exist" and "the secret exists and has no usable
+		// version".
 		return nil, nil
 	case status.Code(err) == codes.FailedPrecondition:
-		// `latest` existe mas está desabilitada ou destruída (divergência 5).
-		// Pela porta não há valor, e isso é o mesmo que ausência: traduzir para
-		// erro faria o chamador tratar "credencial ainda não configurada" como
-		// falha do sistema.
+		// `latest` exists but is disabled or destroyed (divergence 5). Through
+		// the port there is no value, and that is the same as absence:
+		// translating it into an error would make the caller treat "credential
+		// not configured yet" as a system failure.
 		return nil, nil
 	default:
-		return nil, wrapGCP(err, "falha ao ler o segredo no Secret Manager")
+		return nil, wrapGCP(err, "failed to read the secret in Secret Manager")
 	}
 
 	data := resp.GetPayload().GetData()
-	// Só verifica quando o servidor informa o checksum: o emulador devolve
-	// sempre zero (divergência 4), e exigi-lo quebraria o ambiente local por um
-	// defeito que não é do adaptador.
+	// It only verifies when the server reports the checksum: the emulator always
+	// returns zero (divergence 4), and demanding it would break the local
+	// environment over a defect that is not the adapter's.
 	if c := resp.GetPayload().DataCrc32C; c != nil && *c != 0 {
 		if uint32(*c) != crc32.Checksum(data, crcTable) {
-			return nil, errs.Internal("segredo corrompido em trânsito: checksum divergente")
+			return nil, errs.Internal("secret corrupted in transit: checksum mismatch")
 		}
 	}
 	if data == nil {
-		// Valor vazio é VALOR, não ausência: devolvemos fatia não-nula para que
-		// Exists concorde com o k8s e com o adaptador em memória.
+		// An empty value is a VALUE, not an absence: we return a non-nil slice
+		// so Exists agrees with k8s and with the in-memory adapter.
 		return ports.SecretValue{}, nil
 	}
 	return ports.SecretValue(data), nil
@@ -544,8 +557,8 @@ func (g *GCP) Delete(ctx context.Context, ref ports.SecretRef) error {
 		return err
 	}
 	err := g.client.DeleteSecret(ctx, &secretmanagerpb.DeleteSecretRequest{Name: g.secretName(id)})
-	if err != nil && status.Code(err) != codes.NotFound { // garantia 3: idempotente
-		return wrapGCP(err, "falha ao remover o segredo no Secret Manager")
+	if err != nil && status.Code(err) != codes.NotFound { // guarantee 3: idempotent
+		return wrapGCP(err, "failed to delete the secret in Secret Manager")
 	}
 	return nil
 }
@@ -555,38 +568,41 @@ func (g *GCP) Exists(ctx context.Context, ref ports.SecretRef) (bool, error) {
 	return v != nil, err
 }
 
-// ───────────────────────── tradução de erro ─────────────────────────
+// ───────────────────────── error translation ─────────────────────────
 
-// versionNumber extrai o N de ".../versions/N". O nome vem do servidor; se ele
-// não tiver essa forma, alguma premissa deste adaptador deixou de valer — e é
-// melhor dizer isso do que seguir com um número inventado.
+// versionNumber extracts the N from ".../versions/N". The name comes from the
+// server; if it does not have that shape, some premise of this adapter stopped
+// holding — and it is better to say so than to carry on with an invented
+// number.
 func versionNumber(name string) (int64, error) {
 	i := strings.LastIndex(name, "/versions/")
 	if i < 0 {
-		return 0, errs.Internal("nome de versão inesperado vindo do Secret Manager")
+		return 0, errs.Internal("unexpected version name coming from Secret Manager")
 	}
 	n, err := strconv.ParseInt(name[i+len("/versions/"):], 10, 64)
 	if err != nil {
-		return 0, errs.Internal("número de versão inesperado vindo do Secret Manager")
+		return 0, errs.Internal("unexpected version number coming from Secret Manager")
 	}
 	return n, nil
 }
 
-// wrapGCP traduz o código gRPC para o Kind do domínio.
+// wrapGCP translates the gRPC code into the domain's Kind.
 //
-// A mensagem original do servidor NÃO entra: ela carrega o nome completo do
-// segredo, que revela conta e proprietário. Erro sobe para log (garantia 6).
+// The server's original message does NOT come along: it carries the secret's
+// full name, which reveals the account and the owner. The error goes up to the
+// log (guarantee 6).
 func wrapGCP(err error, msg string) error {
-	// O prazo estourado com a conexão caída NÃO chega como status do servidor:
-	// a biblioteca devolve o erro do CONTEXTO, e status.Code() sobre ele
-	// responde Unknown — que cairia no default e viraria KindInternal. Ou seja:
-	// "Secret Manager fora do ar" seria reportado como defeito nosso, mandando
-	// quem investiga procurar no lugar errado. É o mesmo engano que a porta
-	// IdentityProvider proíbe por escrito na garantia 7.
+	// A blown deadline with the connection down does NOT arrive as a server
+	// status: the library returns the CONTEXT's error, and status.Code() over it
+	// answers Unknown — which would fall into the default and become
+	// KindInternal. That is: "Secret Manager is down" would be reported as a
+	// defect of ours, sending whoever investigates to look in the wrong place.
+	// It is the same mistake the IdentityProvider port forbids in writing in its
+	// guarantee 7.
 	//
-	// Encontrado rodando a suíte com o emulador INALCANÇÁVEL — o caminho que
-	// deveria PULAR o teste, e que só é exercitado quando alguém o exercita de
-	// propósito.
+	// Found running the suite with the emulator UNREACHABLE — the path that
+	// should SKIP the test, and which is only exercised when somebody exercises
+	// it on purpose.
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return errs.Wrap(errs.KindUnavailable, err, "%s", msg)
 	}
@@ -605,13 +621,13 @@ func wrapGCP(err error, msg string) error {
 	case codes.FailedPrecondition:
 		kind = errs.KindPrecondition
 	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.ResourceExhausted:
-		// ResourceExhausted é COTA (divergência 7): temporário e retryável, não
-		// defeito do chamador.
+		// ResourceExhausted is QUOTA (divergence 7): temporary and retryable,
+		// not the caller's defect.
 		kind = errs.KindUnavailable
 	default:
 		kind = errs.KindInternal
 	}
-	return errs.New(kind, "%s (código %s)", msg, status.Code(err))
+	return errs.New(kind, "%s (code %s)", msg, status.Code(err))
 }
 
 var _ ports.SecretStore = (*GCP)(nil)

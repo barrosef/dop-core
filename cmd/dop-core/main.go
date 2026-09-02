@@ -1,11 +1,11 @@
-// dop-core — núcleo da plataforma: domínio, estado, transações e eventos.
+// dop-core — the platform's core: domain, state, transactions and events.
 //
-// UMA imagem, QUATRO modos (ADR-0016). Um artefato, um pipeline:
+// ONE image, FOUR modes (ADR-0016). One artifact, one pipeline:
 //
-//	serve     servidor gRPC — a superfície do domínio
-//	worker    consome eventos do NATS e constrói projeções
-//	sched     tarefas periódicas: polling de PRs, suspensão de sandbox, partições
-//	launcher  daemon por cluster de execução: provisiona sandboxes
+//	serve     gRPC server — the domain's surface
+//	worker    consumes NATS events and builds projections
+//	sched     periodic tasks: PR polling, sandbox suspension, partitions
+//	launcher  a daemon per execution cluster: provisions sandboxes
 package main
 
 import (
@@ -31,17 +31,17 @@ func main() {
 	log := logging.New(mode)
 	cfg, err := config.Load(mode)
 	if err != nil {
-		log.Error("configuração inválida", "error", err)
+		log.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// Encerramento gracioso: SIGTERM inicia o desligamento; o Kubernetes dá o
-	// grace period para as conexões drenarem.
+	// Graceful shutdown: SIGTERM starts the wind-down; Kubernetes gives the
+	// grace period for the connections to drain.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	ctx = logging.Into(ctx, log)
 
-	log.Info("iniciando", "grpc_port", cfg.GRPCPort, "secret_backend", cfg.SecretBackend)
+	log.Info("starting", "grpc_port", cfg.GRPCPort, "secret_backend", cfg.SecretBackend)
 
 	var runErr error
 	switch mode {
@@ -62,22 +62,22 @@ func main() {
 	}
 
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
-		log.Error("encerrado com erro", "error", runErr)
+		log.Error("shut down with an error", "error", runErr)
 		os.Exit(1)
 	}
-	log.Info("encerrado")
+	log.Info("shut down")
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `dop-core — núcleo da plataforma
+	fmt.Fprintf(os.Stderr, `dop-core — the platform's core
 
-uso: dop-core <modo>
+usage: dop-core <mode>
 
-modos:
-  serve      servidor gRPC do domínio
-  worker     consumidores de evento e projeções
-  sched      tarefas periódicas
-  launcher   provisionamento de sandboxes no cluster de execução
-  version    versão
+modes:
+  serve      the domain's gRPC server
+  worker     event consumers and projections
+  sched      periodic tasks
+  launcher   sandbox provisioning on the execution cluster
+  version    version
 `)
 }

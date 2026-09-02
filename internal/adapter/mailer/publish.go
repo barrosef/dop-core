@@ -1,15 +1,15 @@
-// Publicação dos templates versionados no SendGrid.
+// Publishing the versioned templates to SendGrid.
 //
-// Os arquivos são do REPOSITÓRIO (templates/sendgrid/), e é um script
-// idempotente que os leva ao fornecedor — o mesmo desenho do projeto irmão, e
-// pelo mesmo motivo: template que só existe dentro do editor do fornecedor não
-// tem histórico, não passa por revisão, não volta atrás e não sobrevive à troca
-// de conta.
+// The files come from the REPOSITORY (templates/sendgrid/), and an idempotent
+// script takes them to the provider — the same design as the sibling project,
+// and for the same reason: a template that only exists inside the provider's
+// editor has no history, goes through no review, does not roll back and does not
+// survive an account change.
 //
-// A lista do que publicar é DERIVADA do índice do adaptador (`sendgridIndex`).
-// Uma segunda lista aqui seria mais um lugar para esquecer de atualizar — e o
-// esquecimento seria silencioso, que é exatamente o que a ADR-0025 manda
-// impedir.
+// The list of what to publish is DERIVED from the adapter's index
+// (`sendgridIndex`). A second list here would be one more place to forget to
+// update — and the oversight would be silent, which is exactly what ADR-0025
+// requires preventing.
 package mailer
 
 import (
@@ -30,7 +30,7 @@ import (
 //go:embed templates/sendgrid/*.html
 var sendgridFiles embed.FS
 
-// TemplateSpec é um template a publicar, já com o HTML carregado.
+// TemplateSpec is a template to publish, with its HTML already loaded.
 type TemplateSpec struct {
 	Kind    string
 	Name    string
@@ -39,21 +39,22 @@ type TemplateSpec struct {
 	HTML    []byte
 }
 
-// SendGridCatalog devolve o que este adaptador precisa que exista no
-// fornecedor, derivado do índice. Exportada porque quem publica é um script,
-// que roda fora do processo — ver publish_templates.go.
+// SendGridCatalog returns what this adapter needs to exist at the provider,
+// derived from the index. Exported because the publisher is a script, which runs
+// outside the process — see publish_templates.go.
 func SendGridCatalog() ([]TemplateSpec, error) {
-	kinds := chaves(sendgridIndex)
+	kinds := sortedKeys(sendgridIndex)
 	out := make([]TemplateSpec, 0, len(kinds))
 	for _, kind := range kinds {
 		spec := sendgridIndex[kind]
 		html, err := sendgridFiles.ReadFile("templates/sendgrid/" + spec.File)
 		if err != nil {
-			// Índice apontando para arquivo que não existe é o mesmo silêncio
-			// da garantia 1, um passo antes: o template nunca seria publicado, e
-			// o envio falharia meses depois com "template not found".
+			// An index pointing at a file that does not exist is guarantee 1's
+			// same silence, one step earlier: the template would never be
+			// published, and the send would fail months later with "template
+			// not found".
 			return nil, errs.Precondition(
-				"o índice do SendGrid cita %q para o aviso %q, e o arquivo não foi embutido",
+				"SendGrid's index cites %q for the %q notice, and the file was not embedded",
 				spec.File, kind)
 		}
 		out = append(out, TemplateSpec{
@@ -64,7 +65,7 @@ func SendGridCatalog() ([]TemplateSpec, error) {
 	return out, nil
 }
 
-// PublishResult é o que o script imprime: o id a configurar.
+// PublishResult is what the script prints: the id to configure.
 type PublishResult struct {
 	Kind       string
 	Name       string
@@ -72,10 +73,10 @@ type PublishResult struct {
 	Created    bool
 }
 
-// PublishConfig é o mínimo para publicar. A chave usada aqui NÃO é a de envio:
-// publicar exige escopo de administração de templates, e dar esse escopo ao
-// processo que manda e-mail seria dar ao worker o poder de reescrever o que
-// todo mundo recebe.
+// PublishConfig is the minimum to publish. The key used here is NOT the sending
+// one: publishing requires template administration scope, and giving that scope
+// to the process that sends email would give the worker the power to rewrite
+// what everybody receives.
 type PublishConfig struct {
 	APIKey  string
 	BaseURL string
@@ -83,24 +84,25 @@ type PublishConfig struct {
 	Timeout time.Duration
 }
 
-// PublishSendGridTemplates cria o que falta e versiona o que já existe.
+// PublishSendGridTemplates creates what is missing and versions what already
+// exists.
 //
-// IDEMPOTENTE por NOME: rodar duas vezes não cria dois templates. O SendGrid não
-// tem "upsert", então a idempotência é nossa — listar, casar por nome, criar só
-// o que faltou. A VERSÃO, essa é sempre nova: é assim que o fornecedor guarda
-// histórico, e é o que permite voltar atrás pelo editor dele quando alguém
-// publicar um HTML quebrado.
+// IDEMPOTENT by NAME: running it twice does not create two templates. SendGrid
+// has no "upsert", so the idempotency is ours — list, match by name, create only
+// what was missing. The VERSION, that one is always new: it is how the provider
+// keeps history, and it is what allows rolling back through its editor when
+// somebody publishes broken HTML.
 func PublishSendGridTemplates(ctx context.Context, cfg PublishConfig) ([]PublishResult, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, errs.Invalid("publicação de template exige chave de administração do SendGrid")
+		return nil, errs.Invalid("publishing a template requires SendGrid's administration key")
 	}
-	catalogo, err := SendGridCatalog()
+	catalog, err := SendGridCatalog()
 	if err != nil {
 		return nil, err
 	}
-	c := &publicador{
-		base:    strings.TrimRight(naoVazio(cfg.BaseURL, "https://api.sendgrid.com"), "/"),
-		redigir: redactor(cfg.APIKey),
+	c := &publisher{
+		base:   strings.TrimRight(orDefault(cfg.BaseURL, "https://api.sendgrid.com"), "/"),
+		redact: redactor(cfg.APIKey),
 	}
 	c.http = cfg.Client
 	if c.http == nil {
@@ -110,42 +112,42 @@ func PublishSendGridTemplates(ctx context.Context, cfg PublishConfig) ([]Publish
 		}
 		c.http = &http.Client{Timeout: t}
 	}
-	chave := cfg.APIKey
-	c.autorizar = func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+chave) }
+	key := cfg.APIKey
+	c.authorize = func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+key) }
 
-	existentes, err := c.listar(ctx)
+	existing, err := c.list(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]PublishResult, 0, len(catalogo))
-	for _, spec := range catalogo {
-		id, criado := existentes[spec.Name], false
+	out := make([]PublishResult, 0, len(catalog))
+	for _, spec := range catalog {
+		id, created := existing[spec.Name], false
 		if id == "" {
-			id, err = c.criar(ctx, spec.Name)
+			id, err = c.create(ctx, spec.Name)
 			if err != nil {
 				return out, err
 			}
-			criado = true
+			created = true
 		}
-		if err := c.versionar(ctx, id, spec); err != nil {
+		if err := c.addVersion(ctx, id, spec); err != nil {
 			return out, err
 		}
 		out = append(out, PublishResult{
-			Kind: spec.Kind, Name: spec.Name, TemplateID: id, Created: criado,
+			Kind: spec.Kind, Name: spec.Name, TemplateID: id, Created: created,
 		})
 	}
 	return out, nil
 }
 
-type publicador struct {
+type publisher struct {
 	base      string
 	http      httpDoer
-	autorizar func(*http.Request)
-	redigir   func(string) string
+	authorize func(*http.Request)
+	redact    func(string) string
 }
 
-func (c *publicador) listar(ctx context.Context) (map[string]string, error) {
+func (c *publisher) list(ctx context.Context) (map[string]string, error) {
 	var resp struct {
 		Result []struct {
 			ID   string `json:"id"`
@@ -164,34 +166,34 @@ func (c *publicador) listar(ctx context.Context) (map[string]string, error) {
 	for _, t := range resp.Result {
 		out[t.Name] = t.ID
 	}
-	// O SendGrid já respondeu nas duas formas conforme a versão da API; aceitar
-	// as duas é mais barato do que descobrir a diferença em produção.
+	// SendGrid has answered in both shapes depending on the API version;
+	// accepting both is cheaper than discovering the difference in production.
 	for _, t := range resp.Templates {
 		out[t.Name] = t.ID
 	}
 	return out, nil
 }
 
-func (c *publicador) criar(ctx context.Context, nome string) (string, error) {
+func (c *publisher) create(ctx context.Context, name string) (string, error) {
 	var resp struct {
 		ID string `json:"id"`
 	}
 	err := c.call(ctx, http.MethodPost, "/v3/templates",
-		map[string]any{"name": nome, "generation": "dynamic"}, &resp)
+		map[string]any{"name": name, "generation": "dynamic"}, &resp)
 	if err != nil {
 		return "", err
 	}
 	if resp.ID == "" {
 		return "", errs.New(errs.KindUnavailable,
-			"o SendGrid criou o template %q sem devolver id", nome)
+			"SendGrid created template %q without returning an id", name)
 	}
 	return resp.ID, nil
 }
 
-func (c *publicador) versionar(ctx context.Context, id string, spec TemplateSpec) error {
-	// O nome da versão carrega o INSTANTE, e não um contador: contador exigiria
-	// ler o estado remoto para saber em quanto está, e duas publicações
-	// simultâneas produziriam duas "v3".
+func (c *publisher) addVersion(ctx context.Context, id string, spec TemplateSpec) error {
+	// The version's name carries the INSTANT, and not a counter: a counter would
+	// require reading the remote state to know where it is, and two simultaneous
+	// publications would produce two "v3".
 	return c.call(ctx, http.MethodPost, "/v3/templates/"+id+"/versions", map[string]any{
 		"name":         "dop-" + time.Now().UTC().Format("20060102-150405"),
 		"subject":      spec.Subject,
@@ -201,62 +203,62 @@ func (c *publicador) versionar(ctx context.Context, id string, spec TemplateSpec
 	}, nil)
 }
 
-func (c *publicador) call(ctx context.Context, method, path string, body, out any) error {
+func (c *publisher) call(ctx context.Context, method, path string, body, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return errs.Wrap(errs.KindInternal, err, "pedido ilegível para o SendGrid")
+			return errs.Wrap(errs.KindInternal, err, "request unreadable for SendGrid")
 		}
 		rdr = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rdr)
 	if err != nil {
-		return errs.Wrap(errs.KindInternal, err, "requisição inválida para o SendGrid")
+		return errs.Wrap(errs.KindInternal, err, "invalid request for SendGrid")
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	c.autorizar(req)
+	c.authorize(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return errs.New(errs.KindUnavailable, "falha ao falar com o SendGrid: %s",
-			c.redigir(err.Error()))
+		return errs.New(errs.KindUnavailable, "failed to talk to SendGrid: %s",
+			c.redact(err.Error()))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return errs.New(errs.KindUnauthorized,
-				"o SendGrid recusou a chave de administração de templates (HTTP %d)", resp.StatusCode)
+				"SendGrid refused the template administration key (HTTP %d)", resp.StatusCode)
 		}
-		return errs.New(errs.KindUnavailable, "o SendGrid recusou %s %s (HTTP %d): %s",
-			method, path, resp.StatusCode, c.redigir(explicarSG(raw)))
+		return errs.New(errs.KindUnavailable, "SendGrid refused %s %s (HTTP %d): %s",
+			method, path, resp.StatusCode, c.redact(explainSG(raw)))
 	}
 	if out == nil || len(raw) == 0 {
 		return nil
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return errs.New(errs.KindUnavailable, "resposta ilegível do SendGrid em %s: %s",
-			path, c.redigir(err.Error()))
+		return errs.New(errs.KindUnavailable, "unreadable response from SendGrid at %s: %s",
+			path, c.redact(err.Error()))
 	}
 	return nil
 }
 
-// FormatPublishResults é o que o script imprime — as linhas de configuração
-// prontas para copiar. Sai daqui, e não do script, para poder ser testado.
+// FormatPublishResults is what the script prints — the configuration lines
+// ready to copy. It lives here, and not in the script, so it can be tested.
 func FormatPublishResults(rs []PublishResult) string {
-	linhas := make([]string, 0, len(rs))
+	lines := make([]string, 0, len(rs))
 	for _, r := range rs {
-		acao := "atualizado"
+		action := "updated"
 		if r.Created {
-			acao = "criado"
+			action = "created"
 		}
-		linhas = append(linhas, fmt.Sprintf("SENDGRID_TEMPLATE_%s=%s  # %s (%s)",
-			strings.ToUpper(r.Kind), r.TemplateID, r.Name, acao))
+		lines = append(lines, fmt.Sprintf("SENDGRID_TEMPLATE_%s=%s  # %s (%s)",
+			strings.ToUpper(r.Kind), r.TemplateID, r.Name, action))
 	}
-	sort.Strings(linhas)
-	return strings.Join(linhas, "\n")
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
 }

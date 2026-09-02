@@ -1,12 +1,12 @@
-// Adaptador de SecretStore sobre Secrets do Kubernetes.
+// A SecretStore adapter over Kubernetes Secrets.
 //
-// Usado no ambiente local (k3d) e em clusters self-hosted. Não existe emulador
-// oficial do GCP Secret Manager, então este adaptador é exercitado TODO DIA —
-// o que é exatamente a disciplina de dois adaptadores da ADR-0001.
+// Used in the local environment (k3d) and in self-hosted clusters. There is no
+// official GCP Secret Manager emulator, so this adapter is exercised EVERY DAY —
+// which is exactly ADR-0001's two-adapter discipline.
 //
-// Detalhe que evita um bug silencioso: lê pela API do Kubernetes, NUNCA por
-// volume montado. Volume é eventualmente consistente (o kubelet sincroniza em
-// torno de um minuto) e violaria a garantia de leitura-após-escrita.
+// A detail that avoids a silent bug: it reads through the Kubernetes API, NEVER
+// through a mounted volume. A volume is eventually consistent (the kubelet syncs
+// on the order of a minute) and would violate the read-after-write guarantee.
 package secretstore
 
 import (
@@ -40,7 +40,7 @@ type K8sConfig struct {
 	Client    *http.Client
 }
 
-// serviceAccountCA é onde o kubelet monta a CA do cluster em todo pod.
+// serviceAccountCA is where the kubelet mounts the cluster's CA in every pod.
 const serviceAccountCA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
 func NewK8s(cfg K8sConfig) *K8s {
@@ -51,16 +51,17 @@ func NewK8s(cfg K8sConfig) *K8s {
 	return &K8s{client: c, apiServer: strings.TrimRight(cfg.APIServer, "/"), token: cfg.Token, namespace: cfg.Namespace}
 }
 
-// defaultClient confia na CA do cluster ALÉM das públicas.
+// defaultClient trusts the cluster's CA BESIDES the public ones.
 //
-// O certificado do apiserver é assinado pela CA do próprio cluster, que não
-// está em bundle nenhum: com o pool padrão toda chamada morre em
-// "x509: certificate signed by unknown authority". A falha é traiçoeira
-// porque nada no boot toca a API — o pod sobe verde e só quebra na PRIMEIRA
-// credencial gravada, longe da causa.
+// The apiserver's certificate is signed by the cluster's own CA, which is in no
+// bundle: with the default pool every call dies in "x509: certificate signed by
+// unknown authority". The failure is treacherous because nothing at boot touches
+// the API — the pod comes up green and only breaks on the FIRST credential
+// written, far from the cause.
 //
-// Fora do cluster o arquivo não existe e caímos no pool do sistema, que é o
-// certo para apiserver com certificado público e para o adaptador do GCP.
+// Outside the cluster the file does not exist and we fall back to the system
+// pool, which is the right thing for an apiserver with a public certificate and
+// for the GCP adapter.
 func defaultClient() *http.Client {
 	c := &http.Client{Timeout: 10 * time.Second}
 	pem, err := os.ReadFile(serviceAccountCA)
@@ -78,32 +79,30 @@ func defaultClient() *http.Client {
 	return c
 }
 
-// secretName mapeia a referência lógica para um nome de Secret válido.
-// O isolamento entre contas está no nome — referência da conta A jamais
-// resolve segredo da conta B (garantia 5 do contrato).
-// secretName mapeia a referência lógica para um nome de Secret válido.
+// secretName maps the logical reference to a valid Secret name.
 //
-// O isolamento entre contas está no NOME (garantia 5 da porta), e por isso ele
-// termina numa impressão digital da tupla CRUA.
+// Isolation between accounts lives in the NAME (the port's guarantee 5), and
+// that is why it ends in a fingerprint of the RAW tuple.
 //
-// Sem ela havia colisão de verdade: `sanitize` emite `-`, o mesmo caractere que
-// separava os campos, então {conta:"a-b", tipo:"c"} e {conta:"a", tipo:"b-c"}
-// produziam o MESMO Secret — `dop-a-b-c-d` para os dois. Uma conta leria o
-// segredo da outra. Trocar o separador não resolve: `sanitize` transforma
-// qualquer caractere fora do alfabeto no separador, seja ele qual for. Só o
-// hash da tupla original torna a garantia uma propriedade, e não uma aposta no
-// formato dos identificadores.
+// Without it there was a real collision: `sanitize` emits `-`, the same
+// character that separated the fields, so {account:"a-b", kind:"c"} and
+// {account:"a", kind:"b-c"} produced the SAME Secret — `dop-a-b-c-d` for both.
+// One account would read the other's secret. Changing the separator does not fix
+// it: `sanitize` turns any character outside the alphabet into the separator,
+// whatever it is. Only hashing the original tuple makes the guarantee a
+// property, and not a bet on the identifiers' shape.
 //
-// O prefixo legível continua porque `kubectl get secret` sem ele é ilegível.
+// The readable prefix stays because `kubectl get secret` without it is
+// unreadable.
 func (k *K8s) secretName(ref ports.SecretRef) string {
 	return fmt.Sprintf("dop-%s-%s-%s-%s",
 		sanitize(ref.AccountID), sanitize(ref.Kind), sanitize(ref.OwnerID),
 		fingerprintK8s(ref))
 }
 
-// fingerprintK8s distingue tuplas que sanitize confundiria. O COMPRIMENTO de
-// cada campo entra no hash: sem ele, {"ab",""} e {"a","b"} colidiriam de novo,
-// agora por concatenação.
+// fingerprintK8s tells apart tuples sanitize would confuse. Each field's LENGTH
+// goes into the hash: without it, {"ab",""} and {"a","b"} would collide again,
+// now by concatenation.
 func fingerprintK8s(r ports.SecretRef) string {
 	h := sha256.New()
 	for _, s := range []string{r.AccountID, r.Kind, r.OwnerID} {
@@ -147,7 +146,7 @@ func (k *K8s) do(ctx context.Context, method, url string, body []byte) (int, []b
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := k.client.Do(req)
 	if err != nil {
-		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "falha ao falar com a API do Kubernetes")
+		return 0, nil, errs.Wrap(errs.KindUnavailable, err, "failed to talk to the Kubernetes API")
 	}
 	defer resp.Body.Close()
 	buf := make([]byte, 0, 4096)
@@ -176,7 +175,7 @@ func (k *K8s) Put(ctx context.Context, ref ports.SecretRef, v ports.SecretValue)
 		"type": "Opaque",
 		"data": map[string]string{secretKey: b64(v)},
 	})
-	// Substitui se existir (garantia 4), cria se não.
+	// Replace if it exists (guarantee 4), create if not.
 	code, _, err := k.do(ctx, http.MethodPut, k.url(name), body)
 	if err != nil {
 		return err
@@ -189,7 +188,7 @@ func (k *K8s) Put(ctx context.Context, ref ports.SecretRef, v ports.SecretValue)
 		}
 	}
 	if code >= 300 {
-		return errs.Internal("Kubernetes recusou a escrita do segredo (HTTP %d)", code)
+		return errs.Internal("Kubernetes refused the secret write (HTTP %d)", code)
 	}
 	return nil
 }
@@ -200,16 +199,16 @@ func (k *K8s) Get(ctx context.Context, ref ports.SecretRef) (ports.SecretValue, 
 		return nil, err
 	}
 	if code == http.StatusNotFound {
-		return nil, nil // garantia 2: ausente devolve nil, não erro
+		return nil, nil // guarantee 2: absent returns nil, not an error
 	}
 	if code >= 300 {
-		return nil, errs.Internal("Kubernetes recusou a leitura do segredo (HTTP %d)", code)
+		return nil, errs.Internal("Kubernetes refused the secret read (HTTP %d)", code)
 	}
 	var out struct {
 		Data map[string]string `json:"data"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "resposta ilegível da API do Kubernetes")
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable response from the Kubernetes API")
 	}
 	raw, ok := out.Data[secretKey]
 	if !ok {
@@ -223,8 +222,8 @@ func (k *K8s) Delete(ctx context.Context, ref ports.SecretRef) error {
 	if err != nil {
 		return err
 	}
-	if code >= 300 && code != http.StatusNotFound { // garantia 3: idempotente
-		return errs.Internal("Kubernetes recusou a remoção do segredo (HTTP %d)", code)
+	if code >= 300 && code != http.StatusNotFound { // guarantee 3: idempotent
+		return errs.Internal("Kubernetes refused the secret deletion (HTTP %d)", code)
 	}
 	return nil
 }

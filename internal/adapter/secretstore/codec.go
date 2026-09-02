@@ -12,7 +12,7 @@ func b64(v ports.SecretValue) string { return base64.StdEncoding.EncodeToString(
 func unb64(s string) (ports.SecretValue, error) {
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "segredo com codificação inválida")
+		return nil, errs.Wrap(errs.KindInternal, err, "secret with invalid encoding")
 	}
 	return ports.SecretValue(raw), nil
 }

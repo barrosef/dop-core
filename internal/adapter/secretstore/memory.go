@@ -7,9 +7,9 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// Memory é o adaptador em memória — usado nos testes de domínio e como
-// referência viva do contrato: ele passa exatamente o mesmo conjunto de testes
-// que o adaptador k8s e o do GCP.
+// Memory is the in-memory adapter — used in the domain tests and as a living
+// reference for the contract: it passes exactly the same set of tests as the k8s
+// adapter and the GCP one.
 type Memory struct {
 	mu   sync.RWMutex
 	data map[string]ports.SecretValue

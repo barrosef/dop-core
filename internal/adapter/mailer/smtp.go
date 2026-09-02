@@ -1,14 +1,18 @@
-// Adaptador de ports.Mailer sobre SMTP.
+// A ports.Mailer adapter over SMTP.
 //
-// É o caminho do self-hosted — o mesmo par GCP/OKD das outras portas —, e é ele
-// que FORÇA a resolução local de template. Com o SendGrid sozinho, nada
-// impediria a porta de vazar `template_id`: o campo estaria lá, o domínio
-// acabaria preenchendo, e a "porta que fala intenção" viraria uma porta que
-// fala SendGrid. Como aqui não existe template de provedor, o adaptador
-// renderiza dos arquivos versionados em templates/smtp/ — e a porta é obrigada
-// a falar TIPO.
+// It is the self-hosted path — the same GCP/OKD pairing as the other ports — and
+// it is what FORCES local template resolution. With SendGrid alone, nothing
+// would stop the port from leaking `template_id`: the field would be there, the
+// domain would end up filling it in, and the "port that speaks intent" would
+// become a port that speaks SendGrid. Since there is no provider template here,
+// the adapter renders from the files versioned in templates/smtp/ — and the port
+// is obliged to speak in KINDS.
 //
-// O preço, assumido pela ADR-0025: perde-se o editor visual do fornecedor.
+// The price, accepted by ADR-0025: the vendor's visual editor is lost.
+//
+// The Subject strings in the index below stay in Portuguese for the same reason
+// as SendGrid's: they are the notification's CONTENT. Email localization is a
+// pending item.
 package mailer
 
 import (
@@ -32,20 +36,21 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Os arquivos são EMBUTIDOS no binário, não lidos do disco em tempo de
-// execução. Um caminho de sistema de arquivos faria o mesmo binário mandar
-// e-mail diferente conforme onde ele foi montado — e o dia em que o volume não
-// estivesse lá, o aviso falharia em produção por um motivo invisível no build.
+// The files are EMBEDDED in the binary, not read from disk at runtime. A
+// filesystem path would make the same binary send a different email depending on
+// where it was mounted — and the day the volume was not there, the notice would
+// fail in production for a reason invisible at build time.
 //
 //go:embed templates/smtp/*.html
 var smtpFiles embed.FS
 
-// smtpTemplate é uma linha do ÍNDICE deste fornecedor. Índice INDEPENDENTE do
-// SendGrid de propósito — ver o cabeçalho do pacote.
+// smtpTemplate is one line of THIS provider's INDEX. An index INDEPENDENT of
+// SendGrid's on purpose — see the package header.
 type smtpTemplate struct {
-	// Subject é template de texto, e não literal, porque o assunto é o único
-	// lugar do e-mail onde um número muda a decisão de abrir: "3 pendências
-	// esperando você" é lido; "Você tem pendências" é arquivado.
+	// Subject is a text template, and not a literal, because the subject is the
+	// one place in the email where a number changes the decision to open it:
+	// "3 items waiting for you" gets read; "You have items waiting" gets
+	// archived.
 	Subject string
 	File    string
 }
@@ -62,59 +67,61 @@ var smtpIndex = map[string]smtpTemplate{
 }
 
 type SMTPConfig struct {
-	// Addr é host:porta. VAZIO liga o ENSAIO LOCAL: imprime em vez de enviar.
-	// É o mesmo gesto da chave vazia no SendGrid, e é ele que faz o ambiente de
-	// desenvolvimento não precisar de servidor de e-mail nenhum.
+	// Addr is host:port. EMPTY turns on the LOCAL DRY RUN: it prints instead of
+	// sending. It is the same gesture as SendGrid's empty key, and it is what
+	// makes the development environment need no mail server at all.
 	Addr     string
 	Username string
-	// Password é o valor JÁ RESOLVIDO da credencial. Ele NÃO vira campo deste
-	// adaptador — ver o construtor.
+	// Password is the credential's ALREADY RESOLVED value. It does NOT become a
+	// field of this adapter — see the constructor.
 	Password string
 	From     string
 	FromName string
-	// StartTLS pede a promoção da conexão antes de autenticar. Não é
-	// automático: um servidor interno de laboratório costuma não oferecer, e
-	// tentar sempre transformaria "sem TLS" em "sem e-mail".
+	// StartTLS asks to promote the connection before authenticating. It is not
+	// automatic: an internal lab server usually does not offer it, and always
+	// trying would turn "no TLS" into "no email".
 	StartTLS  bool
 	TLSConfig *tls.Config
 	Timeout   time.Duration
-	// Dial existe para a suíte de contrato falar com um servidor local de
-	// teste, sem expor transporte para o composition root — mesma escolha do
-	// `Client` nos adaptadores HTTP.
+	// Dial exists so the contract suite can talk to a local test server,
+	// without exposing the transport to the composition root — the same choice
+	// as `Client` in the HTTP adapters.
 	Dial func(ctx context.Context) (net.Conn, error)
 }
 
 type SMTP struct {
 	addr string
-	// autenticar carrega a senha em CLOSURE. Não há campo `password` neste
-	// struct, e essa ausência é a garantia 4: `%+v` não tem o que imprimir.
-	autenticar func(*smtp.Client) error
-	redigir    func(string) string
-	ensaiando  bool
-	from       string
-	fromName   string
-	startTLS   bool
-	tlsCfg     *tls.Config
-	timeout    time.Duration
-	dial       func(ctx context.Context) (net.Conn, error)
-	corpos     *template.Template
-	assuntos   *texttemplate.Template
+	// authenticate carries the password in a CLOSURE. There is no `password`
+	// field in this struct, and that absence is guarantee 4: `%+v` has nothing
+	// to print.
+	authenticate func(*smtp.Client) error
+	redact       func(string) string
+	dryRunMode   bool
+	from         string
+	fromName     string
+	startTLS     bool
+	tlsCfg       *tls.Config
+	timeout      time.Duration
+	dial         func(ctx context.Context) (net.Conn, error)
+	bodies       *template.Template
+	subjects     *texttemplate.Template
 }
 
 func NewSMTP(cfg SMTPConfig) *SMTP {
-	senha := cfg.Password
-	usuario := cfg.Username
+	password := cfg.Password
+	username := cfg.Username
 
-	// missingkey=zero: chave ausente vira vazio, não "<no value>" nem erro. É a
-	// garantia 8 da porta — derrubar um convite porque um campo cosmético não
-	// veio trocaria um problema de aparência por um bloqueio de acesso.
-	corpos := template.Must(template.New("smtp").
+	// missingkey=zero: a missing key becomes empty, not "<no value>" and not an
+	// error. It is the port's guarantee 8 — dropping an invite because a
+	// cosmetic field did not arrive would trade an appearance problem for an
+	// access block.
+	bodies := template.Must(template.New("smtp").
 		Option("missingkey=zero").
 		ParseFS(smtpFiles, "templates/smtp/*.html"))
 
-	assuntos := texttemplate.New("assuntos").Option("missingkey=zero")
+	subjects := texttemplate.New("subjects").Option("missingkey=zero")
 	for kind, spec := range smtpIndex {
-		texttemplate.Must(assuntos.New(kind).Parse(spec.Subject))
+		texttemplate.Must(subjects.New(kind).Parse(spec.Subject))
 	}
 
 	t := cfg.Timeout
@@ -122,115 +129,117 @@ func NewSMTP(cfg SMTPConfig) *SMTP {
 		t = DefaultTimeout
 	}
 	s := &SMTP{
-		addr:      cfg.Addr,
-		redigir:   redactor(senha),
-		ensaiando: strings.TrimSpace(cfg.Addr) == "",
-		from:      naoVazio(cfg.From, DefaultFrom),
-		fromName:  naoVazio(cfg.FromName, DefaultFromName),
-		startTLS:  cfg.StartTLS,
-		tlsCfg:    cfg.TLSConfig,
-		timeout:   t,
-		dial:      cfg.Dial,
-		corpos:    corpos,
-		assuntos:  assuntos,
+		addr:       cfg.Addr,
+		redact:     redactor(password),
+		dryRunMode: strings.TrimSpace(cfg.Addr) == "",
+		from:       orDefault(cfg.From, DefaultFrom),
+		fromName:   orDefault(cfg.FromName, DefaultFromName),
+		startTLS:   cfg.StartTLS,
+		tlsCfg:     cfg.TLSConfig,
+		timeout:    t,
+		dial:       cfg.Dial,
+		bodies:     bodies,
+		subjects:   subjects,
 	}
-	s.autenticar = func(c *smtp.Client) error {
-		if usuario == "" || senha == "" {
-			// Servidor de relay interno sem autenticação é caso legítimo, não
-			// erro. Exigir credencial aqui inviabilizaria o Postfix do cluster.
+	s.authenticate = func(c *smtp.Client) error {
+		if username == "" || password == "" {
+			// An internal relay server with no authentication is a legitimate
+			// case, not an error. Demanding a credential here would rule out the
+			// cluster's Postfix.
 			return nil
 		}
 		host, _, err := net.SplitHostPort(cfg.Addr)
 		if err != nil {
 			host = cfg.Addr
 		}
-		return c.Auth(smtp.PlainAuth("", usuario, senha, host))
+		return c.Auth(smtp.PlainAuth("", username, password, host))
 	}
 	return s
 }
 
 var _ ports.Mailer = (*SMTP)(nil)
 
-// String: receptor por VALOR, para valer também em `%+v` de um valor.
+// String: a VALUE receiver, so it also applies to `%+v` of a value.
 func (s SMTP) String() string { return "mailer.SMTP{" + s.addr + "}" }
 
-// Resolve é a garantia 2: responde sem I/O e sem enviar.
+// Resolve is guarantee 2: it answers with no I/O and without sending.
 func (s *SMTP) Resolve(_ context.Context, kind string) error {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		return errs.Invalid("aviso sem tipo: o canal não tem o que resolver")
+		return errs.Invalid("a notice with no kind: the channel has nothing to resolve")
 	}
 	spec, ok := smtpIndex[kind]
 	if !ok {
-		return desconhecido("SMTP", kind, chaves(smtpIndex))
+		return unknownKind("SMTP", kind, sortedKeys(smtpIndex))
 	}
-	// Índice sem arquivo é o mesmo silêncio, um passo adiante: a linha existe,
-	// o `go:embed` não trouxe o arquivo, e o envio falharia só em produção.
-	if s.corpos.Lookup(nomeDoArquivo(spec.File)) == nil {
+	// An index with no file is the same silence, one step further on: the line
+	// exists, `go:embed` did not bring the file, and the send would only fail in
+	// production.
+	if s.bodies.Lookup(baseName(spec.File)) == nil {
 		return errs.Precondition(
-			"o aviso %q está no índice do SMTP mas o arquivo %q não foi embutido",
+			"the %q notice is in SMTP's index but the file %q was not embedded",
 			kind, spec.File)
 	}
 	return nil
 }
 
 func (s *SMTP) Send(ctx context.Context, m ports.Mail) (*ports.MailReceipt, error) {
-	if err := validar(m); err != nil {
+	if err := validate(m); err != nil {
 		return nil, err
 	}
-	// RESOLVE PRIMEIRO — inclusive no ensaio (garantia 3).
+	// RESOLVE FIRST — in the dry run too (guarantee 3).
 	if err := s.Resolve(ctx, m.Kind); err != nil {
 		return nil, err
 	}
 	spec := smtpIndex[m.Kind]
 
-	assunto, err := s.renderAssunto(m.Kind, m.Data)
+	subject, err := s.renderSubject(m.Kind, m.Data)
 	if err != nil {
 		return nil, err
 	}
-	var corpo bytes.Buffer
-	if err := s.corpos.ExecuteTemplate(&corpo, nomeDoArquivo(spec.File), m.Data); err != nil {
-		// Falha de renderização é erro NOSSO, não do fornecedor nem de quem
-		// chamou: o template está no binário.
+	var body bytes.Buffer
+	if err := s.bodies.ExecuteTemplate(&body, baseName(spec.File), m.Data); err != nil {
+		// A rendering failure is OUR error, not the provider's and not the
+		// caller's: the template is in the binary.
 		return nil, errs.Wrap(errs.KindInternal, err,
-			"falha ao renderizar o aviso %q", m.Kind)
+			"failed to render the %q notice", m.Kind)
 	}
 
-	if s.ensaiando {
-		return ensaio(ctx, "smtp", m, assunto, corpo.String()), nil
+	if s.dryRunMode {
+		return dryRun(ctx, "smtp", m, subject, body.String()), nil
 	}
-	if err := s.entregar(ctx, m, assunto, corpo.Bytes()); err != nil {
+	if err := s.deliver(ctx, m, subject, body.Bytes()); err != nil {
 		return nil, err
 	}
-	// Sem Reference: o SMTP não devolve identificador nenhum, e inventar um
-	// aqui faria o registro afirmar uma rastreabilidade que não existe
-	// (garantia da porta: Reference vazio é NORMAL).
+	// No Reference: SMTP returns no identifier at all, and inventing one here
+	// would make the record assert a traceability that does not exist (the
+	// port's guarantee: an empty Reference is NORMAL).
 	return &ports.MailReceipt{State: ports.MailSent, Provider: "smtp"}, nil
 }
 
-func (s *SMTP) renderAssunto(kind string, data map[string]any) (string, error) {
+func (s *SMTP) renderSubject(kind string, data map[string]any) (string, error) {
 	var b bytes.Buffer
-	if err := s.assuntos.ExecuteTemplate(&b, kind, data); err != nil {
-		return "", errs.Wrap(errs.KindInternal, err, "falha ao montar o assunto de %q", kind)
+	if err := s.subjects.ExecuteTemplate(&b, kind, data); err != nil {
+		return "", errs.Wrap(errs.KindInternal, err, "failed to build the subject of %q", kind)
 	}
 	return strings.TrimSpace(b.String()), nil
 }
 
-// entregar fala SMTP na mão, em vez de smtp.SendMail, por dois motivos:
-// SendMail não aceita contexto (e um servidor pendurado seguraria o worker até
-// o timeout do sistema operacional) e ele decide sozinho sobre STARTTLS.
-func (s *SMTP) entregar(ctx context.Context, m ports.Mail, assunto string, corpo []byte) error {
-	conn, err := s.conectar(ctx)
+// deliver speaks SMTP by hand, instead of smtp.SendMail, for two reasons:
+// SendMail takes no context (and a hung server would hold the worker until the
+// operating system's timeout) and it decides about STARTTLS on its own.
+func (s *SMTP) deliver(ctx context.Context, m ports.Mail, subject string, body []byte) error {
+	conn, err := s.connect(ctx)
 	if err != nil {
 		return err
 	}
-	// Prazo na CONEXÃO: é o único ponto onde o contexto alcança o net/smtp,
-	// que não conhece context.Context.
-	prazo := time.Now().Add(s.timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(prazo) {
-		prazo = d
+	// The deadline goes on the CONNECTION: it is the only point where the
+	// context reaches net/smtp, which knows no context.Context.
+	deadline := time.Now().Add(s.timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
 	}
-	_ = conn.SetDeadline(prazo)
+	_ = conn.SetDeadline(deadline)
 
 	host, _, errSplit := net.SplitHostPort(s.addr)
 	if errSplit != nil {
@@ -239,7 +248,7 @@ func (s *SMTP) entregar(ctx context.Context, m ports.Mail, assunto string, corpo
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
 		_ = conn.Close()
-		return s.indisponivel("handshake", err)
+		return s.unavailable("handshake", err)
 	}
 	defer func() { _ = c.Close() }()
 
@@ -249,136 +258,137 @@ func (s *SMTP) entregar(ctx context.Context, m ports.Mail, assunto string, corpo
 			cfg = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 		}
 		if err := c.StartTLS(cfg); err != nil {
-			return s.indisponivel("STARTTLS", err)
+			return s.unavailable("STARTTLS", err)
 		}
 	}
-	if err := s.autenticar(c); err != nil {
-		// Credencial recusada é KindUnauthorized, e não Unavailable: mandar a
-		// equipe caçar rede quando o problema é senha custa horas.
+	if err := s.authenticate(c); err != nil {
+		// A refused credential is KindUnauthorized, not Unavailable: sending the
+		// team hunting for a network problem when the problem is a password
+		// costs hours.
 		return errs.New(errs.KindUnauthorized,
-			"o servidor SMTP recusou a credencial desta instalação: %s", s.redigir(err.Error()))
+			"the SMTP server refused this installation's credential: %s", s.redact(err.Error()))
 	}
 	if err := c.Mail(s.from); err != nil {
-		return s.recusa("remetente", err)
+		return s.refusal("sender", err)
 	}
 	if err := c.Rcpt(m.To); err != nil {
-		return s.recusa("destinatário", err)
+		return s.refusal("recipient", err)
 	}
 	w, err := c.Data()
 	if err != nil {
-		return s.indisponivel("abertura do corpo", err)
+		return s.unavailable("opening the body", err)
 	}
-	if _, err := w.Write(s.mensagem(m, assunto, corpo)); err != nil {
-		return s.indisponivel("escrita do corpo", err)
+	if _, err := w.Write(s.message(m, subject, body)); err != nil {
+		return s.unavailable("writing the body", err)
 	}
 	if err := w.Close(); err != nil {
-		return s.recusa("corpo", err)
+		return s.refusal("body", err)
 	}
 	if err := c.Quit(); err != nil {
-		// QUIT falho depois de o corpo ter sido aceito NÃO é falha de entrega:
-		// o servidor já assumiu a mensagem. Tratar como erro faria o registro
-		// dizer "não enviou" para um e-mail que chegou — e a retomada mandaria
-		// o segundo.
+		// A failed QUIT after the body was accepted is NOT a delivery failure:
+		// the server has already taken the message. Treating it as an error
+		// would make the record say "it did not send" for an email that
+		// arrived — and the resumption would send a second one.
 		return nil
 	}
 	return nil
 }
 
-func (s *SMTP) conectar(ctx context.Context) (net.Conn, error) {
+func (s *SMTP) connect(ctx context.Context) (net.Conn, error) {
 	if s.dial != nil {
 		conn, err := s.dial(ctx)
 		if err != nil {
-			return nil, s.indisponivel("conexão", err)
+			return nil, s.unavailable("connection", err)
 		}
 		return conn, nil
 	}
 	d := net.Dialer{Timeout: s.timeout}
 	conn, err := d.DialContext(ctx, "tcp", s.addr)
 	if err != nil {
-		return nil, s.indisponivel("conexão", err)
+		return nil, s.unavailable("connection", err)
 	}
 	return conn, nil
 }
 
-func (s *SMTP) indisponivel(etapa string, err error) error {
-	return errs.New(errs.KindUnavailable, "servidor SMTP indisponível em %s: %s",
-		etapa, s.redigir(err.Error()))
+func (s *SMTP) unavailable(stage string, err error) error {
+	return errs.New(errs.KindUnavailable, "SMTP server unavailable at %s: %s",
+		stage, s.redact(err.Error()))
 }
 
-// recusa distingue 5xx (permanente: reenviar dá o mesmo resultado) de 4xx
-// (temporário: vale tentar de novo). Confundir os dois ou reenvia para sempre
-// um endereço que não existe — o que queima a reputação do remetente — ou
-// desiste de um servidor que só estava ocupado.
-func (s *SMTP) recusa(oque string, err error) error {
-	msg := s.redigir(err.Error())
+// refusal tells 5xx (permanent: resending gives the same result) from 4xx
+// (temporary: worth trying again) apart. Confusing the two either resends
+// forever to an address that does not exist — which burns the sender's
+// reputation — or gives up on a server that was merely busy.
+func (s *SMTP) refusal(what string, err error) error {
+	msg := s.redact(err.Error())
 	var proto *textproto.Error
 	if errors.As(err, &proto) && proto.Code >= 400 && proto.Code < 500 {
-		return errs.New(errs.KindUnavailable, "o servidor SMTP adiou o %s: %s", oque, msg)
+		return errs.New(errs.KindUnavailable, "the SMTP server deferred the %s: %s", what, msg)
 	}
-	return errs.Invalid("o servidor SMTP recusou o %s: %s", oque, msg)
+	return errs.Invalid("the SMTP server refused the %s: %s", what, msg)
 }
 
-// mensagem monta o RFC 5322. Cabeçalho mínimo de propósito: cada cabeçalho a
-// mais é uma chance a mais de um filtro antispam encontrar defeito.
-func (s *SMTP) mensagem(m ports.Mail, assunto string, corpo []byte) []byte {
+// message assembles the RFC 5322. A minimal header on purpose: every extra
+// header is one more chance for an antispam filter to find fault.
+func (s *SMTP) message(m ports.Mail, subject string, body []byte) []byte {
 	var b bytes.Buffer
-	// mime.QEncoding: assunto em português tem acento, e assunto não codificado
-	// chega com caractere trocado nos clientes mais antigos.
+	// mime.QEncoding: a subject in Portuguese has accents, and an unencoded
+	// subject arrives with mangled characters in older clients.
 	fmt.Fprintf(&b, "From: %s <%s>\r\n", mime.QEncoding.Encode("utf-8", s.fromName), s.from)
 	if m.ToName != "" {
 		fmt.Fprintf(&b, "To: %s <%s>\r\n", mime.QEncoding.Encode("utf-8", m.ToName), m.To)
 	} else {
 		fmt.Fprintf(&b, "To: %s\r\n", m.To)
 	}
-	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", assunto))
+	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	fmt.Fprintf(&b, "MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&b, "Content-Type: text/html; charset=utf-8\r\n")
 	fmt.Fprintf(&b, "Content-Transfer-Encoding: 8bit\r\n")
-	// X-DOP-Kind existe para a operação: "por que recebi isto?" e "quais avisos
-	// deste tipo saíram?" viram uma busca no servidor de e-mail.
+	// X-DOP-Kind exists for operations: "why did I get this?" and "which notices
+	// of this kind went out?" become one search on the mail server.
 	fmt.Fprintf(&b, "X-DOP-Kind: %s\r\n", m.Kind)
 	b.WriteString("\r\n")
-	b.Write(corpo)
+	b.Write(body)
 	return b.Bytes()
 }
 
-// nomeDoArquivo devolve o nome com que ParseFS registrou o template: ele usa o
-// BASE do caminho, não o caminho inteiro.
-func nomeDoArquivo(p string) string {
+// baseName returns the name under which ParseFS registered the template: it uses
+// the path's BASE, not the whole path.
+func baseName(p string) string {
 	if i := strings.LastIndex(p, "/"); i >= 0 {
 		return p[i+1:]
 	}
 	return p
 }
 
-// SMTPTemplateSource devolve o FONTE embutido de um template do SMTP, pelo nome
-// base do arquivo.
+// SMTPTemplateSource returns the embedded SOURCE of an SMTP template, by the
+// file's base name.
 //
-// Exportada só para teste, e vale a pena: é ela que permite comparar quais
-// campos cada um dos dois templates do mesmo aviso consome. Sem isso, a
-// duplicação que a ADR-0025 assume como custo ("dois lugares para o template do
-// mesmo aviso") não teria quem a vigiasse — e a divergência entre os dois é
-// silenciosa: o e-mail sai nos dois fornecedores, só que um deles sem a
-// informação que importa.
-func SMTPTemplateSource(arquivo string) (string, error) {
-	b, err := smtpFiles.ReadFile("templates/smtp/" + nomeDoArquivo(arquivo))
+// Exported for tests only, and it is worth it: it is what allows comparing which
+// fields each of the two templates of the same notice consumes. Without it, the
+// duplication ADR-0025 accepts as a cost ("two places for the same notice's
+// template") would have nobody watching it — and the divergence between the two
+// is silent: the email goes out in both providers, only one of them without the
+// information that matters.
+func SMTPTemplateSource(file string) (string, error) {
+	b, err := smtpFiles.ReadFile("templates/smtp/" + baseName(file))
 	if err != nil {
-		return "", errs.NotFound("template SMTP %q não foi embutido", arquivo)
+		return "", errs.NotFound("SMTP template %q was not embedded", file)
 	}
 	return string(b), nil
 }
 
-// SMTPTemplateFile devolve o arquivo que o ÍNDICE do SMTP associa a um tipo.
+// SMTPTemplateFile returns the file SMTP's INDEX associates with a kind.
 //
-// Exportada para teste, e pelo mesmo motivo do índice ser exercitado: a suíte
-// prova que o adaptador resolve o tipo, mas "resolver" e "resolver para o
-// artefato CERTO" são coisas diferentes. Trocar os arquivos de dois tipos no
-// índice mandaria a mensagem errada com o rótulo certo — e isso é pior que
-// template ausente, porque alguém RECEBE algo.
+// Exported for tests, and for the same reason the index is exercised: the suite
+// proves the adapter resolves the kind, but "resolving" and "resolving to the
+// RIGHT artifact" are different things. Swapping two kinds' files in the index
+// would send the wrong message with the right label — and that is worse than a
+// missing template, because somebody RECEIVES something.
 func SMTPTemplateFile(kind string) (string, error) {
 	spec, ok := smtpIndex[kind]
 	if !ok {
-		return "", desconhecido("SMTP", kind, chaves(smtpIndex))
+		return "", unknownKind("SMTP", kind, sortedKeys(smtpIndex))
 	}
 	return spec.File, nil
 }

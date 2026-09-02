@@ -1,27 +1,32 @@
-// Adaptador de ports.Mailer sobre o SendGrid.
+// A ports.Mailer adapter over SendGrid.
 //
-// ── O que este adaptador resolve, e o que ele NÃO faz ────────────────────────
+// ── What this adapter solves, and what it does NOT do ────────────────────────
 //
-// Ele mapeia TIPO → `template_id` e manda `dynamic_template_data`. Ele NÃO
-// renderiza: o HTML mora no SendGrid, publicado a partir dos arquivos
-// versionados em templates/sendgrid/ pelo script idempotente
-// (publish_templates.go). É essa escolha que preserva o editor visual, o
-// versionamento e a localização do fornecedor — coisas que a plataforma
-// perderia se o domínio renderizasse e a porta carregasse um blob de HTML.
+// It maps KIND → `template_id` and sends `dynamic_template_data`. It does NOT
+// render: the HTML lives at SendGrid, published from the files versioned in
+// templates/sendgrid/ by the idempotent script (publish_templates.go). It is
+// that choice that preserves the vendor's visual editor, versioning and
+// localization — things the platform would lose if the domain rendered and the
+// port carried a blob of HTML.
 //
-// ── Por que o índice é compilado e os IDs são configuração ───────────────────
+// ── Why the index is compiled and the IDs are configuration ──────────────────
 //
-// São duas perguntas com prazos diferentes, exatamente como `routingTable` e
-// `ModelCatalog` no roteador de custo:
+// They are two questions on different clocks, exactly like `routingTable` and
+// `ModelCatalog` in the cost router:
 //
-//   - QUE TIPOS este adaptador atende é fato do CÓDIGO, e muda junto com a
-//     política. Por isso `sendgridIndex` é literal, e é ele que a suíte de
-//     contrato exercita: acrescentar um tipo em `notification` sem acrescentar
-//     linha aqui reprova;
-//   - QUAL É O ID de cada template é fato da INSTALAÇÃO — o `d-…` do SendGrid
-//     do cliente não é o do nosso. Por isso vem por configuração, e a falta
-//     dele é KindPrecondition (erro de montagem), não KindNotFound (erro de
-//     política).
+//   - WHICH KINDS this adapter serves is a fact of the CODE, and changes along
+//     with the policy. That is why `sendgridIndex` is a literal, and it is what
+//     the contract suite exercises: adding a kind in `notification` without
+//     adding a line here fails;
+//   - WHAT THE ID of each template is is a fact of the INSTALLATION — the
+//     client's SendGrid `d-…` is not ours. That is why it comes from
+//     configuration, and its absence is KindPrecondition (an assembly error),
+//     not KindNotFound (a policy error).
+//
+// The Name/Subject strings below stay in Portuguese: they are the notification's
+// CONTENT, not code, and translating them one by one would replace one hardcoded
+// locale with another. Email localization is a pending item — a template per
+// locale at the provider, chosen by the recipient's language.
 package mailer
 
 import (
@@ -37,22 +42,23 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// sgTemplate é uma linha do ÍNDICE: o que este fornecedor sabe montar.
+// sgTemplate is one line of the INDEX: what this provider knows how to build.
 type sgTemplate struct {
-	// Name é o nome do template DENTRO do SendGrid. É a identidade que o script
-	// de publicação usa para decidir entre criar e atualizar — trocá-lo cria um
-	// template novo em vez de versionar o existente.
+	// Name is the template's name INSIDE SendGrid. It is the identity the
+	// publishing script uses to decide between creating and updating — changing
+	// it creates a new template instead of versioning the existing one.
 	Name string
-	// Subject vai no `subject` da versão publicada. Fica aqui, e não no arquivo
-	// HTML, porque o SendGrid guarda assunto separado do corpo.
+	// Subject goes into the published version's `subject`. It lives here, and
+	// not in the HTML file, because SendGrid keeps the subject separate from the
+	// body.
 	Subject string
-	// File é o arquivo versionado neste repositório que o script publica.
+	// File is the file versioned in this repository that the script publishes.
 	File string
 }
 
-// sendgridIndex — O ÍNDICE. Chaveado pelo vocabulário do domínio, não por
-// string solta: renomear um Kind quebra a compilação aqui, que é onde precisa
-// quebrar.
+// sendgridIndex — THE INDEX. Keyed by the domain's vocabulary, not by a loose
+// string: renaming a Kind breaks compilation here, which is where it needs to
+// break.
 var sendgridIndex = map[string]sgTemplate{
 	string(notification.KindInvite): {
 		Name:    "DOP — Convite para conta",
@@ -67,16 +73,17 @@ var sendgridIndex = map[string]sgTemplate{
 }
 
 type SendGridConfig struct {
-	// APIKey é o valor JÁ RESOLVIDO da credencial. Este pacote não conhece
-	// ports.SecretStore. VAZIO liga o ENSAIO LOCAL: imprime em vez de enviar.
+	// APIKey is the credential's ALREADY RESOLVED value. This package does not
+	// know ports.SecretStore. EMPTY turns on the LOCAL DRY RUN: it prints
+	// instead of sending.
 	APIKey string
-	// BaseURL é https://api.sendgrid.com no serviço público. Existe para a
-	// suíte de contrato apontar para um httptest.Server — a API do SendGrid
-	// nunca é chamada de verdade em teste.
+	// BaseURL is https://api.sendgrid.com on the public service. It exists so
+	// the contract suite can point at an httptest.Server — SendGrid's API is
+	// never really called in a test.
 	BaseURL  string
 	From     string
 	FromName string
-	// Templates é tipo → `template_id`, vindo da configuração da instalação.
+	// Templates is kind → `template_id`, coming from the installation's configuration.
 	Templates map[string]string
 	Timeout   time.Duration
 	Client    httpDoer
@@ -85,21 +92,22 @@ type SendGridConfig struct {
 type SendGrid struct {
 	base string
 	http httpDoer
-	// autorizar carrega a chave em CLOSURE — ver o cabeçalho do pacote. Não há
-	// campo `apiKey` neste struct, e essa ausência é a garantia 4.
-	autorizar func(*http.Request)
-	redigir   func(string) string
-	// ensaiando é BOOLEANO, derivado da chave no construtor. Guardar o booleano
-	// em vez da chave é o que permite decidir o modo sem manter o segredo.
-	ensaiando bool
-	from      string
-	fromName  string
-	templates map[string]string
+	// authorize carries the key in a CLOSURE — see the package header. There is
+	// no `apiKey` field in this struct, and that absence is guarantee 4.
+	authorize func(*http.Request)
+	redact    func(string) string
+	// dryRunMode is a BOOLEAN, derived from the key in the constructor. Keeping
+	// the boolean instead of the key is what allows deciding the mode without
+	// holding on to the secret.
+	dryRunMode bool
+	from       string
+	fromName   string
+	templates  map[string]string
 }
 
 func NewSendGrid(cfg SendGridConfig) *SendGrid {
-	base := naoVazio(cfg.BaseURL, "https://api.sendgrid.com")
-	chave := cfg.APIKey
+	base := orDefault(cfg.BaseURL, "https://api.sendgrid.com")
+	key := cfg.APIKey
 	doer := cfg.Client
 	if doer == nil {
 		t := cfg.Timeout
@@ -117,54 +125,55 @@ func NewSendGrid(cfg SendGridConfig) *SendGrid {
 	return &SendGrid{
 		base: strings.TrimRight(base, "/"),
 		http: doer,
-		autorizar: func(r *http.Request) {
-			if chave != "" {
-				r.Header.Set("Authorization", "Bearer "+chave)
+		authorize: func(r *http.Request) {
+			if key != "" {
+				r.Header.Set("Authorization", "Bearer "+key)
 			}
 		},
-		redigir:   redactor(chave),
-		ensaiando: chave == "",
-		from:      naoVazio(cfg.From, DefaultFrom),
-		fromName:  naoVazio(cfg.FromName, DefaultFromName),
-		templates: ids,
+		redact:     redactor(key),
+		dryRunMode: key == "",
+		from:       orDefault(cfg.From, DefaultFrom),
+		fromName:   orDefault(cfg.FromName, DefaultFromName),
+		templates:  ids,
 	}
 }
 
 var _ ports.Mailer = (*SendGrid)(nil)
 
-// String: receptor por VALOR, para valer também em `%+v` de um valor. Sem ele,
-// o fmt percorreria os campos por reflexão — inclusive os não exportados, cujo
-// String() ele não consegue chamar.
+// String: a VALUE receiver, so it also applies to `%+v` of a value. Without it,
+// fmt would walk the fields through reflection — including the unexported ones,
+// whose String() it cannot call.
 func (s SendGrid) String() string { return "mailer.SendGrid{}" }
 
-// Resolve é a garantia 2: responde sem I/O e sem enviar.
+// Resolve is guarantee 2: it answers with no I/O and without sending.
 func (s *SendGrid) Resolve(_ context.Context, kind string) error {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		return errs.Invalid("aviso sem tipo: o canal não tem o que resolver")
+		return errs.Invalid("a notice with no kind: the channel has nothing to resolve")
 	}
 	if _, ok := sendgridIndex[kind]; !ok {
-		return desconhecido("SendGrid", kind, chaves(sendgridIndex))
+		return unknownKind("SendGrid", kind, sortedKeys(sendgridIndex))
 	}
-	// No ensaio o id não é necessário: não há chamada ao fornecedor para fazer.
-	// Cobrar o id aqui faria a suíte de contrato — e a máquina de todo dev —
-	// exigir configuração de produção para provar uma garantia de política.
-	if s.ensaiando {
+	// In a dry run the id is not needed: there is no call to the provider to
+	// make. Demanding the id here would make the contract suite — and every
+	// developer's machine — require production configuration to prove a policy
+	// guarantee.
+	if s.dryRunMode {
 		return nil
 	}
 	if s.templates[kind] == "" {
 		return errs.Precondition(
-			"o template do aviso %q não foi configurado neste SendGrid: publique com "+
-				"publish_templates.go e informe o id resultante", kind)
+			"the template for the %q notice is not configured in this SendGrid: publish "+
+				"with publish_templates.go and provide the resulting id", kind)
 	}
 	return nil
 }
 
-// sgMail é a forma do `/v3/mail/send` — só o que a porta usa.
+// sgMail is `/v3/mail/send`'s shape — only what the port uses.
 type sgMail struct {
-	From             sgAddr            `json:"from"`
-	Personalizations []sgPersonalizado `json:"personalizations"`
-	TemplateID       string            `json:"template_id"`
+	From             sgAddr              `json:"from"`
+	Personalizations []sgPersonalization `json:"personalizations"`
+	TemplateID       string              `json:"template_id"`
 }
 
 type sgAddr struct {
@@ -172,15 +181,15 @@ type sgAddr struct {
 	Name  string `json:"name,omitempty"`
 }
 
-type sgPersonalizado struct {
+type sgPersonalization struct {
 	To []sgAddr `json:"to"`
-	// DynamicTemplateData é o que o template do fornecedor consome. É aqui que
-	// o `Data` da porta desemboca, sem tradução: a porta fala intenção e dados,
-	// e o SendGrid consome dados.
+	// DynamicTemplateData is what the provider's template consumes. It is where
+	// the port's `Data` flows into, untranslated: the port speaks intent and
+	// data, and SendGrid consumes data.
 	DynamicTemplateData map[string]any `json:"dynamic_template_data,omitempty"`
 }
 
-type sgErro struct {
+type sgError struct {
 	Errors []struct {
 		Message string `json:"message"`
 		Field   string `json:"field"`
@@ -188,49 +197,49 @@ type sgErro struct {
 }
 
 func (s *SendGrid) Send(ctx context.Context, m ports.Mail) (*ports.MailReceipt, error) {
-	if err := validar(m); err != nil {
+	if err := validate(m); err != nil {
 		return nil, err
 	}
-	// RESOLVE PRIMEIRO — inclusive no ensaio (garantia 3).
+	// RESOLVE FIRST — in the dry run too (guarantee 3).
 	if err := s.Resolve(ctx, m.Kind); err != nil {
 		return nil, err
 	}
 	spec := sendgridIndex[m.Kind]
 
-	if s.ensaiando {
-		return ensaio(ctx, "sendgrid", m, spec.Subject, ""), nil
+	if s.dryRunMode {
+		return dryRun(ctx, "sendgrid", m, spec.Subject, ""), nil
 	}
 
-	corpo := sgMail{
+	payload := sgMail{
 		From:       sgAddr{Email: s.from, Name: s.fromName},
 		TemplateID: s.templates[m.Kind],
-		Personalizations: []sgPersonalizado{{
+		Personalizations: []sgPersonalization{{
 			To:                  []sgAddr{{Email: m.To, Name: m.ToName}},
-			DynamicTemplateData: comAssunto(m.Data, spec.Subject),
+			DynamicTemplateData: withSubject(m.Data, spec.Subject),
 		}},
 	}
-	raw, err := json.Marshal(corpo)
+	raw, err := json.Marshal(payload)
 	if err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "aviso ilegível para o SendGrid")
+		return nil, errs.Wrap(errs.KindInternal, err, "notice unreadable for SendGrid")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.base+"/v3/mail/send",
 		strings.NewReader(string(raw)))
 	if err != nil {
-		return nil, errs.Wrap(errs.KindInternal, err, "requisição inválida para o SendGrid")
+		return nil, errs.Wrap(errs.KindInternal, err, "invalid request for SendGrid")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "dop-core")
-	s.autorizar(req)
+	s.authorize(req)
 
 	resp, err := s.http.Do(req)
 	if err != nil {
-		// A mensagem do net/http carrega a URL; a URL não carrega a chave
-		// (autorização vai em cabeçalho), mas o redator passa por cima assim
-		// mesmo — é barato e cobre o dia em que alguém mudar isso.
-		return nil, errs.New(errs.KindUnavailable, "falha ao falar com o SendGrid: %s",
-			s.redigir(err.Error()))
+		// net/http's message carries the URL; the URL does not carry the key
+		// (authorization goes in a header), but the redactor passes over it
+		// anyway — it is cheap and it covers the day somebody changes that.
+		return nil, errs.New(errs.KindUnavailable, "failed to talk to SendGrid: %s",
+			s.redact(err.Error()))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -239,38 +248,38 @@ func (s *SendGrid) Send(ctx context.Context, m ports.Mail) (*ports.MailReceipt, 
 		return &ports.MailReceipt{
 			State:    ports.MailSent,
 			Provider: "sendgrid",
-			// O SendGrid devolve o id no cabeçalho, não no corpo — 202 sem
-			// corpo é a resposta normal dele.
+			// SendGrid returns the id in the header, not in the body — a 202
+			// with no body is its normal response.
 			Reference: resp.Header.Get("X-Message-Id"),
 		}, nil
 	}
-	return nil, s.falha(resp.StatusCode, body)
+	return nil, s.failure(resp.StatusCode, body)
 }
 
-// falha traduz o status do fornecedor para o Kind da porta (garantia 7).
-func (s *SendGrid) falha(code int, body []byte) error {
-	msg := s.redigir(explicarSG(body))
+// failure translates the provider's status into the port's Kind (guarantee 7).
+func (s *SendGrid) failure(code int, body []byte) error {
+	msg := s.redact(explainSG(body))
 	switch {
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
-		// Sem detalhe do fornecedor de propósito: 401/403 é sempre a mesma
-		// decisão para quem opera — a credencial não serve — e o corpo do 401 é
-		// o lugar mais provável de um fornecedor ecoar o que recebeu.
+		// No provider detail, on purpose: a 401/403 is always the same decision
+		// for whoever operates — the credential does not work — and a 401's body
+		// is the likeliest place for a provider to echo what it received.
 		return errs.New(errs.KindUnauthorized,
-			"o SendGrid recusou a credencial desta instalação (HTTP %d)", code)
+			"SendGrid refused this installation's credential (HTTP %d)", code)
 	case code == http.StatusTooManyRequests || code >= 500:
 		return errs.New(errs.KindUnavailable,
-			"o SendGrid não aceitou o aviso (HTTP %d): %s", code, msg)
+			"SendGrid did not accept the notice (HTTP %d): %s", code, msg)
 	case code >= 400:
-		// 400 do SendGrid é conteúdo ou endereço recusado: é erro de quem
-		// chamou, e reenviar igual dá o mesmo resultado.
-		return errs.Invalid("o SendGrid recusou o aviso (HTTP %d): %s", code, msg)
+		// A 400 from SendGrid is content or an address refused: it is the
+		// caller's error, and resending the same gives the same result.
+		return errs.Invalid("SendGrid refused the notice (HTTP %d): %s", code, msg)
 	}
-	return errs.Internal("resposta inesperada do SendGrid (HTTP %d): %s", code, msg)
+	return errs.Internal("unexpected response from SendGrid (HTTP %d): %s", code, msg)
 }
 
-// explicarSG achata o corpo de erro do SendGrid numa frase.
-func explicarSG(body []byte) string {
-	var e sgErro
+// explainSG flattens SendGrid's error body into one sentence.
+func explainSG(body []byte) string {
+	var e sgError
 	if err := json.Unmarshal(body, &e); err != nil || len(e.Errors) == 0 {
 		s := strings.TrimSpace(string(body))
 		if len(s) > 300 {
@@ -278,31 +287,31 @@ func explicarSG(body []byte) string {
 		}
 		return s
 	}
-	partes := make([]string, 0, len(e.Errors))
+	parts := make([]string, 0, len(e.Errors))
 	for _, it := range e.Errors {
 		p := strings.TrimSpace(it.Message)
 		if it.Field != "" {
 			p = it.Field + ": " + p
 		}
 		if p != "" {
-			partes = append(partes, p)
+			parts = append(parts, p)
 		}
 	}
-	return strings.Join(partes, "; ")
+	return strings.Join(parts, "; ")
 }
 
-// comAssunto injeta o assunto nos dados, como o projeto irmão faz: o template
-// publicado usa `{{subject}}`, o que permite trocar o assunto sem republicar
-// versão nova do HTML.
+// withSubject injects the subject into the data, as the sibling project does:
+// the published template uses `{{subject}}`, which allows changing the subject
+// without republishing a new version of the HTML.
 //
-// Cópia, e não escrita no mapa recebido: o chamador reusa o mesmo `Data` para
-// todos os destinatários de um resumo, e mutar aquilo dentro do adaptador é o
-// tipo de efeito colateral que só aparece no segundo destinatário.
-func comAssunto(d map[string]any, assunto string) map[string]any {
+// A copy, and not a write into the received map: the caller reuses the same
+// `Data` for every recipient of a digest, and mutating that inside the adapter
+// is the kind of side effect that only shows up on the second recipient.
+func withSubject(d map[string]any, subject string) map[string]any {
 	out := make(map[string]any, len(d)+1)
 	for k, v := range d {
 		out[k] = v
 	}
-	out["subject"] = assunto
+	out["subject"] = subject
 	return out
 }
