@@ -57,6 +57,7 @@ const (
 	KeyOnlyAdminsInvite     = "identity.invite.only_admins"
 	KeyOnlyAdminsRevoke     = "identity.invite.only_admins_revoke"
 	KeyOnlyAdminsSetRole    = "identity.membership.only_admins"
+	KeyLastOwner            = "identity.membership.last_owner"
 	KeyInviteNotUsable      = "identity.invite.not_usable"
 	KeyInviteNeedsSession   = "identity.invite.session_required"
 	KeyInviteEmailUnverif   = "identity.invite.email_unverified"
@@ -468,6 +469,41 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) (*Invite, e
 // The invariant "every account has at least one active owner" is enforced by a
 // database TRIGGER — a rule no operation can violate, not even through a path
 // nobody anticipated.
+// assertNotTheLastOwner refuses to leave an account without an owner.
+//
+// It is not a permission rule — whoever gets here is already allowed to change
+// roles. It is about RECOVERY: only an owner may hand ownership over, so an
+// account whose last owner demoted themselves cannot be fixed from inside; the
+// way back is a hand at the database. One click on a select, and this screen
+// would make that easy.
+//
+// It only reads the members when the new role is not owner, which is where the
+// number of owners can drop.
+func (s *Service) assertNotTheLastOwner(ctx context.Context, accountID, membershipID string, role Role) error {
+	if role == RoleOwner {
+		return nil
+	}
+	members, err := s.repo.MembershipsOfAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	owners, demotingAnOwner := 0, false
+	for _, m := range members {
+		if m.Role != RoleOwner {
+			continue
+		}
+		owners++
+		if m.ID == membershipID {
+			demotingAnOwner = true
+		}
+	}
+	if demotingAnOwner && owners == 1 {
+		return errs.Precondition("the account needs at least one owner").
+			WithCode(KeyLastOwner, nil)
+	}
+	return nil
+}
+
 func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string, role Role) (*Membership, error) {
 	call, _ := ctxutil.From(ctx)
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -485,6 +521,9 @@ func (s *Service) UpdateMembershipRole(ctx context.Context, membershipID string,
 	if !actor.Role.CanManageMembers() {
 		return nil, errs.Permission("only an owner or admin may change memberships").
 			WithCode(KeyOnlyAdminsSetRole, nil)
+	}
+	if err := s.assertNotTheLastOwner(ctx, accountID, membershipID, role); err != nil {
+		return nil, err
 	}
 	if err := s.requireStepUp(ctx); err != nil {
 		return nil, err

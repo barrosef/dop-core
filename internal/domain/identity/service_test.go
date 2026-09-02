@@ -662,3 +662,38 @@ func TestOnlyWhoManagesMembersSeesTheInvites(t *testing.T) {
 		t.Fatalf("a developer saw the invites: %v", err)
 	}
 }
+
+// ── the last owner ──────────────────────────────────────────────────────────
+
+func TestTheLastOwnerCannotBeDemoted(t *testing.T) {
+	// An account with no owner cannot be recovered from inside: nobody left can
+	// promote anybody. With a select on the members screen it would be one
+	// click away, so the refusal lives in the domain and not on the screen.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s1", Email: "owner@x.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: u.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID, SessionID: "sess-1"})
+	mems, _ := repo.MembershipsOfAccount(ctx, acct.ID)
+	only := mems[0].ID
+
+	_, err = svc.UpdateMembershipRole(ctx, only, identity.RoleAdmin)
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("demoting the only owner gave %v (%s)", err, errs.KindOf(err))
+	}
+	if k, _ := errs.CodeOf(err); k != identity.KeyLastOwner {
+		t.Errorf("key = %q", k)
+	}
+
+	// With a second owner it goes through — what is refused is emptying the
+	// role, not editing it.
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-second", UserID: "usr-2", AccountID: acct.ID, Role: identity.RoleOwner})
+	if _, err := svc.UpdateMembershipRole(ctx, only, identity.RoleAdmin); err != nil {
+		t.Fatalf("with two owners it still refused: %v", err)
+	}
+}

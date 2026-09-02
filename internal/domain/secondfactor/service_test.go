@@ -130,6 +130,22 @@ func (r *memRepo) RegisterAttempt(_ context.Context, id string, consumed bool, a
 	return &cp, nil
 }
 
+func (r *memRepo) ChallengesSince(_ context.Context, factorID string, since time.Time) (int, time.Time, error) {
+	count := 0
+	var lastPending time.Time
+	for _, c := range r.challenges {
+		if c.FactorID != factorID || c.CreatedAt.Before(since) {
+			continue
+		}
+		count++
+		// Only what has NOT been answered holds the floor — see the port.
+		if c.ConsumedAt == nil && c.CreatedAt.After(lastPending) {
+			lastPending = c.CreatedAt
+		}
+	}
+	return count, lastPending, nil
+}
+
 func (r *memRepo) ReplaceRecoveryCodes(_ context.Context, userID string, hashes [][]byte, _ time.Time) error {
 	r.recovery[userID] = hashes
 	return nil
@@ -657,4 +673,153 @@ func codeFromMail(t *testing.T, data map[string]any) string {
 		t.Fatalf("the e-mail did not carry the code: %v", data)
 	}
 	return c
+}
+
+// ── the send ceiling, and the revocation ────────────────────────────────────
+
+func TestASecondCodeIsNotSentWhileTheFirstIsPending(t *testing.T) {
+	// The floor is against the second click and against the loop: with e-mail
+	// and SMS every challenge is a message, and with SMS it is money.
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	factor := activeSMSFactor(t, f, ctx)
+	sentSoFar := len(f.sms.sent)
+
+	if _, err := f.svc.Challenge(ctx, factor.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.svc.Challenge(ctx, factor.ID)
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("a second immediate code gave %v", err)
+	}
+	if k, _ := errs.CodeOf(err); k != secondfactor.KeyResendTooSoon {
+		t.Errorf("key = %q", k)
+	}
+	if len(f.sms.sent) != sentSoFar+1 {
+		t.Errorf("%d messages sent, want 1", len(f.sms.sent)-sentSoFar)
+	}
+
+	// After the floor, asking again is legitimate.
+	f.clock.t = f.clock.t.Add(secondfactor.ResendInterval + time.Second)
+	if _, err := f.svc.Challenge(ctx, factor.ID); err != nil {
+		t.Fatalf("after the interval it still refused: %v", err)
+	}
+}
+
+func TestAnsweringCorrectlyDoesNotCostTheWait(t *testing.T) {
+	// The floor hangs off the PENDING challenge. Whoever verified a code must
+	// not be made to wait a minute for having succeeded.
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	factor := activeSMSFactor(t, f, ctx)
+
+	ch, err := f.svc.Challenge(ctx, factor.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := codeFromText(t, f.sms.sent[len(f.sms.sent)-1].text)
+	if _, err := f.svc.Verify(ctx, ch.ID, code); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Challenge(ctx, factor.ID); err != nil {
+		t.Fatalf("after answering correctly it refused: %v", err)
+	}
+}
+
+func TestTheHourlyCeilingStopsTheLoop(t *testing.T) {
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	factor := activeSMSFactor(t, f, ctx)
+
+	// Walking the clock forward between requests defeats the floor — which is
+	// exactly what a script does. The ceiling is what is left.
+	var err error
+	for i := 0; i < secondfactor.MaxChallengesPerHour+2; i++ {
+		f.clock.t = f.clock.t.Add(secondfactor.ResendInterval + time.Second)
+		_, err = f.svc.Challenge(ctx, factor.ID)
+		if err != nil {
+			break
+		}
+	}
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("the loop was not stopped: %v", err)
+	}
+	if k, _ := errs.CodeOf(err); k != secondfactor.KeyTooManyChallenges {
+		t.Errorf("key = %q", k)
+	}
+
+	// An hour later the window has moved and it is possible again.
+	f.clock.t = f.clock.t.Add(secondfactor.ChallengeWindow + time.Minute)
+	if _, err := f.svc.Challenge(ctx, factor.ID); err != nil {
+		t.Fatalf("after the window it still refused: %v", err)
+	}
+}
+
+func TestATOTPChallengeIsNotThrottled(t *testing.T) {
+	// It sends nothing: throttling would make the screen refuse for no reason.
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	enr, _ := f.svc.EnrollTOTP(ctx, "iPhone")
+	code, _ := totp.Code(enr.Secret, f.clock.t)
+	if _, err := f.svc.Confirm(ctx, enr.Factor.ID, enr.ChallengeID, code); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < secondfactor.MaxChallengesPerHour+3; i++ {
+		if _, err := f.svc.Challenge(ctx, enr.Factor.ID); err != nil {
+			t.Fatalf("attempt %d on a TOTP was throttled: %v", i+1, err)
+		}
+	}
+}
+
+func TestRevokingAFactorDropsEveryStepUp(t *testing.T) {
+	// Whoever revokes a factor is saying "the device I had is no longer mine".
+	// Leaving a session open would keep the door the removal was meant to close.
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	other := ctxOf("sess-2")
+	factor := activeSMSFactor(t, f, ctx)
+
+	// Two sessions stepped up.
+	for _, c := range []context.Context{ctx, other} {
+		f.clock.t = f.clock.t.Add(secondfactor.ResendInterval + time.Second)
+		ch, err := f.svc.Challenge(c, factor.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := codeFromText(t, f.sms.sent[len(f.sms.sent)-1].text)
+		if _, err := f.svc.Verify(c, ch.ID, code); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.svc.RequireStepUp(other); err != nil {
+		t.Fatalf("the second session was not stepped up: %v", err)
+	}
+
+	if err := f.svc.Revoke(ctx, factor.ID); err != nil {
+		t.Fatal(err)
+	}
+	// With no active factor left and no requirement, the gate lets through —
+	// what has to be gone is the RECORD, not the permission.
+	if su, _ := f.repo.StepUpFor(ctx, "u-1", "sess-2"); su != nil {
+		t.Error("a stepped-up session survived the revocation")
+	}
+	if su, _ := f.repo.StepUpFor(ctx, "u-1", "sess-1"); su != nil {
+		t.Error("the revoking session kept its step-up")
+	}
+}
+
+func TestConfirmingStepsTheSessionUp(t *testing.T) {
+	// The person proved possession seconds ago, in this session: asking again
+	// would add nothing and would cost a second message.
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true})
+	ctx := ctxOf("sess-1")
+	activeSMSFactor(t, f, ctx)
+
+	if err := f.svc.RequireStepUp(ctx); err != nil {
+		t.Fatalf("after confirming, the gate still refused: %v", err)
+	}
+	// And only THIS session: confirming is not a master key.
+	if err := f.svc.RequireStepUp(ctxOf("sess-2")); err == nil {
+		t.Error("confirming stepped up another session too")
+	}
 }

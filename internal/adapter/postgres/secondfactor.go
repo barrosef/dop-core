@@ -166,6 +166,34 @@ func (r *SecondFactorRepo) RegisterAttempt(ctx context.Context, id string, consu
 	return c, Translate(err, "challenge")
 }
 
+// ChallengesSince counts what was opened in the window and reports the last
+// PENDING one's instant — in ONE query, because they answer the same question
+// ("may I send another?") and two queries would open the window between them.
+//
+// The `FILTER` is the whole point: the ceiling counts everything (a consumed
+// message cost the same), the floor looks only at what has not been answered
+// yet. Without it, whoever verified a code correctly would be made to wait a
+// minute for having succeeded.
+//
+// The index `second_factor_challenges (factor_id, created_at DESC)` is what
+// keeps this cheap: it runs on every send.
+func (r *SecondFactorRepo) ChallengesSince(ctx context.Context, factorID string, since time.Time) (int, time.Time, error) {
+	var count int
+	var last *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*),
+		       max(created_at) FILTER (WHERE consumed_at IS NULL)
+		  FROM second_factor_challenges
+		 WHERE factor_id = $1 AND created_at >= $2`, factorID, since).Scan(&count, &last)
+	if err != nil {
+		return 0, time.Time{}, Translate(err, "challenges")
+	}
+	if last == nil {
+		return count, time.Time{}, nil
+	}
+	return count, *last, nil
+}
+
 // ── recovery codes ──────────────────────────────────────────────────────────
 
 // ReplaceRecoveryCodes swaps the WHOLE set in one transaction: generating new

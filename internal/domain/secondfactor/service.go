@@ -258,6 +258,20 @@ func (s *Service) Confirm(ctx context.Context, factorID, challengeID, code strin
 	}
 	logging.From(ctx).Info("second factor confirmed", "kind", string(f.Kind), "factor_id", f.ID)
 
+	// Confirming steps the SESSION up: the person proved possession seconds ago,
+	// in this session. Asking again would add nothing and would cost a second
+	// message.
+	//
+	// It does not contradict "an enrolment challenge does not authenticate": what
+	// steps up is the CONFIRMATION — an operation that names the factor and
+	// activates it — and not answering the enrolment's challenge through Verify,
+	// which stays refused.
+	if sessionID, err := session(ctx); err == nil {
+		if _, err := s.stepUp(ctx, userID, sessionID, f.Kind); err != nil {
+			return nil, err
+		}
+	}
+
 	if !first {
 		return nil, nil
 	}
@@ -295,6 +309,19 @@ func (s *Service) Revoke(ctx context.Context, factorID string) error {
 		}
 	}
 	if err := s.repo.RevokeFactor(ctx, f.ID, s.now()); err != nil {
+		return err
+	}
+
+	// Revoking a factor drops EVERY stepped-up session of the person, not only
+	// the ones this factor opened.
+	//
+	// It is deliberately more than the minimum: the step-up records the METHOD,
+	// not which factor answered, so "only this one's sessions" is not a question
+	// the data can answer. And the reason somebody revokes a factor is that the
+	// device is gone — leaving a session open would keep the door the removal
+	// was meant to close. The price is that the person answers again on their
+	// next sensitive operation, which is small next to the alternative.
+	if err := s.repo.DeleteStepUpsOf(ctx, userID); err != nil {
 		return err
 	}
 	logging.From(ctx).Info("second factor revoked", "kind", string(f.Kind), "factor_id", f.ID)
@@ -511,6 +538,9 @@ func (s *Service) stepUp(ctx context.Context, userID, sessionID string, method K
 // and has no row is a code nobody can answer; a row whose send failed is a
 // challenge the person asks for again.
 func (s *Service) issueCode(ctx context.Context, f *Factor, purpose Purpose) (*Challenge, error) {
+	if err := s.assertMaySend(ctx, f); err != nil {
+		return nil, err
+	}
 	ch := &Challenge{
 		FactorID: f.ID, UserID: f.UserID, Purpose: purpose,
 		ExpiresAt: s.now().Add(CodeTTL), CreatedAt: s.now(),
@@ -534,6 +564,34 @@ func (s *Service) issueCode(ctx context.Context, f *Factor, purpose Purpose) (*C
 		return nil, err
 	}
 	return saved, nil
+}
+
+// assertMaySend is the ceiling on SENDING — the other half of the cool-off.
+//
+// The attempt counter stops guessing; this stops the abuse that costs the
+// attacker nothing and costs us a message: asking for codes in a loop. It only
+// applies where there is a channel — a TOTP challenge sends nothing, and
+// throttling it would only make the screen refuse for no reason.
+func (s *Service) assertMaySend(ctx context.Context, f *Factor) error {
+	if !f.Kind.NeedsChannel() {
+		return nil
+	}
+	count, last, err := s.repo.ChallengesSince(ctx, f.ID, s.now().Add(-ChallengeWindow))
+	if err != nil {
+		return err
+	}
+	if !last.IsZero() {
+		if wait := ResendInterval - s.now().Sub(last); wait > 0 {
+			return errs.Precondition("wait %d seconds before asking for another code",
+				int(wait.Seconds()+0.999)).
+				WithCode(KeyResendTooSoon, map[string]any{"seconds": int(wait.Seconds() + 0.999)})
+		}
+	}
+	if count >= MaxChallengesPerHour {
+		return errs.Precondition("too many codes requested for this factor; try again later").
+			WithCode(KeyTooManyChallenges, map[string]any{"max": MaxChallengesPerHour})
+	}
+	return nil
 }
 
 // send is where the CHANNEL is used and the Notifier is not (ADR-0027 §3).

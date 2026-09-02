@@ -140,6 +140,25 @@ const MaxAttempts = 5
 // key.
 const CodeTTL = 10 * time.Minute
 
+// ResendInterval is the floor between two sends to the SAME factor.
+//
+// It exists for the person (a second button press must not send two messages)
+// and against a script: with e-mail and SMS every challenge is a message, and
+// with SMS it is money. Sixty seconds is longer than an impatient click and
+// shorter than the wait for a message that got lost.
+const ResendInterval = 60 * time.Second
+
+// MaxChallengesPerHour is the ceiling per factor.
+//
+// The attempt counter already stops GUESSING; this stops the other abuse, which
+// costs nothing to whoever does it and costs a message to us: asking for codes
+// in a loop. Five in an hour covers a person who genuinely lost two messages and
+// refuses the loop.
+const MaxChallengesPerHour = 5
+
+// ChallengeWindow is the window MaxChallengesPerHour is counted in.
+const ChallengeWindow = time.Hour
+
 // StepUpTTL is how long a session stays stepped up. Twelve hours is a working
 // day: asking again in the middle of it teaches people to answer without
 // reading, and never asking again turns the factor into a formality at sign-up.
@@ -238,6 +257,8 @@ const (
 	KeyChallengeExpired   = "second_factor.challenge.expired"
 	KeyChallengeExhausted = "second_factor.challenge.exhausted"
 	KeyChallengeNotFound  = "second_factor.challenge.not_found"
+	KeyResendTooSoon      = "second_factor.challenge.too_soon"
+	KeyTooManyChallenges  = "second_factor.challenge.too_many"
 	KeyStepUpRequired     = "second_factor.step_up.required"
 	KeyRecoveryInvalid    = "second_factor.recovery.invalid"
 	KeySessionMissing     = "second_factor.session.missing"
