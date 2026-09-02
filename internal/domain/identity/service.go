@@ -189,6 +189,33 @@ func (s *Service) ListAccounts(ctx context.Context, userID string) ([]Account, [
 	return s.repo.AccountsOfUser(ctx, userID)
 }
 
+// PersonalAccountOf returns the id of the user's personal account.
+//
+// It exists for the second factor: the TOTP seed is a user's secret, and the
+// vault's reference needs an isolation scope. The personal account IS the
+// person inside the platform (ADR-0002) — it is born with the user, it has
+// exactly one member and it is the only scope that means "this belongs to that
+// person, not to a company they happen to be in".
+func (s *Service) PersonalAccountOf(ctx context.Context, userID string) (string, error) {
+	if userID == "" {
+		return "", errs.Invalid("user not provided")
+	}
+	accounts, _, err := s.repo.AccountsOfUser(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	for _, a := range accounts {
+		if a.Kind == AccountPersonal {
+			return a.ID, nil
+		}
+	}
+	// It does not happen through the normal path — EnsureUser creates it in the
+	// same transaction as the user — and if it ever does, the honest answer is
+	// a refusal, not an empty scope that would put the secret somewhere nobody
+	// can find it again.
+	return "", errs.Precondition("the user has no personal account")
+}
+
 // Authorize resolves the actor's role and grants in the active account.
 // It is what the BFF queries to fill the decorators' AuthContext.
 func (s *Service) Authorize(ctx context.Context, userID, accountID string) (*Membership, error) {

@@ -25,6 +25,14 @@ type Call struct {
 	ActorID   string
 	ActorKind ActorKind
 	ActorName string
+	// SessionID identifies the CALLER'S SESSION, and it exists for the second
+	// factor: the step-up is per (user, session), because two open sessions are
+	// two doors and one of them answering must not open the other (ADR-0027 §5).
+	//
+	// It comes from the edge, like every other field here — with the limit P-18
+	// describes, which this feature makes load-bearing: the core trusts the
+	// metadata, and the NetworkPolicy is what makes the assumption hold.
+	SessionID string
 }
 
 // ErrNoAccount signals a request with no active account — invalid by

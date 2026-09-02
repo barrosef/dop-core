@@ -728,6 +728,113 @@ type Mailer interface {
 	Resolve(ctx context.Context, kind string) error
 }
 
+// ───────────────────────── SMSer ─────────────────────────
+
+// SMS is ONE text message. Note what is not here, next to Mail: no subject, no
+// HTML, no attachment, no template data. SMS has 160 characters and no
+// formatting, and a port that carried e-mail's fields would be a port with most
+// of its fields always empty.
+//
+// The text arrives READY. It is the opposite of Mail, and the difference is not
+// an inconsistency — it is what the two channels are. E-mail has a template at
+// the provider, with an editor and versioning, and that is why the port speaks
+// intent; SMS has one line, the same in every provider, and inventing a
+// template index for one line would be ceremony with no editor to preserve.
+type SMS struct {
+	// AccountID is the account on whose behalf it goes out. It reaches the
+	// adapter because the sender may one day be per account, not to filter.
+	AccountID string
+	// To is ONE destination in E.164 ("+5511999999999"). One, for Mail's same
+	// reason: fan-out is the caller's decision.
+	To string
+	// Text is what the person reads. The adapter does not render, does not
+	// prefix and does not append — whoever sends is who knows what the message
+	// says.
+	Text string
+}
+
+// SMSState mirrors MailState, with the same vocabulary, so that operations
+// reads both the same way.
+type SMSState string
+
+const (
+	SMSSent SMSState = "sent"
+	// SMSSentLocal is a REHEARSAL: no credential, the adapter printed instead of
+	// sending. Local has no SMS gateway, and the difference between "we sent"
+	// and "we pretended to" cannot depend on whoever reads the log remembering
+	// the environment.
+	SMSSentLocal SMSState = "sent_local"
+)
+
+type SMSReceipt struct {
+	State SMSState
+	// Provider identifies who served it ("twilio", "zenvia"): "it never
+	// arrived" is a different investigation depending on the carrier.
+	Provider string
+	// Reference is the provider's id when there is one. Empty is normal, and
+	// nothing in the domain may depend on it.
+	Reference string
+}
+
+// SMSer is the SMS CHANNEL — the port ADR-0025 left foreseen and ADR-0027
+// brought into being, when the second factor made SMS exist.
+//
+// It is a channel and not a notifier: what decides that a message goes out is
+// the domain. And unlike Mailer, its caller is NOT the Notifier — a
+// second-factor code is a CHALLENGE the person is waiting for, not a
+// notification that interrupts them, so it does not pass through the policy
+// table, the digest or the delay (ADR-0027 §3).
+//
+// Guarantees verified by the contract suite, in EVERY adapter:
+//
+//  1. an empty destination, one not in E.164 (no leading "+", non-digits, fewer
+//     than 8 or more than 15 digits) and an empty text are KindInvalid decided
+//     with NO I/O: a caller with a broken number must not cost a round trip, and
+//     with SMS it must not cost money either;
+//
+//  2. LOCAL REHEARSAL: with no credential configured, the adapter does NOT talk
+//     to the provider — it prints the message and returns SMSSentLocal. It is
+//     the local environment's only mode: there is no SMS emulator, and the path
+//     is exercised even though the delivery is not (P-35);
+//
+//  3. the SECRET does not get out: the token, the auth string and the account
+//     SID never appear in an error, in a log, in the adapter's String() or in a
+//     `%+v` of it. Captured in a CLOSURE, not held in a field — fmt reads
+//     unexported fields by reflection;
+//
+//  4. with a nil error, State is ALWAYS SMSSent or SMSSentLocal, never empty;
+//
+//  5. error translation is the house's: provider down, network, deadline
+//     exceeded and unreadable response are KindUnavailable; a refused credential
+//     is KindUnauthorized; a number or text refused by the provider is
+//     KindInvalid. The distinction decides whether the code is retried or the
+//     person is told to fix the number;
+//
+//  6. Send writes NOTHING and has no side effect beyond the send: recording
+//     belongs to the caller;
+//
+//  7. the TEXT does not reach the log. It carries the one-time code, and a code
+//     in a log is a live credential at rest for as long as it is valid. The
+//     rehearsal of guarantee 2 is the ONE exception, and it exists precisely
+//     because there is no gateway locally — it prints where there is nobody to
+//     receive;
+//
+//  8. safe for concurrent use.
+//
+// OUT of the port, on purpose:
+//
+//   - DELIVERY STATUS (Twilio's callbacks, Zenvia's webhooks). It is
+//     asymmetric, it arrives minutes later through another channel, and nothing
+//     in the second factor waits for it: what proves the code arrived is the
+//     person typing it;
+//   - the SENDER (a long code, a short code, an alphanumeric ID). It is
+//     installation configuration, per provider and per country, not something
+//     the domain chooses per message;
+//   - scheduling, and message parts/concatenation. A code fits in one message.
+type SMSer interface {
+	Send(ctx context.Context, m SMS) (*SMSReceipt, error)
+}
+
 // ───────────────────────── Clock and IDs ─────────────────────────
 // Small, but real: this is what makes the domain deterministic in tests.
 

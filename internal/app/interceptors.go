@@ -52,7 +52,7 @@ func StreamLogging() grpc.StreamServerInterceptor {
 			log.Error("the stream failed", logging.FieldError, err.Error(), logging.FieldDurationMs, ms)
 			return toStatus(err)
 		}
-		log.Info("stream encerrado", logging.FieldDurationMs, ms)
+		log.Info("the stream finished", logging.FieldDurationMs, ms)
 		return nil
 	}
 }
@@ -101,6 +101,7 @@ func callFromMD(ctx context.Context) context.Context {
 		ActorID:   first(md, "x-actor-id"),
 		ActorName: first(md, "x-actor-name"),
 		ActorKind: ctxutil.ActorKind(first(md, "x-actor-kind")),
+		SessionID: first(md, "x-session-id"),
 	}
 	if call.ActorKind == "" {
 		call.ActorKind = ctxutil.ActorUser
