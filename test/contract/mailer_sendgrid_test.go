@@ -1,16 +1,17 @@
 package contract_test
 
-// A suíte de contrato do Mailer contra o adaptador REAL do SendGrid, com um
-// httptest.Server do outro lado do fio.
+// The Mailer's contract suite against the REAL SendGrid adapter, with an
+// httptest.Server on the other side of the wire.
 //
 //	go test ./test/contract/ -run Mailer -v
 //
-// Roda SEMPRE — sem tag, sem infra, sem chave. É condição para a suíte existir
-// de verdade: a lição desta casa é que suíte que não roda não verifica nada (o
-// adaptador k8s de SecretStore passou meses sem nunca ter sido exercitado).
+// It ALWAYS runs — no tag, no infrastructure, no key. It is a condition for the
+// suite to really exist: this house's lesson is that a suite that does not run
+// verifies nothing (SecretStore's k8s adapter spent months never having been
+// exercised).
 //
-// A API do SendGrid nunca é chamada de verdade. Ver o cabeçalho de
-// mailer_fakes.go para o que o duplo prova e o que ele não prova.
+// SendGrid's API is never really called. See mailer_fakes.go's header for what
+// the double proves and what it does not.
 
 import (
 	"testing"
@@ -21,18 +22,19 @@ import (
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
-// chaveSG é o segredo que os duplos ecoam de volta. Valor com cara de chave
-// real de propósito: um segredo "abc" casaria por acidente com qualquer texto e
-// a garantia 4 passaria a acusar falso positivo.
-const chaveSG = "SG.4nZk-teste-NAO-USAR.9xQv7hJp2LmR0tWc"
+// sendGridKey is the secret the doubles echo back. A value that looks like a
+// real key on purpose: a secret of "abc" would match any text by accident and
+// guarantee 4 would start reporting false positives.
+const sendGridKey = "SG.4nZk-test-DO-NOT-USE.9xQv7hJp2LmR0tWc"
 
-// idsDeTeste é tipo → `template_id`, montado a partir de `notification.Kinds()`.
+// testIDs is kind → `template_id`, built from `notification.Kinds()`.
 //
-// Derivado, e não literal: um literal aqui precisaria ser atualizado a cada tipo
-// novo, e quem esquecesse veria a suíte falhar por CONFIGURAÇÃO faltando, não
-// por TEMPLATE faltando — que é a falha que importa. Com o mapa derivado, a
-// única forma de o subteste 1 reprovar é o índice do adaptador estar incompleto.
-func idsDeTeste() map[string]string {
+// Derived, and not a literal: a literal here would need updating with every new
+// kind, and whoever forgot would see the suite fail for a MISSING CONFIGURATION,
+// not for a MISSING TEMPLATE — which is the failure that matters. With the
+// derived map, the only way subtest 1 can fail is the adapter's index being
+// incomplete.
+func testIDs() map[string]string {
 	out := map[string]string{}
 	for _, k := range notification.KindNames() {
 		out[k] = "d-" + k
@@ -41,76 +43,77 @@ func idsDeTeste() map[string]string {
 }
 
 func TestMailerContractSendGrid(t *testing.T) {
-	ids := idsDeTeste()
-	novo := func(t *testing.T, f contract.Falha, comChave bool) (ports.Mailer, *contract.Caixa) {
-		url, caixa := contract.NovoDuploSendGrid(t, ids, f, chaveSG)
-		chave := chaveSG
+	ids := testIDs()
+	novo := func(t *testing.T, f contract.Failure, comChave bool) (ports.Mailer, *contract.Inbox) {
+		url, inbox := contract.NewSendGridDouble(t, ids, f, sendGridKey)
+		key := sendGridKey
 		if !comChave {
-			chave = "" // ensaio local
+			key = "" // ensaio local
 		}
 		return mailer.NewSendGrid(mailer.SendGridConfig{
-			APIKey:    chave,
+			APIKey:    key,
 			BaseURL:   url,
 			From:      "avisos@dop.test",
 			FromName:  "DOP",
 			Templates: ids,
-		}), caixa
+		}), inbox
 	}
 
 	contract.MailerSuite(t, "sendgrid", contract.MailerHarness{
-		Segredo: chaveSG,
-		Novo: func(t *testing.T) (ports.Mailer, *contract.Caixa) {
+		Secret: sendGridKey,
+		New: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
 			return novo(t, "", true)
 		},
-		NovoFalho: func(t *testing.T, f contract.Falha) (ports.Mailer, *contract.Caixa) {
+		NewFailing: func(t *testing.T, f contract.Failure) (ports.Mailer, *contract.Inbox) {
 			return novo(t, f, true)
 		},
-		NovoEnsaio: func(t *testing.T) (ports.Mailer, *contract.Caixa) {
+		NewDryRun: func(t *testing.T) (ports.Mailer, *contract.Inbox) {
 			return novo(t, "", false)
 		},
 	})
 }
 
-// O template configurado mas AUSENTE no fornecedor é a outra metade do silêncio
-// da ADR-0025: o tipo está no índice, o id está na configuração, e o `d-…`
-// aponta para nada. O SendGrid responde 400; o adaptador precisa dizer que foi
-// recusa de conteúdo, e não indisponibilidade — senão o worker fica reenviando
-// para sempre um template que não existe.
+// A template that is configured but ABSENT at the provider is ADR-0025's other
+// half of silence: the kind is in the index, the id is in the configuration, and
+// the `d-…` points at nothing. SendGrid answers 400; the adapter has to say it
+// was a content refusal, and not an unavailability — otherwise the worker keeps
+// resending forever a template that does not exist.
 func TestMailerSendGridTemplateInexistenteNaoViraRetryEterno(t *testing.T) {
-	ids := idsDeTeste()
-	url, _ := contract.NovoDuploSendGrid(t, ids, contract.FalhaConteudo, chaveSG)
+	ids := testIDs()
+	url, _ := contract.NewSendGridDouble(t, ids, contract.FailureContent, sendGridKey)
 	m := mailer.NewSendGrid(mailer.SendGridConfig{
-		APIKey: chaveSG, BaseURL: url, Templates: ids,
+		APIKey: sendGridKey, BaseURL: url, Templates: ids,
 	})
 	_, err := m.Send(t.Context(), ports.Mail{
-		AccountID: "conta-1", Kind: notification.KindNames()[0], To: "alguem@exemplo.test",
+		AccountID: "acct-1", Kind: notification.KindNames()[0], To: "someone@example.test",
 	})
 	if err == nil {
-		t.Fatal("esperava recusa")
+		t.Fatal("expected a refusal")
 	}
 	if got := errsKindOf(err); got != "invalid_argument" {
-		t.Fatalf("esperava invalid_argument (permanente), veio %v: %v", got, err)
+		t.Fatalf("expected invalid_argument (permanent), got %v: %v", got, err)
 	}
 }
 
-// SEM id configurado, e COM chave, o adaptador precisa recusar por PRECONDIÇÃO
-// — erro de montagem, não de política. A distinção existe para que quem lê o
-// erro saiba se falta uma linha no código ou uma variável no deploy.
+// WITHOUT a configured id, and WITH a key, the adapter has to refuse with a
+// PRECONDITION — an assembly error, not a policy one. The distinction exists so
+// whoever reads the error knows whether a line of code or a deploy variable is
+// missing.
 func TestMailerSendGridSemIDConfiguradoEhErroDeMontagem(t *testing.T) {
-	url, caixa := contract.NovoDuploSendGrid(t, idsDeTeste(), "", chaveSG)
+	url, inbox := contract.NewSendGridDouble(t, testIDs(), "", sendGridKey)
 	m := mailer.NewSendGrid(mailer.SendGridConfig{
-		APIKey: chaveSG, BaseURL: url, // Templates vazio
+		APIKey: sendGridKey, BaseURL: url, // Templates vazio
 	})
 	kind := notification.KindNames()[0]
 	if got := errsKindOf(m.Resolve(t.Context(), kind)); got != "failed_precondition" {
-		t.Fatalf("esperava failed_precondition, veio %v", got)
+		t.Fatalf("expected failed_precondition, got %v", got)
 	}
 	if _, err := m.Send(t.Context(), ports.Mail{
 		AccountID: "c", Kind: kind, To: "a@b.test",
 	}); errsKindOf(err) != "failed_precondition" {
-		t.Fatalf("Send sem id: esperava failed_precondition, veio %v", err)
+		t.Fatalf("Send with no id: expected failed_precondition, got %v", err)
 	}
-	if caixa.Chamadas() != 0 {
-		t.Fatalf("erro de montagem custou %d ida(s) ao fornecedor", caixa.Chamadas())
+	if inbox.Calls() != 0 {
+		t.Fatalf("an assembly error cost %d round trip(s) to the provider", inbox.Calls())
 	}
 }

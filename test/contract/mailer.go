@@ -14,43 +14,44 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// Suíte de contrato da porta ports.Mailer.
+// The ports.Mailer port's contract suite.
 //
-// Disciplina da ADR-0001: uma porta com um adaptador só é palpite. O mesmo
-// conjunto roda contra o SendGrid e contra o SMTP.
+// ADR-0001's discipline: a port with a single adapter is guesswork. The same set
+// runs against SendGrid and against SMTP.
 //
-// ── O subteste que justifica a suíte inteira ────────────────────────────────
+// ── The subtest that justifies the whole suite ──────────────────────────────
 //
-// `1_resolve_todos_os_tipos_do_dominio`. A ADR-0025 escreveu a consequência que
-// exige teste: um tipo de notificação pode existir na política e não ter
-// template no fornecedor, e isso falharia em SILÊNCIO — o evento acontece, o
-// consumidor roda, ninguém recebe. Nada mais no sistema fica vermelho por causa
-// disso: não há erro, não há log, não há métrica. Só a caixa de entrada de
-// alguém que fica vazia.
+// `1_resolves_every_domain_kind`. ADR-0025 wrote down the consequence that
+// demands a test: a notification kind may exist in the policy and have no
+// template at the provider, and that would fail in SILENCE — the event happens,
+// the consumer runs, nobody receives anything. Nothing else in the system turns
+// red because of it: there is no error, no log, no metric. Only somebody's inbox
+// staying empty.
 //
-// A lista de tipos vem de `notification.Kinds()`, que por sua vez é DERIVADA da
-// tabela de regras. É a corrente inteira: acrescentar uma linha na política
-// acrescenta um tipo, que acrescenta uma exigência a TODO adaptador, que
-// reprova aqui até alguém dar template a ele nos dois fornecedores.
+// The list of kinds comes from `notification.Kinds()`, which in turn is DERIVED
+// from the rules table. It is the whole chain: adding a line to the policy adds
+// a kind, which adds a requirement to EVERY adapter, which fails here until
+// somebody gives it a template in both providers.
 //
-// ── A API do fornecedor nunca é chamada de verdade ──────────────────────────
+// ── The provider's API is never really called ───────────────────────────────
 //
-// Do outro lado do fio há um DUPLO (httptest.Server para o SendGrid, servidor
-// SMTP local para o outro); sob teste está o adaptador REAL. É a única
-// combinação que prova alguma coisa: duplo dos dois lados prova que o duplo é
-// consistente consigo mesmo, e adaptador contra fornecedor real transforma a
-// suíte em algo que ninguém roda.
+// On the other side of the wire there is a DOUBLE (an httptest.Server for
+// SendGrid, a local SMTP server for the other); what is under test is the REAL
+// adapter. It is the only combination that proves anything: a double on both
+// sides proves the double is consistent with itself, and the adapter against the
+// real provider turns the suite into something nobody runs.
 // ════════════════════════════════════════════════════════════════════════════
 
-// Caixa é o que o duplo do outro lado do fio recolheu. O tipo é da SUÍTE, e não
-// de cada runner, para que as asserções sejam as mesmas nos dois adaptadores.
-type Caixa struct {
+// Inbox is what the double on the other side of the wire collected. The type
+// belongs to the SUITE, and not to each runner, so the assertions are the same
+// in both adapters.
+type Inbox struct {
 	mu       sync.Mutex
 	msgs     []SentMail
 	chamadas int
 }
 
-// SentMail é uma mensagem que chegou ao duplo.
+// SentMail is a message that reached the double.
 type SentMail struct {
 	To      string
 	Kind    string
@@ -58,23 +59,23 @@ type SentMail struct {
 	Body    string
 }
 
-// Recebeu registra uma mensagem. Chamado pelos duplos dos runners.
-func (c *Caixa) Recebeu(m SentMail) {
+// Received records a message. Called by the runners' doubles.
+func (c *Inbox) Received(m SentMail) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.msgs = append(c.msgs, m)
 	c.chamadas++
 }
 
-// Bateu registra que houve CONTATO, ainda que sem mensagem válida. É o que
-// permite provar a garantia 5: recusa sem I/O.
-func (c *Caixa) Bateu() {
+// Touched records that there was CONTACT, even with no valid message. It is what
+// allows proving guarantee 5: a refusal with no I/O.
+func (c *Inbox) Touched() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.chamadas++
 }
 
-func (c *Caixa) Mensagens() []SentMail {
+func (c *Inbox) Messages() []SentMail {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]SentMail, len(c.msgs))
@@ -82,290 +83,291 @@ func (c *Caixa) Mensagens() []SentMail {
 	return out
 }
 
-func (c *Caixa) Chamadas() int {
+func (c *Inbox) Calls() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.chamadas
 }
 
-// Falha é o modo de recusa que o duplo simula. São três porque a garantia 7 da
-// porta faz três distinções, e confundi-las manda a equipe caçar defeito no
-// lugar errado.
-type Falha string
+// Failure is the refusal mode the double simulates. There are three because the
+// port's guarantee 7 makes three distinctions, and confusing them sends the team
+// hunting for a defect in the wrong place.
+type Failure string
 
 const (
-	// FalhaCredencial: o fornecedor recusa a credencial (401 / 535).
-	FalhaCredencial Falha = "credencial"
-	// FalhaIndisponivel: o fornecedor não atende (503 / conexão recusada).
-	FalhaIndisponivel Falha = "indisponivel"
-	// FalhaConteudo: o fornecedor recusa a mensagem (400 / 550).
-	FalhaConteudo Falha = "conteudo"
+	// FailureCredential: o fornecedor recusa a credencial (401 / 535).
+	FailureCredential Failure = "credencial"
+	// FailureUnavailable: the provider does not answer (503 / connection refused).
+	FailureUnavailable Failure = "indisponivel"
+	// FailureContent: o fornecedor recusa a mensagem (400 / 550).
+	FailureContent Failure = "conteudo"
 )
 
-// MailerHarness é o que cada runner fornece: três montagens do MESMO adaptador
-// real, contra duplos diferentes.
+// MailerHarness is what each runner supplies: three assemblies of the SAME real
+// adapter, against different doubles.
 type MailerHarness struct {
-	// Novo monta o adaptador contra um duplo saudável.
-	Novo func(t *testing.T) (ports.Mailer, *Caixa)
-	// NovoFalho monta contra um duplo que recusa do jeito pedido.
-	NovoFalho func(t *testing.T, f Falha) (ports.Mailer, *Caixa)
-	// NovoEnsaio monta SEM credencial — o modo em que o adaptador imprime em
-	// vez de enviar.
-	NovoEnsaio func(t *testing.T) (ports.Mailer, *Caixa)
-	// Segredo é a credencial que os duplos ECOAM de volta na mensagem de erro.
-	// É assim que a garantia 4 vira teste em vez de promessa: o fornecedor
-	// devolve o segredo, e a suíte exige que ele não chegue ao erro.
-	Segredo string
+	// New assembles the adapter against a healthy double.
+	New func(t *testing.T) (ports.Mailer, *Inbox)
+	// NewFailing assembles against a double that refuses in the requested way.
+	NewFailing func(t *testing.T, f Failure) (ports.Mailer, *Inbox)
+	// NewDryRun assembles WITHOUT a credential — the mode in which the adapter
+	// prints instead of sending.
+	NewDryRun func(t *testing.T) (ports.Mailer, *Inbox)
+	// Secret is the credential the doubles ECHO back in the error message. It is
+	// how guarantee 4 becomes a test instead of a promise: the provider returns
+	// the secret, and the suite requires it not to reach the error.
+	Secret string
 }
 
 // MailerSuite verifica as dez garantias documentadas na porta.
 func MailerSuite(t *testing.T, name string, h MailerHarness) {
 	t.Run(name, func(t *testing.T) {
 		ctx := context.Background()
-		tipos := notification.KindNames()
-		if len(tipos) == 0 {
-			t.Fatal("notification.Kinds() está vazio: sem tipos, esta suíte não prova nada")
+		kinds := notification.KindNames()
+		if len(kinds) == 0 {
+			t.Fatal("notification.Kinds() is empty: with no kinds, this suite proves nothing")
 		}
 
-		// ── 1. A GARANTIA QUE JUSTIFICA A SUÍTE ─────────────────────────────
-		t.Run("1_resolve_todos_os_tipos_do_dominio", func(t *testing.T) {
-			m, _ := h.Novo(t)
-			for _, kind := range tipos {
+		// ── 1. THE GUARANTEE THAT JUSTIFIES THE SUITE ───────────────────────
+		t.Run("1_resolves_every_domain_kind", func(t *testing.T) {
+			m, _ := h.New(t)
+			for _, kind := range kinds {
 				if err := m.Resolve(ctx, kind); err != nil {
-					t.Errorf("o adaptador NÃO resolve o aviso %q: %v\n\n"+
-						"Isto falharia em SILÊNCIO em produção: o evento acontece, o "+
-						"consumidor roda e ninguém recebe. Dê template a este tipo neste "+
+					t.Errorf("the adapter does NOT resolve the %q notice: %v\n\n"+
+						"This would fail in SILENCE in production: the event happens, the "+
+						"consumer runs and nobody receives anything. Give this kind a template in this "+
 						"fornecedor (ADR-0025).", kind, err)
 				}
 			}
 		})
 
-		t.Run("1b_envia_todos_os_tipos_do_dominio", func(t *testing.T) {
-			// Resolve e Send precisam CONCORDAR (garantia 2). Um adaptador cujo
-			// Resolve diz "sim" e cujo Send não encontra o template passaria no
-			// subteste acima e continuaria falhando calado.
-			for _, kind := range tipos {
-				m, caixa := h.Novo(t)
+		t.Run("1b_sends_every_domain_kind", func(t *testing.T) {
+			// Resolve and Send have to AGREE (guarantee 2). An adapter whose
+			// Resolve says "yes" and whose Send does not find the template would
+			// pass the subtest above and keep failing quietly.
+			for _, kind := range kinds {
+				m, inbox := h.New(t)
 				rec, err := m.Send(ctx, ports.Mail{
-					AccountID: "conta-1", Kind: kind, To: "alguem@exemplo.test",
-					ToName: "Alguém", Data: dadosDeExemplo(),
+					AccountID: "acct-1", Kind: kind, To: "someone@example.test",
+					ToName: "Somebody", Data: sampleData(),
 				})
 				if err != nil {
-					t.Errorf("Send do aviso %q falhou contra o duplo saudável: %v", kind, err)
+					t.Errorf("Send of the %q notice failed against the healthy double: %v", kind, err)
 					continue
 				}
 				if rec == nil || rec.State != ports.MailSent {
-					t.Errorf("aviso %q: esperava State=%q, veio %+v", kind, ports.MailSent, rec)
+					t.Errorf("notice %q: expected State=%q, got %+v", kind, ports.MailSent, rec)
 					continue
 				}
 				if rec.Provider == "" {
-					t.Errorf("aviso %q: Provider vazio — o registro não diria quem enviou", kind)
+					t.Errorf("notice %q: empty Provider — the record would not say who sent it", kind)
 				}
-				msgs := caixa.Mensagens()
+				msgs := inbox.Messages()
 				if len(msgs) != 1 {
-					t.Errorf("aviso %q: o duplo recebeu %d mensagem(ns), esperava 1", kind, len(msgs))
+					t.Errorf("notice %q: the double received %d message(s), expected 1", kind, len(msgs))
 					continue
 				}
 				if msgs[0].Kind != kind {
-					t.Errorf("o aviso %q chegou ao fornecedor como %q — template trocado é "+
-						"pior que template ausente: alguém recebe a mensagem errada",
+					t.Errorf("the %q notice reached the provider as %q — a swapped template is "+
+						"worse than a missing one: somebody receives the wrong message",
 						kind, msgs[0].Kind)
 				}
 				if strings.TrimSpace(msgs[0].Subject) == "" {
-					t.Errorf("aviso %q chegou SEM assunto", kind)
+					t.Errorf("notice %q arrived WITH NO subject", kind)
 				}
 			}
 		})
 
-		// ── 2. tipo fora do índice é KindNotFound, e não sucesso silencioso ──
-		t.Run("2_tipo_desconhecido_e_notfound", func(t *testing.T) {
-			m, caixa := h.Novo(t)
-			const inventado = "tipo-que-nunca-existiu"
+		// ── 2. a kind outside the index is KindNotFound, not a silent success ─
+		t.Run("2_an_unknown_kind_is_notfound", func(t *testing.T) {
+			m, inbox := h.New(t)
+			const invented = "a-kind-that-never-existed"
 
-			if err := m.Resolve(ctx, inventado); errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("Resolve de tipo desconhecido: esperava KindNotFound, veio %v (%v)",
+			if err := m.Resolve(ctx, invented); errs.KindOf(err) != errs.KindNotFound {
+				t.Fatalf("Resolve of an unknown kind: expected KindNotFound, got %v (%v)",
 					errs.KindOf(err), err)
 			}
 			_, err := m.Send(ctx, ports.Mail{
-				AccountID: "conta-1", Kind: inventado, To: "alguem@exemplo.test",
+				AccountID: "acct-1", Kind: invented, To: "someone@example.test",
 			})
 			if errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("Send de tipo desconhecido: esperava KindNotFound, veio %v (%v)",
+				t.Fatalf("Send of an unknown kind: expected KindNotFound, got %v (%v)",
 					errs.KindOf(err), err)
 			}
-			if caixa.Chamadas() != 0 {
+			if inbox.Calls() != 0 {
 				t.Fatalf("tipo desconhecido chegou a tocar o fornecedor (%d chamada(s)): "+
-					"resolução acontece ANTES do I/O", caixa.Chamadas())
+					"the resolution happens BEFORE the I/O", inbox.Calls())
 			}
 		})
 
 		// ── 3. ensaio local ─────────────────────────────────────────────────
-		t.Run("3_ensaio_local_imprime_e_nao_envia", func(t *testing.T) {
-			m, caixa := h.NovoEnsaio(t)
+		t.Run("3_the_local_dry_run_prints_and_does_not_send", func(t *testing.T) {
+			m, inbox := h.NewDryRun(t)
 			rec, err := m.Send(ctx, ports.Mail{
-				AccountID: "conta-1", Kind: tipos[0], To: "alguem@exemplo.test",
-				Data: dadosDeExemplo(),
+				AccountID: "acct-1", Kind: kinds[0], To: "someone@example.test",
+				Data: sampleData(),
 			})
 			if err != nil {
-				t.Fatalf("ensaio deveria funcionar sem credencial: %v", err)
+				t.Fatalf("the dry run should work with no credential: %v", err)
 			}
 			if rec.State != ports.MailSentLocal {
-				t.Fatalf("ensaio: esperava State=%q, veio %q — a diferença entre "+
-					"'avisamos' e 'fingimos avisar' não pode depender de quem lê o log "+
-					"lembrar em que ambiente aquilo rodou", ports.MailSentLocal, rec.State)
+				t.Fatalf("dry run: expected State=%q, got %q — the difference between "+
+					"'we notified' and 'we pretended to notify' must not depend on whoever "+
+					"reads the log remembering which environment it ran in", ports.MailSentLocal, rec.State)
 			}
-			if caixa.Chamadas() != 0 {
-				t.Fatalf("o ENSAIO falou com o fornecedor (%d chamada(s))", caixa.Chamadas())
+			if inbox.Calls() != 0 {
+				t.Fatalf("the DRY RUN talked to the provider (%d call(s))", inbox.Calls())
 			}
 		})
 
-		t.Run("3b_ensaio_ainda_resolve_o_template", func(t *testing.T) {
-			// O subteste mais fácil de esquecer, e o que decide se a garantia 1
-			// vale onde ela é exercitada. Toda máquina de dev e todo CI rodam sem
-			// chave; se o ensaio pulasse a resolução, o tipo sem template
-			// passaria em TODO lugar e só quebraria em produção.
-			m, _ := h.NovoEnsaio(t)
-			if err := m.Resolve(ctx, "tipo-que-nunca-existiu"); errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("ensaio: Resolve de tipo desconhecido deveria ser KindNotFound, veio %v", err)
+		t.Run("3b_the_dry_run_still_resolves_the_template", func(t *testing.T) {
+			// The easiest subtest to forget, and the one that decides whether
+			// guarantee 1 holds where it is exercised. Every developer machine
+			// and every CI runs with no key; if the dry run skipped the
+			// resolution, a kind with no template would pass EVERYWHERE and only
+			// break in production.
+			m, _ := h.NewDryRun(t)
+			if err := m.Resolve(ctx, "a-kind-that-never-existed"); errs.KindOf(err) != errs.KindNotFound {
+				t.Fatalf("dry run: Resolve of an unknown kind should be KindNotFound, got %v", err)
 			}
 			_, err := m.Send(ctx, ports.Mail{
-				AccountID: "conta-1", Kind: "tipo-que-nunca-existiu", To: "alguem@exemplo.test",
+				AccountID: "acct-1", Kind: "a-kind-that-never-existed", To: "someone@example.test",
 			})
 			if errs.KindOf(err) != errs.KindNotFound {
-				t.Fatalf("ensaio: Send de tipo desconhecido deveria ser KindNotFound, veio %v", err)
+				t.Fatalf("dry run: Send of an unknown kind should be KindNotFound, got %v", err)
 			}
-			for _, kind := range tipos {
+			for _, kind := range kinds {
 				if err := m.Resolve(ctx, kind); err != nil {
-					t.Errorf("ensaio: o aviso %q não resolve: %v", kind, err)
+					t.Errorf("dry run: the %q notice does not resolve: %v", kind, err)
 				}
 			}
 		})
 
-		// ── 4. o segredo não sai ────────────────────────────────────────────
-		t.Run("4_segredo_nao_vaza", func(t *testing.T) {
-			if h.Segredo == "" {
-				t.Fatal("o runner precisa informar o Segredo para esta garantia valer")
+		// ── 4. the secret does not get out ──────────────────────────────────
+		t.Run("4_the_secret_does_not_leak", func(t *testing.T) {
+			if h.Secret == "" {
+				t.Fatal("the runner has to provide the Secret for this guarantee to hold")
 			}
-			m, _ := h.Novo(t)
+			m, _ := h.New(t)
 
-			// 4a. formatação do adaptador. `%#v` está na lista, e ele é o que
-			// esta suíte NÃO checava até esta sessão: um String() com receptor
-			// por valor engole `%v` e `%+v`, então guardar a chave num campo
-			// passava despercebido — e `%#v` (que ignora String()) a imprimia
-			// inteira. Verificado com um adaptador sabotado de propósito.
+			// 4a. the adapter's formatting. `%#v` is on the list, and it is what
+			// this suite did NOT check until this session: a String() with a
+			// value receiver swallows `%v` and `%+v`, so keeping the key in a
+			// field went unnoticed — and `%#v` (which ignores String()) printed
+			// it whole. Verified with a deliberately sabotaged adapter.
 			for _, s := range []string{
 				fmt.Sprintf("%v", m), fmt.Sprintf("%+v", m), fmt.Sprintf("%#v", m),
-				fmt.Sprintf("%v", derefSeguro(m)), fmt.Sprintf("%+v", derefSeguro(m)),
-				fmt.Sprintf("%#v", derefSeguro(m)),
+				fmt.Sprintf("%v", safeDeref(m)), fmt.Sprintf("%+v", safeDeref(m)),
+				fmt.Sprintf("%#v", safeDeref(m)),
 			} {
-				if strings.Contains(s, h.Segredo) {
-					t.Fatalf("A CREDENCIAL VAZOU na formatação do adaptador: %s", s)
+				if strings.Contains(s, h.Secret) {
+					t.Fatalf("THE CREDENTIAL LEAKED in the adapter's formatting: %s", s)
 				}
 			}
 
-			// 4d. ESTRUTURAL, e é esta a garantia de verdade.
+			// 4d. STRUCTURAL, and this is the real guarantee.
 			//
-			// Verificar formatação verifica um SINTOMA: enquanto existir um
-			// String() por valor, o campo com a chave fica escondido de `%v` — e
-			// o teste aprova um adaptador que guarda o segredo. No dia em que
-			// alguém renomear o String(), acrescentar o adaptador dentro de
-			// outro struct, ou um panic imprimir `%#v`, a chave sai.
+			// Checking the formatting checks a SYMPTOM: as long as a String()
+			// with a value receiver exists, the field with the key stays hidden
+			// from `%v` — and the test approves an adapter that keeps the
+			// secret. The day somebody renames the String(), embeds the adapter
+			// inside another struct, or a panic prints `%#v`, the key comes out.
 			//
-			// Aqui a pergunta é outra: o segredo ESTÁ em algum campo? A porta diz
-			// que não deve estar — ele é capturado em closure, e closure a
-			// reflexão não abre. "Não há chave para logar" é uma propriedade da
-			// estrutura, e é assim que ela se verifica.
-			if caminho := campoComSegredo(reflect.ValueOf(m), h.Segredo, "adaptador", 0); caminho != "" {
-				t.Fatalf("A CREDENCIAL está guardada em %s.\n\n"+
-					"Hoje ela não aparece em `%%v` só porque existe um String() por "+
-					"valor — é proteção que depende de disciplina. Capture o segredo "+
-					"num CLOSURE (como o `autorizar`/`autenticar` faz): closure imprime "+
-					"como endereço, e não há o que vazar.", caminho)
+			// Here the question is different: IS the secret in some field? The
+			// port says it must not be — it is captured in a closure, and
+			// reflection does not open a closure. "There is no key to log" is a
+			// property of the structure, and that is how it is verified.
+			if path := fieldWithSecret(reflect.ValueOf(m), h.Secret, "adaptador", 0); path != "" {
+				t.Fatalf("THE CREDENTIAL is kept in %s.\n\n"+
+					"Today it does not show up in `%%v` only because a String() with a "+
+					"value receiver exists — that is protection that depends on discipline. "+
+					"Capture the secret in a CLOSURE (as `authorize`/`authenticate` do): a "+
+					"closure prints as an address, and there is nothing to leak.", path)
 			}
 
-			// 4b. mensagem de erro, com o fornecedor ECOANDO o segredo de volta.
-			falho, _ := h.NovoFalho(t, FalhaIndisponivel)
+			// 4b. the error message, with the provider ECHOING the secret back.
+			falho, _ := h.NewFailing(t, FailureUnavailable)
 			_, err := falho.Send(ctx, ports.Mail{
-				AccountID: "conta-1", Kind: tipos[0], To: "alguem@exemplo.test",
-				Data: dadosDeExemplo(),
+				AccountID: "acct-1", Kind: kinds[0], To: "someone@example.test",
+				Data: sampleData(),
 			})
 			if err == nil {
-				t.Fatal("o duplo indisponível deveria ter feito o envio falhar")
+				t.Fatal("the unavailable double should have made the send fail")
 			}
-			if strings.Contains(err.Error(), h.Segredo) {
-				t.Fatalf("A CREDENCIAL VAZOU na mensagem de erro: %v", err)
+			if strings.Contains(err.Error(), h.Secret) {
+				t.Fatalf("THE CREDENTIAL LEAKED in the error message: %v", err)
 			}
 
-			// 4c. o mesmo pelo caminho da autenticação recusada, que é o outro
-			// lugar onde o fornecedor tem o segredo em mãos.
-			semCred, _ := h.NovoFalho(t, FalhaCredencial)
+			// 4c. the same through the refused-authentication path, which is the
+			// other place where the provider has the secret in hand.
+			semCred, _ := h.NewFailing(t, FailureCredential)
 			_, err = semCred.Send(ctx, ports.Mail{
-				AccountID: "conta-1", Kind: tipos[0], To: "alguem@exemplo.test",
-				Data: dadosDeExemplo(),
+				AccountID: "acct-1", Kind: kinds[0], To: "someone@example.test",
+				Data: sampleData(),
 			})
 			if err == nil {
-				t.Fatal("o duplo que recusa credencial deveria ter feito o envio falhar")
+				t.Fatal("the double that refuses the credential should have made the send fail")
 			}
-			if strings.Contains(err.Error(), h.Segredo) {
-				t.Fatalf("A CREDENCIAL VAZOU na recusa de autenticação: %v", err)
+			if strings.Contains(err.Error(), h.Secret) {
+				t.Fatalf("THE CREDENTIAL LEAKED in the authentication refusal: %v", err)
 			}
 		})
 
-		// ── 5. recusa sem I/O ───────────────────────────────────────────────
-		t.Run("5_pedido_invalido_sem_io", func(t *testing.T) {
+		// ── 5. a refusal with no I/O ────────────────────────────────────────
+		t.Run("5_an_invalid_request_costs_no_io", func(t *testing.T) {
 			casos := []struct {
-				nome string
+				name string
 				mail ports.Mail
 			}{
-				{"destinatário vazio", ports.Mail{Kind: tipos[0], To: ""}},
-				{"destinatário sem arroba", ports.Mail{Kind: tipos[0], To: "fulano"}},
-				{"destinatário com espaço", ports.Mail{Kind: tipos[0], To: "a b@c.test"}},
-				{"arroba no fim", ports.Mail{Kind: tipos[0], To: "fulano@"}},
-				{"tipo vazio", ports.Mail{Kind: "", To: "alguem@exemplo.test"}},
+				{"empty recipient", ports.Mail{Kind: kinds[0], To: ""}},
+				{"recipient with no at sign", ports.Mail{Kind: kinds[0], To: "someone"}},
+				{"recipient with a space", ports.Mail{Kind: kinds[0], To: "a b@c.test"}},
+				{"arroba no fim", ports.Mail{Kind: kinds[0], To: "fulano@"}},
+				{"tipo vazio", ports.Mail{Kind: "", To: "someone@example.test"}},
 			}
 			for _, c := range casos {
-				m, caixa := h.Novo(t)
+				m, inbox := h.New(t)
 				_, err := m.Send(ctx, c.mail)
 				if errs.KindOf(err) != errs.KindInvalid {
-					t.Errorf("%s: esperava KindInvalid, veio %v (%v)", c.nome, errs.KindOf(err), err)
+					t.Errorf("%s: expected KindInvalid, got %v (%v)", c.name, errs.KindOf(err), err)
 				}
-				if caixa.Chamadas() != 0 {
-					t.Errorf("%s: custou %d ida(s) ao fornecedor — quem chama sem "+
-						"endereço não pode custar uma chamada", c.nome, caixa.Chamadas())
+				if inbox.Calls() != 0 {
+					t.Errorf("%s: it cost %d round trip(s) to the provider — calling with no "+
+						"address must not cost a call", c.name, inbox.Calls())
 				}
 			}
 		})
 
-		// ── 6/7. tradução de erro ───────────────────────────────────────────
-		t.Run("7_erros_traduzidos_por_natureza", func(t *testing.T) {
+		// ── 6/7. error translation ──────────────────────────────────────────
+		t.Run("7_errors_translated_by_nature", func(t *testing.T) {
 			casos := []struct {
-				falha    Falha
-				esperado errs.Kind
-				porque   string
+				failure    Failure
+				want errs.Kind
+				why   string
 			}{
-				{FalhaCredencial, errs.KindUnauthorized,
-					"credencial recusada não é indisponibilidade: manda a equipe caçar rede quando o problema é senha"},
-				{FalhaIndisponivel, errs.KindUnavailable,
-					"fornecedor fora do ar não é erro de quem chamou, e reenviar depois faz sentido"},
-				{FalhaConteudo, errs.KindInvalid,
-					"conteúdo ou endereço recusado é permanente: reenviar igual dá o mesmo resultado"},
+				{FailureCredential, errs.KindUnauthorized,
+					"a refused credential is not an unavailability: it sends the team hunting the network when the problem is a password"},
+				{FailureUnavailable, errs.KindUnavailable,
+					"a provider that is down is not the caller's error, and resending later makes sense"},
+				{FailureContent, errs.KindInvalid,
+					"refused content or address is permanent: resending the same gives the same result"},
 			}
 			for _, c := range casos {
-				m, _ := h.NovoFalho(t, c.falha)
+				m, _ := h.NewFailing(t, c.failure)
 				_, err := m.Send(ctx, ports.Mail{
-					AccountID: "conta-1", Kind: tipos[0], To: "alguem@exemplo.test",
-					Data: dadosDeExemplo(),
+					AccountID: "acct-1", Kind: kinds[0], To: "someone@example.test",
+					Data: sampleData(),
 				})
-				if got := errs.KindOf(err); got != c.esperado {
-					t.Errorf("falha %q: esperava %v, veio %v (%v) — %s",
-						c.falha, c.esperado, got, err, c.porque)
+				if got := errs.KindOf(err); got != c.want {
+					t.Errorf("failure %q: expected %v, got %v (%v) — %s",
+						c.failure, c.want, got, err, c.why)
 				}
 			}
 		})
 
-		// ── 10. concorrência ────────────────────────────────────────────────
-		t.Run("10_seguro_para_uso_concorrente", func(t *testing.T) {
-			m, caixa := h.Novo(t)
+		// ── 10. concurrency ─────────────────────────────────────────────────
+		t.Run("10_safe_for_concurrent_use", func(t *testing.T) {
+			m, inbox := h.New(t)
 			const n = 8
 			var wg sync.WaitGroup
 			errCh := make(chan error, n)
@@ -374,9 +376,9 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 				go func(i int) {
 					defer wg.Done()
 					_, err := m.Send(ctx, ports.Mail{
-						AccountID: "conta-1", Kind: tipos[i%len(tipos)],
+						AccountID: "acct-1", Kind: kinds[i%len(kinds)],
 						To:   fmt.Sprintf("dest-%d@exemplo.test", i),
-						Data: dadosDeExemplo(),
+						Data: sampleData(),
 					})
 					errCh <- err
 				}(i)
@@ -385,69 +387,68 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 			close(errCh)
 			for err := range errCh {
 				if err != nil {
-					t.Fatalf("envio concorrente falhou: %v", err)
+					t.Fatalf("a concurrent send failed: %v", err)
 				}
 			}
-			if got := len(caixa.Mensagens()); got != n {
-				t.Fatalf("o duplo recebeu %d mensagens, esperava %d", got, n)
+			if got := len(inbox.Messages()); got != n {
+				t.Fatalf("the double received %d messages, expected %d", got, n)
 			}
 		})
 
-		// ── 9. Send não muta o Data do chamador ─────────────────────────────
-		t.Run("9_send_nao_muta_os_dados_do_chamador", func(t *testing.T) {
-			// O resumo reusa o MESMO mapa para todos os destinatários. Um
-			// adaptador que escrevesse nele (o SendGrid injeta o assunto)
-			// contaminaria o segundo envio — e o defeito só apareceria em conta
-			// com mais de um membro.
-			m, _ := h.Novo(t)
-			dados := dadosDeExemplo()
-			antes := len(dados)
+		// ── 9. Send does not mutate the caller's Data ───────────────────────
+		t.Run("9_send_does_not_mutate_the_callers_data", func(t *testing.T) {
+			// The digest reuses the SAME map for every recipient. An adapter that
+			// wrote into it (SendGrid injects the subject) would contaminate the
+			// second send — and the defect would only show up in an account with
+			// more than one member.
+			m, _ := h.New(t)
+			data := sampleData()
+			before := len(data)
 			for i := 0; i < 2; i++ {
 				if _, err := m.Send(ctx, ports.Mail{
-					AccountID: "conta-1", Kind: tipos[0],
-					To: fmt.Sprintf("dest-%d@exemplo.test", i), Data: dados,
+					AccountID: "acct-1", Kind: kinds[0],
+					To: fmt.Sprintf("dest-%d@exemplo.test", i), Data: data,
 				}); err != nil {
 					t.Fatalf("envio %d: %v", i, err)
 				}
 			}
-			if len(dados) != antes {
-				t.Fatalf("o adaptador MUTOU o Data do chamador: %d chaves viraram %d",
-					antes, len(dados))
+			if len(data) != before {
+				t.Fatalf("the adapter MUTATED the caller's Data: %d keys became %d",
+					before, len(data))
 			}
 		})
 	})
 }
 
-// dadosDeExemplo é um payload que serve a TODOS os tipos: o resumo precisa de
-// `items` e `total`, o convite de `email` e `role`. Chave sobrando não é erro
-// (garantia 8), e é isso que permite um payload só.
-func dadosDeExemplo() map[string]any {
+// sampleData is a payload that serves EVERY kind: the digest needs `items` and
+// `total`, the invite needs `email` and `role`. A spare key is not an error
+// (guarantee 8), and that is what allows a single payload.
+func sampleData() map[string]any {
 	return map[string]any{
-		"account_id": "conta-1",
+		"account_id": "acct-1",
 		"email":      "convidado@exemplo.test",
 		"role":       "member",
 		"link":       "https://cockpit.exemplo.test/atencao",
 		"total":      2,
 		"items": []map[string]any{
-			{"kind": "thread_blocked", "title": "Um agente precisa de resposta", "summary": "thread 7"},
-			{"kind": "pr_review", "title": "PR aguardando revisão", "summary": ""},
+			{"kind": "thread_blocked", "title": "An agent needs an answer", "summary": "thread 7"},
+			{"kind": "pr_review", "title": "A PR awaiting review", "summary": ""},
 		},
 	}
 }
 
-// campoComSegredo procura o segredo em qualquer campo alcançável, e devolve o
-// caminho até ele.
+// fieldWithSecret looks for the secret in any reachable field, and returns the
+// path to it.
 //
-// `reflect.Value.String()` LÊ campo não exportado (só `Interface()` é que
-// panica), e é isso que torna esta checagem possível sem `unsafe`. Closures não
-// são percorríveis — o que é exatamente o ponto: o que está capturado num
-// closure não é alcançável nem por aqui, nem pelo fmt, nem por um dump de
-// depurador.
-func campoComSegredo(v reflect.Value, segredo, caminho string, prof int) string {
-	// Teto de profundidade: o adaptador carrega um http.Client, que carrega um
-	// Transport, que carrega o mundo. O segredo, se estiver guardado, está
-	// perto da superfície.
-	if prof > 6 || !v.IsValid() || segredo == "" {
+// `reflect.Value.String()` READS an unexported field (only `Interface()` panics),
+// and that is what makes this check possible without `unsafe`. Closures are not
+// walkable — which is exactly the point: what is captured in a closure is
+// reachable neither from here, nor by fmt, nor by a debugger's dump.
+func fieldWithSecret(v reflect.Value, secret, path string, depth int) string {
+	// A depth cap: the adapter carries an http.Client, which carries a
+	// Transport, which carries the world. The secret, if it is kept, is near the
+	// surface.
+	if depth > 6 || !v.IsValid() || secret == "" {
 		return ""
 	}
 	switch v.Kind() {
@@ -455,15 +456,15 @@ func campoComSegredo(v reflect.Value, segredo, caminho string, prof int) string 
 		if v.IsNil() {
 			return ""
 		}
-		return campoComSegredo(v.Elem(), segredo, caminho, prof+1)
+		return fieldWithSecret(v.Elem(), secret, path, depth+1)
 	case reflect.String:
-		if strings.Contains(v.String(), segredo) {
-			return caminho
+		if strings.Contains(v.String(), secret) {
+			return path
 		}
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
-			nome := v.Type().Field(i).Name
-			if achado := campoComSegredo(v.Field(i), segredo, caminho+"."+nome, prof+1); achado != "" {
+			name := v.Type().Field(i).Name
+			if achado := fieldWithSecret(v.Field(i), secret, path+"."+name, depth+1); achado != "" {
 				return achado
 			}
 		}
@@ -472,14 +473,14 @@ func campoComSegredo(v reflect.Value, segredo, caminho string, prof int) string 
 			return ""
 		}
 		if v.Type().Elem().Kind() == reflect.Uint8 {
-			// []byte é o outro jeito óbvio de guardar credencial.
-			if b, ok := comoBytes(v); ok && strings.Contains(string(b), segredo) {
-				return caminho
+			// []byte is the other obvious way of keeping a credential.
+			if b, ok := asBytes(v); ok && strings.Contains(string(b), secret) {
+				return path
 			}
 			return ""
 		}
 		for i := 0; i < v.Len(); i++ {
-			if achado := campoComSegredo(v.Index(i), segredo, fmt.Sprintf("%s[%d]", caminho, i), prof+1); achado != "" {
+			if achado := fieldWithSecret(v.Index(i), secret, fmt.Sprintf("%s[%d]", path, i), depth+1); achado != "" {
 				return achado
 			}
 		}
@@ -488,7 +489,7 @@ func campoComSegredo(v reflect.Value, segredo, caminho string, prof int) string 
 			return ""
 		}
 		for _, k := range v.MapKeys() {
-			if achado := campoComSegredo(v.MapIndex(k), segredo, fmt.Sprintf("%s[%v]", caminho, k), prof+1); achado != "" {
+			if achado := fieldWithSecret(v.MapIndex(k), secret, fmt.Sprintf("%s[%v]", path, k), depth+1); achado != "" {
 				return achado
 			}
 		}
@@ -496,9 +497,9 @@ func campoComSegredo(v reflect.Value, segredo, caminho string, prof int) string 
 	return ""
 }
 
-// comoBytes lê um []byte mesmo não exportado, byte a byte — `Bytes()` recusa
-// valor obtido de campo não exportado, `Index(i).Uint()` não.
-func comoBytes(v reflect.Value) ([]byte, bool) {
+// asBytes reads a []byte even when unexported, byte by byte — `Bytes()` refuses
+// a value obtained from an unexported field, `Index(i).Uint()` does not.
+func asBytes(v reflect.Value) ([]byte, bool) {
 	out := make([]byte, v.Len())
 	for i := range out {
 		out[i] = byte(v.Index(i).Uint())
@@ -506,12 +507,12 @@ func comoBytes(v reflect.Value) ([]byte, bool) {
 	return out, true
 }
 
-// derefSeguro devolve o VALOR apontado, quando o adaptador é ponteiro.
+// safeDeref returns the VALUE pointed at, when the adapter is a pointer.
 //
-// Existe porque `%+v` de um ponteiro com String() por valor imprime o String();
-// o que expõe campo é `%+v` do VALOR. Sem isto, a garantia 4 estaria sendo
-// verificada no caminho mais fácil de passar.
-func derefSeguro(m ports.Mailer) any {
+// It exists because `%+v` of a pointer with a value-receiver String() prints the
+// String(); what exposes the fields is `%+v` of the VALUE. Without this,
+// guarantee 4 would be verified on the path that is easiest to pass.
+func safeDeref(m ports.Mailer) any {
 	v := reflect.ValueOf(m)
 	if v.Kind() == reflect.Ptr && !v.IsNil() {
 		return v.Elem().Interface()
