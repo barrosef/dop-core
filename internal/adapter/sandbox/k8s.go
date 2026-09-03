@@ -15,8 +15,11 @@ package sandbox
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -293,6 +296,12 @@ func (k *K8s) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	if err := k.ensureWorkspace(ctx, spec); err != nil {
 		return nil, err
 	}
+	// Before the pod, always: the pod declares the ConfigMap as a volume, and a
+	// pod pointing at a ConfigMap that does not exist stays stuck in
+	// ContainerCreating instead of failing where somebody would see it.
+	if err := k.ensureDocuments(ctx, spec); err != nil {
+		return nil, err
+	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {
 		return nil, err
 	}
@@ -339,6 +348,102 @@ func (k *K8s) ensureWorkspace(ctx context.Context, spec ports.SandboxSpec) error
 	return nil
 }
 
+// documentsConfigMap is the name of the ConfigMap holding the project's
+// documents, one per namespace — and a namespace is a demand.
+const documentsConfigMap = "dop-documents"
+
+// documentsMaxBytes is Kubernetes's ceiling for a ConfigMap, minus room for the
+// object's own metadata.
+//
+// It is checked HERE and not in the domain because it is a fact about this
+// substrate: Docker has no such limit. Exceeding it has to be a refusal with a
+// message, never a silent truncation — an agent reading half a spec draws
+// conclusions from a document that does not exist.
+const documentsMaxBytes = 1<<20 - 8<<10
+
+// ensureDocuments materializes the project's documents as a ConfigMap, which the
+// pod mounts read-only.
+//
+// A ConfigMap and not a PVC: the documents are REWRITTEN at every provisioning,
+// they are small, and a volume mounted from a ConfigMap is read-only by
+// construction — the port's guarantee 19 comes free, instead of depending on
+// file modes.
+//
+// The keys are HASHES of the path, because a ConfigMap key may not contain `/`
+// and a document lives at `adr/0024.md`. The real path travels in the volume's
+// `items[].path`, which does accept separators. Without that indirection, a
+// project's documents would have to be flat.
+func (k *K8s) ensureDocuments(ctx context.Context, spec ports.SandboxSpec) error {
+	path := "/api/v1/namespaces/" + spec.Namespace + "/configmaps"
+	if len(spec.Documents) == 0 {
+		// Removing is what makes Resume not resurrect the documents of a
+		// previous spec (guarantee 20). Absence is success.
+		code, body, err := k.do(ctx, http.MethodDelete, path+"/"+documentsConfigMap, nil)
+		if err != nil {
+			return err
+		}
+		if code >= 300 && code != http.StatusNotFound {
+			return k8sFail(code, body, "removing the project's documents")
+		}
+		return nil
+	}
+
+	total := 0
+	data := make(map[string]string, len(spec.Documents))
+	for _, f := range spec.Documents {
+		total += len(f.Content) + len(f.Path)
+		data[documentKey(f.Path)] = base64.StdEncoding.EncodeToString(f.Content)
+	}
+	if total > documentsMaxBytes {
+		return errs.Invalid(
+			"the project's documents add up to %d bytes and this substrate accepts at most %d",
+			total, documentsMaxBytes)
+	}
+
+	body := map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap",
+		"metadata":   map[string]any{"name": documentsConfigMap, "labels": labelsFor(spec)},
+		"binaryData": data,
+	}
+	// PUT and not POST: provisioning happens more than once for the same demand,
+	// and the second one has to REPLACE what is there.
+	code, out, err := k.do(ctx, http.MethodPut, path+"/"+documentsConfigMap, body)
+	if err != nil {
+		return err
+	}
+	if code == http.StatusNotFound {
+		if code, out, err = k.do(ctx, http.MethodPost, path, body); err != nil {
+			return err
+		}
+	}
+	if code >= 300 && code != http.StatusConflict {
+		return k8sFail(code, out, "writing the project's documents")
+	}
+	return nil
+}
+
+// documentKey turns a path into a valid ConfigMap key. The hash is enough: what
+// names the file for whoever reads it is the volume's `items[].path`.
+func documentKey(p string) string {
+	sum := sha256.Sum256([]byte(p))
+	return "d" + hex.EncodeToString(sum[:8])
+}
+
+// documentItems maps each key back to its real path inside the mount.
+func documentItems(files []ports.SandboxFile) []map[string]any {
+	items := make([]map[string]any, 0, len(files))
+	for _, f := range files {
+		mode := 0o444
+		if f.Executable {
+			mode = 0o555
+		}
+		items = append(items, map[string]any{
+			"key": documentKey(f.Path), "path": f.Path, "mode": mode,
+		})
+	}
+	return items
+}
+
 func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClass string) error {
 	env := make([]map[string]string, 0, len(spec.Env))
 	keys := make([]string, 0, len(spec.Env))
@@ -350,6 +455,28 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		env = append(env, map[string]string{"name": key, "value": spec.Env[key]})
 	}
 
+	// The workspace is always there; the documents only when the project has
+	// any. An empty mount and an absent one are the same thing to whoever reads
+	// (guarantee 18), and asking Kubernetes for an empty ConfigMap would be one
+	// more object to keep in step for nothing.
+	mounts := []map[string]any{
+		{"name": pvcName, "mountPath": ports.SandboxWorkspacePath},
+	}
+	volumes := []map[string]any{
+		{"name": pvcName, "persistentVolumeClaim": map[string]string{"claimName": pvcName}},
+	}
+	if len(spec.Documents) > 0 {
+		mounts = append(mounts, map[string]any{
+			"name": "documents", "mountPath": ports.SandboxDocumentsPath, "readOnly": true,
+		})
+		volumes = append(volumes, map[string]any{
+			"name": "documents",
+			"configMap": map[string]any{
+				"name": documentsConfigMap, "items": documentItems(spec.Documents),
+			},
+		})
+	}
+
 	container := map[string]any{
 		"name":  containerName,
 		"image": spec.Image,
@@ -358,10 +485,9 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		// Pinning the container's is what makes the exec inherit it and what
 		// makes the port's guarantee 14 the same on both substrates: a tool's
 		// command starts in the workspace, here and in Docker.
-		"workingDir": ports.SandboxWorkspacePath,
-		"volumeMounts": []map[string]any{
-			{"name": pvcName, "mountPath": ports.SandboxWorkspacePath},
-		},
+
+		"workingDir":   ports.SandboxWorkspacePath,
+		"volumeMounts": mounts,
 		// Defence in layers (spec §6): the agent reads untrusted content and
 		// carries a credential. No capabilities, no privilege escalation.
 		"securityContext": map[string]any{
@@ -379,9 +505,7 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		// developer would be staring at a terminal restarting on its own.
 		"restartPolicy": "Never",
 		"containers":    []any{container},
-		"volumes": []map[string]any{
-			{"name": pvcName, "persistentVolumeClaim": map[string]string{"claimName": pvcName}},
-		},
+		"volumes":       volumes,
 		// An arbitrary NON-root user from the very first image: OKD and
 		// OpenShift refuse root through SCC, and that is an image requirement,
 		// not a deployment one (spec §2). fsGroup is what makes the workspace
@@ -453,6 +577,11 @@ func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	// A stopped pod (Succeeded/Failed) does not "restart": it goes away and
 	// comes back. Deleting it first is what makes Resume genuinely idempotent.
 	if err := k.deletePodAndWait(ctx, spec.Namespace); err != nil {
+		return nil, err
+	}
+	// The documents are rebuilt from the spec GIVEN here (guarantee 20), not
+	// from the one the sandbox was born with.
+	if err := k.ensureDocuments(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {

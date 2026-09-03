@@ -302,6 +302,48 @@ func ValidIsolationTier(t IsolationTier) bool {
 // suite exists to catch.
 const SandboxWorkspacePath = "/workspace"
 
+// SandboxDocumentsPath is where the PROJECT's documents are mounted inside the
+// sandbox: spec, plans, rules, accumulated context — whatever the project
+// carries in writing.
+//
+// It is separate from the workspace on purpose, and the separation is the
+// design. The workspace is the demand's WORK: it survives suspension and the
+// agent writes in it. The documents are the project's KNOWLEDGE: they are
+// rewritten at every provisioning from the source of truth, and the agent
+// reading them is the point — the agent WRITING them is not. An artefact the
+// agent produces goes back through the core (`PutArtifact`), where it gets a
+// version and an event; if it could be written here, the artefact would exist
+// with nobody having recorded that it does.
+//
+// Documents are copied INTO EACH sandbox, and not shared between the demands of
+// a project through one volume. A shared volume would be a surface common to
+// two demands, and ADR-0024 put the hard boundary exactly there. The price is
+// copying text at every provisioning, which is cheap; the alternative's price is
+// an isolation hole, which is not.
+const SandboxDocumentsPath = "/project"
+
+// SandboxFile is ONE file to write into the sandbox.
+//
+// It carries CONTENT and not a path on the host, because the domain has no
+// filesystem: what it has is bytes it read from the ObjectStore. And it is a
+// list of files rather than an archive because a tar is substrate vocabulary —
+// the adapter builds whatever its substrate wants (Docker takes a tar, k8s takes
+// a stream through exec), and the domain never learns which.
+type SandboxFile struct {
+	// Path is RELATIVE to the directory given to Put, and it may contain
+	// separators (`adr/0024.md`). Absolute, empty or escaping paths (`..`) are
+	// refused — see guarantee 19.
+	Path string
+	// Content is the whole file. There is no streaming here on purpose: what
+	// goes through this path is text a person wrote, and a document that does
+	// not fit in memory is not a document, it is a dataset — which belongs in
+	// the workspace, fetched by the agent.
+	Content []byte
+	// Executable makes the file 0755 instead of 0644. It exists for a script
+	// the project ships; it is not a general permission model.
+	Executable bool
+}
+
 // SandboxHandle identifies an ALREADY provisioned sandbox. The ID belongs to the
 // domain: the adapter never invents identity, it only stamps it on what it
 // creates.
@@ -326,6 +368,17 @@ type SandboxSpec struct {
 	// suite would stop running on the laptop of whoever works on the adapter.
 	Command []string
 	Env     map[string]string
+	// Documents are the project's, mounted READ-ONLY at SandboxDocumentsPath.
+	//
+	// They travel in the SPEC, and not in a method of their own, because on
+	// Kubernetes the volume has to exist before the pod does — a "write into the
+	// sandbox afterwards" would be a capability one substrate has and the other
+	// does not, which is what ADR-0001 says to keep out of the port. Here each
+	// adapter materializes them the way its own substrate does it natively.
+	//
+	// Empty means no documents mount at all, which is the right thing for a
+	// sandbox raised by the contract suite.
+	Documents []SandboxFile
 }
 
 // SandboxPhase is what the SUBSTRATE sees. It is not the domain's state: there
@@ -503,7 +556,23 @@ const (
 //     context cancelled, it returns without error and without leaving a live
 //     goroutine. With Follow=false, it returns at the end of what exists;
 //  12. an error from emit interrupts Tail and propagates — that is how the
-//     server finds out the client is gone.
+//     server finds out the client is gone;
+//  18. a Spec.Documents sandbox has them READABLE at SandboxDocumentsPath, byte
+//     for byte, including in subdirectories. With no documents the path is not
+//     mounted at all — an empty mount and an absent one are the same thing to
+//     whoever reads, and asking every substrate to produce an empty directory
+//     would be a guarantee that buys nothing;
+//  19. the documents mount is READ-ONLY: a write attempt from inside the
+//     sandbox fails. It is what keeps an artefact from existing with nobody
+//     having recorded that it does — what the agent produces goes back through
+//     the core, where it gets a version and an event (ADR-0006);
+//  20. Resume rebuilds the documents from the spec it was given, and does not
+//     resurrect what was in the previous one. The documents are the project's
+//     current knowledge, not a snapshot of the day the sandbox was created;
+//  21. Launch REFUSES a document path that escapes: absolute, empty, or with a
+//     `..` segment. It is not defence against the substrate, it is defence
+//     against whoever assembles the list — a document named `../../etc/passwd`
+//     coming from a project's data would land outside the mount.
 //
 // ── EXEC: why it CAME INTO the port (and what stays out) ─────────────────────
 //

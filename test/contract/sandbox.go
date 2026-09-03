@@ -521,6 +521,142 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("expected KindNotFound for a nonexistent process, got %v", err)
 			}
 		})
+
+		// ── the project's documents (18 to 21) ───────────────────────────────
+
+		t.Run("18_the_documents_are_readable_where_the_port_says", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			spec.Documents = []ports.SandboxFile{
+				{Path: "spec.md", Content: []byte("# the demand's spec\n")},
+				// A subdirectory is the case that separates a real design from
+				// one that works only for flat files — on Kubernetes a
+				// ConfigMap key cannot carry a `/`.
+				{Path: "adr/0024.md", Content: []byte("a microVM per demand\n")},
+			}
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			for _, want := range []struct{ path, content string }{
+				{"spec.md", "# the demand's spec\n"},
+				{"adr/0024.md", "a microVM per demand\n"},
+			} {
+				res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+					Command: []string{"cat", ports.SandboxDocumentsPath + "/" + want.path},
+				})
+				if res.ExitCode != 0 {
+					t.Fatalf("cat %s: exit %d, stderr %q", want.path, res.ExitCode, res.Stderr)
+				}
+				if res.Stdout != want.content {
+					t.Errorf("%s = %q, want %q", want.path, res.Stdout, want.content)
+				}
+			}
+		})
+
+		t.Run("18_with_no_documents_the_path_is_not_mounted", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env) // no Documents
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"ls", ports.SandboxDocumentsPath + "/spec.md"},
+			})
+			if res.ExitCode == 0 {
+				t.Errorf("a project with no documents got a mount with content: %q", res.Stdout)
+			}
+		})
+
+		t.Run("19_the_documents_are_not_writable_from_inside", func(t *testing.T) {
+			// It is what keeps an artefact from existing with nobody having
+			// recorded that it does: what the agent produces goes back through
+			// the core, where it gets a version and an event (ADR-0006).
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			spec.Documents = []ports.SandboxFile{
+				{Path: "spec.md", Content: []byte("original\n")},
+			}
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			target := ports.SandboxDocumentsPath + "/spec.md"
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "echo tampered > " + target},
+			})
+			if res.ExitCode == 0 {
+				t.Fatal("the sandbox wrote over a document")
+			}
+			// And what is there is still the original — a failed write that
+			// truncated the file would be worse than one that succeeded.
+			back := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", target},
+			})
+			if back.Stdout != "original\n" {
+				t.Errorf("the document changed after the attempt: %q", back.Stdout)
+			}
+		})
+
+		t.Run("20_resume_rebuilds_the_documents_from_the_new_spec", func(t *testing.T) {
+			l, env := newLauncher(t)
+			spec := newSpec(t, l, env)
+			spec.Documents = []ports.SandboxFile{
+				{Path: "spec.md", Content: []byte("first version\n")},
+				{Path: "gone.md", Content: []byte("this one leaves\n")},
+			}
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+			if err := l.Suspend(context.Background(), spec.SandboxHandle); err != nil {
+				t.Fatalf("Suspend: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
+
+			// The project moved on while the sandbox slept.
+			spec.Documents = []ports.SandboxFile{
+				{Path: "spec.md", Content: []byte("second version\n")},
+			}
+			if _, err := l.Resume(context.Background(), spec); err != nil {
+				t.Fatalf("Resume: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxDocumentsPath + "/spec.md"},
+			})
+			if res.Stdout != "second version\n" {
+				t.Errorf("it came back with an outdated document: %q", res.Stdout)
+			}
+			// What left the project has to leave the sandbox: a document the
+			// agent reads and nobody maintains is worse than no document.
+			old := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxDocumentsPath + "/gone.md"},
+			})
+			if old.ExitCode == 0 {
+				t.Errorf("a removed document survived the resume: %q", old.Stdout)
+			}
+		})
+
+		t.Run("21_a_document_path_that_escapes_is_refused", func(t *testing.T) {
+			// The list comes from a project's data, and whoever names a file
+			// chooses the name.
+			for _, bad := range []string{"/etc/passwd", "../escape.md", "", "a/../../b"} {
+				l, env := newLauncher(t)
+				spec := newSpec(t, l, env)
+				spec.Documents = []ports.SandboxFile{{Path: bad, Content: []byte("x")}}
+
+				_, err := l.Launch(context.Background(), spec)
+				if errs.KindOf(err) != errs.KindInvalid {
+					t.Errorf("path %q was accepted (err=%v)", bad, err)
+				}
+			}
+		})
 	})
 }
 

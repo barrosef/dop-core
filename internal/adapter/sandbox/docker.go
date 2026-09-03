@@ -11,6 +11,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -261,10 +262,52 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if err := d.createContainer(ctx, spec, runtime); err != nil {
 		return nil, err
 	}
+	// The documents go in with the container CREATED and not yet started: the
+	// archive endpoint writes into a stopped container, and doing it before the
+	// start is what keeps the agent from ever seeing the mount half-filled.
+	if err := d.putDocuments(ctx, spec); err != nil {
+		return nil, err
+	}
 	if err := d.startContainer(ctx, spec.SandboxHandle); err != nil {
 		return nil, err
 	}
 	return d.Describe(ctx, spec.SandboxHandle)
+}
+
+// putDocuments writes the project's documents at SandboxDocumentsPath.
+//
+// Docker has no read-only volume that the host can fill without a second
+// container, so the road here is the container's own filesystem with the entries
+// owned by root and with no write bit — see documentsTar. The outcome the port
+// promises is the same: the sandbox reads and does not write.
+func (d *Docker) putDocuments(ctx context.Context, spec ports.SandboxSpec) error {
+	if len(spec.Documents) == 0 {
+		return nil
+	}
+	// The prefix comes off the leading slash: the archive is extracted at `/`,
+	// and tar creates the intermediate directories for the entries.
+	prefix := strings.TrimPrefix(ports.SandboxDocumentsPath, "/")
+	archive, err := documentsTar(spec.Documents, prefix)
+	if err != nil {
+		return err
+	}
+	target := "http://docker/" + d.apiVer + "/containers/" +
+		d.containerName(spec.SandboxHandle) + "/archive?path=/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(archive))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-tar")
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return errs.Wrap(errs.KindUnavailable, err, "failed to talk to Docker")
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return fail(resp.StatusCode, body, "writing the project's documents")
+	}
+	return nil
 }
 
 func (d *Docker) ensureVolume(ctx context.Context, spec ports.SandboxSpec) error {
@@ -413,18 +456,33 @@ func (d *Docker) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if st.Phase == ports.PhaseActive {
 		return st, nil // idempotent (guarantee 7)
 	}
-	// The container may have been removed with the volume intact; in that case
-	// recreating is the way back to the existing workspace.
-	if code, _, err := d.do(ctx, http.MethodGet, "/containers/"+d.containerName(spec.SandboxHandle)+"/json", nil); err != nil {
+	runtime, err := d.runtimeFor(ctx, spec.Tier)
+	if err != nil {
 		return nil, err
-	} else if code == http.StatusNotFound {
-		runtime, err := d.runtimeFor(ctx, spec.Tier)
-		if err != nil {
-			return nil, err
-		}
-		if err := d.createContainer(ctx, spec, runtime); err != nil {
-			return nil, err
-		}
+	}
+	// Resume RECREATES the container, even when one is there.
+	//
+	// The reason is guarantee 20: the documents are rebuilt from the spec given
+	// HERE, and a document that left the project has to leave the sandbox — an
+	// outdated document the agent reads and nobody maintains is worse than no
+	// document. Docker's archive endpoint only ADDS: there is no way to remove
+	// what is no longer in the spec, and the files belong to root while the
+	// sandbox runs unprivileged, so it cannot delete them from inside either.
+	//
+	// It costs nothing that matters: what survives suspension is the WORKSPACE,
+	// and the workspace is the named volume, not the container's layer. The port
+	// never promised anything outside SandboxWorkspacePath (guarantee 5).
+	if code, body, err := d.do(ctx, http.MethodDelete,
+		"/containers/"+d.containerName(spec.SandboxHandle)+"?force=true", nil); err != nil {
+		return nil, err
+	} else if code >= 300 && code != http.StatusNotFound {
+		return nil, fail(code, body, "recycling the container on resume")
+	}
+	if err := d.createContainer(ctx, spec, runtime); err != nil {
+		return nil, err
+	}
+	if err := d.putDocuments(ctx, spec); err != nil {
+		return nil, err
 	}
 	if err := d.startContainer(ctx, spec.SandboxHandle); err != nil {
 		return nil, err
@@ -879,7 +937,9 @@ func validateSpec(spec ports.SandboxSpec) error {
 		return errs.Invalid(
 			"isolation level not declared — the substrate does not choose for you")
 	}
-	return nil
+	// The documents are validated HERE, in the shared function, so guarantee 21
+	// holds in every adapter without each one remembering to check.
+	return validateDocuments(spec.Documents)
 }
 
 // endpointsFromPorts converts published ports into endpoints.
