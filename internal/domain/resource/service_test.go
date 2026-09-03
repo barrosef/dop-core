@@ -315,6 +315,27 @@ func (f *fakeRepo) RevokeGrant(_ context.Context, accountID, grantID string) err
 	return nil
 }
 
+// RevokeGrantsOfUser is ALL-OR-NOTHING here too, and deliberately so: the fake
+// that preceded it deleted one by one, so a test could pass while the real
+// adapter left half the grants behind. It collects first and mutates last.
+func (f *fakeRepo) RevokeGrantsOfUser(_ context.Context, accountID, userID string) error {
+	var doomed []string
+	for id, g := range f.grants {
+		if g.UserID != userID {
+			continue
+		}
+		r, ok := f.res[g.ResourceID]
+		if !ok || r.AccountID != accountID {
+			continue
+		}
+		doomed = append(doomed, id)
+	}
+	for _, id := range doomed {
+		delete(f.grants, id)
+	}
+	return nil
+}
+
 var _ resource.Repository = (*fakeRepo)(nil)
 
 // fakeAccess is identity's narrow port: the role in the account and the nature
@@ -656,5 +677,49 @@ func TestAPersonalAccountsResourceIsNotShareable(t *testing.T) {
 	// And the only member is owner: manages everything, through implicit manage.
 	if _, err := svc.Update(ctx, skill.ID, map[string]any{"body": "v2"}); err != nil {
 		t.Errorf("a personal account owner manages their own resources: %v", err)
+	}
+}
+
+func TestTheSweepTakesEveryGrantOfTheMemberAndNobodyElses(t *testing.T) {
+	// It is what identity calls when somebody leaves the account. A grant that
+	// outlives the membership is access with nothing left to justify it — and a
+	// grant of ANOTHER person swept along would be the opposite mistake.
+	svc, repo, _, _ := scenario()
+	ctx := asActor("owner")
+
+	r1, err := svc.Create(ctx, resource.KindIntegration, "ClickUp",
+		map[string]any{"category": "task_manager", "provider": "clickup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := svc.Create(ctx, resource.KindIntegration, "GitHub",
+		map[string]any{"category": "git", "provider": "github"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range []struct{ res, user string }{
+		{r1.ID, "dev"}, {r2.ID, "dev"}, {r1.ID, "dev2"},
+	} {
+		if _, err := svc.Grant(ctx, g.res, g.user, resource.LevelUse); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := svc.RevokeAllOfMember(ctx, acctID, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	left, err := repo.GrantsOfUser(ctx, acctID, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Errorf("%d grants survived the sweep", len(left))
+	}
+	stayed, err := repo.GrantsOfUser(ctx, acctID, "dev2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stayed) != 1 {
+		t.Errorf("the sweep took somebody else's grants: %d left", len(stayed))
 	}
 }

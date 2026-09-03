@@ -285,6 +285,52 @@ func (r *ResourceRepo) Grant(ctx context.Context, accountID string, g *resource.
 	return saved, err
 }
 
+// RevokeGrantsOfUser removes every grant of one person in the account, and
+// emits one event per grant — all inside a SINGLE transaction.
+//
+// The atomicity is the whole point: identity calls this when somebody leaves,
+// having promised that a failed sweep removes nothing. The loop it replaced
+// broke that promise halfway, and the test that covered it proved a fake.
+func (r *ResourceRepo) RevokeGrantsOfUser(ctx context.Context, accountID, userID string) error {
+	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			DELETE FROM resource_grants g
+			 USING resources r
+			 WHERE g.user_id = $2 AND r.id = g.resource_id AND r.account_id = $1
+			 RETURNING g.resource_id, g.level`, accountID, userID)
+		if err != nil {
+			return Translate(err, "grants")
+		}
+		type gone struct{ resourceID, level string }
+		var removed []gone
+		for rows.Next() {
+			var g gone
+			if err := rows.Scan(&g.resourceID, &g.level); err != nil {
+				rows.Close()
+				return Translate(err, "grants")
+			}
+			removed = append(removed, g)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return Translate(err, "grants")
+		}
+		// The events come AFTER the rows are drained: emitting inside the
+		// iteration would run a second query on a connection already streaming
+		// one, which pgx refuses.
+		for _, g := range removed {
+			if err := Emit(ctx, tx, ports.Event{
+				AccountID: accountID, Aggregate: "resource", AggregateID: g.resourceID,
+				Type:    "dop.resource.grant_revoked",
+				Payload: mustJSON(map[string]any{"user_id": userID, "level": g.level}),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *ResourceRepo) RevokeGrant(ctx context.Context, accountID, grantID string) error {
 	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
 		var resourceID, userID, level string

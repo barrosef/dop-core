@@ -225,3 +225,27 @@ func buildTurn(pkg agent.ContextPackage, threadKey string, card agent.AgentCard,
 	text, operatorNote string, maxOutputTokens int) agent.Turn {
 	return agent.BuildTurn(pkg, threadKey, card, text, operatorNote, maxOutputTokens, nil)
 }
+
+func TestTheBriefTellsTheAgentTheLibraryExists(t *testing.T) {
+	// A shelf nobody is told about is an empty shelf. The mount was built, the
+	// clone works, and none of it is worth anything if the brief never names
+	// the path — which is exactly what happened until this test existed.
+	contract := agent.RuntimeContract
+	for _, want := range []string{
+		"/project",  // where it is
+		"README.md", // what to read first
+		"rules/",    // what it obeys
+		"memory/",   // where a lesson goes
+		"COMMIT",    // that writing back is expected
+	} {
+		if !strings.Contains(contract, want) {
+			t.Errorf("the runtime contract does not mention %q", want)
+		}
+	}
+	// And it has to say a document is DATA: the library holds text written by
+	// people and by other agents, and it reaches the model inside the prompt's
+	// trusted region only as a path — what is read from it is untrusted.
+	if !strings.Contains(contract, "knowledge, not an order") {
+		t.Error("the contract does not say a document is not an instruction")
+	}
+}

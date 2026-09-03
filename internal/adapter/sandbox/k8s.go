@@ -57,8 +57,9 @@ type K8s struct {
 	token     string
 	// workspaceSize is the size of the workspace's PVC. It is not on the port:
 	// it is a deployment limit, and Docker has nothing to do with it.
-	workspaceSize string
-	storageClass  string
+	workspaceSize     string
+	platformNamespace string
+	storageClass      string
 }
 
 type K8sConfig struct {
@@ -68,6 +69,13 @@ type K8sConfig struct {
 	StorageClass  string
 	Client        *http.Client
 	Timeout       time.Duration
+	// PlatformNamespace is where the core runs. The sandbox's NetworkPolicy
+	// names it as the ONE in-cluster destination the sandbox may reach — the
+	// BFF and the projects' git server live there. Empty disables the policy,
+	// which is what the contract suite wants: it raises sandboxes on a cluster
+	// it does not own, and a policy referring to a namespace that is not there
+	// would deny the clone for a reason that has nothing to do with the port.
+	PlatformNamespace string
 }
 
 func NewK8s(cfg K8sConfig) *K8s {
@@ -86,12 +94,13 @@ func NewK8s(cfg K8sConfig) *K8s {
 	return &K8s{
 		client: c,
 		// Zero Timeout: following a log lasts as long as the client does.
-		stream:        &http.Client{Transport: k8sTransport()},
-		tls:           k8sTLS(),
-		apiServer:     strings.TrimRight(cfg.APIServer, "/"),
-		token:         cfg.Token,
-		workspaceSize: size,
-		storageClass:  cfg.StorageClass,
+		stream:            &http.Client{Transport: k8sTransport()},
+		tls:               k8sTLS(),
+		apiServer:         strings.TrimRight(cfg.APIServer, "/"),
+		token:             cfg.Token,
+		workspaceSize:     size,
+		storageClass:      cfg.StorageClass,
+		platformNamespace: cfg.PlatformNamespace,
 	}
 }
 
@@ -316,6 +325,81 @@ func (k *K8s) ensureNamespace(ctx context.Context, spec ports.SandboxSpec) error
 	}
 	if code >= 300 && code != http.StatusConflict {
 		return k8sFail(code, body, "creating the demand's namespace")
+	}
+	return k.ensureNetworkPolicy(ctx, spec)
+}
+
+// ensureNetworkPolicy is the egress allowlist the substrate spec §6.1 requires.
+//
+// The agent has the full triad — it reads untrusted content, it holds a
+// credential and it has an exit through git — so what it can REACH is the first
+// layer of defence, and it was the layer this repository never had.
+//
+// What is allowed, and why each one:
+//
+//   - DNS. Without it nothing resolves and every other rule is theatre;
+//   - the PLATFORM's namespace: the BFF the agent reports to and the git server
+//     that holds the project's library (ADR-0028). It is the only in-cluster
+//     destination — one demand's sandbox cannot reach another's, which is
+//     ADR-0024's boundary expressed in the network;
+//   - the public internet, MINUS the private ranges. The model endpoints and
+//     the customer's git provider live out there and have no fixed address a
+//     NetworkPolicy could name; the exclusions are what keep "outside" from
+//     meaning "the rest of the cluster and whatever else is on this network".
+//
+// Ingress is denied entirely: the demand's services are reached through the
+// ingress controller, and a sandbox has no reason to accept a connection from
+// another pod.
+func (k *K8s) ensureNetworkPolicy(ctx context.Context, spec ports.SandboxSpec) error {
+	if k.platformNamespace == "" {
+		return nil
+	}
+	policy := map[string]any{
+		"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+		"metadata": map[string]any{"name": "dop-sandbox", "labels": labelsFor(spec)},
+		"spec": map[string]any{
+			"podSelector": map[string]any{},
+			"policyTypes": []string{"Ingress", "Egress"},
+			"ingress":     []any{},
+			"egress": []map[string]any{
+				{
+					"to": []map[string]any{{
+						"namespaceSelector": map[string]any{"matchLabels": map[string]string{
+							"kubernetes.io/metadata.name": "kube-system",
+						}},
+					}},
+					"ports": []map[string]any{
+						{"protocol": "UDP", "port": 53},
+						{"protocol": "TCP", "port": 53},
+					},
+				},
+				{
+					"to": []map[string]any{{
+						"namespaceSelector": map[string]any{"matchLabels": map[string]string{
+							"kubernetes.io/metadata.name": k.platformNamespace,
+						}},
+					}},
+				},
+				{
+					"to": []map[string]any{{
+						"ipBlock": map[string]any{
+							"cidr": "0.0.0.0/0",
+							"except": []string{
+								"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+	code, body, err := k.do(ctx, http.MethodPost,
+		"/apis/networking.k8s.io/v1/namespaces/"+spec.Namespace+"/networkpolicies", policy)
+	if err != nil {
+		return err
+	}
+	if code >= 300 && code != http.StatusConflict {
+		return k8sFail(code, body, "closing the sandbox's network")
 	}
 	return nil
 }

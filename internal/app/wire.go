@@ -115,6 +115,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 			Token:         cfg.K8sToken,
 			WorkspaceSize: cfg.WorkspaceSize,
 			StorageClass:  cfg.StorageClass,
+			// The sandbox's egress allowlist names this namespace as its only
+			// in-cluster destination — the BFF and the git server.
+			PlatformNamespace: cfg.K8sNamespace,
 		})
 	}
 

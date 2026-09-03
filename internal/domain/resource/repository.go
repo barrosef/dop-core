@@ -35,6 +35,15 @@ type Repository interface {
 	// does not duplicate the row (the table has UNIQUE (resource_id, user_id)).
 	Grant(ctx context.Context, accountID string, g *Grant) (*Grant, error)
 	RevokeGrant(ctx context.Context, accountID, grantID string) error
+	// RevokeGrantsOfUser removes every grant the person holds in the account,
+	// in ONE statement.
+	//
+	// It exists because the loop it replaces was not atomic: a failure halfway
+	// left the person a member with half their access gone — a state nobody
+	// asked for and nothing detects. It is called when somebody leaves the
+	// account (identity.RemoveMembership), where "the sweep failed, so nothing
+	// was removed" has to be TRUE and not merely intended.
+	RevokeGrantsOfUser(ctx context.Context, accountID, userID string) error
 }
 
 // Access is the NARROW port into the identity domain: a resource needs to know

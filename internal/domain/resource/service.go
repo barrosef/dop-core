@@ -374,17 +374,11 @@ func (s *Service) GrantsOfMember(ctx context.Context, userID string) ([]Grant, e
 //
 // It takes accountID explicitly instead of reading the context so it cannot,
 // by accident, sweep another account's grants.
+//
+// ONE statement, not a loop over RevokeGrant: the caller's guarantee is that a
+// failed sweep removes nothing, and a loop makes that false halfway through.
 func (s *Service) RevokeAllOfMember(ctx context.Context, accountID, userID string) error {
-	grants, err := s.repo.GrantsOfUser(ctx, accountID, userID)
-	if err != nil {
-		return err
-	}
-	for _, g := range grants {
-		if err := s.repo.RevokeGrant(ctx, accountID, g.ID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.repo.RevokeGrantsOfUser(ctx, accountID, userID)
 }
 
 // SetCredential stores the secret in the SecretStore and persists ONLY the
