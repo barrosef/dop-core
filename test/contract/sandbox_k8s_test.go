@@ -83,8 +83,11 @@ func TestSandboxContractK8s(t *testing.T) {
 			Unsupported: ports.TierHardware,
 			// A pod pulls an image and waits for the volume provisioner; the
 			// local container does neither.
-			Ready:   180 * time.Second,
-			GitHost: envOr("SANDBOX_GIT_HOST", "host.k3d.internal"),
+			Ready: 180 * time.Second,
+			// The k3d network's gateway: `host.k3d.internal` is on the NODE's
+			// /etc/hosts and pods do not resolve it. Override with
+			// SANDBOX_GIT_HOST on a cluster whose network differs.
+			GitHost: envOr("SANDBOX_GIT_HOST", "172.24.0.1"),
 		}
 	})
 }

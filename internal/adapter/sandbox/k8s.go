@@ -440,7 +440,13 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		},
 	}
 	if len(spec.Command) > 0 {
-		container["command"] = spec.Command
+		// ARGS, not command: on Kubernetes `command` REPLACES the image's
+		// ENTRYPOINT, while Docker's `Cmd` leaves it in place. Writing it as
+		// `command` here made the same spec behave differently on the two
+		// substrates — the devbox's entrypoint, which clones the shelf, simply
+		// never ran, and the sandbox came up with an empty /project and no
+		// error anywhere. `args` is what maps to Docker's `Cmd`.
+		container["args"] = spec.Command
 	}
 
 	podSpec := map[string]any{
@@ -461,10 +467,16 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		// not a deployment one (spec §2). fsGroup is what makes the workspace
 		// writable for that user.
 		"securityContext": map[string]any{
-			"runAsNonRoot":   true,
-			"runAsUser":      1000,
-			"runAsGroup":     1000,
-			"fsGroup":        1000,
+			"runAsNonRoot": true,
+			"runAsUser":    1000,
+			// GROUP 0, and it is not decoration: the image's directories belong
+			// to root with group-write (the OKD convention for an arbitrary
+			// uid), and Docker's `USER 1001` lands on gid 0 by default. Without
+			// this the two substrates disagree — on Kubernetes the sandbox
+			// could not write to /project and the clone failed with a bare
+			// "Permission denied".
+			"runAsGroup":     0,
+			"fsGroup":        0,
 			"seccompProfile": map[string]string{"type": "RuntimeDefault"},
 		},
 	}
