@@ -120,6 +120,9 @@ type Config struct {
 	CollectorInterval   time.Duration // how often to look for what is new
 	// CoreTarget is the core's address as the SANDBOX reaches it.
 	CoreTarget string
+	// CollectorImage is what the launcher raises beside the agent. It is the
+	// CORE's own image — the collector is a mode of this binary.
+	CollectorImage string
 
 	// CallAuthKeyCollector is the metrics collector's — a container beside the
 	// agent in the sandbox's pod. A key of its own so that a leak there forges

@@ -258,6 +258,9 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if err := d.ensureVolume(ctx, spec); err != nil {
 		return nil, err
 	}
+	if err := d.ensureSessionsVolume(ctx, spec); err != nil {
+		return nil, err
+	}
 	if err := d.ensureImage(ctx, spec.Image); err != nil {
 		return nil, err
 	}
@@ -273,6 +276,11 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if err := d.startContainer(ctx, spec.SandboxHandle); err != nil {
 		return nil, err
 	}
+	// The collector comes up AFTER the agent's container: it follows a file that
+	// does not exist until the tool starts writing it.
+	if err := d.ensureCollector(ctx, spec); err != nil {
+		return nil, err
+	}
 	return d.Describe(ctx, spec.SandboxHandle)
 }
 
@@ -282,6 +290,80 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 // writes a file into a container that has not started. The file belongs to
 // the sandbox's user and is readable by nobody else — it is the agent's own
 // key, and only the agent's.
+// sessionsVolume is shared between the agent's container and the collector's:
+// the tool writes there and the collector reads. On Docker there are no pods, so
+// "beside" means a second container on the same named volume.
+func (d *Docker) sessionsVolume(h ports.SandboxHandle) string { return h.Namespace + "-sessions" }
+
+func (d *Docker) collectorName(h ports.SandboxHandle) string { return h.Namespace + "-collector" }
+
+// ensureCollector raises the sidecar, or removes it when there is none.
+//
+// The key travels in the collector's OWN environment, and the agent's container
+// has an environment of its own — a container does not read another's. It is a
+// weaker separation than Kubernetes's projected Secret, and it is the strongest
+// this substrate offers; the port promises the outcome, each adapter reaches it
+// its own way.
+func (d *Docker) ensureCollector(ctx context.Context, spec ports.SandboxSpec) error {
+	name := d.collectorName(spec.SandboxHandle)
+	if spec.Collector.Image == "" {
+		code, body, err := d.do(ctx, http.MethodDelete, "/containers/"+name+"?force=true", nil)
+		if err != nil {
+			return err
+		}
+		if code >= 300 && code != http.StatusNotFound {
+			return fail(code, body, "removing the collector")
+		}
+		return nil
+	}
+	if err := d.ensureImage(ctx, spec.Collector.Image); err != nil {
+		return err
+	}
+	// Recreated on every launch: it is stateless, and its configuration —
+	// the demand, the key — changes with the sandbox.
+	if code, body, err := d.do(ctx, http.MethodDelete, "/containers/"+name+"?force=true", nil); err != nil {
+		return err
+	} else if code >= 300 && code != http.StatusNotFound {
+		return fail(code, body, "recycling the collector")
+	}
+
+	env := []string{
+		"COLLECTOR_SESSION_DIR=" + ports.SandboxSessionsPath,
+		"COLLECTOR_ACCOUNT_ID=" + spec.Collector.AccountID,
+		"COLLECTOR_DEMAND_ID=" + spec.Collector.DemandID,
+		"COLLECTOR_PROJECT_ID=" + spec.Collector.ProjectID,
+		"CORE_TARGET=" + spec.Collector.CoreTarget,
+		"CALL_AUTH_KEY_COLLECTOR=" + spec.Collector.Key,
+	}
+	sort.Strings(env)
+	body := map[string]any{
+		"Image":  spec.Collector.Image,
+		"Cmd":    []string{"collector"},
+		"Env":    env,
+		"Labels": labelsFor(spec),
+		"HostConfig": map[string]any{
+			// Read-only on the sessions: the collector follows, it does not write.
+			"Binds":         []string{d.sessionsVolume(spec.SandboxHandle) + ":" + ports.SandboxSessionsPath + ":ro"},
+			"CapDrop":       []string{"ALL"},
+			"SecurityOpt":   []string{"no-new-privileges:true"},
+			"RestartPolicy": map[string]any{"Name": "unless-stopped"},
+		},
+	}
+	code, resp, err := d.do(ctx, http.MethodPost, "/containers/create?name="+url.QueryEscape(name), body)
+	if err != nil {
+		return err
+	}
+	if code >= 300 && code != http.StatusConflict {
+		return fail(code, resp, "creating the collector")
+	}
+	if code, resp, err := d.do(ctx, http.MethodPost, "/containers/"+name+"/start", nil); err != nil {
+		return err
+	} else if code >= 300 && code != http.StatusNotModified {
+		return fail(code, resp, "starting the collector")
+	}
+	return nil
+}
+
 func (d *Docker) putToken(ctx context.Context, spec ports.SandboxSpec) error {
 	if spec.Repository.CloneURL == "" {
 		return nil
@@ -328,6 +410,23 @@ func (d *Docker) putToken(ctx context.Context, spec ports.SandboxSpec) error {
 // sandboxUID is the devbox image's user. It is repeated here because the tar
 // carries ownership, and a file the agent cannot read is a key nobody holds.
 const sandboxUID = 1001
+
+func (d *Docker) ensureSessionsVolume(ctx context.Context, spec ports.SandboxSpec) error {
+	if spec.Collector.Image == "" {
+		return nil
+	}
+	code, body, err := d.do(ctx, http.MethodPost, "/volumes/create", map[string]any{
+		"Name":   d.sessionsVolume(spec.SandboxHandle),
+		"Labels": labelsFor(spec),
+	})
+	if err != nil {
+		return err
+	}
+	if code >= 300 {
+		return fail(code, body, "creating the sessions volume")
+	}
+	return nil
+}
 
 func (d *Docker) ensureVolume(ctx context.Context, spec ports.SandboxSpec) error {
 	code, body, err := d.do(ctx, http.MethodPost, "/volumes/create", map[string]any{
@@ -393,6 +492,13 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 	}
 	sort.Strings(env) // reproducible creation
 
+	binds := []string{d.volumeName(spec.SandboxHandle) + ":" + ports.SandboxWorkspacePath}
+	if spec.Collector.Image != "" {
+		// The two containers share this one: the tool writes, the collector
+		// reads.
+		binds = append(binds, d.sessionsVolume(spec.SandboxHandle)+":"+ports.SandboxSessionsPath)
+	}
+
 	body := map[string]any{
 		"Image":  spec.Image,
 		"Env":    env,
@@ -408,7 +514,7 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 		"Tty": false,
 		"HostConfig": map[string]any{
 			"Runtime": runtime,
-			"Binds":   []string{d.volumeName(spec.SandboxHandle) + ":" + ports.SandboxWorkspacePath},
+			"Binds":   binds,
 			// Defence in layers (spec §6). The agent reads untrusted content and
 			// carries a credential: no capabilities at all, and no
 			// re-escalation.
@@ -512,22 +618,25 @@ func (d *Docker) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 // Destroy takes execution AND workspace. It is irreversible by construction:
 // once the volume is removed there is nothing to resume.
 func (d *Docker) Destroy(ctx context.Context, h ports.SandboxHandle) error {
-	code, body, err := d.do(ctx, http.MethodDelete,
-		"/containers/"+d.containerName(h)+"?force=1&v=0", nil)
-	if err != nil {
-		return err
+	// Everything this sandbox owns, in order, and absence is success everywhere
+	// — destroying what is not there is the desired result (guarantee 8).
+	for _, target := range []struct{ path, what string }{
+		{"/containers/" + d.containerName(h) + "?force=1&v=0", "removing the sandbox"},
+		// The collector goes with it: it exists only to follow this sandbox, and
+		// one left running would keep tailing a file nobody writes any more.
+		{"/containers/" + d.collectorName(h) + "?force=1&v=0", "removing the collector"},
+		{"/volumes/" + d.sessionsVolume(h) + "?force=1", "removing the sessions"},
+		{"/volumes/" + d.volumeName(h) + "?force=1", "removing the workspace"},
+	} {
+		code, body, err := d.do(ctx, http.MethodDelete, target.path, nil)
+		if err != nil {
+			return err
+		}
+		if code >= 300 && code != http.StatusNotFound {
+			return fail(code, body, target.what)
+		}
 	}
-	if code >= 300 && code != http.StatusNotFound {
-		return fail(code, body, "removing the sandbox")
-	}
-	code, body, err = d.do(ctx, http.MethodDelete, "/volumes/"+d.volumeName(h)+"?force=1", nil)
-	if err != nil {
-		return err
-	}
-	if code >= 300 && code != http.StatusNotFound {
-		return fail(code, body, "removing the workspace")
-	}
-	return nil // absence is the desired result (guarantee 8)
+	return nil
 }
 
 func (d *Docker) Describe(ctx context.Context, h ports.SandboxHandle) (*ports.SandboxStatus, error) {

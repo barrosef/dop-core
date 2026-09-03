@@ -231,6 +231,11 @@ func buildExecution(deps *Deps, id *identity.Service, dm *demand.Service, relogi
 		execution.Config{
 			DevboxImage:   deps.Cfg.DevboxImage,
 			IngressDomain: deps.Cfg.IngressDomain,
+			// The collector rides in the CORE's own image: one artifact, one
+			// pipeline — the same argument that made the four modes one binary.
+			CollectorImage: deps.Cfg.CollectorImage,
+			CollectorKey:   deps.Cfg.CallAuthKeyCollector,
+			CoreTarget:     deps.Cfg.CoreTarget,
 		},
 	)
 }

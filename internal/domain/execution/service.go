@@ -20,6 +20,12 @@ type Config struct {
 	DevboxImage string
 	// IngressDomain is the suffix of the URLs <service>--<demand>.<domain> (spec §5).
 	IngressDomain string
+	// The collector beside the agent (P-23 phase 1). An empty image means no
+	// collector — which is what a sandbox raised for something other than
+	// measurement wants, and what the contract suite wants.
+	CollectorImage string
+	CollectorKey   string
+	CoreTarget     string
 }
 
 // Service concentra as regras do substrato. Recebe apenas PORTAS.
@@ -196,6 +202,7 @@ func (s *Service) finishProvision(ctx context.Context, accountID string, sb *San
 		return nil, err
 	}
 	spec.Repository = repo
+	spec.Collector = s.collectorFor(ctx, sb)
 
 	status, err := s.launcher.Launch(ctx, spec)
 	if err != nil {
@@ -271,6 +278,30 @@ func (s *Service) repositoryFor(ctx context.Context, sb *Sandbox) (ports.Sandbox
 		return ports.SandboxRepository{}, err
 	}
 	return ports.SandboxRepository{CloneURL: info.CloneURL, Token: token}, nil
+}
+
+// collectorFor describes the sidecar that will follow this sandbox.
+//
+// A failure to resolve the project does NOT fail the provisioning: the collector
+// is telemetry, and a demand that cannot start because its measurement could not
+// be configured is the tail wagging the dog. The project simply travels empty,
+// and the turns are still attributed to the account and the demand.
+func (s *Service) collectorFor(ctx context.Context, sb *Sandbox) ports.SandboxCollector {
+	if s.cfg.CollectorImage == "" || s.cfg.CollectorKey == "" {
+		return ports.SandboxCollector{}
+	}
+	projectID, err := s.demands.DemandProject(ctx, sb.DemandID)
+	if err != nil {
+		projectID = ""
+	}
+	return ports.SandboxCollector{
+		Image:      s.cfg.CollectorImage,
+		CoreTarget: s.cfg.CoreTarget,
+		Key:        s.cfg.CollectorKey,
+		AccountID:  sb.AccountID,
+		DemandID:   sb.DemandID,
+		ProjectID:  projectID,
+	}
 }
 
 func (s *Service) specFor(sb *Sandbox) ports.SandboxSpec {
@@ -375,6 +406,7 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		return nil, err
 	}
 	spec.Repository = repo
+	spec.Collector = s.collectorFor(ctx, sb)
 
 	status, err := s.launcher.Resume(ctx, spec)
 	if err != nil {

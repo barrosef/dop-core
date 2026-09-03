@@ -324,6 +324,28 @@ const SandboxDocumentsPath = "/project"
 // no way to clone.
 const SandboxTokenPath = "/etc/dop/git-token"
 
+// SandboxSessionsPath is where the agent's tool writes its session files, and
+// where the collector reads them. Both containers mount it; only the collector
+// has to be told, because the tool writes where it always writes.
+const SandboxSessionsPath = "/sessions"
+
+// SandboxCollector is the sidecar's configuration (P-23 phase 1).
+//
+// Note what is here and what is NOT: an image, an address and a key — and no
+// database, no vault, no provider credential. The collector's whole authority is
+// to write telemetry for one account, and the shape of this struct is what says
+// so.
+type SandboxCollector struct {
+	Image      string
+	CoreTarget string
+	// Key signs the collector's assertions (ADR-0029). It is mounted ONLY in the
+	// collector's container: the agent's never sees it.
+	Key       string
+	AccountID string
+	DemandID  string
+	ProjectID string
+}
+
 // SandboxRepository is the project's root repository as the sandbox sees it.
 //
 // The clone URL is not secret and travels in the environment
@@ -359,6 +381,18 @@ type SandboxSpec struct {
 	// suite would stop running on the laptop of whoever works on the adapter.
 	Command []string
 	Env     map[string]string
+	// Collector, when set, raises a container BESIDE the agent that follows the
+	// session files and pushes the consumption to the core (P-23 phase 1).
+	//
+	// It is in the spec and not a method of its own for the same reason the
+	// repository is: on Kubernetes a sidecar is part of the pod, and a pod is
+	// created once. "Add a container afterwards" is not a thing either substrate
+	// does.
+	//
+	// Empty means no collector — which is what the contract suite wants, and
+	// what a sandbox raised for something other than measurement wants.
+	Collector SandboxCollector
+
 	// Repository is the project's root repository (ADR-0028). An empty CloneURL
 	// means no shelf — the right thing for a sandbox raised by the contract
 	// suite's lifecycle tests. With one, the adapter delivers the token at

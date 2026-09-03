@@ -308,6 +308,9 @@ func (k *K8s) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	if err := k.ensureToken(ctx, spec); err != nil {
 		return nil, err
 	}
+	if err := k.ensureCollectorKey(ctx, spec); err != nil {
+		return nil, err
+	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {
 		return nil, err
 	}
@@ -435,6 +438,44 @@ func (k *K8s) ensureWorkspace(ctx context.Context, spec ports.SandboxSpec) error
 // to read this Secret is to be the sandbox it was made for.
 const tokenSecret = "dop-git-token"
 
+// collectorSecret holds the collector's signing key. A Secret of its own, and
+// mounted ONLY in the collector's container: the agent's container never sees
+// it, which is the whole reason a sidecar may hold a credential at all.
+const collectorSecret = "dop-collector-key"
+
+func (k *K8s) ensureCollectorKey(ctx context.Context, spec ports.SandboxSpec) error {
+	path := "/api/v1/namespaces/" + spec.Namespace + "/secrets"
+	if spec.Collector.Image == "" || spec.Collector.Key == "" {
+		code, body, err := k.do(ctx, http.MethodDelete, path+"/"+collectorSecret, nil)
+		if err != nil {
+			return err
+		}
+		if code >= 300 && code != http.StatusNotFound {
+			return k8sFail(code, body, "removing the collector's key")
+		}
+		return nil
+	}
+	body := map[string]any{
+		"apiVersion": "v1", "kind": "Secret",
+		"metadata":   map[string]any{"name": collectorSecret, "labels": labelsFor(spec)},
+		"type":       "Opaque",
+		"stringData": map[string]string{"key": spec.Collector.Key},
+	}
+	code, out, err := k.do(ctx, http.MethodPut, path+"/"+collectorSecret, body)
+	if err != nil {
+		return err
+	}
+	if code == http.StatusNotFound {
+		if code, out, err = k.do(ctx, http.MethodPost, path, body); err != nil {
+			return err
+		}
+	}
+	if code >= 300 && code != http.StatusConflict {
+		return k8sFail(code, out, "writing the collector's key")
+	}
+	return nil
+}
+
 func (k *K8s) ensureToken(ctx context.Context, spec ports.SandboxSpec) error {
 	path := "/api/v1/namespaces/" + spec.Namespace + "/secrets"
 	if spec.Repository.CloneURL == "" {
@@ -470,6 +511,39 @@ func (k *K8s) ensureToken(ctx context.Context, spec ports.SandboxSpec) error {
 	return nil
 }
 
+// collectorContainer is the sidecar, or nothing.
+//
+// It mounts the SAME sessions directory as the agent, reads it, and pushes to
+// the core. What it does NOT mount is everything else: not the workspace, not
+// the shelf, not the git token. And its own key is projected only here.
+func collectorContainer(spec ports.SandboxCollector) []any {
+	if spec.Image == "" {
+		return nil
+	}
+	return []any{map[string]any{
+		"name":  "collector",
+		"image": spec.Image,
+		"args":  []string{"collector"},
+		"env": []map[string]string{
+			{"name": "COLLECTOR_SESSION_DIR", "value": ports.SandboxSessionsPath},
+			{"name": "COLLECTOR_ACCOUNT_ID", "value": spec.AccountID},
+			{"name": "COLLECTOR_DEMAND_ID", "value": spec.DemandID},
+			{"name": "COLLECTOR_PROJECT_ID", "value": spec.ProjectID},
+			{"name": "CORE_TARGET", "value": spec.CoreTarget},
+		},
+		"envFrom": []map[string]any{{
+			"secretRef": map[string]any{"name": collectorSecret},
+		}},
+		"volumeMounts": []map[string]any{{
+			"name": "sessions", "mountPath": ports.SandboxSessionsPath, "readOnly": true,
+		}},
+		"resources": map[string]any{
+			"requests": map[string]string{"memory": "32Mi", "cpu": "10m"},
+			"limits":   map[string]string{"memory": "128Mi", "cpu": "200m"},
+		},
+	}}
+}
+
 func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClass string) error {
 	env := make([]map[string]string, 0, len(spec.Env))
 	keys := make([]string, 0, len(spec.Env))
@@ -488,6 +562,17 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 	}
 	volumes := []map[string]any{
 		{"name": pvcName, "persistentVolumeClaim": map[string]string{"claimName": pvcName}},
+	}
+	// The sessions directory is SHARED between the two containers: the agent's
+	// tool writes there and the collector reads. An emptyDir and not a claim —
+	// it is a stream being followed, not state to survive anything.
+	if spec.Collector.Image != "" {
+		volumes = append(volumes, map[string]any{
+			"name": "sessions", "emptyDir": map[string]any{},
+		})
+		mounts = append(mounts, map[string]any{
+			"name": "sessions", "mountPath": ports.SandboxSessionsPath,
+		})
 	}
 	if spec.Repository.CloneURL != "" {
 		env = append(env, map[string]string{"name": envProjectRepo, "value": spec.Repository.CloneURL})
@@ -538,7 +623,7 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		// automatic restart the domain would see "active" forever and the
 		// developer would be staring at a terminal restarting on its own.
 		"restartPolicy": "Never",
-		"containers":    []any{container},
+		"containers":    append([]any{container}, collectorContainer(spec.Collector)...),
 		"volumes":       volumes,
 		// NO service account token. It is what runs in here that makes this
 		// line load-bearing: agent code, reading untrusted content. The default
@@ -628,6 +713,9 @@ func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	// A fresh token on every resume: the old one may have expired while the
 	// sandbox slept, and the shelf itself is a clone the entrypoint pulls.
 	if err := k.ensureToken(ctx, spec); err != nil {
+		return nil, err
+	}
+	if err := k.ensureCollectorKey(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {
