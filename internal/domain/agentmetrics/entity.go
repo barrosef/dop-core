@@ -38,9 +38,33 @@ type Session struct {
 	ToolVersion string
 	StartedAt   time.Time
 	EndedAt     time.Time
+	// Auth is how the agent authenticated, as the TOOL reports it — observed,
+	// never inferred from an environment variable. Phase 1 measures on the
+	// dev's subscription and phase 2 on the platform's key; the same numbers
+	// mean different things, and a stray key would change which without
+	// anything saying so.
+	Auth SessionAuth
 	// ByteOffset is the collector's cursor into the session file. The file grows
 	// while the agent works; re-reading it whole on each pass is not collection.
 	ByteOffset int64
+}
+
+// SessionAuth is what the tool answers about its own authentication.
+//
+// The METHOD, not the person: no e-mail, no organization. The platform's own
+// account already says whose demand this is, and a second identity would add a
+// surface without adding a measurement.
+type SessionAuth struct {
+	Method       string // claude.ai | apiKey | …
+	Provider     string // firstParty | bedrock | …
+	Subscription string // max | pro | empty when billed by key
+	KeySource    string // where a key came from, when one did
+}
+
+// BilledToSubscription says the consumption came out of a plan and not a
+// metered key — which is the difference between phase 1's numbers and phase 2's.
+func (a SessionAuth) BilledToSubscription() bool {
+	return a.Subscription != "" && a.KeySource == ""
 }
 
 // Turn is one assistant turn with its consumption.

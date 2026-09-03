@@ -146,6 +146,7 @@ func (c *collector) follow(ctx context.Context, path string) error {
 	}
 
 	session, turns := agentmetrics.Parse(chunk, from)
+	session.Auth = c.authState()
 	if session.ExternalID == "" && len(turns) == 0 {
 		return nil
 	}
@@ -159,6 +160,12 @@ func (c *collector) follow(ctx context.Context, path string) error {
 		ToolVersion: session.ToolVersion,
 		ByteOffset:  session.ByteOffset,
 		Turns:       turnsToProto(turns),
+		Auth: &dopv1.SessionAuth{
+			Method:       session.Auth.Method,
+			Provider:     session.Auth.Provider,
+			Subscription: session.Auth.Subscription,
+			KeySource:    session.Auth.KeySource,
+		},
 	}
 	resp, err := c.client.RecordTurns(c.signed(ctx), req)
 	if err != nil {
@@ -172,6 +179,41 @@ func (c *collector) follow(ctx context.Context, path string) error {
 			"session", session.ExternalID, "offset", session.ByteOffset)
 	}
 	return nil
+}
+
+// authStateFile is what the agent's own container writes at startup: the tool's
+// answer about how IT authenticated.
+//
+// It is read from disk and not deduced here on purpose. The collector cannot ask
+// — it does not have the binary, and it must not have the agent's credentials.
+// And deducing it from an environment variable is exactly the mistake this
+// exists to prevent: a stray ANTHROPIC_API_KEY makes the tool bill a key instead
+// of the subscription, and a measurement that guessed would be about the wrong
+// thing with nothing saying so.
+const authStateFile = ".auth.json"
+
+// authState reads the file, and answers empty when it is not there — an unknown
+// method is recorded as unknown, never as a guess. The session's earlier value
+// is preserved on the way in (see the upsert).
+func (c *collector) authState() agentmetrics.SessionAuth {
+	raw, err := os.ReadFile(filepath.Join(c.cfg.CollectorSessionDir, authStateFile))
+	if err != nil {
+		return agentmetrics.SessionAuth{}
+	}
+	var in struct {
+		AuthMethod       string `json:"authMethod"`
+		APIProvider      string `json:"apiProvider"`
+		SubscriptionType string `json:"subscriptionType"`
+		APIKeySource     string `json:"apiKeySource"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		c.log.Warn("the agent's auth state is unreadable", "error", err.Error())
+		return agentmetrics.SessionAuth{}
+	}
+	return agentmetrics.SessionAuth{
+		Method: in.AuthMethod, Provider: in.APIProvider,
+		Subscription: in.SubscriptionType, KeySource: in.APIKeySource,
+	}
 }
 
 // maxChunkBytes bounds one pass. A collector starting on a session that has been

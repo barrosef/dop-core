@@ -37,6 +37,12 @@ func (s *AgentMetricsServer) RecordTurns(ctx context.Context, req *dopv1.RecordT
 		ByteOffset:  req.GetByteOffset(),
 		StartedAt:   firstTurnAt(turns),
 		EndedAt:     lastTurnAt(turns),
+		Auth: agentmetrics.SessionAuth{
+			Method:       req.GetAuth().GetMethod(),
+			Provider:     req.GetAuth().GetProvider(),
+			Subscription: req.GetAuth().GetSubscription(),
+			KeySource:    req.GetAuth().GetKeySource(),
+		},
 	}, turns)
 	if err != nil {
 		return nil, err

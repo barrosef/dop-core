@@ -573,6 +573,13 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		mounts = append(mounts, map[string]any{
 			"name": "sessions", "mountPath": ports.SandboxSessionsPath,
 		})
+		// The agent's container is TOLD where it is, so its entrypoint can leave
+		// the tool's own answer about how it authenticated where the collector
+		// reads it. Without this the measurement would have to guess, and
+		// guessing is what makes it quietly about the wrong thing.
+		env = append(env, map[string]string{
+			"name": envSessionDir, "value": ports.SandboxSessionsPath,
+		})
 	}
 	if spec.Repository.CloneURL != "" {
 		env = append(env, map[string]string{"name": envProjectRepo, "value": spec.Repository.CloneURL})

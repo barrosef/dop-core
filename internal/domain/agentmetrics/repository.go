@@ -41,9 +41,11 @@ type Consumption struct {
 	CacheReadTokens     int64
 
 	TokensByModel map[string]int64
-	CallsByTool   map[string]int
-	FirstTurnAt   time.Time
-	LastTurnAt    time.Time
+	// TokensByAuth splits by HOW it was paid for — a plan or a metered key.
+	TokensByAuth map[string]int64
+	CallsByTool  map[string]int
+	FirstTurnAt  time.Time
+	LastTurnAt   time.Time
 }
 
 // CacheRatio is the share of the incoming context that came from cache.

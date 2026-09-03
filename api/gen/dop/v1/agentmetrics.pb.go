@@ -201,6 +201,11 @@ type RecordTurnsRequest struct {
 	GitBranch   string       `protobuf:"bytes,6,opt,name=git_branch,json=gitBranch,proto3" json:"git_branch,omitempty"`
 	ToolVersion string       `protobuf:"bytes,7,opt,name=tool_version,json=toolVersion,proto3" json:"tool_version,omitempty"`
 	Turns       []*AgentTurn `protobuf:"bytes,8,rep,name=turns,proto3" json:"turns,omitempty"`
+	// How the agent AUTHENTICATED, as the tool reports about itself. It travels
+	// with every batch because it is a fact about the session, and because the
+	// alternative — inferring it here from an environment variable — is exactly
+	// what makes a measurement quietly about the wrong thing.
+	Auth *SessionAuth `protobuf:"bytes,10,opt,name=auth,proto3" json:"auth,omitempty"`
 	// byte_offset is where the collector stopped reading. It travels with the
 	// turns and is stored in the SAME transaction: a cursor that moved without
 	// the turns loses them in silence.
@@ -288,11 +293,88 @@ func (x *RecordTurnsRequest) GetTurns() []*AgentTurn {
 	return nil
 }
 
+func (x *RecordTurnsRequest) GetAuth() *SessionAuth {
+	if x != nil {
+		return x.Auth
+	}
+	return nil
+}
+
 func (x *RecordTurnsRequest) GetByteOffset() int64 {
 	if x != nil {
 		return x.ByteOffset
 	}
 	return 0
+}
+
+// SessionAuth is the METHOD, not the person: no e-mail, no organization. The
+// platform's own account already says whose demand this is.
+type SessionAuth struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Method        string                 `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`             // claude.ai | apiKey | …
+	Provider      string                 `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`         // firstParty | bedrock | …
+	Subscription  string                 `protobuf:"bytes,3,opt,name=subscription,proto3" json:"subscription,omitempty"` // max | pro | empty when billed by key
+	KeySource     string                 `protobuf:"bytes,4,opt,name=key_source,json=keySource,proto3" json:"key_source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionAuth) Reset() {
+	*x = SessionAuth{}
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionAuth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionAuth) ProtoMessage() {}
+
+func (x *SessionAuth) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionAuth.ProtoReflect.Descriptor instead.
+func (*SessionAuth) Descriptor() ([]byte, []int) {
+	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SessionAuth) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *SessionAuth) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *SessionAuth) GetSubscription() string {
+	if x != nil {
+		return x.Subscription
+	}
+	return ""
+}
+
+func (x *SessionAuth) GetKeySource() string {
+	if x != nil {
+		return x.KeySource
+	}
+	return ""
 }
 
 type RecordTurnsResponse struct {
@@ -306,7 +388,7 @@ type RecordTurnsResponse struct {
 
 func (x *RecordTurnsResponse) Reset() {
 	*x = RecordTurnsResponse{}
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[2]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -318,7 +400,7 @@ func (x *RecordTurnsResponse) String() string {
 func (*RecordTurnsResponse) ProtoMessage() {}
 
 func (x *RecordTurnsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[2]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -331,7 +413,7 @@ func (x *RecordTurnsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordTurnsResponse.ProtoReflect.Descriptor instead.
 func (*RecordTurnsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{2}
+	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RecordTurnsResponse) GetRecorded() int32 {
@@ -350,7 +432,7 @@ type GetDemandConsumptionRequest struct {
 
 func (x *GetDemandConsumptionRequest) Reset() {
 	*x = GetDemandConsumptionRequest{}
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[3]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -362,7 +444,7 @@ func (x *GetDemandConsumptionRequest) String() string {
 func (*GetDemandConsumptionRequest) ProtoMessage() {}
 
 func (x *GetDemandConsumptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[3]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -375,7 +457,7 @@ func (x *GetDemandConsumptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDemandConsumptionRequest.ProtoReflect.Descriptor instead.
 func (*GetDemandConsumptionRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{3}
+	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetDemandConsumptionRequest) GetDemandId() string {
@@ -400,8 +482,11 @@ type DemandConsumption struct {
 	CacheRatio float64 `protobuf:"fixed64,8,opt,name=cache_ratio,json=cacheRatio,proto3" json:"cache_ratio,omitempty"`
 	// by_model and by_tool are where the waste hides: which model was chosen and
 	// which tool burned the turns.
-	TokensByModel map[string]int64       `protobuf:"bytes,9,rep,name=tokens_by_model,json=tokensByModel,proto3" json:"tokens_by_model,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	CallsByTool   map[string]int32       `protobuf:"bytes,10,rep,name=calls_by_tool,json=callsByTool,proto3" json:"calls_by_tool,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	TokensByModel map[string]int64 `protobuf:"bytes,9,rep,name=tokens_by_model,json=tokensByModel,proto3" json:"tokens_by_model,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	CallsByTool   map[string]int32 `protobuf:"bytes,10,rep,name=calls_by_tool,json=callsByTool,proto3" json:"calls_by_tool,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// by_auth splits the consumption by how it was paid for. It is the column
+	// that makes phase 1 and phase 2 comparable instead of merely adjacent.
+	TokensByAuth  map[string]int64       `protobuf:"bytes,13,rep,name=tokens_by_auth,json=tokensByAuth,proto3" json:"tokens_by_auth,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	FirstTurnAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=first_turn_at,json=firstTurnAt,proto3" json:"first_turn_at,omitempty"`
 	LastTurnAt    *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=last_turn_at,json=lastTurnAt,proto3" json:"last_turn_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -410,7 +495,7 @@ type DemandConsumption struct {
 
 func (x *DemandConsumption) Reset() {
 	*x = DemandConsumption{}
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[4]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -422,7 +507,7 @@ func (x *DemandConsumption) String() string {
 func (*DemandConsumption) ProtoMessage() {}
 
 func (x *DemandConsumption) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_agentmetrics_proto_msgTypes[4]
+	mi := &file_dop_v1_agentmetrics_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -435,7 +520,7 @@ func (x *DemandConsumption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DemandConsumption.ProtoReflect.Descriptor instead.
 func (*DemandConsumption) Descriptor() ([]byte, []int) {
-	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{4}
+	return file_dop_v1_agentmetrics_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DemandConsumption) GetDemandId() string {
@@ -508,6 +593,13 @@ func (x *DemandConsumption) GetCallsByTool() map[string]int32 {
 	return nil
 }
 
+func (x *DemandConsumption) GetTokensByAuth() map[string]int64 {
+	if x != nil {
+		return x.TokensByAuth
+	}
+	return nil
+}
+
 func (x *DemandConsumption) GetFirstTurnAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.FirstTurnAt
@@ -547,7 +639,7 @@ const file_dop_v1_agentmetrics_proto_rawDesc = "" +
 	"\bthinking\x18\x0e \x01(\x05R\bthinking\x12\x14\n" +
 	"\x05texts\x18\x0f \x01(\x05R\x05texts\x12\x14\n" +
 	"\x05tools\x18\x10 \x03(\tR\x05tools\x12\x1b\n" +
-	"\traw_usage\x18\x11 \x01(\tR\brawUsageJ\x04\b\x01\x10\x02\"\x8e\x02\n" +
+	"\traw_usage\x18\x11 \x01(\tR\brawUsageJ\x04\b\x01\x10\x02\"\xb7\x02\n" +
 	"\x12RecordTurnsRequest\x12\x18\n" +
 	"\asession\x18\x02 \x01(\tR\asession\x12\x1b\n" +
 	"\tdemand_id\x18\x03 \x01(\tR\bdemandId\x12\x1d\n" +
@@ -557,13 +649,21 @@ const file_dop_v1_agentmetrics_proto_rawDesc = "" +
 	"\n" +
 	"git_branch\x18\x06 \x01(\tR\tgitBranch\x12!\n" +
 	"\ftool_version\x18\a \x01(\tR\vtoolVersion\x12'\n" +
-	"\x05turns\x18\b \x03(\v2\x11.dop.v1.AgentTurnR\x05turns\x12\x1f\n" +
+	"\x05turns\x18\b \x03(\v2\x11.dop.v1.AgentTurnR\x05turns\x12'\n" +
+	"\x04auth\x18\n" +
+	" \x01(\v2\x13.dop.v1.SessionAuthR\x04auth\x12\x1f\n" +
 	"\vbyte_offset\x18\t \x01(\x03R\n" +
-	"byteOffsetJ\x04\b\x01\x10\x02\"1\n" +
+	"byteOffsetJ\x04\b\x01\x10\x02\"\x84\x01\n" +
+	"\vSessionAuth\x12\x16\n" +
+	"\x06method\x18\x01 \x01(\tR\x06method\x12\x1a\n" +
+	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\"\n" +
+	"\fsubscription\x18\x03 \x01(\tR\fsubscription\x12\x1d\n" +
+	"\n" +
+	"key_source\x18\x04 \x01(\tR\tkeySource\"1\n" +
 	"\x13RecordTurnsResponse\x12\x1a\n" +
 	"\brecorded\x18\x01 \x01(\x05R\brecorded\"@\n" +
 	"\x1bGetDemandConsumptionRequest\x12\x1b\n" +
-	"\tdemand_id\x18\x02 \x01(\tR\bdemandIdJ\x04\b\x01\x10\x02\"\xd1\x05\n" +
+	"\tdemand_id\x18\x02 \x01(\tR\bdemandIdJ\x04\b\x01\x10\x02\"\xe5\x06\n" +
 	"\x11DemandConsumption\x12\x1b\n" +
 	"\tdemand_id\x18\x01 \x01(\tR\bdemandId\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x05R\bsessions\x12\x14\n" +
@@ -576,7 +676,8 @@ const file_dop_v1_agentmetrics_proto_rawDesc = "" +
 	"cacheRatio\x12T\n" +
 	"\x0ftokens_by_model\x18\t \x03(\v2,.dop.v1.DemandConsumption.TokensByModelEntryR\rtokensByModel\x12N\n" +
 	"\rcalls_by_tool\x18\n" +
-	" \x03(\v2*.dop.v1.DemandConsumption.CallsByToolEntryR\vcallsByTool\x12>\n" +
+	" \x03(\v2*.dop.v1.DemandConsumption.CallsByToolEntryR\vcallsByTool\x12Q\n" +
+	"\x0etokens_by_auth\x18\r \x03(\v2+.dop.v1.DemandConsumption.TokensByAuthEntryR\ftokensByAuth\x12>\n" +
 	"\rfirst_turn_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vfirstTurnAt\x12<\n" +
 	"\flast_turn_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastTurnAt\x1a@\n" +
@@ -585,7 +686,10 @@ const file_dop_v1_agentmetrics_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\x1a>\n" +
 	"\x10CallsByToolEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x012\xb5\x01\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a?\n" +
+	"\x11TokensByAuthEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x012\xb5\x01\n" +
 	"\x13AgentMetricsService\x12F\n" +
 	"\vRecordTurns\x12\x1a.dop.v1.RecordTurnsRequest\x1a\x1b.dop.v1.RecordTurnsResponse\x12V\n" +
 	"\x14GetDemandConsumption\x12#.dop.v1.GetDemandConsumptionRequest\x1a\x19.dop.v1.DemandConsumptionB\x97\x01\n" +
@@ -604,33 +708,37 @@ func file_dop_v1_agentmetrics_proto_rawDescGZIP() []byte {
 	return file_dop_v1_agentmetrics_proto_rawDescData
 }
 
-var file_dop_v1_agentmetrics_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_dop_v1_agentmetrics_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_dop_v1_agentmetrics_proto_goTypes = []any{
 	(*AgentTurn)(nil),                   // 0: dop.v1.AgentTurn
 	(*RecordTurnsRequest)(nil),          // 1: dop.v1.RecordTurnsRequest
-	(*RecordTurnsResponse)(nil),         // 2: dop.v1.RecordTurnsResponse
-	(*GetDemandConsumptionRequest)(nil), // 3: dop.v1.GetDemandConsumptionRequest
-	(*DemandConsumption)(nil),           // 4: dop.v1.DemandConsumption
-	nil,                                 // 5: dop.v1.DemandConsumption.TokensByModelEntry
-	nil,                                 // 6: dop.v1.DemandConsumption.CallsByToolEntry
-	(*timestamppb.Timestamp)(nil),       // 7: google.protobuf.Timestamp
+	(*SessionAuth)(nil),                 // 2: dop.v1.SessionAuth
+	(*RecordTurnsResponse)(nil),         // 3: dop.v1.RecordTurnsResponse
+	(*GetDemandConsumptionRequest)(nil), // 4: dop.v1.GetDemandConsumptionRequest
+	(*DemandConsumption)(nil),           // 5: dop.v1.DemandConsumption
+	nil,                                 // 6: dop.v1.DemandConsumption.TokensByModelEntry
+	nil,                                 // 7: dop.v1.DemandConsumption.CallsByToolEntry
+	nil,                                 // 8: dop.v1.DemandConsumption.TokensByAuthEntry
+	(*timestamppb.Timestamp)(nil),       // 9: google.protobuf.Timestamp
 }
 var file_dop_v1_agentmetrics_proto_depIdxs = []int32{
-	7, // 0: dop.v1.AgentTurn.occurred_at:type_name -> google.protobuf.Timestamp
-	0, // 1: dop.v1.RecordTurnsRequest.turns:type_name -> dop.v1.AgentTurn
-	5, // 2: dop.v1.DemandConsumption.tokens_by_model:type_name -> dop.v1.DemandConsumption.TokensByModelEntry
-	6, // 3: dop.v1.DemandConsumption.calls_by_tool:type_name -> dop.v1.DemandConsumption.CallsByToolEntry
-	7, // 4: dop.v1.DemandConsumption.first_turn_at:type_name -> google.protobuf.Timestamp
-	7, // 5: dop.v1.DemandConsumption.last_turn_at:type_name -> google.protobuf.Timestamp
-	1, // 6: dop.v1.AgentMetricsService.RecordTurns:input_type -> dop.v1.RecordTurnsRequest
-	3, // 7: dop.v1.AgentMetricsService.GetDemandConsumption:input_type -> dop.v1.GetDemandConsumptionRequest
-	2, // 8: dop.v1.AgentMetricsService.RecordTurns:output_type -> dop.v1.RecordTurnsResponse
-	4, // 9: dop.v1.AgentMetricsService.GetDemandConsumption:output_type -> dop.v1.DemandConsumption
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	9,  // 0: dop.v1.AgentTurn.occurred_at:type_name -> google.protobuf.Timestamp
+	0,  // 1: dop.v1.RecordTurnsRequest.turns:type_name -> dop.v1.AgentTurn
+	2,  // 2: dop.v1.RecordTurnsRequest.auth:type_name -> dop.v1.SessionAuth
+	6,  // 3: dop.v1.DemandConsumption.tokens_by_model:type_name -> dop.v1.DemandConsumption.TokensByModelEntry
+	7,  // 4: dop.v1.DemandConsumption.calls_by_tool:type_name -> dop.v1.DemandConsumption.CallsByToolEntry
+	8,  // 5: dop.v1.DemandConsumption.tokens_by_auth:type_name -> dop.v1.DemandConsumption.TokensByAuthEntry
+	9,  // 6: dop.v1.DemandConsumption.first_turn_at:type_name -> google.protobuf.Timestamp
+	9,  // 7: dop.v1.DemandConsumption.last_turn_at:type_name -> google.protobuf.Timestamp
+	1,  // 8: dop.v1.AgentMetricsService.RecordTurns:input_type -> dop.v1.RecordTurnsRequest
+	4,  // 9: dop.v1.AgentMetricsService.GetDemandConsumption:input_type -> dop.v1.GetDemandConsumptionRequest
+	3,  // 10: dop.v1.AgentMetricsService.RecordTurns:output_type -> dop.v1.RecordTurnsResponse
+	5,  // 11: dop.v1.AgentMetricsService.GetDemandConsumption:output_type -> dop.v1.DemandConsumption
+	10, // [10:12] is the sub-list for method output_type
+	8,  // [8:10] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_agentmetrics_proto_init() }
@@ -644,7 +752,7 @@ func file_dop_v1_agentmetrics_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_agentmetrics_proto_rawDesc), len(file_dop_v1_agentmetrics_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

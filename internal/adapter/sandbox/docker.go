@@ -490,6 +490,9 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 		// Not secret: what is secret is the token, and that is a file.
 		env = append(env, envProjectRepo+"="+spec.Repository.CloneURL)
 	}
+	if spec.Collector.Image != "" {
+		env = append(env, envSessionDir+"="+ports.SandboxSessionsPath)
+	}
 	sort.Strings(env) // reproducible creation
 
 	binds := []string{d.volumeName(spec.SandboxHandle) + ":" + ports.SandboxWorkspacePath}
@@ -1074,6 +1077,10 @@ func validateSpec(spec ports.SandboxSpec) error {
 // envProjectRepo is the variable the entrypoint reads to know what to clone.
 // The token is NOT in the environment — see ports.SandboxTokenPath.
 const envProjectRepo = "DOP_PROJECT_REPO"
+
+// envSessionDir tells the agent's container where the collector is watching, so
+// its entrypoint can leave the tool's own auth answer there.
+const envSessionDir = "DOP_SESSION_DIR"
 
 // endpointsFromPorts converts published ports into endpoints.
 //

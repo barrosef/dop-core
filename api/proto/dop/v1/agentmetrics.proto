@@ -63,10 +63,24 @@ message RecordTurnsRequest {
   string git_branch   = 6;
   string tool_version = 7;
   repeated AgentTurn turns = 8;
+  // How the agent AUTHENTICATED, as the tool reports about itself. It travels
+  // with every batch because it is a fact about the session, and because the
+  // alternative — inferring it here from an environment variable — is exactly
+  // what makes a measurement quietly about the wrong thing.
+  SessionAuth auth = 10;
   // byte_offset is where the collector stopped reading. It travels with the
   // turns and is stored in the SAME transaction: a cursor that moved without
   // the turns loses them in silence.
   int64 byte_offset = 9;
+}
+
+// SessionAuth is the METHOD, not the person: no e-mail, no organization. The
+// platform's own account already says whose demand this is.
+message SessionAuth {
+  string method        = 1; // claude.ai | apiKey | …
+  string provider      = 2; // firstParty | bedrock | …
+  string subscription  = 3; // max | pro | empty when billed by key
+  string key_source    = 4;
 }
 
 message RecordTurnsResponse {
@@ -98,6 +112,10 @@ message DemandConsumption {
   // which tool burned the turns.
   map<string, int64> tokens_by_model = 9;
   map<string, int32> calls_by_tool   = 10;
+
+  // by_auth splits the consumption by how it was paid for. It is the column
+  // that makes phase 1 and phase 2 comparable instead of merely adjacent.
+  map<string, int64> tokens_by_auth = 13;
 
   google.protobuf.Timestamp first_turn_at = 11;
   google.protobuf.Timestamp last_turn_at  = 12;

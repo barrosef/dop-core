@@ -31,21 +31,31 @@ func (r *AgentMetricsRepo) EnsureSession(ctx context.Context, s agentmetrics.Ses
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO agent_sessions
 			(account_id, demand_id, project_id, external_id, cwd, git_branch,
-			 tool_version, started_at, ended_at)
+			 tool_version, started_at, ended_at,
+			 auth_method, api_provider, subscription_type, api_key_source)
 		VALUES ($1, nullif($2,'')::uuid, nullif($3,'')::uuid, $4, $5, $6, $7,
 		        nullif($8,'0001-01-01 00:00:00+00'::timestamptz),
-		        nullif($9,'0001-01-01 00:00:00+00'::timestamptz))
+		        nullif($9,'0001-01-01 00:00:00+00'::timestamptz),
+		        $10, $11, $12, $13)
 		ON CONFLICT (account_id, external_id) DO UPDATE SET
 			cwd          = excluded.cwd,
 			git_branch   = excluded.git_branch,
 			tool_version = excluded.tool_version,
 			ended_at     = greatest(agent_sessions.ended_at, excluded.ended_at),
+			-- The auth is refreshed only when the batch KNOWS it: a collector
+			-- that could not read the tool's answer must not erase what an
+			-- earlier batch established.
+			auth_method       = coalesce(nullif(excluded.auth_method,''), agent_sessions.auth_method),
+			api_provider      = coalesce(nullif(excluded.api_provider,''), agent_sessions.api_provider),
+			subscription_type = coalesce(nullif(excluded.subscription_type,''), agent_sessions.subscription_type),
+			api_key_source    = coalesce(nullif(excluded.api_key_source,''), agent_sessions.api_key_source),
 			demand_id    = coalesce(agent_sessions.demand_id, excluded.demand_id),
 			project_id   = coalesce(agent_sessions.project_id, excluded.project_id),
 			updated_at   = now()
 		RETURNING id, byte_offset`,
 		s.AccountID, s.DemandID, s.ProjectID, s.ExternalID, s.CWD, s.GitBranch,
-		s.ToolVersion, s.StartedAt, s.EndedAt).
+		s.ToolVersion, s.StartedAt, s.EndedAt,
+		s.Auth.Method, s.Auth.Provider, s.Auth.Subscription, s.Auth.KeySource).
 		Scan(&out.ID, &out.ByteOffset)
 	if err != nil {
 		return nil, Translate(err, "agent session")
@@ -99,6 +109,7 @@ func (r *AgentMetricsRepo) ConsumptionOf(ctx context.Context, accountID, demandI
 	out := agentmetrics.Consumption{
 		DemandID:      demandID,
 		TokensByModel: map[string]int64{},
+		TokensByAuth:  map[string]int64{},
 		CallsByTool:   map[string]int{},
 	}
 	var first, last *time.Time
@@ -120,6 +131,32 @@ func (r *AgentMetricsRepo) ConsumptionOf(ctx context.Context, accountID, demandI
 	}
 	if last != nil {
 		out.LastTurnAt = *last
+	}
+
+	// Split by how it was PAID FOR. It is what makes phase 1 and phase 2
+	// comparable instead of merely adjacent — the same token count means a
+	// different thing on a plan and on a metered key.
+	authRows, err := r.pool.Query(ctx, `
+		SELECT coalesce(nullif(s.subscription_type,''), nullif(s.auth_method,''), 'unknown'),
+		       sum(t.input_tokens + t.output_tokens + t.cache_creation_tokens + t.cache_read_tokens)
+		  FROM agent_sessions s JOIN agent_turns t ON t.session_id = s.id
+		 WHERE s.account_id = $1 AND s.demand_id = $2
+		 GROUP BY 1`, accountID, demandID)
+	if err != nil {
+		return nil, Translate(err, "consumption")
+	}
+	for authRows.Next() {
+		var how string
+		var n int64
+		if err := authRows.Scan(&how, &n); err != nil {
+			authRows.Close()
+			return nil, Translate(err, "consumption")
+		}
+		out.TokensByAuth[how] = n
+	}
+	authRows.Close()
+	if err := authRows.Err(); err != nil {
+		return nil, Translate(err, "consumption")
 	}
 
 	rows, err := r.pool.Query(ctx, `
