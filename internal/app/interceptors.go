@@ -57,11 +57,16 @@ func StreamLogging() grpc.StreamServerInterceptor {
 	}
 }
 
-// UnaryCallContext extracts the call context from the metadata and puts it into
-// the context.Context. The EDGE fills it in; the domain trusts it (ADR-0016).
-func UnaryCallContext() grpc.UnaryServerInterceptor {
+// UnaryCallContext resolves WHO is calling and puts it into the context.
+//
+// The edge fills the metadata in (ADR-0016), and since ADR-0029 the core no
+// longer takes it on faith: `auth` verifies a signature — the person's token or
+// the platform's assertion — and what reaches the domain is what was PROVEN.
+// A nil auth keeps the old behaviour, which is what the tests that are about
+// something else want.
+func UnaryCallContext(auth *callAuth) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
-		return h(callFromMD(ctx), req)
+		return h(callFromMD(ctx, auth), req)
 	}
 }
 
@@ -76,9 +81,9 @@ func UnaryCallContext() grpc.UnaryServerInterceptor {
 // both kinds of RPC.
 //
 // grpc.ServerStream does not let you swap the Context, so we wrap the stream.
-func StreamCallContext() grpc.StreamServerInterceptor {
+func StreamCallContext(auth *callAuth) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, h grpc.StreamHandler) error {
-		return h(srv, &streamWithContext{ServerStream: ss, ctx: callFromMD(ss.Context())})
+		return h(srv, &streamWithContext{ServerStream: ss, ctx: callFromMD(ss.Context(), auth)})
 	}
 }
 
@@ -93,9 +98,9 @@ func (s *streamWithContext) Context() context.Context { return s.ctx }
 
 // callFromMD is the metadata read, shared by both interceptors — duplicating it
 // is how the two ends diverge without anyone noticing.
-func callFromMD(ctx context.Context) context.Context {
+func callFromMD(ctx context.Context, auth *callAuth) context.Context {
 	md, _ := metadata.FromIncomingContext(ctx)
-	call := ctxutil.Call{
+	claimed := ctxutil.Call{
 		RequestID: first(md, "x-request-id"),
 		AccountID: first(md, "x-account-id"),
 		ActorID:   first(md, "x-actor-id"),
@@ -103,10 +108,12 @@ func callFromMD(ctx context.Context) context.Context {
 		ActorKind: ctxutil.ActorKind(first(md, "x-actor-kind")),
 		SessionID: first(md, "x-session-id"),
 	}
-	if call.ActorKind == "" {
-		call.ActorKind = ctxutil.ActorUser
+	if claimed.ActorKind == "" {
+		claimed.ActorKind = ctxutil.ActorUser
 	}
-	return ctxutil.Into(ctx, call)
+	// What the metadata CLAIMS goes no further than here: from this line on, the
+	// context carries what was proven (ADR-0029).
+	return ctxutil.Into(ctx, auth.authenticate(ctx, md, claimed))
 }
 
 // UnaryRecover stops a panic from bringing the whole process down.

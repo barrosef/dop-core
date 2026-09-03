@@ -100,6 +100,15 @@ type Config struct {
 	// GitBackend chooses the installation's default adapter. It is only a
 	// default: the real connection is assembled per resource, because it is the
 	// resource that says which provider and which credential (ADR-0013).
+	// CallAuthMode is how the core treats its own callers (ADR-0029):
+	// `strict` refuses to fill in an actor without a verified signature,
+	// `permissive` warns and lets it through, `off` is the old behaviour.
+	// The default is permissive and the DEPLOYMENT is strict — see the
+	// comment in internal/app/callauth.go.
+	CallAuthMode string
+	// CallAuthKeyBFF is the key the edge signs its assertions with.
+	CallAuthKeyBFF string
+
 	GitBackend string // github | gitlab
 	// GitHubAPI and GitLabAPI point at the public service OR at a self-hosted
 	// installation (GitHub Enterprise, GitLab CE/EE). Having both at once is
@@ -226,10 +235,12 @@ func Load(mode string) (*Config, error) {
 		OIDCClockSkew:        time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
 		OIDCKeysMinRefresh: time.Duration(
 			envInt("OIDC_KEYS_MIN_REFRESH_SECONDS", 30)) * time.Second,
-		GitBackend:    env("GIT_BACKEND", "github"),
-		GitHubAPI:     env("GITHUB_API", "https://api.github.com"),
-		GitHubGraphQL: env("GITHUB_GRAPHQL", "https://api.github.com/graphql"),
-		GitLabAPI:     env("GITLAB_API", "https://gitlab.com/api/v4"),
+		CallAuthMode:   env("CALL_AUTH_MODE", "permissive"),
+		CallAuthKeyBFF: env("CALL_AUTH_KEY_BFF", ""),
+		GitBackend:     env("GIT_BACKEND", "github"),
+		GitHubAPI:      env("GITHUB_API", "https://api.github.com"),
+		GitHubGraphQL:  env("GITHUB_GRAPHQL", "https://api.github.com/graphql"),
+		GitLabAPI:      env("GITLAB_API", "https://gitlab.com/api/v4"),
 		GitTimeout: time.Duration(
 			envInt("GIT_TIMEOUT_SECONDS", 30)) * time.Second,
 		GitRebaseTimeout: time.Duration(

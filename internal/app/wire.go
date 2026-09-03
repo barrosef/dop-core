@@ -9,7 +9,10 @@ package app
 import (
 	"context"
 	"crypto/rand"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -46,6 +49,10 @@ type Deps struct {
 	Repos   ports.ProjectRepository
 	GitHTTP http.Handler
 	GitAPI  http.Handler
+	// CallAuth authenticates the core's OWN callers (ADR-0029). Nil means the
+	// old behaviour — the metadata taken on faith — which only the tests that
+	// are about something else should want.
+	CallAuth *callAuth
 }
 
 func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
@@ -230,9 +237,23 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		gitAPI = projectrepo.NewAPI(srv, cfg.ProjectRepoAdminKey, cfg.ProjectRepoBaseURL)
 	}
 
+	// Who may assert who the actor is (ADR-0029). One key per caller: a
+	// compromised component forges only its own calls.
+	keys := map[string][]byte{}
+	if k := strings.TrimSpace(cfg.CallAuthKeyBFF); k != "" {
+		keys["bff"] = []byte(k)
+	}
+	if len(keys) == 0 && cfg.CallAuthMode == "strict" {
+		return nil, nil, errs.Invalid(
+			"CALL_AUTH_MODE=strict with no key: every call would arrive with no actor")
+	}
+	auth := newCallAuth(cfg.CallAuthMode, keys, idp,
+		postgres.NewIdentityRepo(pool), clock.NewSystem())
+	log.Info("caller authentication", "mode", cfg.CallAuthMode, "callers", len(keys))
+
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
 		Identity: idp, Launcher: launcher, Mailer: correio, SMS: texto, Cfg: cfg,
-		Repos: repos, GitHTTP: gitHTTP, GitAPI: gitAPI}
+		Repos: repos, GitHTTP: gitHTTP, GitAPI: gitAPI, CallAuth: auth}
 	cleanup := func() {
 		// Adapters that open a connection of their own register the close here.
 		// The port has no Close — closing is the concern of whoever ASSEMBLES,

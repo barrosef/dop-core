@@ -28,8 +28,8 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 	defer cleanup()
 
 	srv := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(UnaryLogging(), UnaryCallContext(), UnaryRecover()),
-		grpc.ChainStreamInterceptor(StreamLogging(), StreamCallContext()),
+		grpc.ChainUnaryInterceptor(UnaryLogging(), UnaryCallContext(deps.CallAuth), UnaryRecover()),
+		grpc.ChainStreamInterceptor(StreamLogging(), StreamCallContext(deps.CallAuth)),
 	)
 	// The domain services are registered here as they are implemented.
 	if err := RegisterServices(ctx, srv, deps); err != nil {
