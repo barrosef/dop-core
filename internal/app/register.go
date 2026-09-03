@@ -138,6 +138,11 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// provisions a sandbox without knowing whether the substrate is Docker or
 	// Kubernetes.
 	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
+	// The shelf: the project's documents, mounted when the sandbox comes up.
+	// Wired here and not inside buildExecution because the launcher process
+	// raises sandboxes without a knowledge service, and a nil there is the
+	// honest answer — see WithLibrary.
+	executionSvc.WithLibrary(knowledgeSvc)
 	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
 	// The attention box is a PROJECTION, and its service is read + streaming

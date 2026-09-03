@@ -295,6 +295,21 @@ func (f Finding) TokenCost() int {
 // and PutArtifact refuses a rule that does not fit inline for exactly this
 // reason.
 func ResolveRules(rules []Artifact) []string {
+	resolved := ResolveRuleArtifacts(rules)
+	out := make([]string, 0, len(resolved))
+	for _, r := range resolved {
+		out = append(out, r.Body)
+	}
+	return out
+}
+
+// ResolveRuleArtifacts is the same resolution keeping the ARTIFACT.
+//
+// It exists because the shelf (library.go) needs what ResolveRules throws away:
+// the name, so the file has one, and the scope, so the manifest can say whether
+// the rule came from the account or was written for the project. The precedence
+// lives here, in ONE place — which is exactly what the comment above asks for.
+func ResolveRuleArtifacts(rules []Artifact) []Artifact {
 	ordered := make([]Artifact, len(rules))
 	copy(ordered, rules)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -308,13 +323,13 @@ func ResolveRules(rules []Artifact) []string {
 	})
 
 	seen := make(map[string]bool, len(ordered))
-	out := make([]string, 0, len(ordered))
+	out := make([]Artifact, 0, len(ordered))
 	for _, r := range ordered {
 		if r.Kind != KindRule || seen[r.Name] || strings.TrimSpace(r.Body) == "" {
 			continue
 		}
 		seen[r.Name] = true
-		out = append(out, r.Body)
+		out = append(out, r)
 	}
 	return out
 }

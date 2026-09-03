@@ -144,6 +144,94 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 	return &pkg, nil
 }
 
+// LibraryFor assembles everything the demand's agent should find already on
+// disk when the sandbox comes up.
+//
+// It is the OPPOSITE selection from BuildContextPackage, and the difference is
+// the point. The package is what goes INTO the prompt, so it is selected,
+// measured and cut against a budget: every token there is paid for on every
+// turn. The library is what sits on the FILESYSTEM, so it is complete: it costs
+// nothing until the agent decides to open a file, and deciding is what the
+// manifest is for.
+//
+// Cutting the library the way the package is cut would be the worst of both — a
+// truncated documentation base the agent believes is whole.
+func (s *Service) LibraryFor(ctx context.Context, demandID string) ([]ports.SandboxFile, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(demandID) == "" {
+		return nil, errs.Invalid("demand not provided")
+	}
+	dc, err := s.demands.ContextOf(ctx, accountID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	if dc == nil {
+		return nil, errs.NotFound("demand")
+	}
+
+	rules, err := s.repo.RulesFor(ctx, accountID, dc.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	// The index of the demand's repositories, not the project's forty: a map of
+	// a repository the demand does not touch is noise on the shelf.
+	index, err := s.repo.IndexFor(ctx, accountID, dc.ProjectID, dc.Repos)
+	if err != nil {
+		return nil, err
+	}
+	// The memory goes in WHOLE — no relevance search. On the shelf, relevance is
+	// the agent's to judge after reading the manifest; deciding for it here
+	// would be repeating the package's cut where it costs nothing to avoid.
+	memories, err := s.repo.SearchMemory(ctx, MemoryQuery{
+		AccountID: accountID, ProjectID: dc.ProjectID, Limit: libraryMemoryCap,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	docs := make([]Document, 0, len(rules)+len(index)+len(memories)+2)
+	// ResolveRules applies the inheritance: the project's rule replaces the
+	// account's of the same name. What reaches the shelf is what APPLIES, and
+	// the origin says where each one came from.
+	for _, a := range ResolveRuleArtifacts(rules) {
+		docs = append(docs, documentOf(a, LibraryRules))
+	}
+	for _, a := range index {
+		docs = append(docs, documentOf(a, LibraryIndex))
+	}
+	for _, m := range memories {
+		docs = append(docs, documentOf(m.Artifact, LibraryMemory))
+	}
+
+	// The demand's own. The statement is what the person asked for, and it is
+	// the one document the agent should never have to go looking for.
+	if body := strings.TrimSpace(dc.Spec); body != "" {
+		docs = append(docs, Document{
+			Section: LibraryDemand, Name: "spec.md",
+			Title: dc.Title, Body: body, Origin: "the demand's statement",
+		})
+	}
+	return Library(docs), nil
+}
+
+// libraryMemoryCap is the ceiling on memories that reach the shelf. It is not a
+// budget — the shelf has none — it is a guard against a project with ten
+// thousand findings turning provisioning into a database dump.
+const libraryMemoryCap = 500
+
+func documentOf(a Artifact, section string) Document {
+	return Document{
+		Section: section,
+		Name:    FileName(a.Name),
+		Title:   a.Name,
+		Body:    a.Body,
+		Origin:  string(a.Scope.Level),
+	}
+}
+
 const (
 	searchLimitDefault = 10
 	searchLimitMax     = 50

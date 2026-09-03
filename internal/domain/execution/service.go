@@ -33,6 +33,7 @@ type Service struct {
 	demands  Demands
 	clock    ports.Clock
 	cfg      Config
+	library  Library
 }
 
 // NewService requires the ports it depends on. The panic here is deliberate: it
@@ -186,7 +187,17 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 // and records what the substrate delivered. It lives apart because it is exactly
 // the stretch that has to be redone when the first attempt died halfway.
 func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
-	status, err := s.launcher.Launch(ctx, s.specFor(sb))
+	spec := s.specFor(sb)
+	// The documents are assembled at every provisioning, Resume included: the
+	// shelf carries the project's CURRENT knowledge, not a snapshot of the day
+	// the sandbox was born.
+	docs, err := s.documentsFor(ctx, sb)
+	if err != nil {
+		return nil, err
+	}
+	spec.Documents = docs
+
+	status, err := s.launcher.Launch(ctx, spec)
 	if err != nil {
 		// The row stays in provisioning on purpose: it is the trace that somebody
 		// tried. Deleting it here would hide a half-started sandbox.
@@ -225,6 +236,36 @@ func (s *Service) requireTierSupported(ctx context.Context, tier ports.Isolation
 	return errs.Precondition(
 		"this substrate does not offer isolation %q; available: %s",
 		tier, strings.Join(names, ", "))
+}
+
+// Library is what execution needs from the knowledge domain: the project's
+// documents, ready to be mounted.
+//
+// It is a port and not a direct call for the usual reason, and for one more:
+// what goes on the shelf is a decision about CONTEXT, and context belongs to
+// whoever owns the knowledge — not to whoever raises containers.
+type Library interface {
+	LibraryFor(ctx context.Context, demandID string) ([]ports.SandboxFile, error)
+}
+
+// WithLibrary wires the shelf. Without it the sandbox comes up with no
+// documents, which is what the contract suite wants and not what a demand wants.
+func (s *Service) WithLibrary(l Library) *Service {
+	s.library = l
+	return s
+}
+
+// documentsFor assembles the shelf, and a failure here FAILS the provisioning.
+//
+// The temptation is to carry on without documents — the sandbox would come up,
+// after all. That is exactly the failure to avoid: an agent that finds an empty
+// shelf does not conclude "the shelf failed", it concludes "this project has no
+// rules", and works against conventions it was never shown.
+func (s *Service) documentsFor(ctx context.Context, sb *Sandbox) ([]ports.SandboxFile, error) {
+	if s.library == nil {
+		return nil, nil
+	}
+	return s.library.LibraryFor(ctx, sb.DemandID)
 }
 
 func (s *Service) specFor(sb *Sandbox) ports.SandboxSpec {
@@ -321,7 +362,17 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		return nil, errs.Precondition("a sandbox in %q cannot be resumed", sb.State)
 	}
 
-	status, err := s.launcher.Resume(ctx, s.specFor(sb))
+	spec := s.specFor(sb)
+	// The documents are assembled at every provisioning, Resume included: the
+	// shelf carries the project's CURRENT knowledge, not a snapshot of the day
+	// the sandbox was born.
+	docs, err := s.documentsFor(ctx, sb)
+	if err != nil {
+		return nil, err
+	}
+	spec.Documents = docs
+
+	status, err := s.launcher.Resume(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
