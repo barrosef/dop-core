@@ -13,6 +13,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
 	appgrpc "github.com/Digital-Business-One/dop-core/internal/app/grpc"
 	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
+	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
 	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
 	"github.com/Digital-Business-One/dop-core/internal/domain/cost"
 	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
@@ -138,6 +139,11 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// The launcher arrives already chosen by configuration (wire.go): the domain
 	// provisions a sandbox without knowing whether the substrate is Docker or
 	// Kubernetes.
+	// The agent's metrics (P-23 phase 1). The writer here is the COLLECTOR, not
+	// a person: the authorization is by caller (ADR-0029), inside the service.
+	metricsSvc := agentmetrics.NewService(postgres.NewAgentMetricsRepo(deps.Pool))
+	dopv1.RegisterAgentMetricsServiceServer(srv, appgrpc.NewAgentMetricsServer(metricsSvc))
+
 	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
 	// The projects' root repositories (ADR-0028): execution mints the sandbox's
 	// clone URL and token from it; knowledge commits the text of every

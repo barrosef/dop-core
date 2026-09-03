@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -83,6 +84,90 @@ func (r *AgentMetricsRepo) RecordTurns(ctx context.Context, sessionID string, tu
 		}
 		return nil
 	})
+}
+
+// ConsumptionOf aggregates a demand's turns in ONE round trip.
+//
+// The account is a parameter and not a filter added later: a demand of another
+// account has to come back empty, and the way to guarantee that is for the
+// isolation to be in the join, where it cannot be forgotten.
+//
+// It is a query and not a stored projection because the aggregates that matter
+// change as the questions change — and an aggregate written to disk ages and
+// starts to lie about a session that is still running.
+func (r *AgentMetricsRepo) ConsumptionOf(ctx context.Context, accountID, demandID string) (*agentmetrics.Consumption, error) {
+	out := agentmetrics.Consumption{
+		DemandID:      demandID,
+		TokensByModel: map[string]int64{},
+		CallsByTool:   map[string]int{},
+	}
+	var first, last *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(DISTINCT s.id), count(t.id),
+		       coalesce(sum(t.input_tokens),0), coalesce(sum(t.output_tokens),0),
+		       coalesce(sum(t.cache_creation_tokens),0), coalesce(sum(t.cache_read_tokens),0),
+		       min(t.occurred_at), max(t.occurred_at)
+		  FROM agent_sessions s
+		  LEFT JOIN agent_turns t ON t.session_id = s.id
+		 WHERE s.account_id = $1 AND s.demand_id = $2`, accountID, demandID).
+		Scan(&out.Sessions, &out.Turns, &out.InputTokens, &out.OutputTokens,
+			&out.CacheCreationTokens, &out.CacheReadTokens, &first, &last)
+	if err != nil {
+		return nil, Translate(err, "consumption")
+	}
+	if first != nil {
+		out.FirstTurnAt = *first
+	}
+	if last != nil {
+		out.LastTurnAt = *last
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT t.model,
+		       sum(t.input_tokens + t.output_tokens + t.cache_creation_tokens + t.cache_read_tokens)
+		  FROM agent_sessions s JOIN agent_turns t ON t.session_id = s.id
+		 WHERE s.account_id = $1 AND s.demand_id = $2
+		 GROUP BY t.model`, accountID, demandID)
+	if err != nil {
+		return nil, Translate(err, "consumption")
+	}
+	for rows.Next() {
+		var model string
+		var n int64
+		if err := rows.Scan(&model, &n); err != nil {
+			rows.Close()
+			return nil, Translate(err, "consumption")
+		}
+		out.TokensByModel[model] = n
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, Translate(err, "consumption")
+	}
+
+	// Which tool burned the turns. The names live in a jsonb array, so the
+	// counting happens in the database — bringing every turn back to count them
+	// here would be moving a session's worth of rows to add integers.
+	toolRows, err := r.pool.Query(ctx, `
+		SELECT tool, count(*)
+		  FROM agent_sessions s
+		  JOIN agent_turns t ON t.session_id = s.id
+		  CROSS JOIN LATERAL jsonb_array_elements_text(t.tools) AS tool
+		 WHERE s.account_id = $1 AND s.demand_id = $2
+		 GROUP BY tool`, accountID, demandID)
+	if err != nil {
+		return nil, Translate(err, "consumption")
+	}
+	defer toolRows.Close()
+	for toolRows.Next() {
+		var tool string
+		var n int
+		if err := toolRows.Scan(&tool, &n); err != nil {
+			return nil, Translate(err, "consumption")
+		}
+		out.CallsByTool[tool] = n
+	}
+	return &out, toolRows.Err()
 }
 
 var _ agentmetrics.Repository = (*AgentMetricsRepo)(nil)

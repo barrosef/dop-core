@@ -122,6 +122,7 @@ func (a *callAuth) authenticate(ctx context.Context, md metadata.MD, claimed ctx
 		if key != nil {
 			if as, err := callauth.Verify(key, raw, a.clock.Now()); err == nil {
 				signed = true
+				proven.Caller = as.Caller
 				proven.ActorID = as.ActorID
 				proven.ActorKind = ctxutil.ActorKind(as.ActorKind)
 				proven.AccountID = as.AccountID

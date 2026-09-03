@@ -1,6 +1,9 @@
 package agentmetrics
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository is where the collected measurement lands.
 //
@@ -19,4 +22,35 @@ type Repository interface {
 	// makes the next pass read them again. It is idempotent by (session, uuid),
 	// so a re-read costs nothing.
 	RecordTurns(ctx context.Context, sessionID string, turns []Turn, offset int64) error
+
+	// ConsumptionOf aggregates a demand's turns. It is a QUERY and not a stored
+	// projection: the aggregates that matter change as the questions do, and a
+	// stored aggregate ages and starts to lie.
+	ConsumptionOf(ctx context.Context, accountID, demandID string) (*Consumption, error)
+}
+
+// Consumption is the number phase 1 exists to move.
+type Consumption struct {
+	DemandID string
+	Sessions int
+	Turns    int
+
+	InputTokens         int64
+	OutputTokens        int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+
+	TokensByModel map[string]int64
+	CallsByTool   map[string]int
+	FirstTurnAt   time.Time
+	LastTurnAt    time.Time
+}
+
+// CacheRatio is the share of the incoming context that came from cache.
+func (c Consumption) CacheRatio() float64 {
+	in := c.InputTokens + c.CacheCreationTokens + c.CacheReadTokens
+	if in == 0 {
+		return 0
+	}
+	return float64(c.CacheReadTokens) / float64(in)
 }

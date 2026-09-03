@@ -29,10 +29,17 @@ type Call struct {
 	// factor: the step-up is per (user, session), because two open sessions are
 	// two doors and one of them answering must not open the other (ADR-0027 §5).
 	//
-	// It comes from the edge, like every other field here — with the limit P-18
-	// describes, which this feature makes load-bearing: the core trusts the
-	// metadata, and the NetworkPolicy is what makes the assumption hold.
+	// It comes from the edge, verified: since ADR-0029 what reaches this struct
+	// is what a signature proved, not what a header claimed.
 	SessionID string
+	// Caller is the COMPONENT that signed the call — "bff", "collector"
+	// (ADR-0029). It is empty on a call proven only by the person's token,
+	// because a token says who the person is and nothing about who relayed it.
+	//
+	// It exists for the authorizations that are about the component and not
+	// about the person: only the collector writes metrics, and no person ever
+	// does.
+	Caller string
 }
 
 // ErrNoAccount signals a request with no active account — invalid by

@@ -24,6 +24,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/smser"
+	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/config"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
@@ -242,6 +243,9 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	keys := map[string][]byte{}
 	if k := strings.TrimSpace(cfg.CallAuthKeyBFF); k != "" {
 		keys["bff"] = []byte(k)
+	}
+	if k := strings.TrimSpace(cfg.CallAuthKeyCollector); k != "" {
+		keys[agentmetrics.CollectorCaller] = []byte(k)
 	}
 	if len(keys) == 0 && cfg.CallAuthMode == "strict" {
 		return nil, nil, errs.Invalid(

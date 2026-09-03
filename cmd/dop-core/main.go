@@ -53,6 +53,10 @@ func main() {
 		runErr = app.RunSched(ctx, cfg)
 	case "launcher":
 		runErr = app.RunLauncher(ctx, cfg)
+	case "collector":
+		// The only mode that does NOT run in the platform's namespace: it runs
+		// beside the agent, in the sandbox's pod (P-23 phase 1).
+		runErr = app.RunCollector(ctx, cfg)
 	case "version":
 		fmt.Println("dop-core dev")
 		return
@@ -78,6 +82,8 @@ modes:
   worker     event consumers and projections
   sched      periodic tasks
   launcher   sandbox provisioning on the execution cluster
+  collector  follows the agent's session file and pushes its consumption —
+             the only mode that runs INSIDE a sandbox, beside the agent
   version    version
 `)
 }

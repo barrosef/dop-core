@@ -1,0 +1,104 @@
+syntax = "proto3";
+package dop.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The agent's consumption metrics (P-23 phase 1).
+//
+// Who calls this is NOT the edge: it is the collector, a container beside the
+// agent in the sandbox's pod, pushing what Claude Code writes to disk. It signs
+// its calls as the caller `collector` (ADR-0029), and the core lets that caller
+// reach THIS service and nothing else — a stolen collector key is worth
+// polluting telemetry, never reading an account.
+//
+// The turns are pushed in batches as they appear, which is what makes the
+// cockpit's consumption live instead of a number that shows up when the demand
+// ends.
+service AgentMetricsService {
+  // RecordTurns ingests a batch. Idempotent by (session, turn uuid): the
+  // collector re-reads the tail of a file that is still being written, so the
+  // same turn arriving twice is the normal case, not an error.
+  rpc RecordTurns (RecordTurnsRequest) returns (RecordTurnsResponse);
+
+  // Consumption of one demand, aggregated. It is a QUERY and not a projection
+  // on purpose: the aggregates that matter change as the questions change, and
+  // a stored aggregate ages and lies.
+  rpc GetDemandConsumption (GetDemandConsumptionRequest) returns (DemandConsumption);
+}
+
+message AgentTurn {
+  reserved 1;
+  string uuid        = 2;
+  string parent_uuid = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  string model        = 5;
+  string service_tier = 6;
+  string stop_reason  = 7;
+  // A subagent's turn. Without it, the cost of delegation is invisible —
+  // averaged into the main thread's.
+  bool   sidechain    = 8;
+
+  int64 input_tokens          = 9;
+  int64 output_tokens         = 10;
+  int64 cache_creation_tokens = 11;
+  int64 cache_read_tokens     = 12;
+
+  int32 tool_uses = 13;
+  int32 thinking  = 14;
+  int32 texts     = 15;
+  repeated string tools = 16;
+  // Everything the tool reported that has no field here yet, as JSON. Kept
+  // whole so that the day a question needs it the data is already collected.
+  string raw_usage = 17;
+}
+
+message RecordTurnsRequest {
+  reserved 1;
+  // session is the tool's OWN session id — what makes the ingestion idempotent
+  // across restarts of the collector.
+  string session      = 2;
+  string demand_id    = 3;
+  string project_id   = 4;
+  string cwd          = 5;
+  string git_branch   = 6;
+  string tool_version = 7;
+  repeated AgentTurn turns = 8;
+  // byte_offset is where the collector stopped reading. It travels with the
+  // turns and is stored in the SAME transaction: a cursor that moved without
+  // the turns loses them in silence.
+  int64 byte_offset = 9;
+}
+
+message RecordTurnsResponse {
+  // recorded counts what was NEW — a batch fully seen before answers zero, and
+  // that is the collector's signal that it is idle, not broken.
+  int32 recorded = 1;
+}
+
+message GetDemandConsumptionRequest {
+  reserved 1;
+  string demand_id = 2;
+}
+
+// DemandConsumption is the number the laboratory exists to move.
+message DemandConsumption {
+  string demand_id = 1;
+  int32  sessions  = 2;
+  int32  turns     = 3;
+
+  int64 input_tokens          = 4;
+  int64 output_tokens         = 5;
+  int64 cache_creation_tokens = 6;
+  int64 cache_read_tokens     = 7;
+
+  // cache_ratio is the share of the incoming context that came from cache. It
+  // is the single number that says whether the prefix discipline is working.
+  double cache_ratio = 8;
+  // by_model and by_tool are where the waste hides: which model was chosen and
+  // which tool burned the turns.
+  map<string, int64> tokens_by_model = 9;
+  map<string, int32> calls_by_tool   = 10;
+
+  google.protobuf.Timestamp first_turn_at = 11;
+  google.protobuf.Timestamp last_turn_at  = 12;
+}

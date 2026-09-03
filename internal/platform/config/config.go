@@ -108,6 +108,23 @@ type Config struct {
 	CallAuthMode string
 	// CallAuthKeyBFF is the key the edge signs its assertions with.
 	CallAuthKeyBFF string
+	// ── the collector (P-23 phase 1) ────────────────────────────────────────
+	//
+	// It runs BESIDE the agent, in the sandbox's pod, so its configuration is
+	// per sandbox and comes from the launcher — not from the platform's
+	// ConfigMap.
+	CollectorSessionDir string        // where Claude Code writes its sessions
+	CollectorAccountID  string        // whose demand this is
+	CollectorDemandID   string        // and which demand
+	CollectorProjectID  string        //
+	CollectorInterval   time.Duration // how often to look for what is new
+	// CoreTarget is the core's address as the SANDBOX reaches it.
+	CoreTarget string
+
+	// CallAuthKeyCollector is the metrics collector's — a container beside the
+	// agent in the sandbox's pod. A key of its own so that a leak there forges
+	// only what the collector may do, which is write telemetry.
+	CallAuthKeyCollector string
 
 	GitBackend string // github | gitlab
 	// GitHubAPI and GitLabAPI point at the public service OR at a self-hosted
@@ -235,12 +252,20 @@ func Load(mode string) (*Config, error) {
 		OIDCClockSkew:        time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
 		OIDCKeysMinRefresh: time.Duration(
 			envInt("OIDC_KEYS_MIN_REFRESH_SECONDS", 30)) * time.Second,
-		CallAuthMode:   env("CALL_AUTH_MODE", "permissive"),
-		CallAuthKeyBFF: env("CALL_AUTH_KEY_BFF", ""),
-		GitBackend:     env("GIT_BACKEND", "github"),
-		GitHubAPI:      env("GITHUB_API", "https://api.github.com"),
-		GitHubGraphQL:  env("GITHUB_GRAPHQL", "https://api.github.com/graphql"),
-		GitLabAPI:      env("GITLAB_API", "https://gitlab.com/api/v4"),
+		CallAuthMode:         env("CALL_AUTH_MODE", "permissive"),
+		CallAuthKeyBFF:       env("CALL_AUTH_KEY_BFF", ""),
+		CallAuthKeyCollector: env("CALL_AUTH_KEY_COLLECTOR", ""),
+		CollectorSessionDir:  env("COLLECTOR_SESSION_DIR", "/sessions"),
+		CollectorAccountID:   env("COLLECTOR_ACCOUNT_ID", ""),
+		CollectorDemandID:    env("COLLECTOR_DEMAND_ID", ""),
+		CollectorProjectID:   env("COLLECTOR_PROJECT_ID", ""),
+		CollectorInterval: time.Duration(
+			envInt("COLLECTOR_INTERVAL_SECONDS", 5)) * time.Second,
+		CoreTarget:    env("CORE_TARGET", "dop-core.dop-local.svc:9090"),
+		GitBackend:    env("GIT_BACKEND", "github"),
+		GitHubAPI:     env("GITHUB_API", "https://api.github.com"),
+		GitHubGraphQL: env("GITHUB_GRAPHQL", "https://api.github.com/graphql"),
+		GitLabAPI:     env("GITLAB_API", "https://gitlab.com/api/v4"),
 		GitTimeout: time.Duration(
 			envInt("GIT_TIMEOUT_SECONDS", 30)) * time.Second,
 		GitRebaseTimeout: time.Duration(
