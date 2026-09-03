@@ -1,0 +1,88 @@
+package postgres
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
+)
+
+// The agent's metrics (P-23 phase 1). Analytical, next to `cost` and not inside
+// it: one row per turn, wide and raw, for study — while `cost` answers "may this
+// demand still spend?".
+type AgentMetricsRepo struct{ pool *pgxpool.Pool }
+
+func NewAgentMetricsRepo(pool *pgxpool.Pool) *AgentMetricsRepo {
+	return &AgentMetricsRepo{pool: pool}
+}
+
+// EnsureSession is an upsert by (account, external id) that RETURNS THE STORED
+// CURSOR — which is the whole reason it is an upsert and not an insert: the
+// second pass over the same file has to learn where the first one stopped.
+//
+// The metadata is refreshed on the way (branch, cwd, version, the end instant),
+// because a session that is still running knows more about itself now than it
+// did on the first line.
+func (r *AgentMetricsRepo) EnsureSession(ctx context.Context, s agentmetrics.Session) (*agentmetrics.Session, error) {
+	out := s
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO agent_sessions
+			(account_id, demand_id, project_id, external_id, cwd, git_branch,
+			 tool_version, started_at, ended_at)
+		VALUES ($1, nullif($2,'')::uuid, nullif($3,'')::uuid, $4, $5, $6, $7,
+		        nullif($8,'0001-01-01 00:00:00+00'::timestamptz),
+		        nullif($9,'0001-01-01 00:00:00+00'::timestamptz))
+		ON CONFLICT (account_id, external_id) DO UPDATE SET
+			cwd          = excluded.cwd,
+			git_branch   = excluded.git_branch,
+			tool_version = excluded.tool_version,
+			ended_at     = greatest(agent_sessions.ended_at, excluded.ended_at),
+			demand_id    = coalesce(agent_sessions.demand_id, excluded.demand_id),
+			project_id   = coalesce(agent_sessions.project_id, excluded.project_id),
+			updated_at   = now()
+		RETURNING id, byte_offset`,
+		s.AccountID, s.DemandID, s.ProjectID, s.ExternalID, s.CWD, s.GitBranch,
+		s.ToolVersion, s.StartedAt, s.EndedAt).
+		Scan(&out.ID, &out.ByteOffset)
+	if err != nil {
+		return nil, Translate(err, "agent session")
+	}
+	return &out, nil
+}
+
+// RecordTurns writes the turns and moves the cursor in the SAME transaction.
+//
+// Idempotent by (session, uuid): re-reading a stretch of the file is the normal
+// case, not the exception, and it has to cost nothing. `DO NOTHING` and not
+// `DO UPDATE` on purpose — a turn does not change after it happened, so a
+// conflict means we have already seen it.
+func (r *AgentMetricsRepo) RecordTurns(ctx context.Context, sessionID string, turns []agentmetrics.Turn, offset int64) error {
+	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		for _, t := range turns {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO agent_turns
+					(session_id, uuid, parent_uuid, occurred_at, model, service_tier,
+					 stop_reason, sidechain, input_tokens, output_tokens,
+					 cache_creation_tokens, cache_read_tokens, tool_uses, thinking,
+					 texts, tools, raw_usage)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+				ON CONFLICT (session_id, uuid) DO NOTHING`,
+				sessionID, t.UUID, t.ParentUUID, t.OccurredAt, t.Model, t.ServiceTier,
+				t.StopReason, t.Sidechain, t.InputTokens, t.OutputTokens,
+				t.CacheCreationTokens, t.CacheReadTokens, t.ToolUses, t.Thinking,
+				t.Texts, mustJSON(t.Tools), mustJSON(t.RawUsage)); err != nil {
+				return Translate(err, "agent turn")
+			}
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE agent_sessions SET byte_offset = $2, updated_at = now()
+			 WHERE id = $1 AND byte_offset <= $2`, sessionID, offset); err != nil {
+			return Translate(err, "agent session")
+		}
+		return nil
+	})
+}
+
+var _ agentmetrics.Repository = (*AgentMetricsRepo)(nil)
