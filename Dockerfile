@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.title="dop-core" \
 # ca-certificates: TLS with the Kubernetes API and with Firebase/GCS.
 # tzdata: the scheduler compares times; with no timezone database everything
 # silently becomes UTC.
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git
 
 COPY --from=build /out/dop-core /app/dop-core
 

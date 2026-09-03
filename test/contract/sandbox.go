@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Digital-Business-One/dop-core/internal/adapter/projectrepo"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
@@ -33,6 +37,12 @@ type SandboxEnv struct {
 	// Ready is how long to wait for a phase change. A pod pulling an image takes
 	// far longer than a local container.
 	Ready time.Duration
+	// GitHost is the address at which a sandbox on THIS substrate reaches a
+	// server listening on this machine — the docker bridge's gateway for
+	// Docker, `host.k3d.internal` for k3d. The suite raises the projects' git
+	// server here and hands the sandboxes URLs with this host (guarantees 18
+	// to 23).
+	GitHost string
 }
 
 // SandboxSuite verifies the twelve guarantees documented on the SandboxLauncher
@@ -522,141 +532,156 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			}
 		})
 
-		// ── the project's documents (18 to 21) ───────────────────────────────
+		// ── the project's root repository (18 to 23) ───────────────────────
 
-		t.Run("18_the_documents_are_readable_where_the_port_says", func(t *testing.T) {
+		t.Run("18_the_repository_is_cloned_where_the_port_says", func(t *testing.T) {
 			l, env := newLauncher(t)
+			git := newGitServer(t, env)
+			project := "proj-" + randomID()
+			git.commit(t, project, "rules/branches.md", "never merge develop into a feature\n")
+
 			spec := newSpec(t, l, env)
-			spec.Documents = []ports.SandboxFile{
-				{Path: "spec.md", Content: []byte("# the demand's spec\n")},
-				// A subdirectory is the case that separates a real design from
-				// one that works only for flat files — on Kubernetes a
-				// ConfigMap key cannot carry a `/`.
-				{Path: "adr/0024.md", Content: []byte("a microVM per demand\n")},
-			}
+			spec.Repository = git.repository(t, project, spec.DemandID, time.Hour)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+			waitShelf(t, l, spec.SandboxHandle, env.Ready)
 
-			for _, want := range []struct{ path, content string }{
-				{"spec.md", "# the demand's spec\n"},
-				{"adr/0024.md", "a microVM per demand\n"},
-			} {
-				res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-					Command: []string{"cat", ports.SandboxDocumentsPath + "/" + want.path},
-				})
-				if res.ExitCode != 0 {
-					t.Fatalf("cat %s: exit %d, stderr %q", want.path, res.ExitCode, res.Stderr)
-				}
-				if res.Stdout != want.content {
-					t.Errorf("%s = %q, want %q", want.path, res.Stdout, want.content)
-				}
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxDocumentsPath + "/rules/branches.md"},
+			})
+			if res.Stdout != "never merge develop into a feature\n" {
+				t.Errorf("the shelf does not hold what was committed: exit %d, %q, stderr %q",
+					res.ExitCode, res.Stdout, res.Stderr)
+			}
+			// The manifest is the first commit: a clone is never empty.
+			res = execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxDocumentsPath + "/README.md"},
+			})
+			if res.ExitCode != 0 {
+				t.Errorf("no manifest on the shelf: %q", res.Stderr)
 			}
 		})
 
-		t.Run("18_with_no_documents_the_path_is_not_mounted", func(t *testing.T) {
+		t.Run("18_with_no_repository_there_is_no_shelf", func(t *testing.T) {
 			l, env := newLauncher(t)
-			spec := newSpec(t, l, env) // no Documents
+			spec := newSpec(t, l, env) // no Repository
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"ls", ports.SandboxDocumentsPath + "/spec.md"},
+				Command: []string{"ls", "-A", ports.SandboxDocumentsPath},
+			})
+			if strings.TrimSpace(res.Stdout) != "" {
+				t.Errorf("a sandbox with no repository got a shelf: %q", res.Stdout)
+			}
+		})
+
+		t.Run("19_and_20_a_push_is_shared_and_persists", func(t *testing.T) {
+			// What one sandbox pushes, the next sandbox of the same project
+			// finds — and it is still there after the first one is destroyed.
+			// This is what "collaborated between agents" means (ADR-0028).
+			l, env := newLauncher(t)
+			git := newGitServer(t, env)
+			project := "proj-" + randomID()
+			git.commit(t, project, "README.md", "seed\n")
+
+			first := newSpec(t, l, env)
+			first.Repository = git.repository(t, project, first.DemandID, time.Hour)
+			if _, err := l.Launch(context.Background(), first); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, first.SandboxHandle, ports.PhaseActive, env.Ready)
+			waitShelf(t, l, first.SandboxHandle, env.Ready)
+
+			res := execOK(t, l, first.SandboxHandle, ports.ExecRequest{
+				Command: []string{"sh", "-c", "cd " + ports.SandboxDocumentsPath +
+					" && mkdir -p memory && echo 'the deadlock was migration 42' > memory/deadlock.md" +
+					" && git add memory && git -c user.name=thread-1 -c user.email=thread-1@agents.dop" +
+					" commit -m 'lesson' && git push origin HEAD:main 2>&1"},
+				TimeoutSeconds: 60,
+			})
+			if res.ExitCode != 0 {
+				t.Fatalf("the sandbox could not push: exit %d\nstdout=%q\nstderr=%q", res.ExitCode, res.Stdout, res.Stderr)
+			}
+			if err := l.Destroy(context.Background(), first.SandboxHandle); err != nil {
+				t.Fatalf("Destroy: %v", err)
+			}
+			waitGone(t, l, first.SandboxHandle, env.Ready)
+
+			second := newSpec(t, l, env)
+			second.Repository = git.repository(t, project, second.DemandID, time.Hour)
+			if _, err := l.Launch(context.Background(), second); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, second.SandboxHandle, ports.PhaseActive, env.Ready)
+			waitShelf(t, l, second.SandboxHandle, env.Ready)
+			res = execOK(t, l, second.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxDocumentsPath + "/memory/deadlock.md"},
+			})
+			if res.Stdout != "the deadlock was migration 42\n" {
+				t.Errorf("the second sandbox did not find the first one's lesson: %q (stderr %q)", res.Stdout, res.Stderr)
+			}
+		})
+
+		t.Run("21_the_token_opens_exactly_one_repository", func(t *testing.T) {
+			l, env := newLauncher(t)
+			git := newGitServer(t, env)
+			mine, other := "proj-"+randomID(), "proj-"+randomID()
+			git.commit(t, mine, "README.md", "mine\n")
+			git.commit(t, other, "README.md", "other\n")
+
+			spec := newSpec(t, l, env)
+			spec.Repository = git.repository(t, mine, spec.DemandID, time.Hour)
+			if _, err := l.Launch(context.Background(), spec); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
+			waitShelf(t, l, spec.SandboxHandle, env.Ready)
+
+			otherURL := git.cloneURL(other)
+			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command:        []string{"sh", "-c", "cd /tmp && git clone -q " + otherURL + " other 2>&1"},
+				TimeoutSeconds: 60,
 			})
 			if res.ExitCode == 0 {
-				t.Errorf("a project with no documents got a mount with content: %q", res.Stdout)
+				t.Fatal("a sandbox of one project cloned another project's repository")
 			}
 		})
 
-		t.Run("19_the_documents_are_not_writable_from_inside", func(t *testing.T) {
-			// It is what keeps an artefact from existing with nobody having
-			// recorded that it does: what the agent produces goes back through
-			// the core, where it gets a version and an event (ADR-0006).
+		t.Run("22_the_token_is_a_file_not_an_environment_variable", func(t *testing.T) {
 			l, env := newLauncher(t)
+			git := newGitServer(t, env)
+			project := "proj-" + randomID()
+			git.commit(t, project, "README.md", "x\n")
 			spec := newSpec(t, l, env)
-			spec.Documents = []ports.SandboxFile{
-				{Path: "spec.md", Content: []byte("original\n")},
-			}
+			spec.Repository = git.repository(t, project, spec.DemandID, time.Hour)
 			if _, err := l.Launch(context.Background(), spec); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
-			target := ports.SandboxDocumentsPath + "/spec.md"
-			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"sh", "-c", "echo tampered > " + target},
+			file := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
+				Command: []string{"cat", ports.SandboxTokenPath},
 			})
-			if res.ExitCode == 0 {
-				t.Fatal("the sandbox wrote over a document")
+			if strings.TrimSpace(file.Stdout) != spec.Repository.Token {
+				t.Errorf("the token file does not hold the token (exit %d, stderr %q)", file.ExitCode, file.Stderr)
 			}
-			// And what is there is still the original — a failed write that
-			// truncated the file would be worse than one that succeeded.
-			back := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"cat", target},
-			})
-			if back.Stdout != "original\n" {
-				t.Errorf("the document changed after the attempt: %q", back.Stdout)
+			environ := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{Command: []string{"env"}})
+			if strings.Contains(environ.Stdout, spec.Repository.Token) {
+				t.Error("the token is in the environment")
+			}
+			if !strings.Contains(environ.Stdout, "DOP_PROJECT_REPO=") {
+				t.Error("the clone URL is not in the environment")
 			}
 		})
 
-		t.Run("20_resume_rebuilds_the_documents_from_the_new_spec", func(t *testing.T) {
-			l, env := newLauncher(t)
-			spec := newSpec(t, l, env)
-			spec.Documents = []ports.SandboxFile{
-				{Path: "spec.md", Content: []byte("first version\n")},
-				{Path: "gone.md", Content: []byte("this one leaves\n")},
-			}
-			if _, err := l.Launch(context.Background(), spec); err != nil {
-				t.Fatalf("Launch: %v", err)
-			}
-			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-			if err := l.Suspend(context.Background(), spec.SandboxHandle); err != nil {
-				t.Fatalf("Suspend: %v", err)
-			}
-			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
-
-			// The project moved on while the sandbox slept.
-			spec.Documents = []ports.SandboxFile{
-				{Path: "spec.md", Content: []byte("second version\n")},
-			}
-			if _, err := l.Resume(context.Background(), spec); err != nil {
-				t.Fatalf("Resume: %v", err)
-			}
-			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
-
-			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"cat", ports.SandboxDocumentsPath + "/spec.md"},
-			})
-			if res.Stdout != "second version\n" {
-				t.Errorf("it came back with an outdated document: %q", res.Stdout)
-			}
-			// What left the project has to leave the sandbox: a document the
-			// agent reads and nobody maintains is worse than no document.
-			old := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
-				Command: []string{"cat", ports.SandboxDocumentsPath + "/gone.md"},
-			})
-			if old.ExitCode == 0 {
-				t.Errorf("a removed document survived the resume: %q", old.Stdout)
-			}
-		})
-
-		t.Run("21_a_document_path_that_escapes_is_refused", func(t *testing.T) {
-			// The list comes from a project's data, and whoever names a file
-			// chooses the name.
-			for _, bad := range []string{"/etc/passwd", "../escape.md", "", "a/../../b"} {
-				l, env := newLauncher(t)
-				spec := newSpec(t, l, env)
-				spec.Documents = []ports.SandboxFile{{Path: bad, Content: []byte("x")}}
-
-				_, err := l.Launch(context.Background(), spec)
-				if errs.KindOf(err) != errs.KindInvalid {
-					t.Errorf("path %q was accepted (err=%v)", bad, err)
-				}
-			}
-		})
+		// Guarantee 23 — the mirror's credential never in a sandbox — is proved
+		// by construction on this port (the spec has no field for it) and by
+		// guarantee 8 of the ProjectRepository suite, where the credential is
+		// resolved server-side at push time.
 	})
 }
 
@@ -816,4 +841,85 @@ func waitLog(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, want 
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("the phrase %q did not appear in the log in %s (lines seen: %v)", want, d, seen)
+}
+
+// ── the projects' git server, for the suite ────────────────────────────────
+
+// gitServer is a projects' root-repository server raised by the suite on this
+// machine, reachable from the sandboxes at env.GitHost. It is the Local adapter
+// of the ProjectRepository port — the same code the core runs.
+type gitServer struct {
+	repos   ports.ProjectRepository
+	baseURL string
+}
+
+func newGitServer(t *testing.T, env SandboxEnv) *gitServer {
+	t.Helper()
+	if env.GitHost == "" {
+		t.Skip("SandboxEnv.GitHost not set: the sandbox has no way to reach a server on this machine")
+	}
+	srv, err := projectrepo.NewServer(projectrepo.Config{
+		Root: t.TempDir(), Key: []byte("contract-suite-key-0123456789abcdef"), Prefix: "/git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/git/", srv)
+	hs := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = hs.Serve(lis) }()
+	t.Cleanup(func() { _ = hs.Close() })
+	port := lis.Addr().(*net.TCPAddr).Port
+	baseURL := fmt.Sprintf("http://%s:%d", env.GitHost, port)
+	return &gitServer{repos: projectrepo.NewLocal(srv, baseURL), baseURL: baseURL}
+}
+
+func (g *gitServer) commit(t *testing.T, project, path, content string) {
+	t.Helper()
+	if _, err := g.repos.Commit(context.Background(), project, ports.RepositoryCommit{
+		Files:   []ports.RepositoryFile{{Path: path, Content: []byte(content)}},
+		Message: "suite: " + path,
+	}); err != nil {
+		t.Fatalf("commit %s: %v", path, err)
+	}
+}
+
+func (g *gitServer) repository(t *testing.T, project, demand string, ttl time.Duration) ports.SandboxRepository {
+	t.Helper()
+	info, err := g.repos.Ensure(context.Background(), project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := g.repos.IssueToken(context.Background(), project, demand, ttl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ports.SandboxRepository{CloneURL: info.CloneURL, Token: tok}
+}
+
+func (g *gitServer) cloneURL(project string) string {
+	return g.baseURL + "/git/" + project + ".git"
+}
+
+// waitShelf waits for the entrypoint's clone: the sandbox is active before the
+// clone finishes, and a `cat` that races it would fail for the wrong reason.
+func waitShelf(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		res, err := l.Exec(context.Background(), h, ports.ExecRequest{
+			Command: []string{"test", "-d", ports.SandboxDocumentsPath + "/.git"},
+		})
+		if err == nil && res.ExitCode == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the shelf did not appear at %s within %s", ports.SandboxDocumentsPath, d)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }

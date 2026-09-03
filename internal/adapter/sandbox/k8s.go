@@ -15,11 +15,8 @@ package sandbox
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -296,10 +293,10 @@ func (k *K8s) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	if err := k.ensureWorkspace(ctx, spec); err != nil {
 		return nil, err
 	}
-	// Before the pod, always: the pod declares the ConfigMap as a volume, and a
-	// pod pointing at a ConfigMap that does not exist stays stuck in
-	// ContainerCreating instead of failing where somebody would see it.
-	if err := k.ensureDocuments(ctx, spec); err != nil {
+	// Before the pod, always: the pod declares the Secret as a volume, and a pod
+	// pointing at a Secret that does not exist stays stuck in ContainerCreating
+	// instead of failing where somebody would see it.
+	if err := k.ensureToken(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {
@@ -348,66 +345,33 @@ func (k *K8s) ensureWorkspace(ctx context.Context, spec ports.SandboxSpec) error
 	return nil
 }
 
-// documentsConfigMap is the name of the ConfigMap holding the project's
-// documents, one per namespace — and a namespace is a demand.
-const documentsConfigMap = "dop-documents"
+// The sandbox's token is a Secret in the demand's namespace, projected as a
+// file (guarantee 22). The namespace is the demand's, the Secret is the
+// demand's, and the pod has NO service account token (below) — so the only way
+// to read this Secret is to be the sandbox it was made for.
+const tokenSecret = "dop-git-token"
 
-// documentsMaxBytes is Kubernetes's ceiling for a ConfigMap, minus room for the
-// object's own metadata.
-//
-// It is checked HERE and not in the domain because it is a fact about this
-// substrate: Docker has no such limit. Exceeding it has to be a refusal with a
-// message, never a silent truncation — an agent reading half a spec draws
-// conclusions from a document that does not exist.
-const documentsMaxBytes = 1<<20 - 8<<10
-
-// ensureDocuments materializes the project's documents as a ConfigMap, which the
-// pod mounts read-only.
-//
-// A ConfigMap and not a PVC: the documents are REWRITTEN at every provisioning,
-// they are small, and a volume mounted from a ConfigMap is read-only by
-// construction — the port's guarantee 19 comes free, instead of depending on
-// file modes.
-//
-// The keys are HASHES of the path, because a ConfigMap key may not contain `/`
-// and a document lives at `adr/0024.md`. The real path travels in the volume's
-// `items[].path`, which does accept separators. Without that indirection, a
-// project's documents would have to be flat.
-func (k *K8s) ensureDocuments(ctx context.Context, spec ports.SandboxSpec) error {
-	path := "/api/v1/namespaces/" + spec.Namespace + "/configmaps"
-	if len(spec.Documents) == 0 {
-		// Removing is what makes Resume not resurrect the documents of a
-		// previous spec (guarantee 20). Absence is success.
-		code, body, err := k.do(ctx, http.MethodDelete, path+"/"+documentsConfigMap, nil)
+func (k *K8s) ensureToken(ctx context.Context, spec ports.SandboxSpec) error {
+	path := "/api/v1/namespaces/" + spec.Namespace + "/secrets"
+	if spec.Repository.CloneURL == "" {
+		code, body, err := k.do(ctx, http.MethodDelete, path+"/"+tokenSecret, nil)
 		if err != nil {
 			return err
 		}
 		if code >= 300 && code != http.StatusNotFound {
-			return k8sFail(code, body, "removing the project's documents")
+			return k8sFail(code, body, "removing the sandbox's token")
 		}
 		return nil
 	}
-
-	total := 0
-	data := make(map[string]string, len(spec.Documents))
-	for _, f := range spec.Documents {
-		total += len(f.Content) + len(f.Path)
-		data[documentKey(f.Path)] = base64.StdEncoding.EncodeToString(f.Content)
-	}
-	if total > documentsMaxBytes {
-		return errs.Invalid(
-			"the project's documents add up to %d bytes and this substrate accepts at most %d",
-			total, documentsMaxBytes)
-	}
-
 	body := map[string]any{
-		"apiVersion": "v1", "kind": "ConfigMap",
-		"metadata":   map[string]any{"name": documentsConfigMap, "labels": labelsFor(spec)},
-		"binaryData": data,
+		"apiVersion": "v1", "kind": "Secret",
+		"metadata":   map[string]any{"name": tokenSecret, "labels": labelsFor(spec)},
+		"type":       "Opaque",
+		"stringData": map[string]string{"token": spec.Repository.Token},
 	}
-	// PUT and not POST: provisioning happens more than once for the same demand,
-	// and the second one has to REPLACE what is there.
-	code, out, err := k.do(ctx, http.MethodPut, path+"/"+documentsConfigMap, body)
+	// PUT and not POST: a Resume mints a fresh token, and the second one has to
+	// REPLACE the first.
+	code, out, err := k.do(ctx, http.MethodPut, path+"/"+tokenSecret, body)
 	if err != nil {
 		return err
 	}
@@ -417,31 +381,9 @@ func (k *K8s) ensureDocuments(ctx context.Context, spec ports.SandboxSpec) error
 		}
 	}
 	if code >= 300 && code != http.StatusConflict {
-		return k8sFail(code, out, "writing the project's documents")
+		return k8sFail(code, out, "writing the sandbox's token")
 	}
 	return nil
-}
-
-// documentKey turns a path into a valid ConfigMap key. The hash is enough: what
-// names the file for whoever reads it is the volume's `items[].path`.
-func documentKey(p string) string {
-	sum := sha256.Sum256([]byte(p))
-	return "d" + hex.EncodeToString(sum[:8])
-}
-
-// documentItems maps each key back to its real path inside the mount.
-func documentItems(files []ports.SandboxFile) []map[string]any {
-	items := make([]map[string]any, 0, len(files))
-	for _, f := range files {
-		mode := 0o444
-		if f.Executable {
-			mode = 0o555
-		}
-		items = append(items, map[string]any{
-			"key": documentKey(f.Path), "path": f.Path, "mode": mode,
-		})
-	}
-	return items
 }
 
 func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClass string) error {
@@ -455,24 +397,26 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		env = append(env, map[string]string{"name": key, "value": spec.Env[key]})
 	}
 
-	// The workspace is always there; the documents only when the project has
-	// any. An empty mount and an absent one are the same thing to whoever reads
-	// (guarantee 18), and asking Kubernetes for an empty ConfigMap would be one
-	// more object to keep in step for nothing.
+	// The workspace is always there; the token only when there is a repository
+	// to open with it.
 	mounts := []map[string]any{
 		{"name": pvcName, "mountPath": ports.SandboxWorkspacePath},
 	}
 	volumes := []map[string]any{
 		{"name": pvcName, "persistentVolumeClaim": map[string]string{"claimName": pvcName}},
 	}
-	if len(spec.Documents) > 0 {
+	if spec.Repository.CloneURL != "" {
+		env = append(env, map[string]string{"name": envProjectRepo, "value": spec.Repository.CloneURL})
+		tokenDir := strings.TrimSuffix(ports.SandboxTokenPath, "/"+tokenFileName)
 		mounts = append(mounts, map[string]any{
-			"name": "documents", "mountPath": ports.SandboxDocumentsPath, "readOnly": true,
+			"name": "git-token", "mountPath": tokenDir, "readOnly": true,
 		})
 		volumes = append(volumes, map[string]any{
-			"name": "documents",
-			"configMap": map[string]any{
-				"name": documentsConfigMap, "items": documentItems(spec.Documents),
+			"name": "git-token",
+			"secret": map[string]any{
+				"secretName":  tokenSecret,
+				"defaultMode": 0o400,
+				"items":       []map[string]any{{"key": "token", "path": tokenFileName}},
 			},
 		})
 	}
@@ -506,6 +450,12 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		"restartPolicy": "Never",
 		"containers":    []any{container},
 		"volumes":       volumes,
+		// NO service account token. It is what runs in here that makes this
+		// line load-bearing: agent code, reading untrusted content. The default
+		// mounts a token that talks to the API server — and from that token, in
+		// this namespace, one reaches the library's claim, the loader, and any
+		// Secret somebody adds here tomorrow.
+		"automountServiceAccountToken": false,
 		// An arbitrary NON-root user from the very first image: OKD and
 		// OpenShift refuse root through SCC, and that is an image requirement,
 		// not a deployment one (spec §2). fsGroup is what makes the workspace
@@ -579,9 +529,9 @@ func (k *K8s) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.Sandbo
 	if err := k.deletePodAndWait(ctx, spec.Namespace); err != nil {
 		return nil, err
 	}
-	// The documents are rebuilt from the spec GIVEN here (guarantee 20), not
-	// from the one the sandbox was born with.
-	if err := k.ensureDocuments(ctx, spec); err != nil {
+	// A fresh token on every resume: the old one may have expired while the
+	// sandbox slept, and the shelf itself is a clone the entrypoint pulls.
+	if err := k.ensureToken(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := k.ensurePod(ctx, spec, runtimeClass); err != nil {
@@ -771,6 +721,10 @@ func (k *K8s) workspaceExists(ctx context.Context, h ports.SandboxHandle) (bool,
 // stdin. Asking for the higher version without needing it would trade
 // compatibility with an older cluster for nothing.
 const wsExecProtocol = "v4.channel.k8s.io"
+
+// tokenFileName is the last segment of ports.SandboxTokenPath — the Secret's
+// item is projected under that name.
+const tokenFileName = "git-token"
 
 // The subprotocol's channels. 0 (stdin) and 4 (resize) are not used here — which
 // is exactly what separates "run a command" from "open a session".

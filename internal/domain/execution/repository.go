@@ -95,4 +95,7 @@ type Demands interface {
 	// error (KindNotFound) on purpose: telling the two cases apart would leak the
 	// existence of other accounts' ids to whoever kept trying.
 	DemandAccount(ctx context.Context, demandID string) (string, error)
+	// DemandProject returns the project the demand belongs to — the key of its
+	// root repository (ADR-0028). Same rule as DemandAccount for absence.
+	DemandProject(ctx context.Context, demandID string) (string, error)
 }

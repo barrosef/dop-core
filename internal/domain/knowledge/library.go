@@ -1,10 +1,12 @@
-// The LIBRARY: the shape in which the project's knowledge reaches the agent.
+// The LIBRARY: the layout of the project's root repository (ADR-0028), and the
+// manifest at its root.
 //
-// It is the contract between the platform and the agent about WHERE things are,
-// and it exists because of one requirement: at startup the content is simply
-// there. The agent does not fetch, does not download and does not ask — from its
-// point of view the library always existed at that path. Everything that travels
-// travels before the agent exists.
+// It is the contract between the platform and the agent about WHERE things are.
+// The repository is cloned into every sandbox of the project before the agent
+// exists; from the agent's point of view the library always existed at
+// `/project`. What is here is what the platform COMMITS — the layout and the
+// generated `README.md`; what agents commit follows the same layout by
+// convention, and the manifest is regenerated on every push so it never drifts.
 //
 // ── Why a tree and not one file ─────────────────────────────────────────────
 //
@@ -136,14 +138,14 @@ var unaccented = map[rune]rune{
 	'ç': 'c', 'ñ': 'n',
 }
 
-// Library assembles the documents into the files that will be mounted, with the
+// Library assembles the documents into the files the platform commits, with the
 // manifest at the front.
 //
 // It DEDUPLICATES by path: two rules with the same title, one from the account
 // and one from the project, would land on the same file and the second would
 // silently win. Here the second gets a suffix, and the manifest says where each
 // came from — the inheritance is visible instead of being resolved by accident.
-func Library(docs []Document) []ports.SandboxFile {
+func Library(docs []Document) []ports.RepositoryFile {
 	sort.SliceStable(docs, func(i, j int) bool {
 		if docs[i].Section != docs[j].Section {
 			return sectionOrder(docs[i].Section) < sectionOrder(docs[j].Section)
@@ -152,7 +154,7 @@ func Library(docs []Document) []ports.SandboxFile {
 	})
 
 	taken := make(map[string]int, len(docs))
-	files := make([]ports.SandboxFile, 0, len(docs)+1)
+	files := make([]ports.RepositoryFile, 0, len(docs)+1)
 	placed := make([]Document, 0, len(docs))
 	for _, d := range docs {
 		p := d.Path()
@@ -163,11 +165,11 @@ func Library(docs []Document) []ports.SandboxFile {
 		}
 		taken[d.Path()]++
 		placed = append(placed, d)
-		files = append(files, ports.SandboxFile{Path: p, Content: []byte(d.Body)})
+		files = append(files, ports.RepositoryFile{Path: p, Content: []byte(d.Body)})
 	}
 
 	manifest := Manifest(placed)
-	return append([]ports.SandboxFile{
+	return append([]ports.RepositoryFile{
 		{Path: LibraryManifest, Content: []byte(manifest)},
 	}, files...)
 }
@@ -199,7 +201,8 @@ func sectionOrder(section string) int {
 func Manifest(docs []Document) string {
 	var b strings.Builder
 	b.WriteString("# The project's library\n\n")
-	b.WriteString("Everything here was available before you started. Nothing needs to be fetched.\n\n")
+	b.WriteString("Everything here is available to every agent of this project. Nothing needs to be fetched.\n")
+	b.WriteString("What you learn, commit into `" + LibraryMemory + "/` — the next agent reads it here.\n\n")
 	b.WriteString("- `" + LibraryRules + "/` — conventions this project OBEYS. Read them before deciding anything.\n")
 	b.WriteString("- `" + LibraryDemand + "/` — what belongs to the demand you are working on: spec, plan, context.\n")
 	b.WriteString("- `" + LibraryIndex + "/` — one map per repository: what lives where, how to build, how to test.\n")

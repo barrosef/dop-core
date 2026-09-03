@@ -8,6 +8,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/projectrepo"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/smser"
@@ -36,6 +39,13 @@ type Deps struct {
 	Mailer   ports.Mailer
 	SMS      ports.SMSer
 	Cfg      *config.Config
+	// Repos is the projects' root repositories (ADR-0028). GitHTTP and GitAPI
+	// are non-nil only when this process HOSTS them (GitBackend=local): the
+	// smart-HTTP handler the sandboxes clone from, and the platform-side API a
+	// remote core would use.
+	Repos   ports.ProjectRepository
+	GitHTTP http.Handler
+	GitAPI  http.Handler
 }
 
 func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
@@ -189,8 +199,37 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		idp = fb
 	}
 
+	// The projects' root repositories: two adapters, one contract suite
+	// (ADR-0001). Local hosts them here; Remote reaches a server elsewhere.
+	var repos ports.ProjectRepository
+	var gitHTTP, gitAPI http.Handler
+	switch cfg.ProjectRepoBackend {
+	case "remote":
+		repos = projectrepo.NewRemote(cfg.ProjectRepoServerURL, "/git", cfg.ProjectRepoAdminKey)
+	default:
+		key := []byte(cfg.ProjectRepoKey)
+		if len(key) == 0 {
+			// A generated key is fine for a single process on a laptop; a
+			// deployment sets PROJECT_REPO_KEY, or a restart would orphan every token.
+			key = make([]byte, 32)
+			if _, err := rand.Read(key); err != nil {
+				return nil, nil, err
+			}
+			log.Warn("PROJECT_REPO_KEY not set: minting sandbox tokens with a key that dies with this process")
+		}
+		srv, err := projectrepo.NewServer(projectrepo.Config{Root: cfg.ProjectRepoRoot, Key: key, Prefix: "/git"})
+		if err != nil {
+			return nil, nil, err
+		}
+		srv.WithSecrets(secrets)
+		repos = projectrepo.NewLocal(srv, cfg.ProjectRepoBaseURL)
+		gitHTTP = srv
+		gitAPI = projectrepo.NewAPI(srv, cfg.ProjectRepoAdminKey, cfg.ProjectRepoBaseURL)
+	}
+
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
-		Identity: idp, Launcher: launcher, Mailer: correio, SMS: texto, Cfg: cfg}
+		Identity: idp, Launcher: launcher, Mailer: correio, SMS: texto, Cfg: cfg,
+		Repos: repos, GitHTTP: gitHTTP, GitAPI: gitAPI}
 	cleanup := func() {
 		// Adapters that open a connection of their own register the close here.
 		// The port has no Close — closing is the concern of whoever ASSEMBLES,

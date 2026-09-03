@@ -57,6 +57,18 @@ type Config struct {
 	K8sNamespace string
 	K8sToken     string
 
+	// The projects' root repositories (ADR-0028). ProjectRepoBackend picks the adapter:
+	// `local` hosts the repositories in THIS process, under ProjectRepoRoot, and serves
+	// them on the health/HTTP port; `remote` talks to a server in another
+	// process at ProjectRepoServerURL. ProjectRepoBaseURL is the address a SANDBOX reaches the
+	// server at — a fact about the network, not about the repositories.
+	ProjectRepoBackend   string // local | remote
+	ProjectRepoRoot      string
+	ProjectRepoKey       string // the HMAC key the sandbox tokens are minted with
+	ProjectRepoAdminKey  string // the platform-side API's key; no sandbox holds it
+	ProjectRepoBaseURL   string
+	ProjectRepoServerURL string
+
 	StorageBucket   string
 	StorageEndpoint string
 
@@ -191,21 +203,27 @@ func Load(mode string) (*Config, error) {
 		SecretEndpoint: env("SECRET_MANAGER_EMULATOR_HOST", ""),
 		SecretPropagation: time.Duration(
 			envInt("SECRET_PROPAGATION_SECONDS", 30)) * time.Second,
-		SandboxBackend:  env("SANDBOX_BACKEND", "k8s"),
-		DockerSocket:    env("DOCKER_SOCKET", "/var/run/docker.sock"),
-		WorkspaceSize:   env("SANDBOX_WORKSPACE_SIZE", "10Gi"),
-		StorageClass:    env("SANDBOX_STORAGE_CLASS", ""),
-		DevboxImage:     env("DEVBOX_IMAGE", "dop-registry:5000/dop/devbox:0.1.0"),
-		IngressDomain:   env("INGRESS_DOMAIN", "localtest.me:8080"),
-		K8sAPIServer:    env("KUBERNETES_API", "https://kubernetes.default.svc"),
-		K8sNamespace:    env("SECRET_NAMESPACE", "dop-local"),
-		StorageBucket:   env("STORAGE_BUCKET", "dop-local.firebasestorage.app"),
-		StorageEndpoint: env("STORAGE_EMULATOR_HOST", ""),
-		FirebaseProject: env("FIREBASE_PROJECT", "dop-local"),
-		IdentityBackend: env("IDENTITY_BACKEND", "firebase"),
-		OIDCIssuer:      env("OIDC_ISSUER", ""),
-		OIDCAudience:    env("OIDC_AUDIENCE", ""),
-		OIDCClockSkew:   time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
+		SandboxBackend:       env("SANDBOX_BACKEND", "k8s"),
+		DockerSocket:         env("DOCKER_SOCKET", "/var/run/docker.sock"),
+		WorkspaceSize:        env("SANDBOX_WORKSPACE_SIZE", "10Gi"),
+		StorageClass:         env("SANDBOX_STORAGE_CLASS", ""),
+		DevboxImage:          env("DEVBOX_IMAGE", "dop-registry:5000/dop/devbox:0.1.0"),
+		IngressDomain:        env("INGRESS_DOMAIN", "localtest.me:8080"),
+		K8sAPIServer:         env("KUBERNETES_API", "https://kubernetes.default.svc"),
+		ProjectRepoBackend:   env("PROJECT_REPO_BACKEND", "local"),
+		ProjectRepoRoot:      env("PROJECT_REPO_ROOT", "/var/lib/dop/git"),
+		ProjectRepoKey:       env("PROJECT_REPO_KEY", ""),
+		ProjectRepoAdminKey:  env("PROJECT_REPO_ADMIN_KEY", ""),
+		ProjectRepoBaseURL:   env("PROJECT_REPO_BASE_URL", "http://dop-core.dop-local.svc:9091"),
+		ProjectRepoServerURL: env("PROJECT_REPO_SERVER_URL", "http://dop-core.dop-local.svc:9091"),
+		K8sNamespace:         env("SECRET_NAMESPACE", "dop-local"),
+		StorageBucket:        env("STORAGE_BUCKET", "dop-local.firebasestorage.app"),
+		StorageEndpoint:      env("STORAGE_EMULATOR_HOST", ""),
+		FirebaseProject:      env("FIREBASE_PROJECT", "dop-local"),
+		IdentityBackend:      env("IDENTITY_BACKEND", "firebase"),
+		OIDCIssuer:           env("OIDC_ISSUER", ""),
+		OIDCAudience:         env("OIDC_AUDIENCE", ""),
+		OIDCClockSkew:        time.Duration(envInt("OIDC_CLOCK_SKEW_SECONDS", 60)) * time.Second,
 		OIDCKeysMinRefresh: time.Duration(
 			envInt("OIDC_KEYS_MIN_REFRESH_SECONDS", 30)) * time.Second,
 		GitBackend:    env("GIT_BACKEND", "github"),

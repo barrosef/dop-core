@@ -20,6 +20,7 @@ type Service struct {
 	embedder Embedder
 	clock    ports.Clock
 	budget   Budget
+	repos    ports.ProjectRepository
 }
 
 // NewService requires a repository, an ObjectStore, demands and a clock; the
@@ -144,87 +145,73 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 	return &pkg, nil
 }
 
-// LibraryFor assembles everything the demand's agent should find already on
-// disk when the sandbox comes up.
-//
-// It is the OPPOSITE selection from BuildContextPackage, and the difference is
-// the point. The package is what goes INTO the prompt, so it is selected,
-// measured and cut against a budget: every token there is paid for on every
-// turn. The library is what sits on the FILESYSTEM, so it is complete: it costs
-// nothing until the agent decides to open a file, and deciding is what the
-// manifest is for.
-//
-// Cutting the library the way the package is cut would be the worst of both — a
-// truncated documentation base the agent believes is whole.
-func (s *Service) LibraryFor(ctx context.Context, demandID string) ([]ports.SandboxFile, error) {
-	accountID, err := ctxutil.MustAccount(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(demandID) == "" {
-		return nil, errs.Invalid("demand not provided")
-	}
-	dc, err := s.demands.ContextOf(ctx, accountID, demandID)
-	if err != nil {
-		return nil, err
-	}
-	if dc == nil {
-		return nil, errs.NotFound("demand")
-	}
-
-	rules, err := s.repo.RulesFor(ctx, accountID, dc.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	// The index of the demand's repositories, not the project's forty: a map of
-	// a repository the demand does not touch is noise on the shelf.
-	index, err := s.repo.IndexFor(ctx, accountID, dc.ProjectID, dc.Repos)
-	if err != nil {
-		return nil, err
-	}
-	// The memory goes in WHOLE — no relevance search. On the shelf, relevance is
-	// the agent's to judge after reading the manifest; deciding for it here
-	// would be repeating the package's cut where it costs nothing to avoid.
-	memories, err := s.repo.SearchMemory(ctx, MemoryQuery{
-		AccountID: accountID, ProjectID: dc.ProjectID, Limit: libraryMemoryCap,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	docs := make([]Document, 0, len(rules)+len(index)+len(memories)+2)
-	// ResolveRules applies the inheritance: the project's rule replaces the
-	// account's of the same name. What reaches the shelf is what APPLIES, and
-	// the origin says where each one came from.
-	for _, a := range ResolveRuleArtifacts(rules) {
-		docs = append(docs, documentOf(a, LibraryRules))
-	}
-	for _, a := range index {
-		docs = append(docs, documentOf(a, LibraryIndex))
-	}
-	for _, m := range memories {
-		docs = append(docs, documentOf(m.Artifact, LibraryMemory))
-	}
-
-	// The demand's own. The statement is what the person asked for, and it is
-	// the one document the agent should never have to go looking for.
-	if body := strings.TrimSpace(dc.Spec); body != "" {
-		docs = append(docs, Document{
-			Section: LibraryDemand, Name: "spec.md",
-			Title: dc.Title, Body: body, Origin: "the demand's statement",
-		})
-	}
-	return Library(docs), nil
+// WithRepositories wires the project's root repository (ADR-0028): where the
+// TEXT of every artifact lives. Without it PutArtifact keeps the row and the
+// bucket, and the shelf is not written — which is the state before the ADR,
+// and it is loud in the log.
+func (s *Service) WithRepositories(r ports.ProjectRepository) *Service {
+	s.repos = r
+	return s
 }
 
-// libraryMemoryCap is the ceiling on memories that reach the shelf. It is not a
-// budget — the shelf has none — it is a guard against a project with ten
-// thousand findings turning provisioning into a database dump.
-const libraryMemoryCap = 500
+// sectionOf maps a kind to its directory in the layout.
+func sectionOf(k Kind) string {
+	switch k {
+	case KindRule:
+		return LibraryRules
+	case KindIndex:
+		return LibraryIndex
+	default:
+		return LibraryMemory
+	}
+}
 
-func documentOf(a Artifact, section string) Document {
+// RegenerateManifest rewrites `README.md` from what the repository holds.
+//
+// It runs after every push (the OnPush of the port) so the manifest never
+// drifts from the tree — a manifest somebody maintains by hand is a manifest
+// that lies within a week. Only the project's OWN rows are listed: what the
+// account's rules contribute reaches the package through inheritance, and the
+// shelf lists what is on THIS shelf.
+func (s *Service) RegenerateManifest(ctx context.Context, accountID, projectID string) error {
+	if s.repos == nil {
+		return nil
+	}
+	rules, err := s.repo.RulesFor(ctx, accountID, projectID)
+	if err != nil {
+		return err
+	}
+	memories, err := s.repo.SearchMemory(ctx, MemoryQuery{
+		AccountID: accountID, ProjectID: projectID, Limit: manifestMemoryCap,
+	})
+	if err != nil {
+		return err
+	}
+	docs := make([]Document, 0, len(rules)+len(memories))
+	for _, a := range ResolveRuleArtifacts(rules) {
+		docs = append(docs, documentOf(a))
+	}
+	for _, m := range memories {
+		docs = append(docs, documentOf(m.Artifact))
+	}
+	files := Library(docs)
+	_, err = s.repos.Commit(ctx, projectID, ports.RepositoryCommit{
+		Files:      files[:1], // only the manifest: the documents are already there
+		Message:    "Regenerate the manifest",
+		AuthorName: "DOP", AuthorEmail: "platform@dop",
+		CommitterName: "DOP", CommitterEmail: "platform@dop",
+	})
+	return err
+}
+
+// manifestMemoryCap bounds the manifest, not the shelf: a project with ten
+// thousand findings still has them all on disk; the README lists the last
+// five hundred and says so.
+const manifestMemoryCap = 500
+
+func documentOf(a Artifact) Document {
 	return Document{
-		Section: section,
+		Section: sectionOf(a.Kind),
 		Name:    FileName(a.Name),
 		Title:   a.Name,
 		Body:    a.Body,
@@ -410,6 +397,28 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 		a.ObjectRef = ref.Bucket + "/" + ref.Key
 	} else {
 		a.Body = string(in.Content)
+	}
+
+	// The shelf (ADR-0028): the text lands in the project's root repository, at
+	// the layout's path, as a platform commit on the actor's behalf. A rule of
+	// the ACCOUNT has no single project to land in — it reaches the shelf of
+	// each project through the manifest's regeneration, not through a commit
+	// here.
+	if s.repos != nil && scope.Level == ScopeProject {
+		call, _ := ctxutil.From(ctx)
+		if _, err := s.repos.Commit(ctx, scope.ProjectID, ports.RepositoryCommit{
+			Files: []ports.RepositoryFile{{
+				Path:    sectionOf(in.Kind) + "/" + FileName(name),
+				Content: in.Content,
+			}},
+			Message:        string(in.Kind) + ": " + name,
+			AuthorName:     call.ActorID,
+			AuthorEmail:    call.ActorID + "@users.dop",
+			CommitterName:  "DOP",
+			CommitterEmail: "platform@dop",
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	// Only memory is vectorized: rules and index are looked up by identity

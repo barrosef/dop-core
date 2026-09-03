@@ -130,12 +130,24 @@ func RunLauncher(ctx context.Context, cfg *config.Config) error {
 	return ctx.Err()
 }
 
-func serveHealthHTTP(ctx context.Context, port int) {
+// serveHealthHTTP is the plain-HTTP side of a process: the health check, and —
+// in the process that hosts the projects' root repositories — git's smart HTTP
+// and the platform-side API (ADR-0028). One port, because the sandboxes'
+// egress allowlist names one address.
+func serveHealthHTTP(ctx context.Context, port int, extra ...struct {
+	prefix string
+	h      http.Handler
+}) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	for _, e := range extra {
+		if e.h != nil {
+			mux.Handle(e.prefix, e.h)
+		}
+	}
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { <-ctx.Done(); _ = srv.Shutdown(context.Background()) }()
 	_ = srv.ListenAndServe()

@@ -6,9 +6,9 @@
 // SDK, and the go.mod is deliberately lean. Here the arithmetic is even more
 // favourable than usual — of RFC 6455 this file needs a fraction: the handshake,
 // reading the server's frames (which never come masked), the pong and the close.
-// There is no data sending: this port's exec is a COMMAND, not a session, and
-// `stdin` goes off. A complete WebSocket library would bring compression,
-// extensions and a concurrency model this use does not have.
+// There is no data sending beyond the pong: this port's exec is a COMMAND, not a
+// session, and `stdin` goes off. A complete WebSocket library would bring
+// compression, extensions and a concurrency model this use does not have.
 //
 // ── Why WebSocket and not SPDY ──────────────────────────────────────────────
 //

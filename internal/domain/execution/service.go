@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
@@ -33,7 +34,7 @@ type Service struct {
 	demands  Demands
 	clock    ports.Clock
 	cfg      Config
-	library  Library
+	repos    ports.ProjectRepository
 }
 
 // NewService requires the ports it depends on. The panic here is deliberate: it
@@ -188,14 +189,13 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 // the stretch that has to be redone when the first attempt died halfway.
 func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
 	spec := s.specFor(sb)
-	// The documents are assembled at every provisioning, Resume included: the
-	// shelf carries the project's CURRENT knowledge, not a snapshot of the day
-	// the sandbox was born.
-	docs, err := s.documentsFor(ctx, sb)
+	// A fresh token at every provisioning, Resume included: the one the sandbox
+	// slept with may have expired, and the shelf is a clone the entrypoint pulls.
+	repo, err := s.repositoryFor(ctx, sb)
 	if err != nil {
 		return nil, err
 	}
-	spec.Documents = docs
+	spec.Repository = repo
 
 	status, err := s.launcher.Launch(ctx, spec)
 	if err != nil {
@@ -238,34 +238,39 @@ func (s *Service) requireTierSupported(ctx context.Context, tier ports.Isolation
 		tier, strings.Join(names, ", "))
 }
 
-// Library is what execution needs from the knowledge domain: the project's
-// documents, ready to be mounted.
-//
-// It is a port and not a direct call for the usual reason, and for one more:
-// what goes on the shelf is a decision about CONTEXT, and context belongs to
-// whoever owns the knowledge — not to whoever raises containers.
-type Library interface {
-	LibraryFor(ctx context.Context, demandID string) ([]ports.SandboxFile, error)
-}
-
-// WithLibrary wires the shelf. Without it the sandbox comes up with no
-// documents, which is what the contract suite wants and not what a demand wants.
-func (s *Service) WithLibrary(l Library) *Service {
-	s.library = l
+// WithRepositories wires the project's root repository (ADR-0028). Without it
+// the sandbox comes up with no shelf — what the contract suite's lifecycle
+// tests want, and not what a demand wants.
+func (s *Service) WithRepositories(r ports.ProjectRepository) *Service {
+	s.repos = r
 	return s
 }
 
-// documentsFor assembles the shelf, and a failure here FAILS the provisioning.
-//
-// The temptation is to carry on without documents — the sandbox would come up,
-// after all. That is exactly the failure to avoid: an agent that finds an empty
+// tokenTTL is how long a sandbox's token to its root repository lives. Long
+// enough for a suspended sandbox to come back; Resume mints a fresh one anyway.
+const tokenTTL = 24 * time.Hour
+
+// repositoryFor mints what the sandbox needs to clone: the URL and its own
+// token. A failure here FAILS the provisioning — an agent that comes up with no
 // shelf does not conclude "the shelf failed", it concludes "this project has no
 // rules", and works against conventions it was never shown.
-func (s *Service) documentsFor(ctx context.Context, sb *Sandbox) ([]ports.SandboxFile, error) {
-	if s.library == nil {
-		return nil, nil
+func (s *Service) repositoryFor(ctx context.Context, sb *Sandbox) (ports.SandboxRepository, error) {
+	if s.repos == nil {
+		return ports.SandboxRepository{}, nil
 	}
-	return s.library.LibraryFor(ctx, sb.DemandID)
+	projectID, err := s.demands.DemandProject(ctx, sb.DemandID)
+	if err != nil {
+		return ports.SandboxRepository{}, err
+	}
+	info, err := s.repos.Ensure(ctx, projectID)
+	if err != nil {
+		return ports.SandboxRepository{}, err
+	}
+	token, err := s.repos.IssueToken(ctx, projectID, sb.DemandID, tokenTTL)
+	if err != nil {
+		return ports.SandboxRepository{}, err
+	}
+	return ports.SandboxRepository{CloneURL: info.CloneURL, Token: token}, nil
 }
 
 func (s *Service) specFor(sb *Sandbox) ports.SandboxSpec {
@@ -363,14 +368,13 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 	}
 
 	spec := s.specFor(sb)
-	// The documents are assembled at every provisioning, Resume included: the
-	// shelf carries the project's CURRENT knowledge, not a snapshot of the day
-	// the sandbox was born.
-	docs, err := s.documentsFor(ctx, sb)
+	// A fresh token at every provisioning, Resume included: the one the sandbox
+	// slept with may have expired, and the shelf is a clone the entrypoint pulls.
+	repo, err := s.repositoryFor(ctx, sb)
 	if err != nil {
 		return nil, err
 	}
-	spec.Documents = docs
+	spec.Repository = repo
 
 	status, err := s.launcher.Resume(ctx, spec)
 	if err != nil {

@@ -211,6 +211,14 @@ func (a executionDemands) DemandAccount(ctx context.Context, demandID string) (s
 	return dm.AccountID, nil
 }
 
+func (a executionDemands) DemandProject(ctx context.Context, demandID string) (string, error) {
+	dm, err := a.d.Get(ctx, demandID)
+	if err != nil {
+		return "", err
+	}
+	return dm.ProjectID, nil
+}
+
 // ── event → attention ───────────────────────────────────────────────────────
 
 // attentionWatcher hands the box the event domain's same fan-out, with replay,

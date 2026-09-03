@@ -848,6 +848,13 @@ func (d *fakeDemands) DemandAccount(_ context.Context, demandID string) (string,
 	return acc, nil
 }
 
+func (d *fakeDemands) DemandProject(_ context.Context, demandID string) (string, error) {
+	if _, err := d.DemandAccount(context.Background(), demandID); err != nil {
+		return "", err
+	}
+	return "proj-1", nil
+}
+
 // The scheduler is a SYSTEM actor and has no active account. The sweep visits
 // account by account, and each visit still happens INSIDE an account — the
 // isolation is not loosened, only the visiting order is decided from outside.

@@ -51,6 +51,7 @@ func TestSandboxContractDocker(t *testing.T) {
 			// has to REFUSE, not deliver an ordinary container.
 			Unsupported: ports.TierHardware,
 			Ready:       90 * time.Second,
+			GitHost:     envOr("SANDBOX_GIT_HOST", "172.17.0.1"),
 		}
 	})
 }
@@ -62,4 +63,11 @@ func testImage() string {
 		return v
 	}
 	return "busybox:1.36"
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

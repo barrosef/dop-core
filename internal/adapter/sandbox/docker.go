@@ -11,6 +11,7 @@
 package sandbox
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -262,10 +264,10 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if err := d.createContainer(ctx, spec, runtime); err != nil {
 		return nil, err
 	}
-	// The documents go in with the container CREATED and not yet started: the
-	// archive endpoint writes into a stopped container, and doing it before the
-	// start is what keeps the agent from ever seeing the mount half-filled.
-	if err := d.putDocuments(ctx, spec); err != nil {
+	// The token goes in with the container CREATED and not yet started: the
+	// archive endpoint writes into a stopped container, and the entrypoint
+	// reads the file before anything else runs.
+	if err := d.putToken(ctx, spec); err != nil {
 		return nil, err
 	}
 	if err := d.startContainer(ctx, spec.SandboxHandle); err != nil {
@@ -274,26 +276,39 @@ func (d *Docker) Launch(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	return d.Describe(ctx, spec.SandboxHandle)
 }
 
-// putDocuments writes the project's documents at SandboxDocumentsPath.
+// putToken delivers the sandbox's one credential as a FILE (guarantee 22).
 //
-// Docker has no read-only volume that the host can fill without a second
-// container, so the road here is the container's own filesystem with the entries
-// owned by root and with no write bit — see documentsTar. The outcome the port
-// promises is the same: the sandbox reads and does not write.
-func (d *Docker) putDocuments(ctx context.Context, spec ports.SandboxSpec) error {
-	if len(spec.Documents) == 0 {
+// Docker has no projected volumes; the archive endpoint is how the daemon
+// writes a file into a container that has not started. The file belongs to
+// the sandbox's user and is readable by nobody else — it is the agent's own
+// key, and only the agent's.
+func (d *Docker) putToken(ctx context.Context, spec ports.SandboxSpec) error {
+	if spec.Repository.CloneURL == "" {
 		return nil
 	}
-	// The prefix comes off the leading slash: the archive is extracted at `/`,
-	// and tar creates the intermediate directories for the entries.
-	prefix := strings.TrimPrefix(ports.SandboxDocumentsPath, "/")
-	archive, err := documentsTar(spec.Documents, prefix)
-	if err != nil {
-		return err
+	dir := strings.TrimPrefix(path.Dir(ports.SandboxTokenPath), "/")
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{
+		Name: dir + "/", Typeflag: tar.TypeDir, Mode: 0o750, Uid: sandboxUID, Gid: 0,
+	}); err != nil {
+		return errs.Wrap(errs.KindInternal, err, "failed to assemble the token")
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name: strings.TrimPrefix(ports.SandboxTokenPath, "/"), Mode: 0o400,
+		Uid: sandboxUID, Gid: 0, Size: int64(len(spec.Repository.Token)),
+	}); err != nil {
+		return errs.Wrap(errs.KindInternal, err, "failed to assemble the token")
+	}
+	if _, err := tw.Write([]byte(spec.Repository.Token)); err != nil {
+		return errs.Wrap(errs.KindInternal, err, "failed to assemble the token")
+	}
+	if err := tw.Close(); err != nil {
+		return errs.Wrap(errs.KindInternal, err, "failed to close the token")
 	}
 	target := "http://docker/" + d.apiVer + "/containers/" +
 		d.containerName(spec.SandboxHandle) + "/archive?path=/"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(archive))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		return err
 	}
@@ -305,10 +320,14 @@ func (d *Docker) putDocuments(ctx context.Context, spec ports.SandboxSpec) error
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return fail(resp.StatusCode, body, "writing the project's documents")
+		return fail(resp.StatusCode, body, "writing the sandbox's token")
 	}
 	return nil
 }
+
+// sandboxUID is the devbox image's user. It is repeated here because the tar
+// carries ownership, and a file the agent cannot read is a key nobody holds.
+const sandboxUID = 1001
 
 func (d *Docker) ensureVolume(ctx context.Context, spec ports.SandboxSpec) error {
 	code, body, err := d.do(ctx, http.MethodPost, "/volumes/create", map[string]any{
@@ -331,7 +350,12 @@ func (d *Docker) ensureVolume(ctx context.Context, spec ports.SandboxSpec) error
 // and the contract suite would depend on somebody having run docker pull first,
 // which is the definition of a test that passes by accident.
 func (d *Docker) ensureImage(ctx context.Context, image string) error {
-	code, _, err := d.do(ctx, http.MethodGet, "/images/"+url.PathEscape(image)+"/json", nil)
+	// The name goes in RAW: PathEscape would turn the slashes of a
+	// registry-qualified name (`dop-registry:5000/dop/devbox:0.1.1`) into
+	// `%2F`, Docker would not find the local image, and the adapter would try
+	// to pull from a registry the host cannot resolve. Docker's own client
+	// sends the name as is.
+	code, _, err := d.do(ctx, http.MethodGet, "/images/"+image+"/json", nil)
 	if err != nil {
 		return err
 	}
@@ -359,9 +383,13 @@ func (d *Docker) ensureImage(ctx context.Context, image string) error {
 }
 
 func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, runtime string) error {
-	env := make([]string, 0, len(spec.Env))
+	env := make([]string, 0, len(spec.Env)+1)
 	for k, v := range spec.Env {
 		env = append(env, k+"="+v)
+	}
+	if spec.Repository.CloneURL != "" {
+		// Not secret: what is secret is the token, and that is a file.
+		env = append(env, envProjectRepo+"="+spec.Repository.CloneURL)
 	}
 	sort.Strings(env) // reproducible creation
 
@@ -456,33 +484,24 @@ func (d *Docker) Resume(ctx context.Context, spec ports.SandboxSpec) (*ports.San
 	if st.Phase == ports.PhaseActive {
 		return st, nil // idempotent (guarantee 7)
 	}
-	runtime, err := d.runtimeFor(ctx, spec.Tier)
-	if err != nil {
+	// The container may have been removed with the volume intact; in that case
+	// recreating is the way back to the existing workspace. The shelf is not
+	// touched here: it is a clone in the container, and the entrypoint pulls
+	// on every start — what the project learned while the sandbox slept is
+	// there when it wakes (guarantee 20).
+	if code, _, err := d.do(ctx, http.MethodGet, "/containers/"+d.containerName(spec.SandboxHandle)+"/json", nil); err != nil {
 		return nil, err
-	}
-	// Resume RECREATES the container, even when one is there.
-	//
-	// The reason is guarantee 20: the documents are rebuilt from the spec given
-	// HERE, and a document that left the project has to leave the sandbox — an
-	// outdated document the agent reads and nobody maintains is worse than no
-	// document. Docker's archive endpoint only ADDS: there is no way to remove
-	// what is no longer in the spec, and the files belong to root while the
-	// sandbox runs unprivileged, so it cannot delete them from inside either.
-	//
-	// It costs nothing that matters: what survives suspension is the WORKSPACE,
-	// and the workspace is the named volume, not the container's layer. The port
-	// never promised anything outside SandboxWorkspacePath (guarantee 5).
-	if code, body, err := d.do(ctx, http.MethodDelete,
-		"/containers/"+d.containerName(spec.SandboxHandle)+"?force=true", nil); err != nil {
-		return nil, err
-	} else if code >= 300 && code != http.StatusNotFound {
-		return nil, fail(code, body, "recycling the container on resume")
-	}
-	if err := d.createContainer(ctx, spec, runtime); err != nil {
-		return nil, err
-	}
-	if err := d.putDocuments(ctx, spec); err != nil {
-		return nil, err
+	} else if code == http.StatusNotFound {
+		runtime, err := d.runtimeFor(ctx, spec.Tier)
+		if err != nil {
+			return nil, err
+		}
+		if err := d.createContainer(ctx, spec, runtime); err != nil {
+			return nil, err
+		}
+		if err := d.putToken(ctx, spec); err != nil {
+			return nil, err
+		}
 	}
 	if err := d.startContainer(ctx, spec.SandboxHandle); err != nil {
 		return nil, err
@@ -937,10 +956,15 @@ func validateSpec(spec ports.SandboxSpec) error {
 		return errs.Invalid(
 			"isolation level not declared — the substrate does not choose for you")
 	}
-	// The documents are validated HERE, in the shared function, so guarantee 21
-	// holds in every adapter without each one remembering to check.
-	return validateDocuments(spec.Documents)
+	if spec.Repository.CloneURL != "" && strings.TrimSpace(spec.Repository.Token) == "" {
+		return errs.Invalid("a repository with no token: the sandbox could not clone it")
+	}
+	return nil
 }
+
+// envProjectRepo is the variable the entrypoint reads to know what to clone.
+// The token is NOT in the environment — see ports.SandboxTokenPath.
+const envProjectRepo = "DOP_PROJECT_REPO"
 
 // endpointsFromPorts converts published ports into endpoints.
 //

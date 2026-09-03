@@ -27,6 +27,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/resource"
 	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
+	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
 )
 
@@ -138,11 +139,25 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// provisions a sandbox without knowing whether the substrate is Docker or
 	// Kubernetes.
 	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
-	// The shelf: the project's documents, mounted when the sandbox comes up.
-	// Wired here and not inside buildExecution because the launcher process
-	// raises sandboxes without a knowledge service, and a nil there is the
-	// honest answer — see WithLibrary.
-	executionSvc.WithLibrary(knowledgeSvc)
+	// The projects' root repositories (ADR-0028): execution mints the sandbox's
+	// clone URL and token from it; knowledge commits the text of every
+	// artifact into it; and a push regenerates the manifest and becomes an
+	// event.
+	executionSvc.WithRepositories(deps.Repos)
+	knowledgeSvc.WithRepositories(deps.Repos)
+	pushes := postgres.NewPushRecorder(deps.Pool)
+	deps.Repos.OnPush(func(ctx context.Context, p ports.Push) {
+		accountID, err := pushes.Record(ctx, p)
+		if err != nil {
+			logging.From(ctx).Warn("push not recorded", "project_id", p.ProjectID, "error", err.Error())
+			return
+		}
+		if err := knowledgeSvc.RegenerateManifest(
+			ctxutil.Into(ctx, ctxutil.Call{AccountID: accountID, ActorID: "platform", ActorKind: ctxutil.ActorSystem}),
+			accountID, p.ProjectID); err != nil {
+			logging.From(ctx).Warn("manifest not regenerated", "project_id", p.ProjectID, "error", err.Error())
+		}
+	})
 	dopv1.RegisterExecutionServiceServer(srv, appgrpc.NewExecutionServer(executionSvc))
 
 	// The attention box is a PROJECTION, and its service is read + streaming

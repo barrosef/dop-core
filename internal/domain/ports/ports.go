@@ -302,46 +302,37 @@ func ValidIsolationTier(t IsolationTier) bool {
 // suite exists to catch.
 const SandboxWorkspacePath = "/workspace"
 
-// SandboxDocumentsPath is where the PROJECT's documents are mounted inside the
-// sandbox: spec, plans, rules, accumulated context — whatever the project
-// carries in writing.
+// SandboxDocumentsPath is where the project's ROOT REPOSITORY is cloned inside
+// the sandbox (ADR-0028): the shelf — rules, repository maps, memories, and
+// this demand's spec and plan — as a working copy, read-write.
 //
-// It is separate from the workspace on purpose, and the separation is the
-// design. The workspace is the demand's WORK: it survives suspension and the
-// agent writes in it. The documents are the project's KNOWLEDGE: they are
-// rewritten at every provisioning from the source of truth, and the agent
-// reading them is the point — the agent WRITING them is not. An artefact the
-// agent produces goes back through the core (`PutArtifact`), where it gets a
-// version and an event; if it could be written here, the artefact would exist
-// with nobody having recorded that it does.
-//
-// Documents are copied INTO EACH sandbox, and not shared between the demands of
-// a project through one volume. A shared volume would be a surface common to
-// two demands, and ADR-0024 put the hard boundary exactly there. The price is
-// copying text at every provisioning, which is cheap; the alternative's price is
-// an isolation hole, which is not.
+// It is separate from the workspace on purpose. The workspace is the demand's
+// WORK; the shelf is the project's KNOWLEDGE, shared by every sandbox of the
+// project through push and pull. From the agent's point of view the content
+// was always there: the clone happens before the agent exists, in the image's
+// entrypoint, and what the agent commits is there for the next agent.
 const SandboxDocumentsPath = "/project"
 
-// SandboxFile is ONE file to write into the sandbox.
+// SandboxTokenPath is where the sandbox finds its ONE credential: the token
+// that opens the project's root repository (ADR-0028 §3). A projected FILE and
+// not an environment variable — environ is inherited by every child process,
+// and the sandbox runs agent code.
 //
-// It carries CONTENT and not a path on the host, because the domain has no
-// filesystem: what it has is bytes it read from the ObjectStore. And it is a
-// list of files rather than an archive because a tar is substrate vocabulary —
-// the adapter builds whatever its substrate wants (Docker takes a tar, k8s takes
-// a stream through exec), and the domain never learns which.
-type SandboxFile struct {
-	// Path is RELATIVE to the directory given to Put, and it may contain
-	// separators (`adr/0024.md`). Absolute, empty or escaping paths (`..`) are
-	// refused — see guarantee 19.
-	Path string
-	// Content is the whole file. There is no streaming here on purpose: what
-	// goes through this path is text a person wrote, and a document that does
-	// not fit in memory is not a document, it is a dataset — which belongs in
-	// the workspace, fetched by the agent.
-	Content []byte
-	// Executable makes the file 0755 instead of 0644. It exists for a script
-	// the project ships; it is not a general permission model.
-	Executable bool
+// `/etc/dop` and not `/var/run/dop`: on Alpine `/var/run` is a SYMLINK to
+// `/run`, and Docker's archive extractor refuses to replace a symlink with a
+// directory — the token would never land, and the sandbox would come up with
+// no way to clone.
+const SandboxTokenPath = "/etc/dop/git-token"
+
+// SandboxRepository is the project's root repository as the sandbox sees it.
+//
+// The clone URL is not secret and travels in the environment
+// (`DOP_PROJECT_REPO`); the token is, and travels as a file. Both are minted by
+// the core at provisioning: the token is per demand, opens exactly this
+// repository, read-write, and dies with the sandbox.
+type SandboxRepository struct {
+	CloneURL string
+	Token    string
 }
 
 // SandboxHandle identifies an ALREADY provisioned sandbox. The ID belongs to the
@@ -368,17 +359,12 @@ type SandboxSpec struct {
 	// suite would stop running on the laptop of whoever works on the adapter.
 	Command []string
 	Env     map[string]string
-	// Documents are the project's, mounted READ-ONLY at SandboxDocumentsPath.
-	//
-	// They travel in the SPEC, and not in a method of their own, because on
-	// Kubernetes the volume has to exist before the pod does — a "write into the
-	// sandbox afterwards" would be a capability one substrate has and the other
-	// does not, which is what ADR-0001 says to keep out of the port. Here each
-	// adapter materializes them the way its own substrate does it natively.
-	//
-	// Empty means no documents mount at all, which is the right thing for a
-	// sandbox raised by the contract suite.
-	Documents []SandboxFile
+	// Repository is the project's root repository (ADR-0028). An empty CloneURL
+	// means no shelf — the right thing for a sandbox raised by the contract
+	// suite's lifecycle tests. With one, the adapter delivers the token at
+	// SandboxTokenPath and the clone URL in the environment, and the image's
+	// entrypoint clones (guarantees 18 to 23).
+	Repository SandboxRepository
 }
 
 // SandboxPhase is what the SUBSTRATE sees. It is not the domain's state: there
@@ -447,9 +433,12 @@ type LogLine struct {
 //     on k8s would mean prefixing `env K=V …` onto the argv — and a value in
 //     argv is visible in the `ps` of any process in the sandbox, which is where
 //     agent code runs. A capability that does not map stays out (ADR-0001), and
-//     in this case staying out is also the safe choice: **the port has no field
-//     through which a credential could arrive**. It is not a promise of
-//     discipline, it is the absence of a field;
+//     in this case staying out is also the safe choice: **exec has no field
+//     through which a credential could arrive**. The ONE credential a sandbox
+//     holds — the token to the project's root repository (ADR-0028 §3, the
+//     substrate spec §5) — enters at provisioning as a projected file, never
+//     through exec, never as environ. It is the agent's own workbench key, not
+//     a third party's; a third party's credential has no path in here at all;
 //
 //   - WORKING DIRECTORY. Same asymmetry: Docker has `WorkingDir`, k8s does not.
 //     Instead of emulating it, both adapters fix the CONTAINER's working
@@ -557,22 +546,23 @@ const (
 //     goroutine. With Follow=false, it returns at the end of what exists;
 //  12. an error from emit interrupts Tail and propagates — that is how the
 //     server finds out the client is gone;
-//  18. a Spec.Documents sandbox has them READABLE at SandboxDocumentsPath, byte
-//     for byte, including in subdirectories. With no documents the path is not
-//     mounted at all — an empty mount and an absent one are the same thing to
-//     whoever reads, and asking every substrate to produce an empty directory
-//     would be a guarantee that buys nothing;
-//  19. the documents mount is READ-ONLY: a write attempt from inside the
-//     sandbox fails. It is what keeps an artefact from existing with nobody
-//     having recorded that it does — what the agent produces goes back through
-//     the core, where it gets a version and an event (ADR-0006);
-//  20. Resume rebuilds the documents from the spec it was given, and does not
-//     resurrect what was in the previous one. The documents are the project's
-//     current knowledge, not a snapshot of the day the sandbox was created;
-//  21. Launch REFUSES a document path that escapes: absolute, empty, or with a
-//     `..` segment. It is not defence against the substrate, it is defence
-//     against whoever assembles the list — a document named `../../etc/passwd`
-//     coming from a project's data would land outside the mount.
+//  18. a Spec.Repository sandbox has the project's root repository CLONED at
+//     SandboxDocumentsPath when it comes up: a file committed before the launch
+//     is readable, byte for byte. With no repository the path is EMPTY — the
+//     image creates the directory, and an empty directory says "no shelf" as
+//     clearly as an absent one;
+//  19. the shelf is WRITABLE, and SHARED: a commit pushed from one sandbox is
+//     visible to a sandbox of the same project launched afterwards. It is what
+//     "collaborated between agents" means (ADR-0028);
+//  20. the shelf PERSISTS: what a sandbox pushed is still there after its own
+//     Suspend/Resume, and after its Destroy — the repository outlives the
+//     sandbox, it is the project's;
+//  21. the token opens EXACTLY ONE repository: a sandbox of project X cannot
+//     clone, fetch or push project Y's, even holding a valid token of its own;
+//  22. the token is a FILE at SandboxTokenPath, not an environment variable:
+//     `env` inside the sandbox does not contain it;
+//  23. the mirror's credential — the user's remote — is never in a sandbox: no
+//     file, no variable, nothing. The platform mirrors; the sandbox does not.
 //
 // ── EXEC: why it CAME INTO the port (and what stays out) ─────────────────────
 //
@@ -925,3 +915,88 @@ type SMSer interface {
 type Clock interface{ Now() time.Time }
 
 type IDGenerator interface{ NewID() string }
+
+// ───────────────────────── ProjectRepository ─────────────────────────
+
+// ProjectRepository is the home of a project's knowledge: a git repository the
+// platform hosts, born with the project (ADR-0028).
+//
+// It is a port for the usual reason — two adapters, one contract suite — and
+// for a specific one: WHERE the repositories live (a directory on the core's
+// disk, a service of its own, one day a managed git) is a deployment fact, and
+// the domain only ever needs five verbs.
+//
+// Guarantees verified by the contract suite, in EVERY adapter:
+//
+//  1. Ensure is IDEMPOTENT by project: the second call returns the same clone
+//     URL and touches nothing. A project has one root repository, ever;
+//  2. a repository is born with a first commit holding the layout's manifest,
+//     so a clone is never empty — an empty clone tells the agent "this project
+//     knows nothing", which is a different statement from "this project is
+//     new";
+//  3. IssueToken returns a credential that clones, fetches and pushes THAT
+//     project's repository over the clone URL — and NOTHING else: another
+//     project's repository refuses it (guarantee 21 of the sandbox port hangs
+//     off this one);
+//  4. a token EXPIRES: after its TTL the same operations are refused. A demand's
+//     token is a demand's, not a standing key;
+//  5. Commit writes files on the platform's behalf and returns the commit: a
+//     Read after it returns the content, and a clone after it contains it.
+//     Attribution follows ADR-0003, and it is the caller's to state;
+//  6. Read of a path that does not exist is KindNotFound; Read never invents;
+//  7. a push through the clone URL reaches the platform: OnPush is called with
+//     the project, the ref and the commits, AFTER the refs are updated — it is
+//     how a push becomes an event (ADR-0006), and how the manifest gets
+//     regenerated;
+//  8. a mirror set with SetMirror receives what is pushed, and the mirror's
+//     credential is resolved by the ADAPTER from the SecretStore — it never
+//     appears in a clone URL, a token or a sandbox.
+type ProjectRepository interface {
+	Ensure(ctx context.Context, projectID string) (RepositoryInfo, error)
+	IssueToken(ctx context.Context, projectID, demandID string, ttl time.Duration) (string, error)
+	Commit(ctx context.Context, projectID string, c RepositoryCommit) (string, error)
+	Read(ctx context.Context, projectID, path string) ([]byte, error)
+	SetMirror(ctx context.Context, projectID, remoteURL string, credential SecretRef) error
+	// OnPush registers the callback of guarantee 7. One per process; the
+	// adapter calls it synchronously after the refs are updated.
+	OnPush(fn func(ctx context.Context, p Push))
+}
+
+// RepositoryInfo is what Ensure answers.
+type RepositoryInfo struct {
+	ProjectID string
+	// CloneURL is what a sandbox clones — reachable from inside the execution
+	// substrate. It is not secret.
+	CloneURL string
+}
+
+// RepositoryFile is one file of a platform-side commit.
+type RepositoryFile struct {
+	Path    string
+	Content []byte
+	// Delete marks a removal: the file leaves the tree in this commit.
+	Delete bool
+}
+
+// RepositoryCommit is a write on the platform's behalf. Author and committer
+// follow ADR-0003: the author is the person for whom the work is done, the
+// committer is who wrote it down — here, the platform.
+type RepositoryCommit struct {
+	Files          []RepositoryFile
+	Message        string
+	AuthorName     string
+	AuthorEmail    string
+	CommitterName  string
+	CommitterEmail string
+}
+
+// Push is what OnPush receives: enough to make an event, no more. The commits
+// are ids; whoever needs the diff reads the repository.
+type Push struct {
+	ProjectID string
+	// DemandID is the demand whose token pushed — empty for a platform commit.
+	DemandID string
+	Ref      string
+	Before   string
+	After    string
+}
