@@ -24,6 +24,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/sandbox"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/smser"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/verification"
 	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/config"
@@ -40,9 +41,14 @@ type Deps struct {
 	Objects  ports.ObjectStore
 	Identity ports.IdentityProvider
 	Launcher ports.SandboxLauncher
-	Mailer   ports.Mailer
-	SMS      ports.SMSer
-	Cfg      *config.Config
+	// Runner is where a verification runs and where an application runs at all
+	// (ADR-0030). It is a DIFFERENT port from Launcher on purpose: the bench and
+	// the runner have opposite promises — one preserves the work, the other
+	// starts from nothing.
+	Runner ports.VerificationRunner
+	Mailer ports.Mailer
+	SMS    ports.SMSer
+	Cfg    *config.Config
 	// Repos is the projects' root repositories (ADR-0028). GitHTTP and GitAPI
 	// are non-nil only when this process HOSTS them (GitBackend=local): the
 	// smart-HTTP handler the sandboxes clone from, and the platform-side API a
@@ -125,6 +131,26 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 			StorageClass:  cfg.StorageClass,
 			// The sandbox's egress allowlist names this namespace as its only
 			// in-cluster destination — the BFF and the git server.
+			PlatformNamespace: cfg.K8sNamespace,
+		})
+	}
+
+	// The verification runner follows the SAME substrate choice as the sandbox,
+	// and for the same reason: a cluster deployment has no host daemon to talk
+	// to, and a laptop has no cluster.
+	var runner ports.VerificationRunner
+	switch cfg.SandboxBackend {
+	case "docker":
+		runner = verification.NewDocker(verification.DockerConfig{
+			Socket:    cfg.DockerSocket,
+			CacheRoot: cfg.RunnerCacheRoot,
+		})
+	default:
+		runner = verification.NewK8s(verification.K8sConfig{
+			APIServer:         cfg.K8sAPIServer,
+			Token:             cfg.K8sToken,
+			CacheSize:         cfg.RunnerCacheSize,
+			StorageClass:      cfg.StorageClass,
 			PlatformNamespace: cfg.K8sNamespace,
 		})
 	}
@@ -256,7 +282,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	log.Info("caller authentication", "mode", cfg.CallAuthMode, "callers", len(keys))
 
 	deps := &Deps{Pool: pool, Bus: bus, Secrets: secrets, Objects: objects,
-		Identity: idp, Launcher: launcher, Mailer: correio, SMS: texto, Cfg: cfg,
+		Identity: idp, Launcher: launcher, Runner: runner, Mailer: correio, SMS: texto, Cfg: cfg,
 		Repos: repos, GitHTTP: gitHTTP, GitAPI: gitAPI, CallAuth: auth}
 	cleanup := func() {
 		// Adapters that open a connection of their own register the close here.

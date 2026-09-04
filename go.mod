@@ -9,6 +9,7 @@ require (
 	google.golang.org/api v0.295.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

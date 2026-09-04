@@ -676,6 +676,230 @@ type SandboxLauncher interface {
 	Exec(ctx context.Context, h SandboxHandle, req ExecRequest) (*ExecResult, error)
 }
 
+// ───────────────────────── VerificationRunner ─────────────────────────
+
+// RunnerDependency is a third party the application needs while it is verified:
+// a database, a cache, a broker. Always a PUBLISHED image, pulled and never
+// built (ADR-0030 §1).
+//
+// It is reachable at `localhost:<port>`, on EVERY substrate: on Kubernetes it is
+// a container of the same pod, and on Docker it joins the runner's network
+// namespace. The same address on both is the point — an application configured
+// for one substrate and broken on the other would be compose's translation
+// problem coming back under another name. Name is what the run calls it in an
+// error message, not an address.
+type RunnerDependency struct {
+	Name  string
+	Image string
+	Port  int32
+	Env   map[string]string
+	// Ready is an optional shell command, run IN THE RUNNER, that has to succeed
+	// before the application starts. Empty means readiness is the TCP port
+	// accepting a connection.
+	Ready string
+}
+
+// RunnerRepository is the customer's code: where to clone it from, with what,
+// and at which commit.
+//
+// The three travel together because none of them is useful alone — and because
+// the commit is what makes the evidence worth anything (ADR-0007: evidence that
+// does not say which code it ran on is not evidence).
+type RunnerRepository struct {
+	CloneURL string
+	Token    string
+	Commit   string
+}
+
+// RunnerStepKind is what a step IS, which is what decides how its failure reads.
+// A build that did not compile is not a test failure, and reporting it as one
+// sends whoever reads the evidence to the wrong place.
+type RunnerStepKind string
+
+const (
+	StepSetup RunnerStepKind = "setup" // clone, checkout, dependencies up
+	StepBuild RunnerStepKind = "build"
+	StepStart RunnerStepKind = "start"
+	StepCheck RunnerStepKind = "check"
+)
+
+// RunnerStep is one command in the sequence. Command is a SHELL line, run by the
+// runner image's shell: it is what the project wrote in its manifest, and
+// splitting it into argv here would break every pipe and glob a build command
+// legitimately uses.
+type RunnerStep struct {
+	Name    string // "build", "aaa", "e2e" — what shows up in the evidence
+	Kind    RunnerStepKind
+	Command string
+}
+
+// RunnerStepResult is what a step DID. Note that a non-zero exit code is not an
+// error of the port, for the same reason it is not one in Exec: the domain has
+// to be able to tell "the tests failed" from "the substrate went down".
+type RunnerStepResult struct {
+	Name      string
+	Kind      RunnerStepKind
+	ExitCode  int
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+func (r RunnerStepResult) Failed() bool { return r.ExitCode != 0 }
+
+type RunnerPhase string
+
+const (
+	RunnerPending RunnerPhase = "pending" // the environment is coming up
+	RunnerRunning RunnerPhase = "running" // the sequence is executing
+	// RunnerHolding is a DEV SESSION: every step ran, there were no checks, and
+	// the application is up waiting for a person (verification-runner spec §4).
+	// It is a phase and not a flag because what ends it is different — a
+	// deadline or a person, never the absence of work.
+	RunnerHolding   RunnerPhase = "holding"
+	RunnerSucceeded RunnerPhase = "succeeded"
+	RunnerFailed    RunnerPhase = "failed"
+)
+
+// RunnerHandle identifies an already created run. As with the sandbox, the ID
+// belongs to the domain: the adapter never invents identity.
+//
+// Namespace is the ACCOUNT's space, not the run's — and that difference is the
+// cache. The account's cache volume lives in this space, and a volume cannot be
+// mounted across namespaces, so a space per run would give every run a cold
+// cache: guarantee 3 would be unimplementable on Kubernetes while quietly
+// passing on Docker. Runs of one account therefore share the space and are told
+// apart by ID.
+type RunnerHandle struct {
+	ID        string
+	Namespace string
+}
+
+// RunnerSpec is everything the substrate needs to materialize a run.
+//
+// What is NOT here is the same list as the sandbox's — no kubeconfig, no socket,
+// no compose file — plus one more: there is no image OF THE PROJECT. The runner
+// image is ours and carries the toolchains; the project arrives as a commit and
+// is built inside it. Nothing is ever pushed to a registry (ADR-0030).
+type RunnerSpec struct {
+	RunnerHandle
+	AccountID    string
+	DemandID     string
+	Image        string // the PLATFORM's runner image, with the toolchains
+	Repository   RunnerRepository
+	Dependencies []RunnerDependency
+	// Steps is the sequence, in order. A spec with no StepCheck is a dev
+	// session: the run holds after StepStart instead of finishing.
+	Steps []RunnerStep
+	// AppPort is the port the application answers on, published for a dev
+	// session. Zero means the run starts no application.
+	AppPort int32
+	Env     map[string]string
+	// CachePaths are paths inside the runner backed by the ACCOUNT's cache
+	// volume. Never global: a cache shared between accounts is a side channel.
+	CachePaths []string
+}
+
+// RunnerEndpoint is the port a dev session published. As with the sandbox, no
+// URL: `<service>--<demand>.<domain>` is installation policy, and building it in
+// two places is how the naming rule diverges.
+type RunnerEndpoint struct {
+	Port  int32
+	State string // running | stopped
+}
+
+type RunnerStatus struct {
+	Phase RunnerPhase
+	Steps []RunnerStepResult
+	// FailedStep names the step that stopped the sequence, empty if none. It is
+	// a name and not an index because the evidence quotes it.
+	FailedStep string
+	Endpoint   *RunnerEndpoint
+}
+
+// VerificationRunner is where a verification runs, and where an application runs
+// at all (ADR-0030, `verification-runner.md`).
+//
+// It is NOT the sandbox and the difference is the whole point. The sandbox is
+// the bench: a dirty working tree with whatever the agent installed along the
+// way. A runner starts from nothing and builds a COMMIT, which is what makes its
+// green a statement about the code instead of a statement about the agent's
+// afternoon.
+//
+// The application exists in exactly two windows: during a verification, and
+// while a developer asked to look at it. There is no third — a demand does not
+// keep an application running.
+//
+// ── How the sequence executes, and why it is not driven from here ────────────
+//
+// The steps run as the runner container's MAIN PROCESS, from a script the
+// adapter generates, and each result comes back as a marked line on stdout that
+// Status parses out of the log. The obvious alternative — the core driving step
+// after step over exec — was rejected for one reason: it puts the run's state in
+// a goroutine, and a core that restarts mid-verification would leave a container
+// running with nobody to read it. Here the container IS the run; the core can
+// die and come back and still find out what happened.
+//
+// The marker carries a nonce derived from the handle, so a build that prints
+// something shaped like a result cannot forge one.
+//
+// Guarantees verified by the contract suite, in EVERY adapter:
+//
+//  1. a run builds the COMMIT it was given, not the branch's tip: the same
+//     commit twice produces the same tree;
+//  2. a runner starts from NOTHING — a file a previous run wrote is not there.
+//     It is the guarantee that separates a runner from the bench;
+//  3. the CACHE is there: a second run of the same account finds under
+//     CachePaths what the first one left;
+//  4. a failing step STOPS the sequence, and Status names it in FailedStep. The
+//     steps after it did not run and do not appear as passed;
+//  5. a non-zero exit code is NOT a port error: it comes back in
+//     RunnerStepResult.ExitCode with Status returning nil. A transport error in
+//     its place would erase the difference between "the tests failed" and "the
+//     cluster went down";
+//  6. dependencies are READY before the start step, and one that never becomes
+//     ready fails the run with a message naming it — never a mysterious
+//     connection refused in the application's log;
+//  7. Logs streams the run's output and DIES WITH the caller: with the context
+//     cancelled it returns without error and leaves no live goroutine;
+//  8. Destroy is IRREVERSIBLE and idempotent: destroying what does not exist
+//     returns nil, and after it Status returns KindNotFound and the endpoint
+//     answers nothing;
+//  9. runs coexist without interference: two runs of the same commit, at the
+//     same time, neither see nor alter each other — including two runs of the
+//     SAME account, which share a space and a cache volume;
+//  10. a spec with NO check steps starts and HOLDS in RunnerHolding — that is a
+//     dev session. What ends it is Destroy, never the absence of work.
+//
+// OUT of the port, on purpose:
+//
+//   - the DEADLINE of a dev session. It is a policy decision (how long is a
+//     session worth paying for), it is the same on every substrate, and putting
+//     it here would give two adapters two chances to disagree about a clock;
+//   - the ADDRESS. RunnerEndpoint carries a port; the URL is built where the
+//     ingress domain is known, exactly as for the sandbox;
+//   - BUILDING AND PUSHING AN IMAGE of the project. It is not missing, it is
+//     refused: the sequence this port exists to remove is `build → push → pull`
+//     (ADR-0030 §1);
+//   - cpu/memory LIMITS, for the same reason the sandbox refuses them.
+//
+// A LIMIT worth knowing before it surprises somebody: the account's cache is one
+// ReadWriteOnce volume, so two concurrent runs of one account have to land on
+// the same node. On a single-node cluster that is free; on several, the second
+// run waits for a schedulable node. Making it ReadWriteMany would need a storage
+// class most installations do not have — the same wall that killed the shared
+// volume in ADR-0028.
+type VerificationRunner interface {
+	// Start creates the environment and begins the sequence. It returns as soon
+	// as the run exists — a verification takes minutes, and a call that blocks
+	// for minutes is a call that times out somewhere else.
+	Start(ctx context.Context, spec RunnerSpec) (*RunnerStatus, error)
+	// Status is the run's progress. The error is reserved for a SUBSTRATE
+	// failure; everything the run did, including failing, is in RunnerStatus.
+	Status(ctx context.Context, h RunnerHandle) (*RunnerStatus, error)
+	Logs(ctx context.Context, h RunnerHandle, q LogQuery, emit func(LogLine) error) error
+	Destroy(ctx context.Context, h RunnerHandle) error
+}
+
 // ───────────────────────── Mailer ─────────────────────────
 
 // Mail is the INTENT to notify someone — never the notification artifact.

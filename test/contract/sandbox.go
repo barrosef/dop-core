@@ -855,8 +855,15 @@ type gitServer struct {
 
 func newGitServer(t *testing.T, env SandboxEnv) *gitServer {
 	t.Helper()
-	if env.GitHost == "" {
-		t.Skip("SandboxEnv.GitHost not set: the sandbox has no way to reach a server on this machine")
+	return newGitServerAt(t, env.GitHost)
+}
+
+// newGitServerAt is the same server addressed by an arbitrary host — it is what
+// lets the runner's suite (which has its own env) reuse this one.
+func newGitServerAt(t *testing.T, host string) *gitServer {
+	t.Helper()
+	if host == "" {
+		t.Skip("no host set: the execution has no way to reach a server on this machine")
 	}
 	srv, err := projectrepo.NewServer(projectrepo.Config{
 		Root: t.TempDir(), Key: []byte("contract-suite-key-0123456789abcdef"), Prefix: "/git",
@@ -874,7 +881,7 @@ func newGitServer(t *testing.T, env SandboxEnv) *gitServer {
 	go func() { _ = hs.Serve(lis) }()
 	t.Cleanup(func() { _ = hs.Close() })
 	port := lis.Addr().(*net.TCPAddr).Port
-	baseURL := fmt.Sprintf("http://%s:%d", env.GitHost, port)
+	baseURL := fmt.Sprintf("http://%s:%d", host, port)
 	return &gitServer{repos: projectrepo.NewLocal(srv, baseURL), baseURL: baseURL}
 }
 

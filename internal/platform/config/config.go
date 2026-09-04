@@ -48,6 +48,18 @@ type Config struct {
 	WorkspaceSize  string
 	StorageClass   string
 
+	// RunnerImage is the PLATFORM's image for a verification (ADR-0030): fat on
+	// purpose, with the toolchains, cached on the nodes. It is never an image of
+	// the customer's project — that one is built from source inside this one and
+	// pushed nowhere.
+	RunnerImage string
+	// RunnerCacheSize is the account cache volume's size, and RunnerCacheRoot is
+	// where that cache lives on the host under the Docker adapter. Without the
+	// cache, building from source every time is slower than the registry
+	// sequence the decision removed.
+	RunnerCacheSize string
+	RunnerCacheRoot string
+
 	// DevboxImage runs as an arbitrary NON-root user from the very first image:
 	// OKD refuses root through its SCC, and that is an image requirement.
 	DevboxImage   string
@@ -236,6 +248,9 @@ func Load(mode string) (*Config, error) {
 		DockerSocket:         env("DOCKER_SOCKET", "/var/run/docker.sock"),
 		WorkspaceSize:        env("SANDBOX_WORKSPACE_SIZE", "10Gi"),
 		StorageClass:         env("SANDBOX_STORAGE_CLASS", ""),
+		RunnerImage:          env("RUNNER_IMAGE", "dop-registry:5000/dop/runner:0.1.0"),
+		RunnerCacheSize:      env("RUNNER_CACHE_SIZE", "10Gi"),
+		RunnerCacheRoot:      env("RUNNER_CACHE_ROOT", "/var/lib/dop/cache"),
 		DevboxImage:          env("DEVBOX_IMAGE", "dop-registry:5000/dop/devbox:0.1.0"),
 		IngressDomain:        env("INGRESS_DOMAIN", "localtest.me:8080"),
 		K8sAPIServer:         env("KUBERNETES_API", "https://kubernetes.default.svc"),

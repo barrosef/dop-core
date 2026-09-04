@@ -42,12 +42,17 @@ const (
 	CheckAcceptance CheckKind = "acceptance" // the spec's executable criteria
 	CheckUnit       CheckKind = "unit"
 	CheckE2E        CheckKind = "e2e"
-	CheckCritic     CheckKind = "critic" // the independent instance's opinion
+	// CheckIntegration is a run against the REAL dependencies the project
+	// declared — the database that came up beside the application, not a double
+	// (ADR-0030). Recording it as `unit` would make the evidence say less than
+	// what was proved.
+	CheckIntegration CheckKind = "integration"
+	CheckCritic      CheckKind = "critic" // the independent instance's opinion
 )
 
 func ValidCheckKind(k CheckKind) bool {
 	switch k {
-	case CheckAcceptance, CheckUnit, CheckE2E, CheckCritic:
+	case CheckAcceptance, CheckUnit, CheckE2E, CheckIntegration, CheckCritic:
 		return true
 	}
 	return false

@@ -1,0 +1,14 @@
+-- ADR-0030 — the verification runs in a runner, and a project declares which
+-- suites it has in `.dop/verification.yml`.
+--
+-- The manifest's vocabulary is the workflow's (ADR-0014 §1: the `test` stage has
+-- the subtypes `aaa`, `e2e`, `integration`), and `integration` had no place to
+-- land here: `verification_kind` was born with four values and none of them
+-- means "it ran against the real dependencies". Recording an integration run as
+-- `unit` would make the evidence lie about what was proved.
+--
+-- `aaa` is NOT added: it is the same thing as `unit` under the name the stage
+-- vocabulary uses, and the domain maps one to the other on the way in. Two enum
+-- values for one concept is how a projection ends up counting the same run
+-- twice.
+ALTER TYPE verification_kind ADD VALUE IF NOT EXISTS 'integration';
