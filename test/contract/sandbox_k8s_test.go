@@ -78,7 +78,7 @@ func TestSandboxContractK8s(t *testing.T) {
 			Image:           testImage(),
 			Tier:            ports.TierNamespace,
 			// k3d ships no Kata RuntimeClass. Asking for hardware isolation here
-			// has to REFUSE — it is the substrate spec's R-4, and the case where
+			// has to REFUSE — it is the execution spec's R-4, and the case where
 			// degrading in silence would cost dearly in production.
 			Unsupported: ports.TierHardware,
 			// A pod pulls an image and waits for the volume provisioner; the

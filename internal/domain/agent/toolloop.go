@@ -72,7 +72,7 @@ const (
 	LoopMaxRounds LoopStop = "max_rounds"
 	// LoopBudget: the budget blew between one round and the next (ADR-0011 §2).
 	LoopBudget LoopStop = "budget_exceeded"
-	// LoopNoSandbox: the model asked for a tool and there is no substrate
+	// LoopNoSandbox: the model asked for a tool and there is no executor
 	// wired.
 	LoopNoSandbox LoopStop = "sandbox_unavailable"
 )
@@ -183,11 +183,11 @@ func (l loop) run(ctx context.Context, turn Turn) (*loopResult, error) {
 		}
 		res.calls += len(calls)
 
-		// ── rule 5, first half: no substrate, no action ─────────────────────
+		// ── rule 5, first half: no executor, no action ─────────────────────
 		if l.sandbox == nil {
 			res.stop = LoopNoSandbox
 			res.warnings = append(res.warnings,
-				"the model asked for a tool and this installation has no execution substrate "+
+				"the model asked for a tool and this installation has no executor "+
 					"wired: the turn stopped here WITHOUT executing anything")
 			return res, nil
 		}
@@ -301,7 +301,7 @@ func (l loop) execute(ctx context.Context, calls []ToolCall) ([]ToolResult, erro
 	return out, nil
 }
 
-// isInfraFailure separates "the substrate went down" from "the call was wrong".
+// isInfraFailure separates "the executor went down" from "the call was wrong".
 //
 // The ruler is `errs.Kind`, and the split is by WHO CAN FIX IT:
 //
@@ -369,7 +369,7 @@ func LoopNotice(stop LoopStop, rounds, roundCap int) string {
 		return "⚠️ The budget blew in the middle of the tool loop and it stopped on round " +
 			strconv.Itoa(rounds) + ". What already ran is delivered; the next round does not go out."
 	case LoopNoSandbox:
-		return "⚠️ The agent asked to run a command and there is no execution substrate " +
+		return "⚠️ The agent asked to run a command and there is no executor " +
 			"wired in this installation. It answered without executing anything."
 	}
 	return ""

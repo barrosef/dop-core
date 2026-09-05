@@ -14,7 +14,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// RunnerEnv is what THIS substrate offers the suite.
+// RunnerEnv is what THIS executor offers the suite.
 //
 // As with SandboxEnv, what changes between a cluster and the host's daemon is
 // environment and not behaviour: which image to use, where the space is, and how
@@ -34,7 +34,7 @@ type RunnerEnv struct {
 	DepImage string
 	DepPort  int32
 	Ready    time.Duration
-	// GitHost is where a runner on this substrate reaches this machine.
+	// GitHost is where a runner on this executor reaches this machine.
 	GitHost string
 }
 
@@ -43,7 +43,7 @@ type RunnerEnv struct {
 //
 // ADR-0001's discipline, applied to the newest port: Kubernetes and Docker share
 // the run SCRIPT and nothing else. It is only by putting both through this suite
-// that "the evidence does not depend on the substrate" stops being a sentence in
+// that "the evidence does not depend on the executor" stops being a sentence in
 // an ADR.
 func RunnerSuite(t *testing.T, name string, newRunner func(t *testing.T) (ports.VerificationRunner, RunnerEnv)) {
 	t.Run(name, func(t *testing.T) {

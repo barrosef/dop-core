@@ -45,7 +45,7 @@ import (
 //    the loop (toolloop.go) executes. Three things can go wrong before the first
 //    call, and all three BECOME WARNINGS instead of silence or an error: a
 //    granted name that does not exist, a card granting tools in an installation
-//    with no substrate, and a model asking for a tool when none was declared.
+//    with no executor, and a model asking for a tool when none was declared.
 //
 // 4. MEASUREMENT IS IDEMPOTENT, AND THE KEY IS DERIVED FROM THE TURN. A
 //    duplicate consumption record collides with nothing: it would enter as
@@ -112,13 +112,13 @@ type Service struct {
 // Why a variadic option and not a constructor parameter, going against the
 // house's other services' style: the four mandatory parameters are used on EVERY
 // turn, and that is why nil in them is an assembly error deserving a panic.
-// These two are not — an installation with no execution substrate runs turns,
+// These two are not — an installation with no executor runs turns,
 // and the cap has a domain default that is the right answer in most
 // installations. On top of that, the existing wiring keeps compiling: adding a
 // capability must not cost a change to whoever does not use it.
 type Option func(*Service)
 
-// WithSandbox wires the execution substrate — it is what turns a "platform that
+// WithSandbox wires the executor — it is what turns a "platform that
 // MODELS agent work" into a "platform that EXECUTES agent work".
 func WithSandbox(s Sandbox) Option {
 	return func(svc *Service) { svc.sandbox = s }
@@ -401,13 +401,13 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		warnings = append(warnings, w)
 	}
 	if len(tools) > 0 && s.sandbox == nil {
-		// The card promises action and the installation has no substrate.
+		// The card promises action and the installation has no executor.
 		// Declaring the tools anyway would make the agent plan on top of them
 		// and find out on the first call; not declaring and not warning would
 		// make the card look honoured. That leaves the third way: do not
 		// declare, and SAY so.
 		warnings = append(warnings, "this thread's card grants tool(s) ("+
-			namesOf(tools)+"), but this installation has no execution substrate "+
+			namesOf(tools)+"), but this installation has no executor "+
 			"wired: the turn ran WITHOUT tools")
 		tools = nil
 	}

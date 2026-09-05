@@ -21,7 +21,7 @@ import (
 //
 // The network is what makes the dependencies reachable BY NAME, which is the
 // same address the Kubernetes adapter gives them through a shared `localhost`.
-// The application's configuration does not learn which substrate it is on.
+// The application's configuration does not learn which executor it is on.
 type Docker struct {
 	client  *http.Client
 	stream  *http.Client

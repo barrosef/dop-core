@@ -219,7 +219,7 @@ const (
 	RoleOperator  Role = "operator"
 	// RoleToolResult is what the TOOL returned. A role of its own, and not the
 	// user's, for RoleOperator's security reason inverted: a command's output
-	// is UNTRUSTED content (substrate spec §6) and must not reach the model
+	// is UNTRUSTED content (execution spec §6) and must not reach the model
 	// with the authority of whoever asked for the work. A malicious `README`
 	// read by `cat` cannot become an instruction.
 	RoleToolResult Role = "tool_result"

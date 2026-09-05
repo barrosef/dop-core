@@ -9,7 +9,7 @@ import (
 // ════════════════════════════════════════════════════════════════════════════
 // THE TOOL CATALOGUE — what the agent can DO, and not only say.
 //
-// The catalogue lives in the DOMAIN, and not in the substrate, for two reasons
+// The catalogue lives in the DOMAIN, and not in the executor, for two reasons
 // that pull the same way:
 //
 //  1. a tool declaration IS PROMPT. It goes into the body before the
@@ -20,7 +20,7 @@ import (
 //     know it exists;
 //
 //  2. the contract with the model belongs to the runtime. Name, description and
-//     schema are what the agent reads to decide what to do; the substrate only
+//     schema are what the agent reads to decide what to do; the executor only
 //     knows how to run a command.
 //
 // ── WHY ONLY ONE TOOL ───────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ const ToolRunCommand = "run_command"
 // Limits of ONE command, in the runtime's vocabulary.
 //
 // They belong to the DOMAIN and not to the adapter because they are cost policy,
-// not a substrate detail: a tool's output becomes the next turn's context,
+// not a executor detail: a tool's output becomes the next turn's context,
 // context becomes tokens and tokens become an invoice (ADR-0011). The model's
 // ceiling may even become configurable one day; what it cannot do is not
 // exist.
@@ -162,9 +162,9 @@ func ToolCatalog(granted []string) (specs []ToolSpec, unknown []string) {
 	return specs, unknown
 }
 
-// ── da chamada do modelo ao comando do substrato ────────────────────────────
+// ── da chamada do modelo ao comando do executor ────────────────────────────
 
-// commandFrom translates a tool call into a substrate command.
+// commandFrom translates a tool call into a executor command.
 //
 // Every refusal path here returns a REASON, not an error: the loop receives the
 // reason and hands it to the model as an error result. A wrong argument is
@@ -260,7 +260,7 @@ func intFrom(v any) (int, bool) {
 	return 0, false
 }
 
-// ── do resultado do substrato ao resultado do modelo ────────────────────────
+// ── do resultado do executor ao resultado do modelo ────────────────────────
 
 // resultFrom builds what the MODEL will read.
 //

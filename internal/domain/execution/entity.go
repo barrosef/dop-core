@@ -1,4 +1,4 @@
-// Package execution is the SUBSTRATE domain: where and how a demand executes.
+// Package execution is the EXECUTOR domain: where and how a demand executes.
 //
 // House rule: this package knows nothing of Kubernetes, Docker, Postgres or
 // gRPC. It declares what it needs as a PORT (repository.go, plus
@@ -117,7 +117,7 @@ func CanApply(from State, t Transition) bool {
 	return false
 }
 
-// Sandbox is the substrate's unit: one active demand, one sandbox (spec §1).
+// Sandbox is the executor's unit: one active demand, one sandbox (spec §1).
 type Sandbox struct {
 	ID        string
 	AccountID string
@@ -150,7 +150,7 @@ func (s Sandbox) Handle() ports.SandboxHandle {
 	return ports.SandboxHandle{ID: s.ID, Namespace: s.Namespace}
 }
 
-// IsLive: the sandbox still occupies room in the substrate (execution, workspace, or both).
+// IsLive: the sandbox still occupies room in the executor (execution, workspace, or both).
 func (s Sandbox) IsLive() bool { return !s.State.IsTerminal() }
 
 // IdleFor says how long the sandbox has been unused. It is the number the idle
@@ -168,7 +168,7 @@ func (s Sandbox) IdleFor(now time.Time) time.Duration {
 const IdleTimeout = 30 * time.Minute
 
 // ShouldSuspend is the saving policy as a pure function, testable with no
-// substrate at all.
+// executor at all.
 func (s Sandbox) ShouldSuspend(now time.Time) bool {
 	return s.State == StateActive && s.IdleFor(now) >= IdleTimeout
 }
@@ -220,16 +220,16 @@ type LogLine struct {
 	At       time.Time
 }
 
-// Classify reads the convention prefix of a raw line from the substrate.
+// Classify reads the convention prefix of a raw line from the executor.
 //
 // The convention lives HERE, and not in the adapter, for a practical reason:
 // there are two adapters and one domain. Placed on the far side, the same prefix
 // rule would exist twice and would diverge on the first adjustment — and the
 // contract suite would not catch it, because log classification is not a
-// substrate guarantee.
+// executor guarantee.
 //
 // Accepted format, at the start of the line: "[app]", "[infra]", "[test:e2e]".
-// A line with no prefix is infra: it is what the substrate itself printed.
+// A line with no prefix is infra: it is what the executor itself printed.
 func Classify(raw string) (Source, TestType, string) {
 	text := strings.TrimSpace(raw)
 	if !strings.HasPrefix(text, "[") {
@@ -289,7 +289,7 @@ func RequireTier(t ports.IsolationTier) error {
 	if t == ports.TierUnspecified {
 		return errs.Invalid(
 			"isolation tier not declared: provide min_tier (hardware, " +
-				"kernel_emulated or namespace) — the substrate does not choose for you")
+				"kernel_emulated or namespace) — the executor does not choose for you")
 	}
 	if !ports.ValidIsolationTier(t) {
 		return errs.Invalid("unknown isolation tier: %q", t)

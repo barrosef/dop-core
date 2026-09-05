@@ -317,7 +317,7 @@ func (a *Anthropic) render(t agent.Turn, model string, effort agent.Effort,
 			// D9: the results go as `tool_result` blocks in a `role:"user"`
 			// message — SEVERAL in the same one, which is this provider's
 			// format. A message of its OWN and not mixed into the user's turn:
-			// a tool's output is untrusted content (substrate spec §6) and must
+			// a tool's output is untrusted content (execution spec §6) and must
 			// not be confused with the question of whoever asked for the work.
 			messages = append(messages, antMessage{
 				Role: "user", Content: antResults(m.ToolResults),

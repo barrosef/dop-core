@@ -106,7 +106,7 @@ func (r *ExecutionRepo) LiveByDemand(ctx context.Context, accountID, demandID st
 // Create writes the INTENTION to provision and emits the event in the same
 // transaction.
 //
-// The event goes out before the substrate answers on purpose: it is what allows
+// The event goes out before the executor answers on purpose: it is what allows
 // reconciling a half-started sandbox after a crash. Emitting only at the end
 // would leave a live microVM with no record that anybody asked for it.
 func (r *ExecutionRepo) Create(ctx context.Context, s *execution.Sandbox) (*execution.Sandbox, error) {
@@ -141,7 +141,7 @@ func (r *ExecutionRepo) Create(ctx context.Context, s *execution.Sandbox) (*exec
 	return saved, err
 }
 
-// MarkProvisioned records what the substrate DELIVERED.
+// MarkProvisioned records what the executor DELIVERED.
 //
 // The tier is written again, with the value the launcher returned, because it is
 // what the client actually got — and the contract promises they see what they

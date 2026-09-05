@@ -41,7 +41,7 @@ type Config struct {
 	// real GCP the alias is eventually consistent, and this wait is what
 	// separates "read-after-write" from an empty promise (see the adapter).
 	SecretPropagation time.Duration
-	// SandboxBackend chooses the execution substrate. Docker is the path for
+	// SandboxBackend chooses the executor. Docker is the path for
 	// local development with no cluster; k8s is the execution cluster's.
 	SandboxBackend string // k8s | docker
 	DockerSocket   string

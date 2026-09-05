@@ -136,7 +136,7 @@ func repoRoot(t *testing.T) string {
 // which `agent.Micros` does not import `cost`.
 func TestTheWorkspacePathIsTheSameOnBothSides(t *testing.T) {
 	if agent.SandboxWorkspaceHint != ports.SandboxWorkspacePath {
-		t.Fatalf("the runtime tells the agent the workspace is at %q and the substrate mounts "+
+		t.Fatalf("the runtime tells the agent the workspace is at %q and the executor mounts "+
 			"it at %q: the agent will look for files where they are not and conclude the "+
 			"repository is empty — with nothing failing",
 			agent.SandboxWorkspaceHint, ports.SandboxWorkspacePath)

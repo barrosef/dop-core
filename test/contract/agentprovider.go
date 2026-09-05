@@ -845,7 +845,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 					"(guarantee 21):\n%s", body)
 			}
 			// And the result's content must NOT be attributed to the user: it
-			// is untrusted content (the substrate's spec §6), and a malicious
+			// is untrusted content (the execution spec §6), and a malicious
 			// `README` read by `cat` must not arrive with the authority of
 			// whoever asked for the work.
 			if roleOfText(t, body, sentinelResult) == "user" &&

@@ -16,7 +16,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// SandboxEnv describes what THIS substrate has for the suite to work with.
+// SandboxEnv describes what THIS executor has for the suite to work with.
 //
 // It exists because the two things that change between a cluster and the host's
 // Docker are not behaviour, they are environment: the name of the space to
@@ -29,7 +29,7 @@ type SandboxEnv struct {
 	// test running on either side.
 	NamespacePrefix string
 	Image           string
-	// Tier is what this substrate delivers. Unsupported is one it does NOT
+	// Tier is what this executor delivers. Unsupported is one it does NOT
 	// deliver — it is the case that proves the refusal instead of the
 	// degradation.
 	Tier        ports.IsolationTier
@@ -37,7 +37,7 @@ type SandboxEnv struct {
 	// Ready is how long to wait for a phase change. A pod pulling an image takes
 	// far longer than a local container.
 	Ready time.Duration
-	// GitHost is the address at which a sandbox on THIS substrate reaches a
+	// GitHost is the address at which a sandbox on THIS executor reaches a
 	// server listening on this machine — the docker bridge's gateway for
 	// Docker, `host.k3d.internal` for k3d. The suite raises the projects' git
 	// server here and hands the sandboxes URLs with this host (guarantees 18
@@ -50,7 +50,7 @@ type SandboxEnv struct {
 //
 // ADR-0001's discipline: a port with a single adapter is guesswork. Kubernetes
 // and Docker do not have ONE line in common in their implementations — it is
-// only by putting both through this suite that "changing substrate does not
+// only by putting both through this suite that "changing executor does not
 // change the behaviour" stops being a promise and becomes a verified fact.
 func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (ports.SandboxLauncher, SandboxEnv)) {
 	t.Run(name, func(t *testing.T) {
@@ -61,7 +61,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				t.Fatalf("SupportedTiers: %v", err)
 			}
 			if len(tiers) == 0 {
-				t.Fatal("an empty list with no error: a substrate with no level at all is an unavailable substrate")
+				t.Fatal("an empty list with no error: a executor with no level at all is an unavailable executor")
 			}
 			for _, tr := range tiers {
 				if !ports.ValidIsolationTier(tr) {
@@ -69,10 +69,10 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 				}
 			}
 			if !containsTier(tiers, env.Tier) {
-				t.Errorf("the environment says it delivers %q, the substrate does not list it: %v", env.Tier, tiers)
+				t.Errorf("the environment says it delivers %q, the executor does not list it: %v", env.Tier, tiers)
 			}
 			if containsTier(tiers, env.Unsupported) {
-				t.Errorf("the environment says it does NOT deliver %q, but the substrate lists it", env.Unsupported)
+				t.Errorf("the environment says it does NOT deliver %q, but the executor lists it", env.Unsupported)
 			}
 		})
 
@@ -101,7 +101,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			spec.Tier = env.Unsupported
 
 			if _, err := l.Launch(ctx, spec); err == nil {
-				t.Fatal("it accepted a tier the substrate does not offer — degrading in silence is forbidden")
+				t.Fatal("it accepted a tier the executor does not offer — degrading in silence is forbidden")
 			} else if k := errs.KindOf(err); k != errs.KindPrecondition {
 				t.Fatalf("expected KindPrecondition with a message, got %s: %v", k, err)
 			}
@@ -370,7 +370,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			// It is the guarantee that holds the whole tool loop up: the model
 			// needs to SEE that the command failed in order to fix it. A
 			// transport error in its place would erase the difference between
-			// "the test failed" and "the substrate went down".
+			// "the test failed" and "the executor went down".
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
 				Command: []string{"sh", "-c", "exit 7"},
 			})
@@ -396,7 +396,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseActive, env.Ready)
 
 			// Unlike Tail, where k8s merges the two and the port promises
-			// nothing: in exec both substrates really separate them.
+			// nothing: in exec both executors really separate them.
 			res := execOK(t, l, spec.SandboxHandle, ports.ExecRequest{
 				Command: []string{"sh", "-c", "echo STDOUT-LINE; echo STDERR-LINE 1>&2"},
 			})
@@ -478,7 +478,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			waitPhase(t, l, spec.SandboxHandle, ports.PhaseSuspended, env.Ready)
 
 			// Suspended: a PRECONDITION, and never an invented exit code. A
-			// substrate with no execution does not run a command, and saying
+			// executor with no execution does not run a command, and saying
 			// that is different from saying the command failed.
 			res, err := l.Exec(context.Background(), spec.SandboxHandle, cmd)
 			if err == nil {
@@ -500,7 +500,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			// The core is the process that HAS the credentials — the model
 			// provider's key comes out of the vault and lives in its memory
 			// (ADR-0023). The sandbox runs agent code, which reads untrusted
-			// content (substrate spec §6). An adapter that passed `os.Environ()`
+			// content (execution spec §6). An adapter that passed `os.Environ()`
 			// to the exec — which is the shortest path and what an SDK would do
 			// for convenience — would hand the two to each other, and nothing
 			// would fail.
@@ -698,7 +698,7 @@ const (
 // sandboxCommand prints the marker's state, writes it and stays alive.
 //
 // The `[infra]` at the end is on purpose: it is the domain's log classification
-// convention, and seeing it cross the whole substrate proves neither adapter
+// convention, and seeing it cross the whole executor proves neither adapter
 // touches the line's text.
 func sandboxCommand() []string {
 	return []string{"sh", "-c",
@@ -736,7 +736,7 @@ func newSpec(t *testing.T, l ports.SandboxLauncher, env SandboxEnv) ports.Sandbo
 
 // execOK runs a command and requires the PORT not to have failed.
 //
-// Note what it does NOT check: the exit code. An error here is a substrate
+// Note what it does NOT check: the exit code. An error here is a executor
 // failure; what the command did — failing included — is the caller's business.
 // Mixing the two in this helper would erase guarantee 15 from every subtest that
 // uses it.
@@ -771,7 +771,7 @@ func containsTier(list []ports.IsolationTier, want ports.IsolationTier) bool {
 
 // ── waiting ──────────────────────────────────────────────────────────────────
 //
-// Provisioning is asynchronous in both substrates: Launch returns when the
+// Provisioning is asynchronous in both executors: Launch returns when the
 // request was accepted, not when the process came up. Waiting here, and not
 // inside the adapter, is what keeps the port non-blocking for real callers.
 
@@ -814,7 +814,7 @@ func waitGone(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, d ti
 }
 
 // waitLog waits for a phrase to appear in the log. It uses Follow=false on
-// purpose: it is a read of what the substrate ALREADY has, which is what matters
+// purpose: it is a read of what the executor ALREADY has, which is what matters
 // for proving workspace persistence.
 func waitLog(t *testing.T, l ports.SandboxLauncher, h ports.SandboxHandle, want string, d time.Duration) {
 	t.Helper()

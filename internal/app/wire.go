@@ -116,7 +116,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// The execution substrate is also a port with two REAL adapters (ADR-0001):
+	// The executor is also a port with two REAL adapters (ADR-0001):
 	// Docker for local development with no cluster, k8s for the execution
 	// cluster. Both pass the same contract suite.
 	var launcher ports.SandboxLauncher
@@ -135,7 +135,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// The verification runner follows the SAME substrate choice as the sandbox,
+	// The verification runner follows the SAME executor choice as the sandbox,
 	// and for the same reason: a cluster deployment has no host daemon to talk
 	// to, and a laptop has no cluster.
 	var runner ports.VerificationRunner

@@ -266,13 +266,13 @@ type EventBus interface {
 
 // ───────────────────────── SandboxLauncher ─────────────────────────
 
-// IsolationTier is the isolation level of the substrate where a demand runs.
+// IsolationTier is the isolation level of the executor where a demand runs.
 //
 // It is DECLARED, never presumed. Whoever provisions says which one they want;
 // the launcher delivers EXACTLY that or refuses. There is no silent
 // degradation: a sandbox that asked for a microVM and got a container still
 // looks healthy, and the difference only shows up on the day of the incident.
-// A Kata RuntimeClass is missing from most distributions (substrate spec §2 and
+// A Kata RuntimeClass is missing from most distributions (execution spec §2 and
 // R-4) — which is why its absence has to become a refusal with a message, not
 // one tier less with no warning.
 type IsolationTier string
@@ -365,7 +365,7 @@ type SandboxHandle struct {
 	Namespace string // dop-<short-id> — one per demand (spec §1)
 }
 
-// SandboxSpec is everything the substrate needs to materialize a sandbox. Note
+// SandboxSpec is everything the executor needs to materialize a sandbox. Note
 // what is NOT here: no kubeconfig, no socket, no runtimeClassName, no internal
 // registry image name, no cgroup limit. That is vendor vocabulary and it lives
 // on the far side of the port.
@@ -375,7 +375,7 @@ type SandboxSpec struct {
 	DemandID  string
 	Tier      IsolationTier
 	Image     string
-	// An empty Command means the image's entrypoint. It exists so the substrate
+	// An empty Command means the image's entrypoint. It exists so the executor
 	// can be exercised with a generic image in the contract suite — without it,
 	// proving the guarantees would require a published devbox image, and the
 	// suite would stop running on the laptop of whoever works on the adapter.
@@ -386,7 +386,7 @@ type SandboxSpec struct {
 	//
 	// It is in the spec and not a method of its own for the same reason the
 	// repository is: on Kubernetes a sidecar is part of the pod, and a pod is
-	// created once. "Add a container afterwards" is not a thing either substrate
+	// created once. "Add a container afterwards" is not a thing either executor
 	// does.
 	//
 	// Empty means no collector — which is what the contract suite wants, and
@@ -401,7 +401,7 @@ type SandboxSpec struct {
 	Repository SandboxRepository
 }
 
-// SandboxPhase is what the SUBSTRATE sees. It is not the domain's state: there
+// SandboxPhase is what the EXECUTOR sees. It is not the domain's state: there
 // is no "destroyed" here, because to the launcher destroyed and never-existed
 // are the same thing — the memory of a destroyed sandbox lives in Postgres.
 type SandboxPhase string
@@ -415,7 +415,7 @@ const (
 // SandboxEndpoint is a port published by the demand's stack.
 //
 // It has no URL on purpose: the URL is `<service>--<demand>.<domain>` (spec §5),
-// and the ingress domain is installation policy, not a fact about the substrate.
+// and the ingress domain is installation policy, not a fact about the executor.
 // If each adapter built the URL, the same naming rule would exist in two places
 // and would diverge the first day the domain changed.
 type SandboxEndpoint struct {
@@ -425,7 +425,7 @@ type SandboxEndpoint struct {
 }
 
 type SandboxStatus struct {
-	// Phase and Tier are what the substrate IS delivering right now — not what
+	// Phase and Tier are what the executor IS delivering right now — not what
 	// was asked for. It is that distinction that makes "declared, never
 	// presumed" verifiable after provisioning, and not only at the moment of it.
 	Phase     SandboxPhase
@@ -437,16 +437,16 @@ type SandboxStatus struct {
 // sandbox (a pod's container, a compose service); empty = the main process.
 type LogQuery struct {
 	Service   string
-	TailLines int  // 0 = everything the substrate still holds
+	TailLines int  // 0 = everything the executor still holds
 	Follow    bool // false = return what already exists and stop
 }
 
-// LogLine is a raw line from the substrate. Classifying its origin (app, test,
+// LogLine is a raw line from the executor. Classifying its origin (app, test,
 // infra) is NOT here: that is a convention of what runs inside the sandbox, and
 // it lives in the domain, where it changes in one place.
 type LogLine struct {
 	Service string
-	// Stream is stdout or stderr — when the substrate separates the two.
+	// Stream is stdout or stderr — when the executor separates the two.
 	// Kubernetes does not (it merges everything into the container log) and
 	// always returns "stdout"; Docker separates them. That is why the contract
 	// suite promises nothing about this field: depending on it means depending
@@ -470,7 +470,7 @@ type LogLine struct {
 //     in this case staying out is also the safe choice: **exec has no field
 //     through which a credential could arrive**. The ONE credential a sandbox
 //     holds — the token to the project's root repository (ADR-0028 §3, the
-//     substrate spec §5) — enters at provisioning as a projected file, never
+//     execution spec §5) — enters at provisioning as a projected file, never
 //     through exec, never as environ. It is the agent's own workbench key, not
 //     a third party's; a third party's credential has no path in here at all;
 //
@@ -504,7 +504,7 @@ type ExecRequest struct {
 // failure of the COMMAND is a result, not a failure of the port (guarantee 15).
 type ExecResult struct {
 	// ExitCode is the process's code. -1 means there was NO code: the process
-	// did not finish (TimedOut) or the substrate could not tell. Zero would
+	// did not finish (TimedOut) or the executor could not tell. Zero would
 	// assert success, which is a different thing.
 	ExitCode int
 	Stdout   string
@@ -531,8 +531,8 @@ const (
 	DefaultExecMaxOutputBytes = 64 << 10
 )
 
-// SandboxLauncher is the substrate where a demand executes: a microVM or a
-// container holding the agent, the workspace and an inner Docker (substrate spec
+// SandboxLauncher is the executor where a demand executes: a microVM or a
+// container holding the agent, the workspace and an inner Docker (execution spec
 // §1).
 //
 // Two things live inside a sandbox, and the whole port turns on the difference
@@ -545,14 +545,14 @@ const (
 //
 //  1. Launch delivers the REQUESTED tier or fails. Status.Tier always equals
 //     Spec.Tier when the error is nil — silent degradation is forbidden, and a
-//     tier the substrate does not offer becomes KindPrecondition with a message
+//     tier the executor does not offer becomes KindPrecondition with a message
 //     saying what is missing;
 //  2. a refused tier leaves NO trace: after the refusal, Describe returns
 //     KindNotFound. A refusal that provisions half is worse than no refusal;
-//  3. SupportedTiers answers what THIS substrate offers now — that is what lets
+//  3. SupportedTiers answers what THIS executor offers now — that is what lets
 //     the domain refuse before writing state. It never returns an empty list
-//     with no error: a substrate offering no tier at all is an unavailable
-//     substrate (KindUnavailable);
+//     with no error: a executor offering no tier at all is an unavailable
+//     executor (KindUnavailable);
 //  4. Launch is IDEMPOTENT by SandboxHandle.ID: relaunching the same spec
 //     returns the existing sandbox instead of creating a second one. Without
 //     that, a network retry would duplicate a microVM — and the bill arrives at
@@ -637,16 +637,16 @@ const (
 //     ExecResult.ExitCode with a nil error. This is the guarantee that holds up
 //     the agent's tool loop: the model has to SEE that the command failed in
 //     order to fix it, and a transport error in its place would erase the
-//     difference between "the test failed" and "the substrate went down";
+//     difference between "the test failed" and "the executor went down";
 //  16. stdout and stderr arrive SEPARATED. Unlike Tail — where k8s merges the
 //     two into the container log and the port promises nothing — here both
-//     substrates genuinely separate them: channels 1 and 2 on k8s, frames 1 and
+//     executors genuinely separate them: channels 1 and 2 on k8s, frames 1 and
 //     2 on Docker;
 //  17. output is CAPPED and the deadline is RESPECTED, and neither is an error:
 //     Truncated and TimedOut are result fields. A command that dumps megabytes
 //     is cut; a command that hangs is abandoned with what already came out;
 //  18. Exec on a nonexistent sandbox is KindNotFound and on a SUSPENDED sandbox
-//     is KindPrecondition — never a made-up exit code. A substrate with no
+//     is KindPrecondition — never a made-up exit code. A executor with no
 //     execution runs no command, and saying that is different from saying the
 //     command failed.
 //
@@ -670,7 +670,7 @@ type SandboxLauncher interface {
 	Tail(ctx context.Context, h SandboxHandle, q LogQuery, emit func(LogLine) error) error
 	// Exec runs ONE command inside the sandbox and waits for it to finish.
 	//
-	// The error is reserved for a SUBSTRATE failure (nonexistent sandbox,
+	// The error is reserved for a EXECUTOR failure (nonexistent sandbox,
 	// suspended sandbox, cluster down). Everything the command did — including
 	// failing — comes back in ExecResult.
 	Exec(ctx context.Context, h SandboxHandle, req ExecRequest) (*ExecResult, error)
@@ -682,10 +682,10 @@ type SandboxLauncher interface {
 // a database, a cache, a broker. Always a PUBLISHED image, pulled and never
 // built (ADR-0030 §1).
 //
-// It is reachable at `localhost:<port>`, on EVERY substrate: on Kubernetes it is
+// It is reachable at `localhost:<port>`, on EVERY executor: on Kubernetes it is
 // a container of the same pod, and on Docker it joins the runner's network
 // namespace. The same address on both is the point — an application configured
-// for one substrate and broken on the other would be compose's translation
+// for one executor and broken on the other would be compose's translation
 // problem coming back under another name. Name is what the run calls it in an
 // error message, not an address.
 type RunnerDependency struct {
@@ -735,7 +735,7 @@ type RunnerStep struct {
 
 // RunnerStepResult is what a step DID. Note that a non-zero exit code is not an
 // error of the port, for the same reason it is not one in Exec: the domain has
-// to be able to tell "the tests failed" from "the substrate went down".
+// to be able to tell "the tests failed" from "the executor went down".
 type RunnerStepResult struct {
 	Name      string
 	Kind      RunnerStepKind
@@ -774,7 +774,7 @@ type RunnerHandle struct {
 	Namespace string
 }
 
-// RunnerSpec is everything the substrate needs to materialize a run.
+// RunnerSpec is everything the executor needs to materialize a run.
 //
 // What is NOT here is the same list as the sandbox's — no kubeconfig, no socket,
 // no compose file — plus one more: there is no image OF THE PROJECT. The runner
@@ -873,7 +873,7 @@ type RunnerStatus struct {
 // OUT of the port, on purpose:
 //
 //   - the DEADLINE of a dev session. It is a policy decision (how long is a
-//     session worth paying for), it is the same on every substrate, and putting
+//     session worth paying for), it is the same on every executor, and putting
 //     it here would give two adapters two chances to disagree about a clock;
 //   - the ADDRESS. RunnerEndpoint carries a port; the URL is built where the
 //     ingress domain is known, exactly as for the sandbox;
@@ -893,7 +893,7 @@ type VerificationRunner interface {
 	// as the run exists — a verification takes minutes, and a call that blocks
 	// for minutes is a call that times out somewhere else.
 	Start(ctx context.Context, spec RunnerSpec) (*RunnerStatus, error)
-	// Status is the run's progress. The error is reserved for a SUBSTRATE
+	// Status is the run's progress. The error is reserved for a EXECUTOR
 	// failure; everything the run did, including failing, is in RunnerStatus.
 	Status(ctx context.Context, h RunnerHandle) (*RunnerStatus, error)
 	Logs(ctx context.Context, h RunnerHandle, q LogQuery, emit func(LogLine) error) error
@@ -1224,7 +1224,7 @@ type ProjectRepository interface {
 type RepositoryInfo struct {
 	ProjectID string
 	// CloneURL is what a sandbox clones — reachable from inside the execution
-	// substrate. It is not secret.
+	// executor. It is not secret.
 	CloneURL string
 }
 

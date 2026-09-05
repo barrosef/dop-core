@@ -201,7 +201,7 @@ func (a agentConversation) PublishFinding(ctx context.Context, demandID, threadI
 
 // ── execution → agent ───────────────────────────────────────────────────────
 
-// agentSandbox wires the tool loop to the substrate.
+// agentSandbox wires the tool loop to the executor.
 //
 // The conversion is mechanical on purpose: the agent domain speaks
 // `SandboxCommand`, the execution one speaks `ports.ExecRequest`, and neither
@@ -209,7 +209,7 @@ func (a agentConversation) PublishFinding(ctx context.Context, demandID, threadI
 // here, the rule is in the wrong domain.
 //
 // This glue's ERROR CONTRACT is the delicate point: an error only when the
-// SUBSTRATE failed. A non-zero exit code, a blown deadline and a cut output are
+// EXECUTOR failed. A non-zero exit code, a blown deadline and a cut output are
 // a RESULT — the model needs to see them in order to fix things, and turning
 // them into a turn error would take from it exactly the information that would
 // make it get the next round right.

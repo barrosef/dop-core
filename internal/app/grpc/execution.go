@@ -10,7 +10,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// ExecutionServer exposes the substrate on the gRPC contract.
+// ExecutionServer exposes the executor on the gRPC contract.
 //
 // A THIN layer: it converts types, calls the service, converts back. Note what
 // does NOT happen here: an UNSPECIFIED min_tier does not become a default. It

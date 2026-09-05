@@ -7,7 +7,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 )
 
-// Repository is the substrate's persistence PORT.
+// Repository is the executor's persistence PORT.
 //
 // Declared here, in domain language; implemented in internal/adapter/postgres.
 // The domain never sees SQL.
@@ -35,7 +35,7 @@ type Repository interface {
 
 	// Create writes the sandbox in provisioning and emits the start event.
 	Create(ctx context.Context, s *Sandbox) (*Sandbox, error)
-	// MarkProvisioned confirms what the substrate DELIVERED: the real tier and
+	// MarkProvisioned confirms what the executor DELIVERED: the real tier and
 	// endpoints. The tier comes back because it is declared, never presumed — and
 	// the row has to record what the client actually received.
 	MarkProvisioned(ctx context.Context, accountID, id string, tier ports.IsolationTier, endpoints []Endpoint) (*Sandbox, error)
@@ -64,13 +64,13 @@ type Repository interface {
 	// who decides the visiting order.
 	//
 	// Without it, either the scheduler would gain unrestricted access, or an idle
-	// sandbox would never suspend. The substrate spec is explicit about the cost
+	// sandbox would never suspend. The execution spec is explicit about the cost
 	// of the second case: "an idle sandbox is what separates real parallelism
 	// from a drowning machine".
 	AccountsWithIdle(ctx context.Context, olderThanSeconds int) ([]string, error)
 }
 
-// Access is the NARROW port into the identity domain: the substrate needs ONE
+// Access is the NARROW port into the identity domain: the executor needs ONE
 // thing about the caller — their role in the active account, because provisioning
 // costs money and a viewer does not spend the account's money.
 //
@@ -82,10 +82,10 @@ type Access interface {
 
 // Demands is the NARROW port into the demand domain.
 //
-// The substrate needs to know TWO things before spending a microVM: the demand
+// The executor needs to know TWO things before spending a microVM: the demand
 // exists, and it belongs to the active account. Nothing more — no stage, no
 // thread, no card. Declared here, and not imported from the demand package,
-// because the dependency runs from substrate to demand and not the other way:
+// because the dependency runs from executor to demand and not the other way:
 // whoever executes knows what it executes, and inverting that would tie the two
 // domains into a cycle.
 type Demands interface {

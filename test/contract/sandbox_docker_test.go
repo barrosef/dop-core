@@ -1,6 +1,6 @@
 //go:build integration
 
-// The substrate's contract suite against the host's Docker.
+// The executor's contract suite against the host's Docker.
 //
 //	go test ./test/contract/ -tags=integration -run TestSandboxContractDocker -v
 //

@@ -74,14 +74,14 @@ func TestAnUndeclaredTierIsRefused(t *testing.T) {
 		t.Fatalf("a missing tier has to be refused, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "does not choose for you") {
-		t.Errorf("the message has to say the substrate does not choose: %q", err)
+		t.Errorf("the message has to say the executor does not choose: %q", err)
 	}
 	// And above all: nothing was written and nothing was launched.
 	if n := f.repo.total(); n != 0 {
 		t.Errorf("recusa gravou %d sandbox(es)", n)
 	}
 	if f.launcher.launches != 0 {
-		t.Errorf("recusa chamou o substrato %d vez(es)", f.launcher.launches)
+		t.Errorf("recusa chamou o executor %d vez(es)", f.launcher.launches)
 	}
 }
 
@@ -110,10 +110,10 @@ func TestAnUnofferedTierRefusesWithoutWriting(t *testing.T) {
 	}
 }
 
-// TestASubstrateThatDegradesIsDiscarded: if the launcher delivers a tier
+// TestAExecutorThatDegradesIsDiscarded: if the launcher delivers a tier
 // different from the declared one, the sandbox is DESTROYED. Accepting it would
 // turn the port's guarantee into a recommendation.
-func TestASubstrateThatDegradesIsDiscarded(t *testing.T) {
+func TestAExecutorThatDegradesIsDiscarded(t *testing.T) {
 	f := novoCenario(t)
 	f.launcher.tiers = []ports.IsolationTier{ports.TierHardware, ports.TierNamespace}
 	f.launcher.delivers = ports.TierNamespace // we asked for hardware, it gives namespace
@@ -164,13 +164,13 @@ func TestTheIdempotencyKeyDoesNotDuplicateASandbox(t *testing.T) {
 		t.Fatalf("the repeat created another sandbox: %s != %s", a.ID, b.ID)
 	}
 	if f.launcher.launches != 1 {
-		t.Errorf("the substrate was invoked %d times for a single key", f.launcher.launches)
+		t.Errorf("the executor was invoked %d times for a single key", f.launcher.launches)
 	}
 }
 
 // TestAnInterruptedProvisioningIsResumed covers the crash between the TWO
 // transactions of provisioning: the row stayed in provisioning and the
-// substrate never came up. The repeat has to finish the job, not hand the client
+// executor never came up. The repeat has to finish the job, not hand the client
 // half a sandbox nobody can fix afterwards.
 func TestAnInterruptedProvisioningIsResumed(t *testing.T) {
 	f := novoCenario(t)
@@ -308,7 +308,7 @@ func TestResumingRecreatesOverTheWorkspace(t *testing.T) {
 		t.Fatalf("state after resuming: %q", got.State)
 	}
 	if f.launcher.resumes != 1 {
-		t.Errorf("o substrato foi retomado %d vezes", f.launcher.resumes)
+		t.Errorf("o executor foi retomado %d vezes", f.launcher.resumes)
 	}
 }
 
@@ -326,7 +326,7 @@ func TestResumingWithADifferentTierIsRefused(t *testing.T) {
 	}
 }
 
-func TestDescribeReportsDivergenceWithTheSubstrate(t *testing.T) {
+func TestDescribeReportsDivergenceWithTheExecutor(t *testing.T) {
 	f := novoCenario(t)
 	sb := f.provisionado(t)
 	f.launcher.gone = true // somebody deleted the namespace from outside
@@ -393,7 +393,7 @@ func TestLineClassification(t *testing.T) {
 		{"[app] subiu na 3000", execution.SourceApp, "", "subiu na 3000"},
 		{"[test:e2e] 3 passaram", execution.SourceTest, execution.TestE2E, "3 passaram"},
 		{"[infra] docker pronto", execution.SourceInfra, "", "docker pronto"},
-		// No prefix means it is what the substrate itself printed.
+		// No prefix means it is what the executor itself printed.
 		{"npm ERR! algo", execution.SourceInfra, "", "npm ERR! algo"},
 		// A bracket that is not our tag must not be eaten: the line stands as it came.
 		{"[2026-08-31] backup ok", execution.SourceInfra, "", "[2026-08-31] backup ok"},
@@ -760,7 +760,7 @@ func (l *fakeLauncher) Launch(_ context.Context, spec ports.SandboxSpec) (*ports
 	l.launches++
 	if l.launchFailures > 0 {
 		l.launchFailures--
-		return nil, errs.New(errs.KindUnavailable, "the substrate did not answer")
+		return nil, errs.New(errs.KindUnavailable, "the executor did not answer")
 	}
 	if l.phases == nil {
 		l.phases = map[string]ports.SandboxPhase{}
@@ -883,10 +883,10 @@ func TestTheSystemSweepCrossesAccountsWithoutLooseningIsolation(t *testing.T) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// RunCommand — the bridge through which the agent ACTS (substrate spec §4).
+// RunCommand — the bridge through which the agent ACTS (execution spec §4).
 //
 // The rule these tests protect is the port's guarantee 15, one floor up: the
-// error is the SUBSTRATE's; what the command did, including failing, is a result.
+// error is the EXECUTOR's; what the command did, including failing, is a result.
 // ═════════════════════════════════════════════════════════════════════════════
 
 func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
@@ -903,7 +903,7 @@ func TestRunCommandRunsInTheDemandsSandbox(t *testing.T) {
 		t.Fatalf("exit code %d", res.ExitCode)
 	}
 	if len(c.launcher.execs) != 1 {
-		t.Fatalf("the substrate received %d command(s)", len(c.launcher.execs))
+		t.Fatalf("the executor received %d command(s)", len(c.launcher.execs))
 	}
 	// The agent runtime asks by DEMAND; the one that resolves demand → sandbox is
 	// this domain. The agent never sees a sandbox id.
@@ -959,7 +959,7 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 		if _, err := c.svc.Suspend(c.ctx, sb.ID); err != nil {
 			t.Fatalf("Suspend: %v", err)
 		}
-		// A precondition, and never a made-up exit code: a substrate with no
+		// A precondition, and never a made-up exit code: a executor with no
 		// execution runs no command, and saying that is different from saying the
 		// the command failed.
 		_, err := c.svc.RunCommand(c.ctx, "demand-1", ports.ExecRequest{Command: []string{"x"}})
@@ -967,7 +967,7 @@ func TestRunCommandRefusesWhatItCannotExecute(t *testing.T) {
 			t.Fatalf("expected KindPrecondition, got %v", err)
 		}
 		if len(c.launcher.execs) != 0 {
-			t.Fatal("the command went to the substrate even with the sandbox suspended")
+			t.Fatal("the command went to the executor even with the sandbox suspended")
 		}
 	})
 

@@ -46,7 +46,7 @@ type Dependency struct {
 	// before the application starts. Without it, readiness is the TCP port
 	// accepting a connection — which is enough for most images and lies for a
 	// few (Postgres accepts connections during recovery). The command lives on
-	// the runner's side because that is the only place both substrates agree
+	// the runner's side because that is the only place both executors agree
 	// on: on Kubernetes the dependency is a container of the same pod and its
 	// binaries are not ours to call.
 	Ready string `yaml:"ready"`
@@ -91,7 +91,7 @@ var checkKinds = map[string]CheckKind{
 	"integration": CheckIntegration,
 }
 
-// dnsLabel is the stricter of the two substrates' rules, applied to both.
+// dnsLabel is the stricter of the two executors' rules, applied to both.
 //
 // A dependency's name becomes a HOSTNAME — a container alias on Docker, and on
 // Kubernetes nothing at all, because containers of one pod share `localhost`.

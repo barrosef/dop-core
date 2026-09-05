@@ -22,7 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Declared, never presumed — the client sees what they got (substrate spec §2).
+// Declared, never presumed — the client sees what they got (execution spec §2).
 type IsolationTier int32
 
 const (

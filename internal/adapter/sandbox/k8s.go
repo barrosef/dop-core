@@ -2,7 +2,7 @@
 //
 // It is the product's orchestration surface in BOTH modes — SaaS on DOP's
 // cluster and the client's infrastructure — changing the kubeconfig and the
-// limits, not the implementation (substrate spec §2). One namespace per demand,
+// limits, not the implementation (execution spec §2). One namespace per demand,
 // one PVC with the workspace, one pod with the agent.
 //
 // It speaks through the cluster's API, with the service account's CA, in the
@@ -197,7 +197,7 @@ func (k *K8s) runtimeClasses(ctx context.Context) ([]string, error) {
 		// installation problem and has to show up as one.
 		return nil, errs.Permission(
 			"no permission to list runtimeclasses.node.k8s.io — without it the " +
-				"substrate cannot prove which isolation it offers")
+				"executor cannot prove which isolation it offers")
 	}
 	if code == http.StatusNotFound {
 		return nil, nil // a cluster with no RuntimeClass API: namespace isolation only
@@ -273,7 +273,7 @@ func (k *K8s) runtimeClassFor(ctx context.Context, tier ports.IsolationTier) (st
 	if found == "" {
 		return "", errs.Precondition(
 			"this cluster has no RuntimeClass for %q isolation — install the "+
-				"corresponding runtime or ask for another level (substrate spec, R-4)", tier)
+				"corresponding runtime or ask for another level (execution spec, R-4)", tier)
 	}
 	return found, nil
 }
@@ -332,7 +332,7 @@ func (k *K8s) ensureNamespace(ctx context.Context, spec ports.SandboxSpec) error
 	return k.ensureNetworkPolicy(ctx, spec)
 }
 
-// ensureNetworkPolicy is the egress allowlist the substrate spec §6.1 requires.
+// ensureNetworkPolicy is the egress allowlist the execution spec §6.1 requires.
 //
 // The agent has the full triad — it reads untrusted content, it holds a
 // credential and it has an exit through git — so what it can REACH is the first
@@ -603,7 +603,7 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		"env":   env,
 		// `pods/exec` does NOT accept a working directory — only the command.
 		// Pinning the container's is what makes the exec inherit it and what
-		// makes the port's guarantee 14 the same on both substrates: a tool's
+		// makes the port's guarantee 14 the same on both executors: a tool's
 		// command starts in the workspace, here and in Docker.
 
 		"workingDir":   ports.SandboxWorkspacePath,
@@ -619,7 +619,7 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 		// ARGS, not command: on Kubernetes `command` REPLACES the image's
 		// ENTRYPOINT, while Docker's `Cmd` leaves it in place. Writing it as
 		// `command` here made the same spec behave differently on the two
-		// substrates — the devbox's entrypoint, which clones the shelf, simply
+		// executors — the devbox's entrypoint, which clones the shelf, simply
 		// never ran, and the sandbox came up with an empty /project and no
 		// error anywhere. `args` is what maps to Docker's `Cmd`.
 		container["args"] = spec.Command
@@ -648,7 +648,7 @@ func (k *K8s) ensurePod(ctx context.Context, spec ports.SandboxSpec, runtimeClas
 			// GROUP 0, and it is not decoration: the image's directories belong
 			// to root with group-write (the OKD convention for an arbitrary
 			// uid), and Docker's `USER 1001` lands on gid 0 by default. Without
-			// this the two substrates disagree — on Kubernetes the sandbox
+			// this the two executors disagree — on Kubernetes the sandbox
 			// could not write to /project and the clone failed with a bare
 			// "Permission denied".
 			"runAsGroup":     0,
@@ -1046,7 +1046,7 @@ func (k *K8s) Exec(ctx context.Context, h ports.SandboxHandle, req ports.ExecReq
 //   - Success → code 0;
 //   - Failure with an ExitCode cause → the code the process returned;
 //   - Failure with no code cause (the classic "executable file not found") → -1,
-//     and the substrate's message goes into stderr. It has to reach the MODEL,
+//     and the executor's message goes into stderr. It has to reach the MODEL,
 //     which is who can fix the command; swallowing it would leave the agent with
 //     an empty output and no clue.
 func applyExecStatus(res *ports.ExecResult, raw []byte) {

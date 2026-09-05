@@ -4,7 +4,7 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// Declared, never presumed — the client sees what they got (substrate spec §2).
+// Declared, never presumed — the client sees what they got (execution spec §2).
 enum IsolationTier {
   ISOLATION_TIER_UNSPECIFIED    = 0;
   ISOLATION_TIER_HARDWARE       = 1;  // Kata/Firecracker — microVM

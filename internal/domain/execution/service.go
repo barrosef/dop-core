@@ -11,7 +11,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
-// Config is the substrate's deployment policy. It is not infrastructure: these
+// Config is the executor's deployment policy. It is not infrastructure: these
 // are product decisions the composition root injects.
 type Config struct {
 	// DevboxImage is the sandbox's image. It runs as an arbitrary NON-root user
@@ -28,7 +28,7 @@ type Config struct {
 	CoreTarget     string
 }
 
-// Service concentra as regras do substrato. Recebe apenas PORTAS.
+// Service concentra as regras do executor. Recebe apenas PORTAS.
 //
 // Note what does NOT exist here: no method returns a credential, a kubeconfig
 // or a socket. The sandbox receives a short-lived derived token as a projected
@@ -103,13 +103,13 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Sandbox, err
 //  2. a repeat of the same idempotency key returns the same sandbox;
 //  3. the demand has to exist and belong to the active account;
 //  4. an active demand has ONE sandbox (spec §1);
-//  5. the substrate has to OFFER the requested tier. If it does not, it refuses
+//  5. the executor has to OFFER the requested tier. If it does not, it refuses
 //     BEFORE writing any state — a refusal that provisions half is worse than
 //     refusing none.
 //
 // Only after that is the state written. Two transactions, each atomic with its
 // own event (ADR-0019): the first records the INTENT (provisioning), the second
-// records what the substrate DELIVERED. A crash between them leaves the
+// records what the executor DELIVERED. A crash between them leaves the
 // row in provisioning — visible, reconcilable and with no invisible orphan
 // sandbox, which is exactly what a single transaction could not give: writing
 // after Launch would lose the trace of what already came up.
@@ -191,7 +191,7 @@ func (s *Service) Provision(ctx context.Context, demandID string, tier ports.Iso
 }
 
 // finishProvision runs the SECOND half of provisioning: it brings the sandbox up
-// and records what the substrate delivered. It lives apart because it is exactly
+// and records what the executor delivered. It lives apart because it is exactly
 // the stretch that has to be redone when the first attempt died halfway.
 func (s *Service) finishProvision(ctx context.Context, accountID string, sb *Sandbox, tier ports.IsolationTier) (*Sandbox, error) {
 	spec := s.specFor(sb)
@@ -216,7 +216,7 @@ func (s *Service) finishProvision(ctx context.Context, accountID string, sb *San
 		_ = s.launcher.Destroy(ctx, sb.Handle())
 		_, _ = s.repo.Transition(ctx, accountID, sb.ID, DestroyTransition)
 		return nil, errs.Internal(
-			"the substrate delivered isolation %q for a request of %q — sandbox discarded",
+			"the executor delivered isolation %q for a request of %q — sandbox discarded",
 			status.Tier, tier)
 	}
 	return s.repo.MarkProvisioned(ctx, accountID, sb.ID, status.Tier,
@@ -241,7 +241,7 @@ func (s *Service) requireTierSupported(ctx context.Context, tier ports.Isolation
 		names = append(names, string(t))
 	}
 	return errs.Precondition(
-		"this substrate does not offer isolation %q; available: %s",
+		"this executor does not offer isolation %q; available: %s",
 		tier, strings.Join(names, ", "))
 }
 
@@ -339,7 +339,7 @@ func (s *Service) endpoints(demandID string, in []ports.SandboxEndpoint) []Endpo
 // Suspend is the SAVING operation: the execution dies, the workspace stays.
 //
 // Repeating is harmless: suspending what is already suspended returns the
-// sandbox as it stands, without touching the substrate and WITHOUT emitting an
+// sandbox as it stands, without touching the executor and WITHOUT emitting an
 // event. A change event that changed nothing poisons the demand's dossier and
 func (s *Service) Suspend(ctx context.Context, id string) (*Sandbox, error) {
 	accountID, _, role, err := s.caller(ctx)
@@ -417,14 +417,14 @@ func (s *Service) Resume(ctx context.Context, id string) (*Sandbox, error) {
 		// degradation coming in through the back door: the sandbox already existed,
 		// so nobody would recheck the tier.
 		return nil, errs.Internal(
-			"the substrate resumed the sandbox with isolation %q, declared as %q",
+			"the executor resumed the sandbox with isolation %q, declared as %q",
 			status.Tier, sb.Tier)
 	}
 	resumed, err := s.repo.Transition(ctx, accountID, sb.ID, ResumeTransition)
 	if err != nil {
 		return nil, err
 	}
-	// The endpoints in the return come from the substrate, but they are NOT
+	// The endpoints in the return come from the executor, but they are NOT
 	// rewritten: doing so would emit a second "provisioned" for a sandbox that was
 	// only resumed, and every projection would start counting two provisionings
 	// where there was one. An endpoint is current state, read through Describe.
@@ -452,7 +452,7 @@ func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 	if sb.State.IsTerminal() {
 		return true, nil
 	}
-	// The substrate first, the row second. Destroy is idempotent by contract
+	// The executor first, the row second. Destroy is idempotent by contract
 	// (guarantee 8), so failing to write leaves a clean retry. The reverse order
 	// would leave the row saying "destroyed" with the microVM alive and billing,
 	// and nobody would look for it again.
@@ -467,7 +467,7 @@ func (s *Service) Destroy(ctx context.Context, id string) (bool, error) {
 
 // Describe returns the sandbox as it IS.
 //
-// It queries the substrate when the sandbox is alive, and not only the database,
+// It queries the executor when the sandbox is alive, and not only the database,
 // for a specific reason: each endpoint's state (running/stopped) is the demand's
 // inner compose, which changes without going through any RPC of ours. Reading
 // only the row would return an old photograph with the face of current truth.
@@ -487,18 +487,18 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 	status, err := s.launcher.Describe(ctx, sb.Handle())
 	if err != nil {
 		if errs.KindOf(err) == errs.KindNotFound {
-			// A real divergence: the row says it exists, the substrate does not have
+			// A real divergence: the row says it exists, the executor does not have
 			// it. Somebody deleted the namespace from outside, or Launch never finished.
 			// Saying "active" here would be lying to the cockpit.
 			return nil, errs.Precondition(
-				"sandbox %s no longer exists in the substrate (recorded state: %s); "+
+				"sandbox %s no longer exists in the executor (recorded state: %s); "+
 					"destroy it and provision another", sb.ID, sb.State)
 		}
 		return nil, err
 	}
 	sb.Endpoints = s.endpoints(sb.DemandID, status.Endpoints)
-	// The tier comes from the DATABASE, not from the substrate: it is what was
-	// provisioning. Letting the substrate redeclare it on every read would open
+	// The tier comes from the DATABASE, not from the executor: it is what was
+	// provisioning. Letting the executor redeclare it on every read would open
 	// door for the value to change without anybody having asked.
 	return sb, nil
 }
@@ -507,14 +507,14 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 
 // RunCommand runs a command in the demand's LIVE sandbox.
 //
-// This is how the agent acts (ADR-0023 + substrate spec §4): the agent runtime
+// This is how the agent acts (ADR-0023 + execution spec §4): the agent runtime
 // asks by DEMAND, which is its vocabulary, and this domain resolves demand →
-// sandbox → substrate. The runtime never sees a sandbox id, never sees
+// sandbox → executor. The runtime never sees a sandbox id, never sees
 // `ports.SandboxLauncher` and never chooses where the command runs.
 //
 // Three decisions that are not obvious:
 //
-//  1. THE ERROR IS THE SUBSTRATE'S ALONE. A command that exits non-zero, blows
+//  1. THE ERROR IS THE EXECUTOR'S ALONE. A command that exits non-zero, blows
 //     its deadline or has its output cut comes back in `ExecResult` with a nil
 //     error — it is the port's guarantee 15, propagated intact. The agent HAS to
 //     read the output of the test that failed in order to fix it; returning that
@@ -588,7 +588,7 @@ type Emitter func(LogLine) error
 // precisely looking at it (spec §3).
 //
 // A suspended sandbox has NO logs, and that is an explicit refusal rather than
-// an empty stream: suspension erases the execution, and what each substrate
+// an empty stream: suspension erases the execution, and what each executor
 // still keeps of what ran before differs between them — k8s deletes the pod and
 // loses everything, Docker keeps the stopped container's log file. Promising
 // "sometimes something comes back" would expose that divergence to the client.

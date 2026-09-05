@@ -80,7 +80,7 @@ command -v nc  >/dev/null 2>&1 || fatal $S setup "this image has no nc — it is
 	// The credential helper, then the clone. The token never reaches the command
 	// line, so it does not show up in a process list inside the container.
 	if spec.Repository.Token != "" {
-		// Two ways in, because the substrates deliver it differently: Kubernetes
+		// Two ways in, because the executors deliver it differently: Kubernetes
 		// projects a Secret as a FILE (a variable would show up in `env`, and a
 		// build that dumps its environment would carry the credential into its
 		// log), while Docker has no projection and passes it in the environment.
@@ -106,10 +106,10 @@ git checkout --quiet %q >/dev/null 2>&1 || fatal $S setup "commit %s is not in t
 	// with its name — not as a connection refused buried in the application's
 	// log twenty seconds later.
 	for _, d := range spec.Dependencies {
-		// ALWAYS localhost, on both substrates: on Kubernetes the dependency is a
+		// ALWAYS localhost, on both executors: on Kubernetes the dependency is a
 		// container of the same pod, and on Docker it joins the runner's network
 		// namespace. If one of them resolved a name instead, the application's
-		// configuration would have to know which substrate it was on — which is
+		// configuration would have to know which executor it was on — which is
 		// the compose translation problem coming back in through the window.
 		const host = "127.0.0.1"
 		fmt.Fprintf(&b, `i=0

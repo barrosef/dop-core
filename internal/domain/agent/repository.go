@@ -121,7 +121,7 @@ import "context"
 //     serialized body, and the result's content is NEVER attributed to the
 //     user. It is guarantee 5's rule, for the inverse reason: an operator
 //     instruction must not become data, and a tool's output — which is
-//     untrusted content, substrate spec §6 — must not become an instruction;
+//     untrusted content, execution spec §6 — must not become an instruction;
 //
 //  21. a result marked as an ERROR reaches the model readably. Where the
 //     provider has the boolean, it is used; where it does not, the marker goes
@@ -144,7 +144,7 @@ import "context"
 //   - SERVER TOOLS (web search, the provider's code execution). They run on
 //     THEIR infrastructure, are billed separately and do not go through the
 //     sandbox — the opposite of this delivery's entire point, which is the
-//     agent acting inside the demand's isolated sandbox (substrate spec §1);
+//     agent acting inside the demand's isolated sandbox (execution spec §1);
 //
 //   - STREAMING. The platform's live follow-along is the event log (ADR-0006):
 //     the published message BECOMES an event and reaches the cockpit through
@@ -206,7 +206,7 @@ type Providers interface {
 	For(ctx context.Context, resourceID string) (AgentProvider, error)
 }
 
-// ── the substrate port ───────────────────────────────────────────────────────
+// ── the executor port ───────────────────────────────────────────────────────
 
 // SandboxCommand is ONE command to run in the demand's sandbox, in the
 // runtime's vocabulary.
@@ -215,7 +215,7 @@ type Providers interface {
 // no environment, no directory, no credential. **It is not discipline, it is an
 // absent field** — there is no way for a secret to enter the sandbox through
 // this path. The sandbox runs agent code, which reads untrusted content
-// (substrate spec §6): the model provider's key lives in the vault, is read by
+// (execution spec §6): the model provider's key lives in the vault, is read by
 // the composition root and used in the SAME process (ADR-0023), and this struct
 // is the boundary that guarantees it goes no further than that.
 type SandboxCommand struct {
@@ -236,17 +236,17 @@ type SandboxOutput struct {
 
 // Failed answers the question the loop asks: was this a failure?
 //
-// Code -1 means "there was no code" (a hung process, a substrate that could not
+// Code -1 means "there was no code" (a hung process, a executor that could not
 // say) and counts as a failure: the model needs to treat "I do not know whether
 // it finished" as a problem, not as a success.
 func (o SandboxOutput) Failed() bool { return o.ExitCode != 0 || o.TimedOut }
 
-// Sandbox is the NARROW port to the execution substrate: ONE operation.
+// Sandbox is the NARROW port to the executor: ONE operation.
 //
 // It is the bridge between the agent and the sandbox, and it is this service's
 // only OPTIONAL port (see NewService). Without it, the agent converses; with it,
 // it acts. The optionality is real and is not laxity: an installation with no
-// substrate wired keeps running turns — what it may NOT do is grant tools on the
+// executor wired keeps running turns — what it may NOT do is grant tools on the
 // card and watch the agent stay quiet about it, which is why the absence becomes
 // a readable warning in the turn's result, never silence.
 //
@@ -261,7 +261,7 @@ func (o SandboxOutput) Failed() bool { return o.ExitCode != 0 || o.TimedOut }
 //     output was cut is a SUCCESS of this port, with the facts in
 //     `SandboxOutput`. The model needs to SEE that the command failed in order
 //     to fix it;
-//   - an error is reserved for the SUBSTRATE: a nonexistent sandbox, a
+//   - an error is reserved for the EXECUTOR: a nonexistent sandbox, a
 //     suspended one, a cluster that is down. The loop tells the two apart by
 //     `errs.Kind` (see toolloop.go) and only the second kills the turn.
 type Sandbox interface {

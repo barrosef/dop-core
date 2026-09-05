@@ -1,6 +1,6 @@
 // A SandboxLauncher adapter over the host's Docker.
 //
-// It is what makes developing the platform possible with no cluster (substrate
+// It is what makes developing the platform possible with no cluster (executor
 // spec §2) — and, by ADR-0001, it is the PROOF that the port is right: with a
 // single adapter, the port would come out in Kubernetes's shape and nobody would
 // notice.
@@ -87,7 +87,7 @@ var _ ports.SandboxLauncher = (*Docker)(nil)
 //
 // The demand's namespace becomes a name PREFIX in Docker, because Docker has no
 // namespaces. It is the spec's same hierarchical identification, expressed in
-// what this substrate offers — and that is why the labels travel along: the name
+// what this executor offers — and that is why the labels travel along: the name
 // is for finding, the label is for querying.
 
 func (d *Docker) containerName(h ports.SandboxHandle) string { return h.Namespace + "-sandbox" }
@@ -302,7 +302,7 @@ func (d *Docker) collectorName(h ports.SandboxHandle) string { return h.Namespac
 // The key travels in the collector's OWN environment, and the agent's container
 // has an environment of its own — a container does not read another's. It is a
 // weaker separation than Kubernetes's projected Secret, and it is the strongest
-// this substrate offers; the port promises the outcome, each adapter reaches it
+// this executor offers; the port promises the outcome, each adapter reaches it
 // its own way.
 func (d *Docker) ensureCollector(ctx context.Context, spec ports.SandboxSpec) error {
 	name := d.collectorName(spec.SandboxHandle)
@@ -510,7 +510,7 @@ func (d *Docker) createContainer(ctx context.Context, spec ports.SandboxSpec, ru
 		// the port's guarantee 14 comes from: k8s's `pods/exec` does not accept
 		// a working directory, so instead of emulating it in the adapter both
 		// pin the container's and let the exec inherit it. A tool's command
-		// starts in the same place on both substrates.
+		// starts in the same place on both executors.
 		"WorkingDir": ports.SandboxWorkspacePath,
 		// A false Tty keeps stdout and stderr SEPARATE in the log stream. With a
 		// tty the two merge and LogLine.Stream would start lying.
@@ -733,7 +733,7 @@ func (d *Docker) Exec(ctx context.Context, h ports.SandboxHandle, req ports.Exec
 	// The phase BEFORE trying: Docker answers 409 for a stopped container, and
 	// 409 is "already exists" in this adapter's error translator. Asking first
 	// gives k8s's same answer — NotFound for a nonexistent one, Precondition for
-	// a suspended one (guarantee 18) — instead of letting each substrate pick
+	// a suspended one (guarantee 18) — instead of letting each executor pick
 	// its own.
 	st, err := d.Describe(ctx, h)
 	if err != nil {
@@ -1012,7 +1012,7 @@ func boolToInt(b bool) int {
 // requires.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// Hierarchical identification is a LABEL, not a name (substrate spec §1): the
+// Hierarchical identification is a LABEL, not a name (execution spec §1): the
 // name carries only what has to be short and unique; the account, the demand and
 // the tier stay queryable without parsing a string.
 const (
@@ -1066,7 +1066,7 @@ func validateSpec(spec ports.SandboxSpec) error {
 	}
 	if !ports.ValidIsolationTier(spec.Tier) {
 		return errs.Invalid(
-			"isolation level not declared — the substrate does not choose for you")
+			"isolation level not declared — the executor does not choose for you")
 	}
 	if spec.Repository.CloneURL != "" && strings.TrimSpace(spec.Repository.Token) == "" {
 		return errs.Invalid("a repository with no token: the sandbox could not clone it")
@@ -1167,7 +1167,7 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 
 func (b *cappedBuffer) String() string { return string(b.buf) }
 
-// splitTimestamp splits off the RFC3339 stamp both substrates prefix when
+// splitTimestamp splits off the RFC3339 stamp both executors prefix when
 // timestamps are requested. A line with no stamp returns the zero instant — and
 // it is the DOMAIN that decides what to do with that, not the adapter guessing
 // time.Now().

@@ -11,7 +11,7 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// THE TOOL LOOP, tested with no real provider and no real substrate.
+// THE TOOL LOOP, tested with no real provider and no real executor.
 //
 // What these tests protect is expensive and silent: a loop with no cap is a bill
 // with no cap; a measurement that only counts the last round makes the budget
@@ -19,7 +19,7 @@ import (
 // from the model the one piece of information that solves its problem.
 // ════════════════════════════════════════════════════════════════════════════
 
-// fakeSandbox is the double for the substrate's narrow port.
+// fakeSandbox is the double for the executor's narrow port.
 //
 // It keeps EVERYTHING it received — including for the credential sweep, which is
 // the only way to prove, from the outside, that nothing from the platform leaks
@@ -75,7 +75,7 @@ func replyAskingForTool(id, argument string) *agent.Reply {
 	}
 }
 
-// setupWithTools assembles the scenario with the substrate wired.
+// setupWithTools assembles the scenario with the executor wired.
 func setupWithTools(t *testing.T, sb agent.Sandbox, accounting agent.Accounting,
 	replies []*agent.Reply, opts ...agent.Option) scenario {
 
@@ -124,7 +124,7 @@ func TestLoopExecutesTheToolAndContinues(t *testing.T) {
 	}
 	// The tool ran the command the MODEL asked for, and on the right demand.
 	if got := sb.commands[0].Command; strings.Join(got, " ") != "sh -c git status" {
-		t.Fatalf("the command reached the substrate mangled: %v", got)
+		t.Fatalf("the command reached the executor mangled: %v", got)
 	}
 	if sb.demands[0] != "dem-1" {
 		t.Fatalf("the command went to demand %q", sb.demands[0])
@@ -355,7 +355,7 @@ func TestInfrastructureFailureGoesUpAndKillsTheTurn(t *testing.T) {
 
 	_, err := c.svc.RunTurn(callCtx(), request(), "turn-infra")
 	if err == nil {
-		t.Fatal("a substrate that is down became a tool result: insisting with the model " +
+		t.Fatal("a executor that is down became a tool result: insisting with the model " +
 			"against a wall is burning money")
 	}
 	if errs.KindOf(err) != errs.KindUnavailable {
@@ -398,7 +398,7 @@ func TestUngrantedToolBecomesAnErrorResult(t *testing.T) {
 		t.Fatalf("an unknown tool killed the turn: %v", err)
 	}
 	if sb.calls != 0 {
-		t.Fatal("THE SUBSTRATE EXECUTED A TOOL THAT WAS NOT GRANTED: neither provider " +
+		t.Fatal("THE EXECUTOR EXECUTED A TOOL THAT WAS NOT GRANTED: neither provider " +
 			"stops the model from calling what does not exist — the loop is what stops it")
 	}
 	res := resultInHistory(c.prov.turns[1], "call-1")
@@ -461,7 +461,7 @@ func TestMissingCommandBecomesAnErrorResult(t *testing.T) {
 
 // ── the most expensive guarantee: nothing from the platform enters the sandbox
 
-// The sandbox runs agent code, which reads untrusted content (substrate spec
+// The sandbox runs agent code, which reads untrusted content (execution spec
 // §6). The model provider's credential lives in the vault and is used in the
 // same process (ADR-0023) — and it must not leak into the sandbox through any
 // crack in the loop.
@@ -469,7 +469,7 @@ func TestMissingCommandBecomesAnErrorResult(t *testing.T) {
 // The structural proof is the port: `SandboxCommand` has no environment field
 // and no credential field (nor does `ports.ExecRequest`). This test is the
 // BEHAVIOURAL proof: nothing that crosses the loop — not the prompt's prefix,
-// which contains the thread's card, nor the user's text — reaches the substrate.
+// which contains the thread's card, nor the user's text — reaches the executor.
 func TestNothingCrossingTheLoopCarriesACredential(t *testing.T) {
 	const key = "sk-CREDENTIAL-SENTINEL-MUST-NOT-REACH-THE-SANDBOX"
 
@@ -500,7 +500,7 @@ func TestNothingCrossingTheLoopCarriesACredential(t *testing.T) {
 		t.Fatalf("serializing the command: %v", err)
 	}
 	if strings.Contains(string(raw), key) {
-		t.Fatalf("THE CREDENTIAL CROSSED THE LOOP AND REACHED THE SUBSTRATE: %s", raw)
+		t.Fatalf("THE CREDENTIAL CROSSED THE LOOP AND REACHED THE EXECUTOR: %s", raw)
 	}
 	// And the demand must not carry anything beyond the id either.
 	if strings.Contains(sb.demands[0], key) {
@@ -508,14 +508,14 @@ func TestNothingCrossingTheLoopCarriesACredential(t *testing.T) {
 	}
 }
 
-// ── an installation with no substrate ───────────────────────────────────────
+// ── an installation with no executor ───────────────────────────────────────
 
-// A card granting a tool in an installation with no substrate: the turn runs,
+// A card granting a tool in an installation with no executor: the turn runs,
 // the tools are NOT declared, and the warning says why. The three worse
 // alternatives are declaring (the agent plans on top of what does not exist),
 // staying silent (the card looks honoured) and refusing (one line of a card
 // stopping the whole job).
-func TestCardWithToolAndNoSubstrateWarnsAndDoesNotDeclare(t *testing.T) {
+func TestCardWithToolAndNoExecutorWarnsAndDoesNotDeclare(t *testing.T) {
 	prov := &fakeProvider{info: providerSheet(), reply: concludingReply()}
 	cost := &fakeCost{decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong}}
 	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main", Card: cardWithTool()}}
@@ -526,17 +526,17 @@ func TestCardWithToolAndNoSubstrateWarnsAndDoesNotDeclare(t *testing.T) {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if len(prov.askedTurn.Tools) != 0 {
-		t.Fatalf("the tools were DECLARED with no substrate to execute them: %+v",
+		t.Fatalf("the tools were DECLARED with no executor to execute them: %+v",
 			prov.askedTurn.Tools)
 	}
-	if !someWarningContains(out.Warnings, "execution substrate") {
+	if !someWarningContains(out.Warnings, "executor") {
 		t.Fatalf("the card promised action, nothing was wired, and nobody warned: %v", out.Warnings)
 	}
 }
 
-// A model asking for a tool in an installation with no substrate: the loop stops
+// A model asking for a tool in an installation with no executor: the loop stops
 // and SAYS so.
-func TestToolRequestWithNoSubstrateStopsTheLoopWithAWarning(t *testing.T) {
+func TestToolRequestWithNoExecutorStopsTheLoopWithAWarning(t *testing.T) {
 	prov := &fakeProvider{
 		info: providerSheet(), reply: replyAskingForTool("call-1", "ls"),
 	}
@@ -854,14 +854,14 @@ func TestResultsComeBackInTheCallsOrder(t *testing.T) {
 	}
 }
 
-// PROBE 5 — the DOMAIN's output cap has to reach the substrate.
+// PROBE 5 — the DOMAIN's output cap has to reach the executor.
 //
 // The break that passed clean: sending zero in `MaxOutputBytes`. The port treats
 // zero as "use my default", so nothing fails and nothing blows up — what changes
 // is that the cap becomes the PORT's (64 KiB) instead of the domain's (32 KiB),
 // and every tool result enters the next turn's context at twice the size. It is
 // cost policy (ADR-0011) decided by omission, in the wrong layer.
-func TestDomainOutputCapReachesTheSubstrate(t *testing.T) {
+func TestDomainOutputCapReachesTheExecutor(t *testing.T) {
 	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
 	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
 		replyAskingForTool("call-1", "ls"), concludingReply(),
@@ -870,7 +870,7 @@ func TestDomainOutputCapReachesTheSubstrate(t *testing.T) {
 		t.Fatalf("RunTurn: %v", err)
 	}
 	if got := sb.commands[0].MaxOutputBytes; got != agent.DefaultToolOutputBytes {
-		t.Fatalf("the output cap reached the substrate as %d, expected %d: zero makes the "+
+		t.Fatalf("the output cap reached the executor as %d, expected %d: zero makes the "+
 			"port use ITS default, and the cost policy starts being decided by omission in "+
 			"the wrong layer (ADR-0011)", got, agent.DefaultToolOutputBytes)
 	}

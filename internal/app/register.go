@@ -137,7 +137,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	dopv1.RegisterDeliveryServiceServer(srv, appgrpc.NewDeliveryServer(deliverySvc))
 
 	// The launcher arrives already chosen by configuration (wire.go): the domain
-	// provisions a sandbox without knowing whether the substrate is Docker or
+	// provisions a sandbox without knowing whether the executor is Docker or
 	// Kubernetes.
 	// The agent's metrics (P-23 phase 1). The writer here is the COLLECTOR, not
 	// a person: the authorization is by caller (ADR-0029), inside the service.
@@ -280,7 +280,7 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 	return nil
 }
 
-// RegisterLauncher prepares the execution substrate in the launcher process.
+// RegisterLauncher prepares the executor in the launcher process.
 //
 // Today the sandbox's life cycle is driven by CALLS (ProvisionSandbox and
 // company) and by SWEEPS (the scheduler suspends the idle ones). There is no
@@ -293,12 +293,12 @@ func RegisterLauncher(ctx context.Context, deps *Deps) error {
 	log := logging.From(ctx)
 	tiers, err := deps.Launcher.SupportedTiers(ctx)
 	if err != nil {
-		// Not knowing which isolation the substrate offers is a reason NOT to
+		// Not knowing which isolation the executor offers is a reason NOT to
 		// come up: `isolationTier` is declared and checked, and a launcher that
 		// cannot answer would accept anything later on.
 		return err
 	}
-	log.Info("launcher pronto", "substrato", deps.Cfg.SandboxBackend, "isolamentos", tiers)
+	log.Info("launcher pronto", "executor", deps.Cfg.SandboxBackend, "isolamentos", tiers)
 	return nil
 }
 
@@ -325,7 +325,7 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 	}
 
 	// The cost-saving sweep: a sandbox stopped beyond the limit is suspended.
-	// The pod dies, the workspace survives on the volume. The substrate's spec
+	// The pod dies, the workspace survives on the volume. The execution spec
 	// is blunt about the cost of not doing this — "an idle sandbox is what
 	// separates real parallelism from a drowned machine".
 	{
