@@ -28,8 +28,15 @@ func NewIdentityServer(svc *identity.Service) *IdentityServer {
 // EnsureUser is the bootstrap: it runs BEFORE the person has a user, so no actor
 // can authorize it. What authorizes it is the token, and the token is also the
 // only acceptable source for who the person is — the request's fields describe
-// an identity the caller merely asserts (ADR-0029). They are ignored, and stay
-// in the proto only so an older client is refused rather than misread.
+// an identity the caller merely asserts (ADR-0029).
+//
+// The fields are IGNORED, not validated: an older client that still sends them
+// is served the token's values and never told its body went nowhere. That is on
+// purpose — there is nothing for it to do differently, and refusing the call
+// would break a client that is asking for the right thing in an outdated way.
+// They stay in the proto because removing a field is a wire-compatibility break
+// for every client at once; they come out when the last one has stopped sending
+// them.
 func (s *IdentityServer) EnsureUser(ctx context.Context, _ *dopv1.EnsureUserRequest) (*dopv1.User, error) {
 	call, _ := ctxutil.From(ctx)
 	if call.Verified == nil {

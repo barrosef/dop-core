@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,7 +82,22 @@ func (s *stubIdentityRepo) UpsertUser(_ context.Context, u *identity.User) (*ide
 	return &cp, nil
 }
 
-func (s *stubIdentityRepo) UserByVerifiedEmail(context.Context, string) (*identity.User, error) {
+// It consults s.users like its siblings, instead of the hardcoded NotFound it
+// used to answer. A hardcoded miss is the very thing this type's doc comment
+// warns about: EnsureUser's collision guard asks this question, and a double
+// that always says "nobody" makes the case it guards untestable while every
+// test that passes through it goes green. The empty address matches nobody
+// here for the same reason it cannot in the adapter — `lower(NULL) =
+// lower(”)` is NULL, not true.
+func (s *stubIdentityRepo) UserByVerifiedEmail(_ context.Context, email string) (*identity.User, error) {
+	if email == "" {
+		return nil, errs.NotFound("user")
+	}
+	for _, u := range s.users {
+		if u.EmailVerified && strings.ToLower(u.Email) == strings.ToLower(email) {
+			return u, nil
+		}
+	}
 	return nil, errs.NotFound("user")
 }
 

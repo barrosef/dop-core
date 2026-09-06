@@ -55,6 +55,11 @@ type Call struct {
 // and today depends on nothing in the domain; inverting that to reuse one struct
 // buys nothing. The codebase already makes the same trade where reaction
 // restates a workflow stage's action rather than importing the package.
+//
+// KEEP IN SYNC with ports.Principal (internal/domain/ports). The compiler will
+// NOT tell you: a new field there simply stops arriving here, and what the token
+// proved reaches EnsureUser missing a piece — silently, which is the failure
+// mode the restating buys and has to be paid for by hand.
 type VerifiedIdentity struct {
 	Subject       string
 	Email         string
