@@ -825,6 +825,102 @@ func TestRevokeShareRefusesAMismatchedAdoptionFlowPair(t *testing.T) {
 	}
 }
 
+// TestRevokeShareRefusesAConsistentPairFromAThirdGrantedAccount is the fix
+// for I1: the flow_adoptions UPDATE proved the pairing (ad.id/ad.flow_id) and
+// the ownership (p.account_id, via flow_publications) — but never that the
+// adoption named actually belongs to THIS revocation's grantee. A caller
+// revoking otherAccount's share, who names a pair that is entirely
+// consistent — the SAME publication, correctly paired adoption and flow —
+// but belongs to a DIFFERENT granted account (thirdAccount) passed every
+// check that existed before this fix, and thirdAccount's copy would be
+// marked revoked. Only the domain's own filter (Service.RevokeShare building
+// rev.Adoptions) kept this from happening; this proves the SQL itself now
+// refuses it, matching TestRevokeShareRefusesAMismatchedAdoptionFlowPair's
+// role for the OTHER exploit the review flagged.
+func TestRevokeShareRefusesAConsistentPairFromAThirdGrantedAccount(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, thirdAccount := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shareOther, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyDrain, GrantedAt: time.Now(),
+	}, "g-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: thirdAccount,
+		RevocationPolicy: workflow.PolicyDrain, GrantedAt: time.Now(),
+	}, "g-third"); err != nil {
+		t.Fatal(err)
+	}
+
+	ref := "@" + handleOf(t, pool, pubAccount) + "/backend-go"
+	derive := func(account string) (*workflow.Flow, *workflow.Adoption) {
+		now := time.Now().UTC()
+		copied := &workflow.Flow{
+			AccountID: account, OwnerScope: workflow.ScopeAccount, OwnerID: account,
+			Name: "copied flow", Version: 1, Stages: []workflow.StageSpec{stageSpec("context")},
+			Origin:    &workflow.Origin{Ref: ref, Version: pub.Version, AdoptedAt: now},
+			CreatedAt: now, UpdatedAt: now,
+		}
+		adoption := &workflow.Adoption{PublicationID: pub.ID, Version: pub.Version, ByAccountID: account, DerivedAt: now}
+		saved, err := repo.RecordDerivation(ctx, account, copied, adoption, fmt.Sprintf("derive-%s-%d", account, time.Now().UnixNano()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved, adoption
+	}
+	_, _ = derive(otherAccount)
+	thirdFlow, thirdAdoption := derive(thirdAccount)
+
+	// The consistent-but-wrong-account pair: thirdAdoption really does point
+	// at thirdFlow — nothing mismatched about the pair itself — it simply
+	// belongs to thirdAccount, not to otherAccount, whose share is the one
+	// being revoked.
+	err = repo.RevokeShare(ctx, pubAccount, workflow.Revocation{
+		ShareID: shareOther.ID, PublicationID: pub.ID, ToAccountID: otherAccount,
+		Policy: workflow.PolicyDrain, At: time.Now(),
+		Adoptions: []workflow.AdoptionRef{{ID: thirdAdoption.ID, FlowID: thirdFlow.ID}},
+	})
+	if err == nil {
+		t.Fatal("a consistent pair belonging to a THIRD granted account had to be refused")
+	}
+
+	// NOTHING may have been revoked — same all-or-nothing guarantee as the
+	// mismatched-pair case, and thirdAccount's copy in particular must be
+	// untouched: it is a real, correctly-paired copy that this revocation
+	// simply has no business reaching.
+	var shareRevoked, thirdFlowRevoked, thirdAdoptionRevoked *time.Time
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flow_shares WHERE id = $1`, shareOther.ID).Scan(&shareRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if shareRevoked != nil {
+		t.Fatal("the share was revoked despite the wrong-account pair — the transaction did not roll back")
+	}
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flows WHERE id = $1`, thirdFlow.ID).Scan(&thirdFlowRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if thirdFlowRevoked != nil {
+		t.Fatal("a THIRD granted account's copy was revoked by a consistent pair naming it — exactly the exploit I1 closes")
+	}
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flow_adoptions WHERE id = $1`, thirdAdoption.ID).Scan(&thirdAdoptionRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if thirdAdoptionRevoked != nil {
+		t.Fatal("a THIRD granted account's adoption record was revoked by a consistent pair naming it")
+	}
+}
+
 // ── the shared read path (fix for my own concern #2) ────────────────────────
 
 // TestGetSurfacesOriginAndRevokedAtForADerivedCopy proves the read path fix:

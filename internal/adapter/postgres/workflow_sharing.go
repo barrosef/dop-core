@@ -271,12 +271,22 @@ func (r *WorkflowSharing) RevokeShare(ctx context.Context, accountID string, rev
 		// already ran under it have to survive.
 		flowIDs := make([]string, 0, len(rev.Adoptions))
 		for _, a := range rev.Adoptions {
+			// ad.by_account_id = $4 (rev.ToAccountID) is the SECOND tenancy
+			// proof, alongside p.account_id = $3: without it, a caller who
+			// passes a CONSISTENT pair — same publication, same owner,
+			// correctly paired adoption/flow — but belonging to a DIFFERENT
+			// granted account would pass every other check here, and a third
+			// company's copy would be marked revoked. Only rev.Adoptions being
+			// built from the domain's own filter (Service.RevokeShare) kept
+			// that from happening before; this is the SQL half of the same
+			// guard, the way ad.flow_id = $5 below is the SQL half of the
+			// mismatched-pair guard.
 			ct, err := tx.Exec(ctx, `
 				UPDATE flow_adoptions ad SET revoked_at = $2
 				  FROM flow_publications p
 				 WHERE ad.id = $1 AND ad.publication_id = p.id AND p.account_id = $3
-				   AND ad.revoked_at IS NULL`,
-				a.ID, rev.At, accountID)
+				   AND ad.by_account_id = $4 AND ad.revoked_at IS NULL`,
+				a.ID, rev.At, accountID, rev.ToAccountID)
 			if err != nil {
 				return Translate(err, "the adoption record")
 			}
@@ -293,17 +303,20 @@ func (r *WorkflowSharing) RevokeShare(ctx context.Context, accountID string, rev
 			// FK, exactly so one account's cascade cannot reach into another's
 			// rows) — this is the one write in the adapter that crosses the
 			// boundary. What authorises it is not the caller-supplied a.FlowID
-			// taken on faith, but `ad.flow_id = $4`: the WHERE clause proves,
-			// IN SQL, that flow $4 is the one adoption $1 actually points at —
+			// taken on faith, but `ad.flow_id = $5`: the WHERE clause proves,
+			// IN SQL, that flow $5 is the one adoption $1 actually points at —
 			// a mismatched pair matches no row instead of silently revoking
-			// whichever flow the caller named.
+			// whichever flow the caller named. `ad.by_account_id = $4` is the
+			// same tenancy proof as the UPDATE above, for the same reason: the
+			// adoption row alone does not prove it belongs to THIS revocation's
+			// grantee.
 			ct, err = tx.Exec(ctx, `
 				UPDATE flows f SET revoked_at = $2
 				  FROM flow_adoptions ad
 				  JOIN flow_publications p ON p.id = ad.publication_id
-				 WHERE f.id = $4 AND ad.id = $1 AND ad.flow_id = $4
-				   AND p.account_id = $3 AND f.revoked_at IS NULL`,
-				a.ID, rev.At, accountID, a.FlowID)
+				 WHERE f.id = $5 AND ad.id = $1 AND ad.flow_id = $5
+				   AND p.account_id = $3 AND ad.by_account_id = $4 AND f.revoked_at IS NULL`,
+				a.ID, rev.At, accountID, rev.ToAccountID, a.FlowID)
 			if err != nil {
 				return Translate(err, "the derived copy")
 			}
