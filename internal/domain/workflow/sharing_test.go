@@ -377,10 +377,15 @@ type sharingEnv struct {
 	AccountID, OtherAccountID, ThirdAccountID string
 	OwnerID, DeveloperID, OtherOwnerID        string
 	FlowID, PlatformFlowID, OtherProjectID    string
-	CurrentVersion                            int32
-	AccountDefault                            string // what the AccountDefaults port answers
-	roles                                     map[string]string
-	sharing                                   *fakeSharing
+	// OtherFlowID is the OTHER account's own account-level flow — absent until
+	// AppendAccountVersion first creates it, which is deliberate: a test that
+	// wants to observe "inherits the platform's flow because it declares
+	// nothing of its own" needs that starting state to be reachable.
+	OtherFlowID    string
+	CurrentVersion int32
+	AccountDefault string // what the AccountDefaults port answers
+	roles          map[string]string
+	sharing        *fakeSharing
 }
 
 func (e *sharingEnv) CtxAs(userID string) context.Context {
@@ -402,6 +407,48 @@ func (e *sharingEnv) CtxAsThird() context.Context {
 }
 
 func (e *sharingEnv) FlowRevoked(id string) bool { return e.sharing.revokedFlows[id] }
+
+// AppendPlatformVersion publishes a new version of the PLATFORM catalogue's
+// flow — the level every account inherits from by default when its own chain
+// declares nothing. It is what a test uses to prove an account pinned across
+// the ownership boundary does NOT move by itself when the platform changes.
+func (e *sharingEnv) AppendPlatformVersion() {
+	e.bumpFlow("", e.PlatformFlowID)
+}
+
+// AppendAccountVersion moves the OTHER account's OWN account-level flow
+// forward. The flow does not exist until the first call — creating it here,
+// rather than in newSharingHarness, is deliberate: a test needs the account
+// to start with NOTHING declared of its own (so it inherits the platform's
+// flow, crossing the ownership boundary) and only later gain a flow it
+// governs itself, to prove that inheritance INSIDE one account stays live
+// even while a cross-boundary pin is in effect.
+func (e *sharingEnv) AppendAccountVersion() {
+	if e.OtherFlowID == "" {
+		f := seed(e.sharing.repo, e.OtherAccountID, workflow.ScopeAccount, e.OtherAccountID,
+			stage("context", workflow.TypeContext, workflow.ArtifactDocument))
+		e.OtherFlowID = f.ID
+	}
+	e.bumpFlow(e.OtherAccountID, e.OtherFlowID)
+}
+
+// bumpFlow appends the next version straight through the repository double,
+// the same shortcut newSharingHarness already takes to put the publisher's
+// flow at version 2 (bypassing Service.Update's rules on purpose): what these
+// tests need is a KNOWN version to move to, not another exercise of Update.
+func (e *sharingEnv) bumpFlow(accountID, flowID string) {
+	repo := e.sharing.repo
+	r, ok := repo.flows[flowID]
+	if !ok {
+		panic("bumpFlow: unknown flow " + flowID)
+	}
+	next := repo.current(r)
+	next.Version = r.current + 1
+	key := "bump-" + flowID + "-" + strconv.Itoa(int(next.Version))
+	if _, err := repo.AppendVersion(context.Background(), accountID, &next, r.current, key); err != nil {
+		panic("bumpFlow: " + err.Error())
+	}
+}
 
 // LastRevocation returns the most recent Revocation RevokeShare received —
 // a real recording of what the domain decided to hand to the port, not a
@@ -977,5 +1024,114 @@ func TestRevokingAnAlreadyRevokedShareIsIdempotent(t *testing.T) {
 	}
 	if got := len(env.sharing.revocations); got != before {
 		t.Fatalf("a second revoke recorded another revocation: had %d, now %d — RevokeShare must not be called again", before, got)
+	}
+}
+
+// ── the pin ──────────────────────────────────────────────────────────────────
+
+// TestInheritanceAcrossAnOwnerIsPinnedAndInsideOneAccountIsLive is the rule
+// this task exists for, and it is deliberately written to fail in BOTH
+// directions if it only tested one half: an account inheriting a flow it
+// does NOT own (here, the platform catalogue — AccountID == "") must not move
+// the instant the owner publishes; an account inheriting from ITSELF (its own
+// account-level flow overlaying the same account's project) must move live,
+// with no pin at all — that is governance already working, and a pin there
+// would be ceremony.
+func TestInheritanceAcrossAnOwnerIsPinnedAndInsideOneAccountIsLive(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	// The platform's flow is at v1 and the account is pinned to it.
+	eff, err := svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.Version != 1 {
+		t.Fatalf("started on version %d", eff.Flow.Version)
+	}
+	// The platform publishes v2. The account must NOT move.
+	env.AppendPlatformVersion()
+	eff, err = svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.Version != 1 {
+		t.Fatal("a change on the other side of an ownership boundary reached the account by itself")
+	}
+	// Bumping is deliberate.
+	if err := svc.BumpPin(env.CtxAsOther(env.OtherOwnerID), env.PlatformFlowID, 2); err != nil {
+		t.Fatal(err)
+	}
+	eff, err = svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.Version != 2 {
+		t.Fatal("after bumping the pin the new version had to apply")
+	}
+
+	// Inside ONE account inheritance stays live: same owner, no pin, no ceremony.
+	env.AppendAccountVersion() // creates the account's own flow, now at v2
+	eff, err = svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.OwnerScope != workflow.ScopeAccount || eff.Flow.Version != 2 {
+		t.Fatalf("the account's own flow had to overlay live at v2, got scope=%s version=%d",
+			eff.Flow.OwnerScope, eff.Flow.Version)
+	}
+	// The account publishes AGAIN. A single resolve landing on v2 above proves
+	// nothing by itself — a buggy Resolve that pins EVERY flow, own or not,
+	// would also land on v2 here, because a first resolution auto-pins to
+	// whatever is current. The real proof is that a SECOND change inside the
+	// same account keeps applying live too, with no ceremony and no version
+	// left behind — which a pin-everything bug would catch on this second
+	// bump and freeze right here.
+	env.AppendAccountVersion() // now at v3
+	eff, err = svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.Version != 3 {
+		t.Fatal("inheritance inside one account must not be pinned")
+	}
+}
+
+// TestBumpPinRequiresManage mirrors Promote/Publish/Grant/Withdraw/Revoke: a
+// developer moving the whole account onto another version of an inherited
+// flow is not any member's decision to make alone.
+func TestBumpPinRequiresManage(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	if _, err := svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID); err != nil {
+		t.Fatal(err)
+	}
+	dev := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: "usr-sharing-other-dev", AccountID: env.OtherAccountID, ActorKind: ctxutil.ActorUser,
+	})
+	env.roles["usr-sharing-other-dev@"+env.OtherAccountID] = "developer"
+	if err := svc.BumpPin(dev, env.PlatformFlowID, 2); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("a developer must not move the account onto another version: %v", err)
+	}
+}
+
+// TestBumpPinRefusesAFlowTheAccountDoesNotInherit is R10: the schema cannot
+// express, across tables, that a flow id is actually something the account
+// inherits — the same reason flows.owner_id is checked in
+// Service.resolveOwner rather than in a Postgres CHECK. Without this guard
+// BumpPin would let an account pin ANY flow id, including one it has no
+// relationship with at all — env.FlowID here belongs to a completely
+// different account and never appears anywhere in the other account's chain.
+func TestBumpPinRefusesAFlowTheAccountDoesNotInherit(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAsOther(env.OtherOwnerID)
+	if err := svc.BumpPin(ctx, env.FlowID, 2); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("pinning a flow the account does not inherit at all has to be refused: %v", err)
+	}
+
+	// Even a flow the account DOES see — but only because it now declares its
+	// OWN account-level flow, which stays live and crosses no boundary — must
+	// be refused: there is nothing to pin when nothing is being pinned across
+	// an ownership boundary.
+	env.AppendAccountVersion()
+	if err := svc.BumpPin(ctx, env.OtherFlowID, 2); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("pinning the account's OWN live flow has to be refused: %v", err)
 	}
 }

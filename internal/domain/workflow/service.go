@@ -233,13 +233,63 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 		return nil, err
 	}
 
-	chain, err := s.tree.ChainOf(ctx, accountID, ref)
+	eff, err := s.resolveChain(ctx, accountID, ref)
 	if err != nil {
 		return nil, err
 	}
+	if len(eff.Flow.Stages) == 0 {
+		return nil, errs.NotFound(
+			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
+	}
+
+	// A flow whose owner is not this account crossed an OWNERSHIP boundary, and
+	// the version that applies is the pinned one — not the newest. Whoever
+	// changes it is not whoever lives with the change, and an automatic change
+	// to how somebody's development runs is what the copy-versus-reference
+	// decision refused in the first place (see Derive).
+	//
+	// Inheritance INSIDE one account is deliberately untouched: there, the
+	// person changing the flow is the same owner who lives with it, and a pin
+	// would be ceremony. That is why this compares ACCOUNTS, not chain depth —
+	// account ▷ workspace ▷ project ▷ demand all share one owner and stay live.
+	if eff.Flow.AccountID != accountID {
+		version, pinned, err := s.sharing.PinOf(ctx, accountID, eff.Flow.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !pinned {
+			// A first resolution pins to what is current, so the account starts
+			// on a known version instead of on "whatever is newest today".
+			version = eff.Flow.Version
+			if err := s.sharing.Pin(ctx, accountID, eff.Flow.ID, version, "", s.now()); err != nil {
+				return nil, err
+			}
+		}
+		if version != eff.Flow.Version {
+			frozen, err := s.repo.VersionOf(ctx, eff.Flow.AccountID, eff.Flow.ID, version)
+			if err != nil {
+				return nil, err
+			}
+			eff.Flow = *frozen
+		}
+	}
+	return &eff, nil
+}
+
+// resolveChain walks the account's chain and overlays what it declares, with
+// NO pin applied. Resolve builds on it and then decides whether the result
+// crossed an ownership boundary; BumpPin builds on it to confirm the flow it
+// is asked to pin is actually the one the account would inherit that way —
+// splitting the walk out is what lets both share it instead of drifting apart
+// over time into two slightly different ideas of "what this account inherits".
+func (s *Service) resolveChain(ctx context.Context, accountID string, ref ScopeRef) (EffectiveFlow, error) {
+	chain, err := s.tree.ChainOf(ctx, accountID, ref)
+	if err != nil {
+		return EffectiveFlow{}, err
+	}
 	declared, err := s.repo.ByOwners(ctx, accountID, chain)
 	if err != nil {
-		return nil, err
+		return EffectiveFlow{}, err
 	}
 
 	// Reorder what the repository returned according to the CHAIN — the overlay
@@ -255,13 +305,58 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 			levels = append(levels, f)
 		}
 	}
+	return MergeChain(levels), nil
+}
 
-	eff := MergeChain(levels)
-	if len(eff.Flow.Stages) == 0 {
-		return nil, errs.NotFound(
-			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
+// BumpPin moves the account onto a different (usually newer) version of a
+// flow it inherits across an ownership boundary. It is the deliberate act
+// that a live reference would have taken away: the platform (or another
+// account's publication) can move on without dragging every inheritor with
+// it, and moving is something an owner or admin chooses, on purpose.
+func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
 	}
-	return &eff, nil
+	call, _ := ctxutil.From(ctx)
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("moving the account onto another version requires owner or admin")
+	}
+	flowID = strings.TrimSpace(flowID)
+	if flowID == "" {
+		return errs.Invalid("flow identifier not provided")
+	}
+	if version <= 0 {
+		return errs.Invalid("version has to be positive")
+	}
+
+	// R10: nothing in the schema can check, ACROSS TABLES, that flowID is
+	// something this account actually inherits — a Postgres CHECK cannot see
+	// another table, which is exactly why flows.owner_id is validated in
+	// Service.resolveOwner instead of in SQL. Without this, any account could
+	// pin — and freeze itself onto — a flow it has no relationship with at
+	// all, including one it was never granted and cannot even read.
+	//
+	// The account's OWN chain (rooted at the account level, not at whatever
+	// scope the caller happens to be resolving today) is what decides this: the
+	// pin is stored per (account, flow), not per resolution path, so the flow
+	// it is allowed to reach is the one the account would inherit ACROSS AN
+	// OWNERSHIP BOUNDARY by default — the same flow Resolve would pin the very
+	// first time it crossed one.
+	eff, err := s.resolveChain(ctx, accountID, ScopeRef{Scope: ScopeAccount, ID: accountID})
+	if err != nil {
+		return err
+	}
+	if eff.Flow.AccountID == accountID || eff.Flow.ID != flowID {
+		return errs.Invalid(
+			"%q is not a flow this account inherits across an ownership boundary: there is nothing to pin", flowID)
+	}
+
+	return s.sharing.Pin(ctx, accountID, flowID, version, call.ActorID, s.now())
 }
 
 // ── promotion ────────────────────────────────────────────────────────────────
