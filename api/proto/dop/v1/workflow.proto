@@ -35,6 +35,35 @@ enum Gate {
   GATE_HUMAN       = 2;
 }
 
+// When a stage's action fires. Both moments are derivable from the from/to a
+// `dop.demand.stage.advanced` event already carries; two values and not one
+// because folding an entry into "the exit of the previous stage" is correct and
+// unreadable — and the flow is authored through a chat.
+enum StageMoment {
+  STAGE_MOMENT_UNSPECIFIED = 0;
+  STAGE_MOMENT_ENTER       = 1;
+  STAGE_MOMENT_EXIT        = 2;
+}
+
+// What a stage asks the platform to do when it is entered or left: a
+// DECLARATION, never a branch. No condition, no expression — the same stance
+// ADR-0014 §2 takes on the flow's structure, for the same reason: the moment
+// this message can hold an expression, swapping the policy stops being a load
+// and becomes a rewrite.
+//
+// `name` is a plain string and not an enum, unlike type/artifacts/gate above.
+// The vocabulary it draws on belongs to the REACTION domain, which validates it
+// (reaction.ValidActionName, reached from workflow.Validate) and refuses an
+// unknown name with a message that says so. Mirroring that list here would make
+// two vocabularies to keep in step, and a name this file had not caught up with
+// would arrive as the enum's zero and be dropped silently at the edge — which
+// is the exact failure the actions field was added to stop.
+message StageAction {
+  StageMoment on = 1;
+  string      name = 2;             // reaction's closed vocabulary: open_attention, send_email, …
+  map<string, string> params = 3;   // flat strings: a value here is data, never code
+}
+
 message StageSpec {
   string       key       = 1;
   string       name      = 2;   // free, the author's
@@ -42,6 +71,10 @@ message StageSpec {
   repeated ArtifactKind artifacts = 4;
   Gate         gate      = 5;
   repeated string subtypes = 6;  // e.g.: test → aaa, e2e, integration
+  // What fires when the demand ENTERS or LEAVES this stage. It travels with
+  // the frozen version (ADR-0014 §4), so a demand in flight keeps causing what
+  // was declared when it started.
+  repeated StageAction actions = 7;
 }
 
 // FlowOrigin is the provenance carried BY a copy derived from another

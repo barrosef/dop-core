@@ -202,21 +202,151 @@ func (Gate) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{2}
 }
 
-type StageSpec struct {
+// When a stage's action fires. Both moments are derivable from the from/to a
+// `dop.demand.stage.advanced` event already carries; two values and not one
+// because folding an entry into "the exit of the previous stage" is correct and
+// unreadable — and the flow is authored through a chat.
+type StageMoment int32
+
+const (
+	StageMoment_STAGE_MOMENT_UNSPECIFIED StageMoment = 0
+	StageMoment_STAGE_MOMENT_ENTER       StageMoment = 1
+	StageMoment_STAGE_MOMENT_EXIT        StageMoment = 2
+)
+
+// Enum value maps for StageMoment.
+var (
+	StageMoment_name = map[int32]string{
+		0: "STAGE_MOMENT_UNSPECIFIED",
+		1: "STAGE_MOMENT_ENTER",
+		2: "STAGE_MOMENT_EXIT",
+	}
+	StageMoment_value = map[string]int32{
+		"STAGE_MOMENT_UNSPECIFIED": 0,
+		"STAGE_MOMENT_ENTER":       1,
+		"STAGE_MOMENT_EXIT":        2,
+	}
+)
+
+func (x StageMoment) Enum() *StageMoment {
+	p := new(StageMoment)
+	*p = x
+	return p
+}
+
+func (x StageMoment) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StageMoment) Descriptor() protoreflect.EnumDescriptor {
+	return file_dop_v1_workflow_proto_enumTypes[3].Descriptor()
+}
+
+func (StageMoment) Type() protoreflect.EnumType {
+	return &file_dop_v1_workflow_proto_enumTypes[3]
+}
+
+func (x StageMoment) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StageMoment.Descriptor instead.
+func (StageMoment) EnumDescriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{3}
+}
+
+// What a stage asks the platform to do when it is entered or left: a
+// DECLARATION, never a branch. No condition, no expression — the same stance
+// ADR-0014 §2 takes on the flow's structure, for the same reason: the moment
+// this message can hold an expression, swapping the policy stops being a load
+// and becomes a rewrite.
+//
+// `name` is a plain string and not an enum, unlike type/artifacts/gate above.
+// The vocabulary it draws on belongs to the REACTION domain, which validates it
+// (reaction.ValidActionName, reached from workflow.Validate) and refuses an
+// unknown name with a message that says so. Mirroring that list here would make
+// two vocabularies to keep in step, and a name this file had not caught up with
+// would arrive as the enum's zero and be dropped silently at the edge — which
+// is the exact failure the actions field was added to stop.
+type StageAction struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // free, the author's
-	Type          StageType              `protobuf:"varint,3,opt,name=type,proto3,enum=dop.v1.StageType" json:"type,omitempty"`
-	Artifacts     []ArtifactKind         `protobuf:"varint,4,rep,packed,name=artifacts,proto3,enum=dop.v1.ArtifactKind" json:"artifacts,omitempty"`
-	Gate          Gate                   `protobuf:"varint,5,opt,name=gate,proto3,enum=dop.v1.Gate" json:"gate,omitempty"`
-	Subtypes      []string               `protobuf:"bytes,6,rep,name=subtypes,proto3" json:"subtypes,omitempty"` // e.g.: test → aaa, e2e, integration
+	On            StageMoment            `protobuf:"varint,1,opt,name=on,proto3,enum=dop.v1.StageMoment" json:"on,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                               // reaction's closed vocabulary: open_attention, send_email, …
+	Params        map[string]string      `protobuf:"bytes,3,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // flat strings: a value here is data, never code
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StageAction) Reset() {
+	*x = StageAction{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StageAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StageAction) ProtoMessage() {}
+
+func (x *StageAction) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StageAction.ProtoReflect.Descriptor instead.
+func (*StageAction) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StageAction) GetOn() StageMoment {
+	if x != nil {
+		return x.On
+	}
+	return StageMoment_STAGE_MOMENT_UNSPECIFIED
+}
+
+func (x *StageAction) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *StageAction) GetParams() map[string]string {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+type StageSpec struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Key       string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // free, the author's
+	Type      StageType              `protobuf:"varint,3,opt,name=type,proto3,enum=dop.v1.StageType" json:"type,omitempty"`
+	Artifacts []ArtifactKind         `protobuf:"varint,4,rep,packed,name=artifacts,proto3,enum=dop.v1.ArtifactKind" json:"artifacts,omitempty"`
+	Gate      Gate                   `protobuf:"varint,5,opt,name=gate,proto3,enum=dop.v1.Gate" json:"gate,omitempty"`
+	Subtypes  []string               `protobuf:"bytes,6,rep,name=subtypes,proto3" json:"subtypes,omitempty"` // e.g.: test → aaa, e2e, integration
+	// What fires when the demand ENTERS or LEAVES this stage. It travels with
+	// the frozen version (ADR-0014 §4), so a demand in flight keeps causing what
+	// was declared when it started.
+	Actions       []*StageAction `protobuf:"bytes,7,rep,name=actions,proto3" json:"actions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StageSpec) Reset() {
 	*x = StageSpec{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[0]
+	mi := &file_dop_v1_workflow_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -228,7 +358,7 @@ func (x *StageSpec) String() string {
 func (*StageSpec) ProtoMessage() {}
 
 func (x *StageSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[0]
+	mi := &file_dop_v1_workflow_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +371,7 @@ func (x *StageSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageSpec.ProtoReflect.Descriptor instead.
 func (*StageSpec) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{0}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *StageSpec) GetKey() string {
@@ -286,6 +416,13 @@ func (x *StageSpec) GetSubtypes() []string {
 	return nil
 }
 
+func (x *StageSpec) GetActions() []*StageAction {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
 // FlowOrigin is the provenance carried BY a copy derived from another
 // account's publication (task 9) — where it came from, at which version, and
 // when this account adopted it. It mirrors flow_versions/flows'
@@ -304,7 +441,7 @@ type FlowOrigin struct {
 
 func (x *FlowOrigin) Reset() {
 	*x = FlowOrigin{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[1]
+	mi := &file_dop_v1_workflow_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -316,7 +453,7 @@ func (x *FlowOrigin) String() string {
 func (*FlowOrigin) ProtoMessage() {}
 
 func (x *FlowOrigin) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[1]
+	mi := &file_dop_v1_workflow_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -329,7 +466,7 @@ func (x *FlowOrigin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowOrigin.ProtoReflect.Descriptor instead.
 func (*FlowOrigin) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{1}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FlowOrigin) GetReference() string {
@@ -380,7 +517,7 @@ type Flow struct {
 
 func (x *Flow) Reset() {
 	*x = Flow{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	mi := &file_dop_v1_workflow_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +529,7 @@ func (x *Flow) String() string {
 func (*Flow) ProtoMessage() {}
 
 func (x *Flow) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[2]
+	mi := &file_dop_v1_workflow_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,7 +542,7 @@ func (x *Flow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Flow.ProtoReflect.Descriptor instead.
 func (*Flow) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{2}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Flow) GetId() string {
@@ -494,7 +631,7 @@ type StageOrigin struct {
 
 func (x *StageOrigin) Reset() {
 	*x = StageOrigin{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[3]
+	mi := &file_dop_v1_workflow_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -506,7 +643,7 @@ func (x *StageOrigin) String() string {
 func (*StageOrigin) ProtoMessage() {}
 
 func (x *StageOrigin) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[3]
+	mi := &file_dop_v1_workflow_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +656,7 @@ func (x *StageOrigin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StageOrigin.ProtoReflect.Descriptor instead.
 func (*StageOrigin) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{3}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StageOrigin) GetKey() string {
@@ -563,7 +700,7 @@ type EffectiveFlow struct {
 
 func (x *EffectiveFlow) Reset() {
 	*x = EffectiveFlow{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	mi := &file_dop_v1_workflow_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +712,7 @@ func (x *EffectiveFlow) String() string {
 func (*EffectiveFlow) ProtoMessage() {}
 
 func (x *EffectiveFlow) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[4]
+	mi := &file_dop_v1_workflow_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +725,7 @@ func (x *EffectiveFlow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffectiveFlow.ProtoReflect.Descriptor instead.
 func (*EffectiveFlow) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{4}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EffectiveFlow) GetFlow() *Flow {
@@ -631,7 +768,7 @@ type ScopeRef struct {
 
 func (x *ScopeRef) Reset() {
 	*x = ScopeRef{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[5]
+	mi := &file_dop_v1_workflow_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +780,7 @@ func (x *ScopeRef) String() string {
 func (*ScopeRef) ProtoMessage() {}
 
 func (x *ScopeRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[5]
+	mi := &file_dop_v1_workflow_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +793,7 @@ func (x *ScopeRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScopeRef.ProtoReflect.Descriptor instead.
 func (*ScopeRef) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{5}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ScopeRef) GetScope() string {
@@ -683,7 +820,7 @@ type ListFlowsRequest struct {
 
 func (x *ListFlowsRequest) Reset() {
 	*x = ListFlowsRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[6]
+	mi := &file_dop_v1_workflow_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +832,7 @@ func (x *ListFlowsRequest) String() string {
 func (*ListFlowsRequest) ProtoMessage() {}
 
 func (x *ListFlowsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[6]
+	mi := &file_dop_v1_workflow_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +845,7 @@ func (x *ListFlowsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowsRequest.ProtoReflect.Descriptor instead.
 func (*ListFlowsRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{6}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListFlowsRequest) GetOwnerScope() string {
@@ -734,7 +871,7 @@ type ListFlowsResponse struct {
 
 func (x *ListFlowsResponse) Reset() {
 	*x = ListFlowsResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[7]
+	mi := &file_dop_v1_workflow_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +883,7 @@ func (x *ListFlowsResponse) String() string {
 func (*ListFlowsResponse) ProtoMessage() {}
 
 func (x *ListFlowsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[7]
+	mi := &file_dop_v1_workflow_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +896,7 @@ func (x *ListFlowsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowsResponse.ProtoReflect.Descriptor instead.
 func (*ListFlowsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{7}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListFlowsResponse) GetFlows() []*Flow {
@@ -778,7 +915,7 @@ type GetFlowRequest struct {
 
 func (x *GetFlowRequest) Reset() {
 	*x = GetFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[8]
+	mi := &file_dop_v1_workflow_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +927,7 @@ func (x *GetFlowRequest) String() string {
 func (*GetFlowRequest) ProtoMessage() {}
 
 func (x *GetFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[8]
+	mi := &file_dop_v1_workflow_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +940,7 @@ func (x *GetFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFlowRequest.ProtoReflect.Descriptor instead.
 func (*GetFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{8}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetFlowRequest) GetId() string {
@@ -823,7 +960,7 @@ type CreateFlowRequest struct {
 
 func (x *CreateFlowRequest) Reset() {
 	*x = CreateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[9]
+	mi := &file_dop_v1_workflow_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +972,7 @@ func (x *CreateFlowRequest) String() string {
 func (*CreateFlowRequest) ProtoMessage() {}
 
 func (x *CreateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[9]
+	mi := &file_dop_v1_workflow_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +985,7 @@ func (x *CreateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFlowRequest.ProtoReflect.Descriptor instead.
 func (*CreateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{9}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreateFlowRequest) GetFlow() *Flow {
@@ -874,7 +1011,7 @@ type UpdateFlowRequest struct {
 
 func (x *UpdateFlowRequest) Reset() {
 	*x = UpdateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[10]
+	mi := &file_dop_v1_workflow_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +1023,7 @@ func (x *UpdateFlowRequest) String() string {
 func (*UpdateFlowRequest) ProtoMessage() {}
 
 func (x *UpdateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[10]
+	mi := &file_dop_v1_workflow_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1036,7 @@ func (x *UpdateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateFlowRequest.ProtoReflect.Descriptor instead.
 func (*UpdateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{10}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UpdateFlowRequest) GetFlow() *Flow {
@@ -918,7 +1055,7 @@ type ValidateFlowRequest struct {
 
 func (x *ValidateFlowRequest) Reset() {
 	*x = ValidateFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[11]
+	mi := &file_dop_v1_workflow_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1067,7 @@ func (x *ValidateFlowRequest) String() string {
 func (*ValidateFlowRequest) ProtoMessage() {}
 
 func (x *ValidateFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[11]
+	mi := &file_dop_v1_workflow_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1080,7 @@ func (x *ValidateFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateFlowRequest.ProtoReflect.Descriptor instead.
 func (*ValidateFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{11}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ValidateFlowRequest) GetFlow() *Flow {
@@ -964,7 +1101,7 @@ type ValidateFlowResponse struct {
 
 func (x *ValidateFlowResponse) Reset() {
 	*x = ValidateFlowResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[12]
+	mi := &file_dop_v1_workflow_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +1113,7 @@ func (x *ValidateFlowResponse) String() string {
 func (*ValidateFlowResponse) ProtoMessage() {}
 
 func (x *ValidateFlowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[12]
+	mi := &file_dop_v1_workflow_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +1126,7 @@ func (x *ValidateFlowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateFlowResponse.ProtoReflect.Descriptor instead.
 func (*ValidateFlowResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{12}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ValidateFlowResponse) GetValid() bool {
@@ -1023,7 +1160,7 @@ type ResolveFlowRequest struct {
 
 func (x *ResolveFlowRequest) Reset() {
 	*x = ResolveFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[13]
+	mi := &file_dop_v1_workflow_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1035,7 +1172,7 @@ func (x *ResolveFlowRequest) String() string {
 func (*ResolveFlowRequest) ProtoMessage() {}
 
 func (x *ResolveFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[13]
+	mi := &file_dop_v1_workflow_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1048,7 +1185,7 @@ func (x *ResolveFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveFlowRequest.ProtoReflect.Descriptor instead.
 func (*ResolveFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{13}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResolveFlowRequest) GetScope() string {
@@ -1076,7 +1213,7 @@ type PromoteFlowRequest struct {
 
 func (x *PromoteFlowRequest) Reset() {
 	*x = PromoteFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[14]
+	mi := &file_dop_v1_workflow_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1088,7 +1225,7 @@ func (x *PromoteFlowRequest) String() string {
 func (*PromoteFlowRequest) ProtoMessage() {}
 
 func (x *PromoteFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[14]
+	mi := &file_dop_v1_workflow_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1101,7 +1238,7 @@ func (x *PromoteFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteFlowRequest.ProtoReflect.Descriptor instead.
 func (*PromoteFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{14}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PromoteFlowRequest) GetFlowId() string {
@@ -1137,7 +1274,7 @@ type PublishFlowRequest struct {
 
 func (x *PublishFlowRequest) Reset() {
 	*x = PublishFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[15]
+	mi := &file_dop_v1_workflow_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1286,7 @@ func (x *PublishFlowRequest) String() string {
 func (*PublishFlowRequest) ProtoMessage() {}
 
 func (x *PublishFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[15]
+	mi := &file_dop_v1_workflow_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1299,7 @@ func (x *PublishFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishFlowRequest.ProtoReflect.Descriptor instead.
 func (*PublishFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{15}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PublishFlowRequest) GetFlowId() string {
@@ -1212,7 +1349,7 @@ type FlowPublication struct {
 
 func (x *FlowPublication) Reset() {
 	*x = FlowPublication{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[16]
+	mi := &file_dop_v1_workflow_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1361,7 @@ func (x *FlowPublication) String() string {
 func (*FlowPublication) ProtoMessage() {}
 
 func (x *FlowPublication) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[16]
+	mi := &file_dop_v1_workflow_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1374,7 @@ func (x *FlowPublication) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowPublication.ProtoReflect.Descriptor instead.
 func (*FlowPublication) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{16}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FlowPublication) GetId() string {
@@ -1298,7 +1435,7 @@ type WithdrawFlowRequest struct {
 
 func (x *WithdrawFlowRequest) Reset() {
 	*x = WithdrawFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[17]
+	mi := &file_dop_v1_workflow_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1310,7 +1447,7 @@ func (x *WithdrawFlowRequest) String() string {
 func (*WithdrawFlowRequest) ProtoMessage() {}
 
 func (x *WithdrawFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[17]
+	mi := &file_dop_v1_workflow_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1323,7 +1460,7 @@ func (x *WithdrawFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawFlowRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{17}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WithdrawFlowRequest) GetPublicationId() string {
@@ -1350,7 +1487,7 @@ type GrantFlowRequest struct {
 
 func (x *GrantFlowRequest) Reset() {
 	*x = GrantFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[18]
+	mi := &file_dop_v1_workflow_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1362,7 +1499,7 @@ func (x *GrantFlowRequest) String() string {
 func (*GrantFlowRequest) ProtoMessage() {}
 
 func (x *GrantFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[18]
+	mi := &file_dop_v1_workflow_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1375,7 +1512,7 @@ func (x *GrantFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantFlowRequest.ProtoReflect.Descriptor instead.
 func (*GrantFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{18}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GrantFlowRequest) GetPublicationId() string {
@@ -1417,7 +1554,7 @@ type FlowGrant struct {
 
 func (x *FlowGrant) Reset() {
 	*x = FlowGrant{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[19]
+	mi := &file_dop_v1_workflow_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1429,7 +1566,7 @@ func (x *FlowGrant) String() string {
 func (*FlowGrant) ProtoMessage() {}
 
 func (x *FlowGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[19]
+	mi := &file_dop_v1_workflow_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1442,7 +1579,7 @@ func (x *FlowGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowGrant.ProtoReflect.Descriptor instead.
 func (*FlowGrant) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{19}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FlowGrant) GetId() string {
@@ -1496,7 +1633,7 @@ type RevokeFlowGrantRequest struct {
 
 func (x *RevokeFlowGrantRequest) Reset() {
 	*x = RevokeFlowGrantRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[20]
+	mi := &file_dop_v1_workflow_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1508,7 +1645,7 @@ func (x *RevokeFlowGrantRequest) String() string {
 func (*RevokeFlowGrantRequest) ProtoMessage() {}
 
 func (x *RevokeFlowGrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[20]
+	mi := &file_dop_v1_workflow_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1521,7 +1658,7 @@ func (x *RevokeFlowGrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeFlowGrantRequest.ProtoReflect.Descriptor instead.
 func (*RevokeFlowGrantRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{20}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RevokeFlowGrantRequest) GetShareId() string {
@@ -1542,7 +1679,7 @@ type DeriveFlowRequest struct {
 
 func (x *DeriveFlowRequest) Reset() {
 	*x = DeriveFlowRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[21]
+	mi := &file_dop_v1_workflow_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1554,7 +1691,7 @@ func (x *DeriveFlowRequest) String() string {
 func (*DeriveFlowRequest) ProtoMessage() {}
 
 func (x *DeriveFlowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[21]
+	mi := &file_dop_v1_workflow_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1567,7 +1704,7 @@ func (x *DeriveFlowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeriveFlowRequest.ProtoReflect.Descriptor instead.
 func (*DeriveFlowRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{21}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeriveFlowRequest) GetReference() string {
@@ -1601,7 +1738,7 @@ type BumpFlowPinRequest struct {
 
 func (x *BumpFlowPinRequest) Reset() {
 	*x = BumpFlowPinRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[22]
+	mi := &file_dop_v1_workflow_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1613,7 +1750,7 @@ func (x *BumpFlowPinRequest) String() string {
 func (*BumpFlowPinRequest) ProtoMessage() {}
 
 func (x *BumpFlowPinRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[22]
+	mi := &file_dop_v1_workflow_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1626,7 +1763,7 @@ func (x *BumpFlowPinRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BumpFlowPinRequest.ProtoReflect.Descriptor instead.
 func (*BumpFlowPinRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{22}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *BumpFlowPinRequest) GetFlowId() string {
@@ -1652,7 +1789,7 @@ type ListFlowSharesRequest struct {
 
 func (x *ListFlowSharesRequest) Reset() {
 	*x = ListFlowSharesRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[23]
+	mi := &file_dop_v1_workflow_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1664,7 +1801,7 @@ func (x *ListFlowSharesRequest) String() string {
 func (*ListFlowSharesRequest) ProtoMessage() {}
 
 func (x *ListFlowSharesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[23]
+	mi := &file_dop_v1_workflow_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1677,7 +1814,7 @@ func (x *ListFlowSharesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowSharesRequest.ProtoReflect.Descriptor instead.
 func (*ListFlowSharesRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{23}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListFlowSharesRequest) GetPublicationId() string {
@@ -1696,7 +1833,7 @@ type ListFlowSharesResponse struct {
 
 func (x *ListFlowSharesResponse) Reset() {
 	*x = ListFlowSharesResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[24]
+	mi := &file_dop_v1_workflow_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1708,7 +1845,7 @@ func (x *ListFlowSharesResponse) String() string {
 func (*ListFlowSharesResponse) ProtoMessage() {}
 
 func (x *ListFlowSharesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[24]
+	mi := &file_dop_v1_workflow_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1721,7 +1858,7 @@ func (x *ListFlowSharesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowSharesResponse.ProtoReflect.Descriptor instead.
 func (*ListFlowSharesResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{24}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListFlowSharesResponse) GetShares() []*FlowGrant {
@@ -1749,7 +1886,7 @@ type FlowAdoption struct {
 
 func (x *FlowAdoption) Reset() {
 	*x = FlowAdoption{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[25]
+	mi := &file_dop_v1_workflow_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +1898,7 @@ func (x *FlowAdoption) String() string {
 func (*FlowAdoption) ProtoMessage() {}
 
 func (x *FlowAdoption) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[25]
+	mi := &file_dop_v1_workflow_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +1911,7 @@ func (x *FlowAdoption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowAdoption.ProtoReflect.Descriptor instead.
 func (*FlowAdoption) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{25}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *FlowAdoption) GetId() string {
@@ -1835,7 +1972,7 @@ type ListFlowAdoptionsRequest struct {
 
 func (x *ListFlowAdoptionsRequest) Reset() {
 	*x = ListFlowAdoptionsRequest{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[26]
+	mi := &file_dop_v1_workflow_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1847,7 +1984,7 @@ func (x *ListFlowAdoptionsRequest) String() string {
 func (*ListFlowAdoptionsRequest) ProtoMessage() {}
 
 func (x *ListFlowAdoptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[26]
+	mi := &file_dop_v1_workflow_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1860,7 +1997,7 @@ func (x *ListFlowAdoptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowAdoptionsRequest.ProtoReflect.Descriptor instead.
 func (*ListFlowAdoptionsRequest) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{26}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListFlowAdoptionsRequest) GetPublicationId() string {
@@ -1879,7 +2016,7 @@ type ListFlowAdoptionsResponse struct {
 
 func (x *ListFlowAdoptionsResponse) Reset() {
 	*x = ListFlowAdoptionsResponse{}
-	mi := &file_dop_v1_workflow_proto_msgTypes[27]
+	mi := &file_dop_v1_workflow_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1891,7 +2028,7 @@ func (x *ListFlowAdoptionsResponse) String() string {
 func (*ListFlowAdoptionsResponse) ProtoMessage() {}
 
 func (x *ListFlowAdoptionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dop_v1_workflow_proto_msgTypes[27]
+	mi := &file_dop_v1_workflow_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1904,7 +2041,7 @@ func (x *ListFlowAdoptionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFlowAdoptionsResponse.ProtoReflect.Descriptor instead.
 func (*ListFlowAdoptionsResponse) Descriptor() ([]byte, []int) {
-	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{27}
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListFlowAdoptionsResponse) GetAdoptions() []*FlowAdoption {
@@ -1918,14 +2055,22 @@ var File_dop_v1_workflow_proto protoreflect.FileDescriptor
 
 const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x15dop/v1/workflow.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xca\x01\n" +
+	"\x15dop/v1/workflow.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x01\n" +
+	"\vStageAction\x12#\n" +
+	"\x02on\x18\x01 \x01(\x0e2\x13.dop.v1.StageMomentR\x02on\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x127\n" +
+	"\x06params\x18\x03 \x03(\v2\x1f.dop.v1.StageAction.ParamsEntryR\x06params\x1a9\n" +
+	"\vParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf9\x01\n" +
 	"\tStageSpec\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12%\n" +
 	"\x04type\x18\x03 \x01(\x0e2\x11.dop.v1.StageTypeR\x04type\x122\n" +
 	"\tartifacts\x18\x04 \x03(\x0e2\x14.dop.v1.ArtifactKindR\tartifacts\x12 \n" +
 	"\x04gate\x18\x05 \x01(\x0e2\f.dop.v1.GateR\x04gate\x12\x1a\n" +
-	"\bsubtypes\x18\x06 \x03(\tR\bsubtypes\"\x7f\n" +
+	"\bsubtypes\x18\x06 \x03(\tR\bsubtypes\x12-\n" +
+	"\aactions\x18\a \x03(\v2\x13.dop.v1.StageActionR\aactions\"\x7f\n" +
 	"\n" +
 	"FlowOrigin\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x18\n" +
@@ -2064,7 +2209,11 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\x10GATE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tGATE_NONE\x10\x01\x12\x0e\n" +
 	"\n" +
-	"GATE_HUMAN\x10\x022\xeb\a\n" +
+	"GATE_HUMAN\x10\x02*Z\n" +
+	"\vStageMoment\x12\x1c\n" +
+	"\x18STAGE_MOMENT_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12STAGE_MOMENT_ENTER\x10\x01\x12\x15\n" +
+	"\x11STAGE_MOMENT_EXIT\x10\x022\xeb\a\n" +
 	"\x0fWorkflowService\x12@\n" +
 	"\tListFlows\x12\x18.dop.v1.ListFlowsRequest\x1a\x19.dop.v1.ListFlowsResponse\x12/\n" +
 	"\aGetFlow\x12\x16.dop.v1.GetFlowRequest\x1a\f.dop.v1.Flow\x125\n" +
@@ -2099,108 +2248,114 @@ func file_dop_v1_workflow_proto_rawDescGZIP() []byte {
 	return file_dop_v1_workflow_proto_rawDescData
 }
 
-var file_dop_v1_workflow_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_dop_v1_workflow_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_dop_v1_workflow_proto_goTypes = []any{
 	(StageType)(0),                    // 0: dop.v1.StageType
 	(ArtifactKind)(0),                 // 1: dop.v1.ArtifactKind
 	(Gate)(0),                         // 2: dop.v1.Gate
-	(*StageSpec)(nil),                 // 3: dop.v1.StageSpec
-	(*FlowOrigin)(nil),                // 4: dop.v1.FlowOrigin
-	(*Flow)(nil),                      // 5: dop.v1.Flow
-	(*StageOrigin)(nil),               // 6: dop.v1.StageOrigin
-	(*EffectiveFlow)(nil),             // 7: dop.v1.EffectiveFlow
-	(*ScopeRef)(nil),                  // 8: dop.v1.ScopeRef
-	(*ListFlowsRequest)(nil),          // 9: dop.v1.ListFlowsRequest
-	(*ListFlowsResponse)(nil),         // 10: dop.v1.ListFlowsResponse
-	(*GetFlowRequest)(nil),            // 11: dop.v1.GetFlowRequest
-	(*CreateFlowRequest)(nil),         // 12: dop.v1.CreateFlowRequest
-	(*UpdateFlowRequest)(nil),         // 13: dop.v1.UpdateFlowRequest
-	(*ValidateFlowRequest)(nil),       // 14: dop.v1.ValidateFlowRequest
-	(*ValidateFlowResponse)(nil),      // 15: dop.v1.ValidateFlowResponse
-	(*ResolveFlowRequest)(nil),        // 16: dop.v1.ResolveFlowRequest
-	(*PromoteFlowRequest)(nil),        // 17: dop.v1.PromoteFlowRequest
-	(*PublishFlowRequest)(nil),        // 18: dop.v1.PublishFlowRequest
-	(*FlowPublication)(nil),           // 19: dop.v1.FlowPublication
-	(*WithdrawFlowRequest)(nil),       // 20: dop.v1.WithdrawFlowRequest
-	(*GrantFlowRequest)(nil),          // 21: dop.v1.GrantFlowRequest
-	(*FlowGrant)(nil),                 // 22: dop.v1.FlowGrant
-	(*RevokeFlowGrantRequest)(nil),    // 23: dop.v1.RevokeFlowGrantRequest
-	(*DeriveFlowRequest)(nil),         // 24: dop.v1.DeriveFlowRequest
-	(*BumpFlowPinRequest)(nil),        // 25: dop.v1.BumpFlowPinRequest
-	(*ListFlowSharesRequest)(nil),     // 26: dop.v1.ListFlowSharesRequest
-	(*ListFlowSharesResponse)(nil),    // 27: dop.v1.ListFlowSharesResponse
-	(*FlowAdoption)(nil),              // 28: dop.v1.FlowAdoption
-	(*ListFlowAdoptionsRequest)(nil),  // 29: dop.v1.ListFlowAdoptionsRequest
-	(*ListFlowAdoptionsResponse)(nil), // 30: dop.v1.ListFlowAdoptionsResponse
-	(*timestamppb.Timestamp)(nil),     // 31: google.protobuf.Timestamp
-	(*AuditStamp)(nil),                // 32: dop.v1.AuditStamp
-	(*AccountRef)(nil),                // 33: dop.v1.AccountRef
-	(*emptypb.Empty)(nil),             // 34: google.protobuf.Empty
+	(StageMoment)(0),                  // 3: dop.v1.StageMoment
+	(*StageAction)(nil),               // 4: dop.v1.StageAction
+	(*StageSpec)(nil),                 // 5: dop.v1.StageSpec
+	(*FlowOrigin)(nil),                // 6: dop.v1.FlowOrigin
+	(*Flow)(nil),                      // 7: dop.v1.Flow
+	(*StageOrigin)(nil),               // 8: dop.v1.StageOrigin
+	(*EffectiveFlow)(nil),             // 9: dop.v1.EffectiveFlow
+	(*ScopeRef)(nil),                  // 10: dop.v1.ScopeRef
+	(*ListFlowsRequest)(nil),          // 11: dop.v1.ListFlowsRequest
+	(*ListFlowsResponse)(nil),         // 12: dop.v1.ListFlowsResponse
+	(*GetFlowRequest)(nil),            // 13: dop.v1.GetFlowRequest
+	(*CreateFlowRequest)(nil),         // 14: dop.v1.CreateFlowRequest
+	(*UpdateFlowRequest)(nil),         // 15: dop.v1.UpdateFlowRequest
+	(*ValidateFlowRequest)(nil),       // 16: dop.v1.ValidateFlowRequest
+	(*ValidateFlowResponse)(nil),      // 17: dop.v1.ValidateFlowResponse
+	(*ResolveFlowRequest)(nil),        // 18: dop.v1.ResolveFlowRequest
+	(*PromoteFlowRequest)(nil),        // 19: dop.v1.PromoteFlowRequest
+	(*PublishFlowRequest)(nil),        // 20: dop.v1.PublishFlowRequest
+	(*FlowPublication)(nil),           // 21: dop.v1.FlowPublication
+	(*WithdrawFlowRequest)(nil),       // 22: dop.v1.WithdrawFlowRequest
+	(*GrantFlowRequest)(nil),          // 23: dop.v1.GrantFlowRequest
+	(*FlowGrant)(nil),                 // 24: dop.v1.FlowGrant
+	(*RevokeFlowGrantRequest)(nil),    // 25: dop.v1.RevokeFlowGrantRequest
+	(*DeriveFlowRequest)(nil),         // 26: dop.v1.DeriveFlowRequest
+	(*BumpFlowPinRequest)(nil),        // 27: dop.v1.BumpFlowPinRequest
+	(*ListFlowSharesRequest)(nil),     // 28: dop.v1.ListFlowSharesRequest
+	(*ListFlowSharesResponse)(nil),    // 29: dop.v1.ListFlowSharesResponse
+	(*FlowAdoption)(nil),              // 30: dop.v1.FlowAdoption
+	(*ListFlowAdoptionsRequest)(nil),  // 31: dop.v1.ListFlowAdoptionsRequest
+	(*ListFlowAdoptionsResponse)(nil), // 32: dop.v1.ListFlowAdoptionsResponse
+	nil,                               // 33: dop.v1.StageAction.ParamsEntry
+	(*timestamppb.Timestamp)(nil),     // 34: google.protobuf.Timestamp
+	(*AuditStamp)(nil),                // 35: dop.v1.AuditStamp
+	(*AccountRef)(nil),                // 36: dop.v1.AccountRef
+	(*emptypb.Empty)(nil),             // 37: google.protobuf.Empty
 }
 var file_dop_v1_workflow_proto_depIdxs = []int32{
-	0,  // 0: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
-	1,  // 1: dop.v1.StageSpec.artifacts:type_name -> dop.v1.ArtifactKind
-	2,  // 2: dop.v1.StageSpec.gate:type_name -> dop.v1.Gate
-	31, // 3: dop.v1.FlowOrigin.adopted_at:type_name -> google.protobuf.Timestamp
-	3,  // 4: dop.v1.Flow.stages:type_name -> dop.v1.StageSpec
-	32, // 5: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
-	4,  // 6: dop.v1.Flow.origin:type_name -> dop.v1.FlowOrigin
-	31, // 7: dop.v1.Flow.revoked_at:type_name -> google.protobuf.Timestamp
-	5,  // 8: dop.v1.EffectiveFlow.flow:type_name -> dop.v1.Flow
-	8,  // 9: dop.v1.EffectiveFlow.contributors:type_name -> dop.v1.ScopeRef
-	6,  // 10: dop.v1.EffectiveFlow.origins:type_name -> dop.v1.StageOrigin
-	5,  // 11: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
-	5,  // 12: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
-	5,  // 13: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
-	5,  // 14: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
-	31, // 15: dop.v1.FlowPublication.published_at:type_name -> google.protobuf.Timestamp
-	31, // 16: dop.v1.FlowPublication.withdrawn_at:type_name -> google.protobuf.Timestamp
-	33, // 17: dop.v1.GrantFlowRequest.to_account:type_name -> dop.v1.AccountRef
-	33, // 18: dop.v1.FlowGrant.to_account:type_name -> dop.v1.AccountRef
-	31, // 19: dop.v1.FlowGrant.granted_at:type_name -> google.protobuf.Timestamp
-	31, // 20: dop.v1.FlowGrant.revoked_at:type_name -> google.protobuf.Timestamp
-	8,  // 21: dop.v1.DeriveFlowRequest.target:type_name -> dop.v1.ScopeRef
-	22, // 22: dop.v1.ListFlowSharesResponse.shares:type_name -> dop.v1.FlowGrant
-	33, // 23: dop.v1.FlowAdoption.by_account:type_name -> dop.v1.AccountRef
-	31, // 24: dop.v1.FlowAdoption.derived_at:type_name -> google.protobuf.Timestamp
-	31, // 25: dop.v1.FlowAdoption.revoked_at:type_name -> google.protobuf.Timestamp
-	28, // 26: dop.v1.ListFlowAdoptionsResponse.adoptions:type_name -> dop.v1.FlowAdoption
-	9,  // 27: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
-	11, // 28: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
-	12, // 29: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
-	13, // 30: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
-	14, // 31: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
-	16, // 32: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
-	17, // 33: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
-	18, // 34: dop.v1.WorkflowService.PublishFlow:input_type -> dop.v1.PublishFlowRequest
-	20, // 35: dop.v1.WorkflowService.WithdrawFlow:input_type -> dop.v1.WithdrawFlowRequest
-	21, // 36: dop.v1.WorkflowService.GrantFlow:input_type -> dop.v1.GrantFlowRequest
-	23, // 37: dop.v1.WorkflowService.RevokeFlowGrant:input_type -> dop.v1.RevokeFlowGrantRequest
-	24, // 38: dop.v1.WorkflowService.DeriveFlow:input_type -> dop.v1.DeriveFlowRequest
-	25, // 39: dop.v1.WorkflowService.BumpFlowPin:input_type -> dop.v1.BumpFlowPinRequest
-	26, // 40: dop.v1.WorkflowService.ListFlowShares:input_type -> dop.v1.ListFlowSharesRequest
-	29, // 41: dop.v1.WorkflowService.ListFlowAdoptions:input_type -> dop.v1.ListFlowAdoptionsRequest
-	10, // 42: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
-	5,  // 43: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
-	5,  // 44: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
-	5,  // 45: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
-	15, // 46: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
-	7,  // 47: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
-	5,  // 48: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
-	19, // 49: dop.v1.WorkflowService.PublishFlow:output_type -> dop.v1.FlowPublication
-	34, // 50: dop.v1.WorkflowService.WithdrawFlow:output_type -> google.protobuf.Empty
-	22, // 51: dop.v1.WorkflowService.GrantFlow:output_type -> dop.v1.FlowGrant
-	34, // 52: dop.v1.WorkflowService.RevokeFlowGrant:output_type -> google.protobuf.Empty
-	5,  // 53: dop.v1.WorkflowService.DeriveFlow:output_type -> dop.v1.Flow
-	34, // 54: dop.v1.WorkflowService.BumpFlowPin:output_type -> google.protobuf.Empty
-	27, // 55: dop.v1.WorkflowService.ListFlowShares:output_type -> dop.v1.ListFlowSharesResponse
-	30, // 56: dop.v1.WorkflowService.ListFlowAdoptions:output_type -> dop.v1.ListFlowAdoptionsResponse
-	42, // [42:57] is the sub-list for method output_type
-	27, // [27:42] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	3,  // 0: dop.v1.StageAction.on:type_name -> dop.v1.StageMoment
+	33, // 1: dop.v1.StageAction.params:type_name -> dop.v1.StageAction.ParamsEntry
+	0,  // 2: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
+	1,  // 3: dop.v1.StageSpec.artifacts:type_name -> dop.v1.ArtifactKind
+	2,  // 4: dop.v1.StageSpec.gate:type_name -> dop.v1.Gate
+	4,  // 5: dop.v1.StageSpec.actions:type_name -> dop.v1.StageAction
+	34, // 6: dop.v1.FlowOrigin.adopted_at:type_name -> google.protobuf.Timestamp
+	5,  // 7: dop.v1.Flow.stages:type_name -> dop.v1.StageSpec
+	35, // 8: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
+	6,  // 9: dop.v1.Flow.origin:type_name -> dop.v1.FlowOrigin
+	34, // 10: dop.v1.Flow.revoked_at:type_name -> google.protobuf.Timestamp
+	7,  // 11: dop.v1.EffectiveFlow.flow:type_name -> dop.v1.Flow
+	10, // 12: dop.v1.EffectiveFlow.contributors:type_name -> dop.v1.ScopeRef
+	8,  // 13: dop.v1.EffectiveFlow.origins:type_name -> dop.v1.StageOrigin
+	7,  // 14: dop.v1.ListFlowsResponse.flows:type_name -> dop.v1.Flow
+	7,  // 15: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
+	7,  // 16: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
+	7,  // 17: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
+	34, // 18: dop.v1.FlowPublication.published_at:type_name -> google.protobuf.Timestamp
+	34, // 19: dop.v1.FlowPublication.withdrawn_at:type_name -> google.protobuf.Timestamp
+	36, // 20: dop.v1.GrantFlowRequest.to_account:type_name -> dop.v1.AccountRef
+	36, // 21: dop.v1.FlowGrant.to_account:type_name -> dop.v1.AccountRef
+	34, // 22: dop.v1.FlowGrant.granted_at:type_name -> google.protobuf.Timestamp
+	34, // 23: dop.v1.FlowGrant.revoked_at:type_name -> google.protobuf.Timestamp
+	10, // 24: dop.v1.DeriveFlowRequest.target:type_name -> dop.v1.ScopeRef
+	24, // 25: dop.v1.ListFlowSharesResponse.shares:type_name -> dop.v1.FlowGrant
+	36, // 26: dop.v1.FlowAdoption.by_account:type_name -> dop.v1.AccountRef
+	34, // 27: dop.v1.FlowAdoption.derived_at:type_name -> google.protobuf.Timestamp
+	34, // 28: dop.v1.FlowAdoption.revoked_at:type_name -> google.protobuf.Timestamp
+	30, // 29: dop.v1.ListFlowAdoptionsResponse.adoptions:type_name -> dop.v1.FlowAdoption
+	11, // 30: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
+	13, // 31: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
+	14, // 32: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
+	15, // 33: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
+	16, // 34: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
+	18, // 35: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
+	19, // 36: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
+	20, // 37: dop.v1.WorkflowService.PublishFlow:input_type -> dop.v1.PublishFlowRequest
+	22, // 38: dop.v1.WorkflowService.WithdrawFlow:input_type -> dop.v1.WithdrawFlowRequest
+	23, // 39: dop.v1.WorkflowService.GrantFlow:input_type -> dop.v1.GrantFlowRequest
+	25, // 40: dop.v1.WorkflowService.RevokeFlowGrant:input_type -> dop.v1.RevokeFlowGrantRequest
+	26, // 41: dop.v1.WorkflowService.DeriveFlow:input_type -> dop.v1.DeriveFlowRequest
+	27, // 42: dop.v1.WorkflowService.BumpFlowPin:input_type -> dop.v1.BumpFlowPinRequest
+	28, // 43: dop.v1.WorkflowService.ListFlowShares:input_type -> dop.v1.ListFlowSharesRequest
+	31, // 44: dop.v1.WorkflowService.ListFlowAdoptions:input_type -> dop.v1.ListFlowAdoptionsRequest
+	12, // 45: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
+	7,  // 46: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
+	7,  // 47: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
+	7,  // 48: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
+	17, // 49: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
+	9,  // 50: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
+	7,  // 51: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
+	21, // 52: dop.v1.WorkflowService.PublishFlow:output_type -> dop.v1.FlowPublication
+	37, // 53: dop.v1.WorkflowService.WithdrawFlow:output_type -> google.protobuf.Empty
+	24, // 54: dop.v1.WorkflowService.GrantFlow:output_type -> dop.v1.FlowGrant
+	37, // 55: dop.v1.WorkflowService.RevokeFlowGrant:output_type -> google.protobuf.Empty
+	7,  // 56: dop.v1.WorkflowService.DeriveFlow:output_type -> dop.v1.Flow
+	37, // 57: dop.v1.WorkflowService.BumpFlowPin:output_type -> google.protobuf.Empty
+	29, // 58: dop.v1.WorkflowService.ListFlowShares:output_type -> dop.v1.ListFlowSharesResponse
+	32, // 59: dop.v1.WorkflowService.ListFlowAdoptions:output_type -> dop.v1.ListFlowAdoptionsResponse
+	45, // [45:60] is the sub-list for method output_type
+	30, // [30:45] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_workflow_proto_init() }
@@ -2214,8 +2369,8 @@ func file_dop_v1_workflow_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_workflow_proto_rawDesc), len(file_dop_v1_workflow_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   28,
+			NumEnums:      4,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -221,6 +221,14 @@ func flowToProto(f *workflow.Flow) *dopv1.Flow {
 		for _, a := range st.Artifacts {
 			artifacts = append(artifacts, flowArtifactToProto(a))
 		}
+		actions := make([]*dopv1.StageAction, 0, len(st.Actions))
+		for _, a := range st.Actions {
+			actions = append(actions, &dopv1.StageAction{
+				On:     flowMomentToProto(a.On),
+				Name:   a.Name,
+				Params: a.Params,
+			})
+		}
 		stages = append(stages, &dopv1.StageSpec{
 			Key:       st.Key,
 			Name:      st.Name,
@@ -228,6 +236,7 @@ func flowToProto(f *workflow.Flow) *dopv1.Flow {
 			Artifacts: artifacts,
 			Gate:      flowGateToProto(st.Gate),
 			Subtypes:  st.Subtypes,
+			Actions:   actions,
 		})
 	}
 	out := &dopv1.Flow{
@@ -277,6 +286,17 @@ func flowFromProto(f *dopv1.Flow) workflow.Flow {
 		for _, a := range st.GetArtifacts() {
 			artifacts = append(artifacts, flowArtifactFromProto(a))
 		}
+		// nil and not an empty slice when the client sent none: a flow written
+		// before stages could declare actions and one deliberately declaring
+		// zero are the same document, and the domain says that with nil.
+		var actions []workflow.StageAction
+		for _, a := range st.GetActions() {
+			actions = append(actions, workflow.StageAction{
+				On:     flowMomentFromProto(a.GetOn()),
+				Name:   a.GetName(),
+				Params: a.GetParams(),
+			})
+		}
 		stages = append(stages, workflow.StageSpec{
 			Key:       st.GetKey(),
 			Name:      st.GetName(),
@@ -284,6 +304,7 @@ func flowFromProto(f *dopv1.Flow) workflow.Flow {
 			Artifacts: artifacts,
 			Gate:      flowGateFromProto(st.GetGate()),
 			Subtypes:  st.GetSubtypes(),
+			Actions:   actions,
 		})
 	}
 	return workflow.Flow{
@@ -341,6 +362,29 @@ func flowArtifactToProto(a workflow.ArtifactKind) dopv1.ArtifactKind {
 func flowArtifactFromProto(a dopv1.ArtifactKind) workflow.ArtifactKind {
 	for domain, proto := range flowArtifactKinds {
 		if proto == a {
+			return domain
+		}
+	}
+	return ""
+}
+
+var flowStageMoments = map[workflow.StageMoment]dopv1.StageMoment{
+	workflow.MomentEnter: dopv1.StageMoment_STAGE_MOMENT_ENTER,
+	workflow.MomentExit:  dopv1.StageMoment_STAGE_MOMENT_EXIT,
+}
+
+func flowMomentToProto(m workflow.StageMoment) dopv1.StageMoment {
+	return flowStageMoments[m]
+}
+
+// An unspecified moment stays EMPTY rather than defaulting to enter, unlike
+// the gate below. A gate has a defensible default — silence means "does not
+// stop". A moment does not: guessing "enter" would run the action at a moment
+// the author never wrote, and the empty string is what makes workflow.Validate
+// refuse it by name instead.
+func flowMomentFromProto(m dopv1.StageMoment) workflow.StageMoment {
+	for domain, proto := range flowStageMoments {
+		if proto == m {
 			return domain
 		}
 	}

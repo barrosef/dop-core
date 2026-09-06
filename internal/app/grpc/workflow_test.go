@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 )
 
@@ -70,5 +71,56 @@ func TestPublicationToProtoCarriesWithdrawnAt(t *testing.T) {
 	out := publicationToProto(p, "acme")
 	if out.GetWithdrawnAt() == nil || !out.GetWithdrawnAt().AsTime().Equal(withdrawn) {
 		t.Fatalf("withdrawn_at = %v, want %v", out.GetWithdrawnAt(), withdrawn)
+	}
+}
+
+// TestAStageActionSurvivesBothMapperDirections covers the half the Postgres
+// round trip cannot reach: a flow authored through the API arrives as proto and
+// leaves as proto, and a mapper that drops `actions` in either direction makes
+// a stage that declared one indistinguishable from a stage that never did —
+// with no error anywhere, which is the whole reason DecideStage was unreachable
+// from a real flow.
+func TestAStageActionSurvivesBothMapperDirections(t *testing.T) {
+	in := &dopv1.Flow{
+		Id: "flow-1", Name: "with actions", Version: 3,
+		OwnerScope: "account", OwnerId: "acct-1",
+		Stages: []*dopv1.StageSpec{{
+			Key: "implementation", Name: "Implementation",
+			Type: dopv1.StageType_STAGE_TYPE_IMPLEMENTATION,
+			Gate: dopv1.Gate_GATE_NONE,
+			Actions: []*dopv1.StageAction{
+				{On: dopv1.StageMoment_STAGE_MOMENT_EXIT, Name: "provision_bench",
+					Params: map[string]string{"size": "large"}},
+			},
+		}},
+	}
+
+	domain := flowFromProto(in)
+	if len(domain.Stages[0].Actions) != 1 {
+		t.Fatalf("inbound: the stage declared one action and %d arrived", len(domain.Stages[0].Actions))
+	}
+	got := domain.Stages[0].Actions[0]
+	if got.On != workflow.MomentExit || got.Name != "provision_bench" || got.Params["size"] != "large" {
+		t.Fatalf("inbound: the action arrived as %+v", got)
+	}
+
+	out := flowToProto(&domain)
+	if len(out.GetStages()[0].GetActions()) != 1 {
+		t.Fatalf("outbound: the action did not come back")
+	}
+	back := out.GetStages()[0].GetActions()[0]
+	if back.GetOn() != dopv1.StageMoment_STAGE_MOMENT_EXIT ||
+		back.GetName() != "provision_bench" || back.GetParams()["size"] != "large" {
+		t.Fatalf("outbound: the action came back as %+v", back)
+	}
+}
+
+// TestAMomentTheContractDoesNotKnowStaysEmpty pins the one place this mapper
+// deliberately refuses the gate's habit of defaulting. Guessing "enter" would
+// fire the action at a moment nobody wrote; the empty string is what makes
+// workflow.Validate name the problem instead.
+func TestAMomentTheContractDoesNotKnowStaysEmpty(t *testing.T) {
+	if m := flowMomentFromProto(dopv1.StageMoment_STAGE_MOMENT_UNSPECIFIED); m != "" {
+		t.Fatalf("an unspecified moment must not be guessed, got %q", m)
 	}
 }
