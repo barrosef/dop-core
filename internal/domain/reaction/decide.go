@@ -68,7 +68,7 @@ func Decide(e ports.Event, rules []Rule) ([]PlannedAction, error) {
 		}
 		for _, a := range r.Actions {
 			planned = append(planned, PlannedAction{
-				RuleRef: r.ID, Name: a.Name, Params: a.Params, Event: e,
+				RuleRef: r.ID, Name: a.Name, Params: copyParams(a.Params), Event: e,
 			})
 		}
 	}
@@ -90,4 +90,23 @@ func matches(when map[string]string, payload map[string]any) bool {
 		}
 	}
 	return true
+}
+
+// copyParams keeps the rule's own map out of the plan.
+//
+// A plan crosses a domain boundary: a handler receives it and there is nothing
+// stopping the handler from writing to Params — filling in a resolved address,
+// say. Handing over the source map means that write lands in the Rule the
+// CALLER is still holding, and the caller may go on to decide with that same
+// rule for the next event. One small map per planned action is the price of
+// not having that aliasing be discovered in production.
+func copyParams(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }

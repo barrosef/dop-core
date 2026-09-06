@@ -47,6 +47,11 @@ func TestARuleThatCouldNotBeAppliedIsRefused(t *testing.T) {
 		"no owner":                          func(r *reaction.Rule) { r.OwnerScope = "" },
 		"the demand scope":                  func(r *reaction.Rule) { r.OwnerScope = "demand" },
 		"no reason":                         func(r *reaction.Rule) { r.Why = "" },
+		// An empty or misspelt trigger used to reach Postgres and fail at the
+		// cast to the reaction_trigger enum — a database error about a type
+		// nobody writing a policy has heard of.
+		"no trigger at all":     func(r *reaction.Rule) { r.Trigger = "" },
+		"a trigger that is not": func(r *reaction.Rule) { r.Trigger = "webhook" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := good()

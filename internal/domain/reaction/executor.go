@@ -28,13 +28,26 @@ type Registry map[ActionName]Handler
 
 // Run refuses an unregistered action name rather than skipping it.
 //
-// The vocabulary is validated when a rule is WRITTEN (Rule.Validate), so
-// reaching an unknown name here means a rule outlived its handler — a deploy
-// problem, not something a user typed — and that is a contract error
-// (KindInternal), not a business failure. Skipping it quietly would make a
-// policy stop working with nothing in the logs to point at: the message below
-// names the action, the rule and the event so whoever is paged at 3am does not
-// have to reconstruct that from a stack trace.
+// An unknown name here is a CONTRACT error (KindInternal) and not a business
+// failure, because there is no legitimate path that produces one from user
+// input: a rule outliving the deploy that removed its handler is the case this
+// exists for.
+//
+// That statement is not yet fully earned, and plan 2 owes the rest of it.
+// Rule.Validate does check the vocabulary, but NOTHING ON THE WRITE PATH CALLS
+// IT: `ReactionRepo.Create` writes the rule it is given, no CHECK in migration
+// 0023 covers action names, and `decodeActions` tolerates an unreadable array
+// by returning none. So a rule with a name outside the vocabulary can be
+// written today, and it would arrive here as an internal error over what was in
+// fact bad input. There is no caller writing rules yet, which is why this is a
+// promise to keep rather than a defect to fix: the use case plan 2 builds must
+// call Rule.Validate before Create, and until it does, the Kind below is
+// optimistic about where the bad name came from.
+//
+// Skipping quietly would be worse in every case: a policy stops working with
+// nothing in the logs to point at. The message below names the action, the rule
+// and the event so whoever is paged at 3am does not have to reconstruct that
+// from a stack trace.
 func (r Registry) Run(ctx context.Context, p PlannedAction) error {
 	h, ok := r[p.Name]
 	if !ok {

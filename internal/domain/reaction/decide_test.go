@@ -186,3 +186,38 @@ func TestTheFirstStageHasNoExitBeforeIt(t *testing.T) {
 		t.Fatalf("a demand starting has an entry and no exit: %+v", got)
 	}
 }
+
+// TestThePlanDoesNotHandOutTheRulesOwnParams closes a domain boundary. A
+// handler that writes to Params would otherwise be writing into the Rule the
+// CALLER is still holding — the same map, aliased across the decision. The
+// caller may well go on to decide with that rule for another event.
+func TestThePlanDoesNotHandOutTheRulesOwnParams(t *testing.T) {
+	r := ruleAt("account", "r-1", nil, reaction.ActionSendEmail)
+	r.Actions[0].Params = map[string]string{"to_field": "email"}
+	got, err := reaction.Decide(event(t, "dop.identity.invite.created", nil), []reaction.Rule{r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got[0].Params["to_field"] = "hijacked"
+	if r.Actions[0].Params["to_field"] != "email" {
+		t.Fatalf("the handler wrote through into the rule: %v", r.Actions[0].Params)
+	}
+}
+
+// The same boundary on the in-demand side: the stages map belongs to whoever
+// read the frozen flow version, and a handler must not be able to edit it.
+func TestTheStagePlanDoesNotHandOutTheFlowsOwnParams(t *testing.T) {
+	spec := reaction.StageActionSpec{On: "enter", Name: reaction.ActionOpenAttention,
+		Params: map[string]string{"severity": "info"}}
+	stages := map[string][]reaction.StageActionSpec{"test": {spec}}
+	got, err := reaction.DecideStage(
+		event(t, "dop.demand.stage.advanced", map[string]any{"from": "", "to": "test"}),
+		"flow-1", 1, stages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got[0].Params["severity"] = "hijacked"
+	if stages["test"][0].Params["severity"] != "info" {
+		t.Fatalf("the handler wrote through into the frozen flow: %v", stages["test"][0].Params)
+	}
+}

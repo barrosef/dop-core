@@ -52,7 +52,7 @@ func DecideStage(e ports.Event, flowID string, version int32, stages map[string]
 			planned = append(planned, PlannedAction{
 				RuleRef: fmt.Sprintf("%s/%d/%s/%s", flowID, version, stageKey, moment),
 				Name:    a.Name,
-				Params:  a.Params,
+				Params:  copyParams(a.Params),
 				Event:   e,
 			})
 		}

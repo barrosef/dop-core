@@ -79,6 +79,11 @@ type Rule struct {
 	CreatedBy  string
 }
 
+// validTriggers restates the reaction_trigger enum the column carries. Without
+// it an empty or misspelt trigger is refused only by the cast in Postgres, as a
+// database error naming a type nobody writing a policy has heard of.
+var validTriggers = map[TriggerKind]bool{TriggerEvent: true, TriggerSchedule: true}
+
 // validScopes excludes `demand` deliberately: a demand's reactions come from
 // the flow version it froze, not from this table. Two places deciding for one
 // demand is two places to look when it does the wrong thing.
@@ -87,6 +92,9 @@ var validScopes = map[string]bool{"platform": true, "account": true, "workspace"
 func (r Rule) Validate() error {
 	if !validScopes[r.OwnerScope] {
 		return errs.Invalid("rule at an unusable level: %q — a demand's reactions come from its flow", r.OwnerScope)
+	}
+	if !validTriggers[r.Trigger] {
+		return errs.Invalid("rule with an unusable trigger %q: a rule fires on an event or on a schedule", r.Trigger)
 	}
 	if r.Trigger == TriggerEvent && strings.TrimSpace(r.EventType) == "" {
 		return errs.Invalid("an event rule with no event type reacts to nothing")
