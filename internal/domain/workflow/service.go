@@ -413,6 +413,9 @@ func (s *Service) Grant(ctx context.Context, publicationID, toAccountID, idempot
 		return nil, err
 	}
 	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
 	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
 	if err != nil {
 		return nil, err
@@ -420,7 +423,8 @@ func (s *Service) Grant(ctx context.Context, publicationID, toAccountID, idempot
 	if !canManage(role) {
 		return nil, errs.Permission("granting a flow requires owner or admin")
 	}
-	if strings.TrimSpace(toAccountID) == "" {
+	toAccountID = strings.TrimSpace(toAccountID)
+	if toAccountID == "" {
 		return nil, errs.Invalid("no account to grant to")
 	}
 	if toAccountID == accountID {

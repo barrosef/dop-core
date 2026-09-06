@@ -601,3 +601,67 @@ func TestTheGrantStampsThePolicyItWasMadeUnder(t *testing.T) {
 		t.Fatal("the account's default changed the terms of an existing grant: the stamp is not being honoured")
 	}
 }
+
+// GrantedBy is an AUDIT field: it is stored verbatim from the actor, and a
+// grant nobody can be held to is worse than no grant at all. fakeAccess
+// happens to reject an empty actor key too (there is no membership row for
+// ""), which would mask a missing guard behind a Permission error instead of
+// Unauthorized — so this asserts the SPECIFIC kind the guard raises.
+func TestGrantRequiresAnIdentifiedActor(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	anon := ctxutil.Into(context.Background(), ctxutil.Call{
+		AccountID: env.AccountID, ActorKind: ctxutil.ActorUser,
+	})
+	if _, err := svc.Grant(anon, pub.ID, env.OtherAccountID, "g-anon"); errs.KindOf(err) != errs.KindUnauthorized {
+		t.Fatalf("an unidentified actor must not grant, and GrantedBy must never be recorded empty: %v", err)
+	}
+}
+
+func TestGrantRefusesAnEmptyTarget(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Grant(ctx, pub.ID, "   ", "g1"); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("an empty target account has to be refused: %v", err)
+	}
+}
+
+func TestGrantRefusesGrantingToYourOwnAccount(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Padded with whitespace on purpose: the trim has to apply BEFORE the
+	// self-grant comparison and stay applied for what gets stored — trimming
+	// only the emptiness check and comparing the untrimmed value afterwards
+	// would let this one slip through as a "grant" to a mistyped variant of
+	// the caller's own account.
+	if _, err := svc.Grant(ctx, pub.ID, " "+env.AccountID+" ", "g1"); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("an account already sees its own flows: there is nothing to grant: %v", err)
+	}
+}
+
+func TestGrantRefusesAWithdrawnPublication(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Withdraw(ctx, pub.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g1"); errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("a withdrawn publication has to be granted again, not still granted from: %v", err)
+	}
+}
