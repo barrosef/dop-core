@@ -107,6 +107,21 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 		return nil, nil, err
 	}
 
+	// The e-mail is unique across the whole table (0001_foundation.sql), while
+	// the lookup above is by subject. Those two only agree because the identity
+	// provider links accounts that share an e-mail, which is configuration and
+	// not code. When it stops agreeing, say why: without this the insert dies on
+	// the unique index and the person reads "something went wrong".
+	if existing == nil && p.Email != "" && p.EmailVerified {
+		if other, err := s.repo.UserByVerifiedEmail(ctx, p.Email); err == nil && other != nil {
+			return nil, nil, errs.New(errs.KindConflict,
+				"this e-mail already belongs to another sign-in method; "+
+					"the identity provider is not linking accounts that share an e-mail")
+		} else if err != nil && errs.KindOf(err) != errs.KindNotFound {
+			return nil, nil, err
+		}
+	}
+
 	u := &User{
 		Subject:       p.Subject,
 		Email:         strings.ToLower(strings.TrimSpace(p.Email)),

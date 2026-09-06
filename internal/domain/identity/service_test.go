@@ -336,6 +336,53 @@ func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	}
 }
 
+func TestASecondSubjectOnAVerifiedEmailIsRefusedByName(t *testing.T) {
+	// Reaching here means the provider stopped linking accounts that share an
+	// e-mail. The e-mail is unique in the schema, so the insert would fail on the
+	// index and the person would read "something went wrong". The cause is a
+	// configuration, and the error has to say so.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	ctx := context.Background()
+
+	if _, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-google", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"google"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-github", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"github"},
+	})
+	if errs.KindOf(err) != errs.KindConflict {
+		t.Fatalf("expected a conflict naming the configuration, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "linking") {
+		t.Fatalf("the message does not name the cause: %v", err)
+	}
+}
+
+func TestTheSameSubjectComingBackIsNotAConflict(t *testing.T) {
+	// The guard must not fire on the ordinary case: the same person, same
+	// subject, signing in again on an e-mail that is already theirs.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	ctx := context.Background()
+	p := ports.Principal{Subject: "sub-1", Email: "ana@example.com",
+		EmailVerified: true, Providers: []string{"google"}}
+
+	u1, _, _ := svc.EnsureUser(ctx, p)
+	u2, _, err := svc.EnsureUser(ctx, p)
+	if err != nil {
+		t.Fatalf("signing in twice is not a conflict: %v", err)
+	}
+	if u1.ID != u2.ID {
+		t.Fatal("the same subject produced two users")
+	}
+}
+
 func TestAPasswordCredentialNeedsAVerifiedEmail(t *testing.T) {
 	svc := identity.NewService(newFakeRepo(), fixedClock{now})
 	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
