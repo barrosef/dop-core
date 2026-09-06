@@ -148,3 +148,41 @@ func TestThePlanCarriesWhatTheExecutorNeeds(t *testing.T) {
 		t.Fatalf("the plan does not carry enough to execute: %+v", got[0])
 	}
 }
+
+func TestAStageEventPlansTheExitOfWhereItLeftAndTheEntryOfWhereItArrived(t *testing.T) {
+	e := event(t, "dop.demand.stage.advanced", map[string]any{
+		"from": "implementation", "to": "test",
+	})
+	stages := map[string][]reaction.StageActionSpec{
+		"implementation": {{On: "exit", Name: reaction.ActionProvisionBench}},
+		"test":           {{On: "enter", Name: reaction.ActionOpenAttention}},
+		"spec":           {{On: "enter", Name: reaction.ActionSendEmail}},
+	}
+	got, err := reaction.DecideStage(e, "flow-1", 3, stages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("the exit of implementation and the entry of test, got %d: %+v", len(got), got)
+	}
+	// RuleRef names the frozen flow, its version, the stage and the moment —
+	// which is what makes the idempotency key unique and a DLQ record
+	// re-executable without consulting the rules again.
+	if got[0].RuleRef != "flow-1/3/implementation/exit" {
+		t.Fatalf("the plan does not identify its origin: %q", got[0].RuleRef)
+	}
+}
+
+func TestTheFirstStageHasNoExitBeforeIt(t *testing.T) {
+	e := event(t, "dop.demand.stage.advanced", map[string]any{"from": "", "to": "context"})
+	stages := map[string][]reaction.StageActionSpec{
+		"context": {{On: "enter", Name: reaction.ActionSendEmail}},
+	}
+	got, err := reaction.DecideStage(e, "flow-1", 1, stages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].RuleRef != "flow-1/1/context/enter" {
+		t.Fatalf("a demand starting has an entry and no exit: %+v", got)
+	}
+}
