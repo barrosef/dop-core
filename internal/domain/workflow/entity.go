@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Digital-Business-One/dop-core/internal/domain/reaction"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
@@ -157,6 +158,33 @@ const (
 
 func ValidGate(g GateKind) bool { return g == GateNone || g == GateHuman }
 
+// StageMoment is when a stage's action fires.
+//
+// Both are derivable from the `from`/`to` the `dop.demand.stage.advanced` event
+// already carries, so nothing changes in the emitter. Two moments and not one
+// because the two real cases need both: "provision the bench when implementation
+// ENDS" is an exit, and "tell the dev when the demand ENTERS spec" is an entry.
+// Folding entry into "the exit of the previous stage" is correct and unreadable
+// — and unreadable is fatal here, because the flow is authored through a chat.
+type StageMoment string
+
+const (
+	MomentEnter StageMoment = "enter"
+	MomentExit  StageMoment = "exit"
+)
+
+func ValidStageMoment(m StageMoment) bool { return m == MomentEnter || m == MomentExit }
+
+// StageAction is what a stage asks the platform to do when it is entered or
+// left. The vocabulary is the reaction domain's (reaction.ActionName), so a
+// flow cannot ask for something no handler implements — the same closed list
+// the outside-the-demand decider uses (P-29).
+type StageAction struct {
+	On     StageMoment
+	Name   string
+	Params map[string]string
+}
+
 // StageSpec is one stage. No conditionals, no parallelism, no DSL: v1 is
 // deliberately a sequence (ADR-0014 §2).
 type StageSpec struct {
@@ -167,7 +195,8 @@ type StageSpec struct {
 	Type      StageType
 	Artifacts []ArtifactKind
 	Gate      GateKind
-	Subtypes  []string // e.g. test → aaa, e2e, integration
+	Subtypes  []string      // e.g. test → aaa, e2e, integration
+	Actions   []StageAction // what fires on enter/exit — declaration, not a branch (ADR-0014)
 }
 
 // Flow is a FROZEN version of a flow at one level of the chain.
@@ -227,7 +256,8 @@ func (f Flow) SameStages(other Flow) bool {
 	for i := range f.Stages {
 		a, b := f.Stages[i], other.Stages[i]
 		if a.Key != b.Key || a.Name != b.Name || a.Type != b.Type || a.Gate != b.Gate ||
-			!sameArtifacts(a.Artifacts, b.Artifacts) || !sameStrings(a.Subtypes, b.Subtypes) {
+			!sameArtifacts(a.Artifacts, b.Artifacts) || !sameStrings(a.Subtypes, b.Subtypes) ||
+			!sameActions(a.Actions, b.Actions) {
 			return false
 		}
 	}
@@ -488,6 +518,40 @@ func Validate(f Flow) Report {
 			}
 		}
 
+		// WHY a name may not repeat AT ONE MOMENT, so nobody "helpfully" relaxes
+		// it: what marks an action as done is (event, rule_ref, action name),
+		// and reaction.DecideStage builds rule_ref as
+		// flow/version/stage/moment. Two actions sharing a name at one moment
+		// therefore claim the SAME row — the first runs, the second is skipped
+		// as already applied, forever, with no error anywhere. The moment is
+		// part of rule_ref, which is why the scope is per moment and not per
+		// stage: enter and exit are genuinely different rows.
+		//
+		// The alternative was an ordinal in that key. It was rejected because
+		// it makes idempotency depend on ORDER: inserting an action in the
+		// middle of the list would shift every later ordinal, make
+		// already-applied actions look unapplied, and a redelivery would re-run
+		// them.
+		seenAction := map[string]bool{}
+		for _, a := range st.Actions {
+			if !ValidStageMoment(a.On) {
+				r.errf("stage %s: %q is not a moment — use enter or exit", where, a.On)
+			}
+			if !reaction.ValidActionName(reaction.ActionName(a.Name)) {
+				r.errf("stage %s: %q is not an action this platform implements", where, a.Name)
+			}
+			key := string(a.On) + "\x00" + a.Name
+			if seenAction[key] {
+				r.errf("stage %s declares %q twice on %s: what marks an action as done is "+
+					"(event, stage, moment, action name), so the second one would be skipped "+
+					"as already applied and would never run. The same name on the OTHER "+
+					"moment is fine; to do %q twice at this one — to reach two recipients, "+
+					"say — use two stages, or one action whose params name both",
+					where, a.Name, a.On, a.Name)
+			}
+			seenAction[key] = true
+		}
+
 		if st.Type == TypeSpec {
 			hasSpec = true
 		}
@@ -525,6 +589,34 @@ func sameArtifacts(a, b []ArtifactKind) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sameActions compares a stage's declared actions — part of the EXECUTABLE
+// content SameStages exists to detect a change in. Skipping it here would let
+// somebody swap what a stage does on enter/exit without ever creating a new
+// version, silently breaking invariant #1 at the top of this file.
+func sameActions(a, b []StageAction) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].On != b[i].On || a[i].Name != b[i].Name || !sameParams(a[i].Params, b[i].Params) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameParams(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
 			return false
 		}
 	}

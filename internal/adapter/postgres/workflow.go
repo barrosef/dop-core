@@ -501,12 +501,24 @@ func flowEvent(kind string, f *workflow.Flow) ports.Event {
 // type on purpose: renaming a domain field must not silently rewrite the JSON of
 // versions that have been frozen for months.
 type stageDoc struct {
-	Key       string   `json:"key"`
-	Name      string   `json:"name"`
-	Type      string   `json:"type"`
-	Artifacts []string `json:"artifacts"`
-	Gate      string   `json:"gate"`
-	Subtypes  []string `json:"subtypes"`
+	Key       string           `json:"key"`
+	Name      string           `json:"name"`
+	Type      string           `json:"type"`
+	Artifacts []string         `json:"artifacts"`
+	Gate      string           `json:"gate"`
+	Subtypes  []string         `json:"subtypes"`
+	Actions   []stageActionDoc `json:"actions,omitempty"`
+}
+
+// stageActionDoc is a stage's action as it sits in the frozen version. `omitempty`
+// on the field above, and not a `[]` default like subtypes: a version written
+// before stages could declare actions has no key at all, and reading it back as
+// nil is the truth — inventing an empty array would make an old version and a
+// deliberately action-free one indistinguishable from the outside.
+type stageActionDoc struct {
+	On     string            `json:"on"`
+	Name   string            `json:"name"`
+	Params map[string]string `json:"params,omitempty"`
 }
 
 func encodeStages(stages []workflow.StageSpec) []byte {
@@ -520,9 +532,14 @@ func encodeStages(stages []workflow.StageSpec) []byte {
 		if subtypes == nil {
 			subtypes = []string{}
 		}
+		actions := make([]stageActionDoc, 0, len(st.Actions))
+		for _, a := range st.Actions {
+			actions = append(actions, stageActionDoc{On: string(a.On), Name: a.Name, Params: a.Params})
+		}
 		docs = append(docs, stageDoc{
 			Key: st.Key, Name: st.Name, Type: string(st.Type),
 			Artifacts: artifacts, Gate: string(st.Gate), Subtypes: subtypes,
+			Actions: actions,
 		})
 	}
 	return mustJSON(docs)
@@ -542,9 +559,16 @@ func decodeStages(raw []byte) []workflow.StageSpec {
 		for _, a := range d.Artifacts {
 			artifacts = append(artifacts, workflow.ArtifactKind(a))
 		}
+		var actions []workflow.StageAction
+		for _, a := range d.Actions {
+			actions = append(actions, workflow.StageAction{
+				On: workflow.StageMoment(a.On), Name: a.Name, Params: a.Params,
+			})
+		}
 		out = append(out, workflow.StageSpec{
 			Key: d.Key, Name: d.Name, Type: workflow.StageType(d.Type),
 			Artifacts: artifacts, Gate: workflow.GateKind(d.Gate), Subtypes: d.Subtypes,
+			Actions: actions,
 		})
 	}
 	return out

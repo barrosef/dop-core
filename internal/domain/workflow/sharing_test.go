@@ -491,11 +491,11 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 
 	repo := newFakeRepo()
 	tree := &fakeTree{
-		workspaceDe: map[string]string{sharingProject: sharingWorkspace},
-		contaDe:     map[string]string{sharingWorkspace: sharingOther},
-		projetoDe:   map[string]string{},
+		workspaceOf: map[string]string{sharingProject: sharingWorkspace},
+		accountOf:   map[string]string{sharingWorkspace: sharingOther},
+		projectOf:   map[string]string{},
 	}
-	access := &fakeAccess{papel: map[string]string{
+	access := &fakeAccess{role: map[string]string{
 		sharingOwner + "@" + sharingAccount:     workflow.RoleOwner,
 		sharingDeveloper + "@" + sharingAccount: "developer",
 		sharingOtherOwner + "@" + sharingOther:  workflow.RoleOwner,
@@ -533,7 +533,7 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 		FlowID: flow.ID, PlatformFlowID: platformFlow.ID, OtherProjectID: sharingProject,
 		CurrentVersion: 2,
 		AccountDefault: string(workflow.DefaultRevocationPolicy),
-		roles:          access.papel,
+		roles:          access.role,
 		sharing:        sharing,
 	}
 	// The double reads env.AccountDefault live: built AFTER env so it can hold a

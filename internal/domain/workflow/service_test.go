@@ -13,11 +13,11 @@ import (
 
 // The domain is testable WITHOUT a database: repository, lineage, identity and
 // clock are ports, and in-memory doubles go in here. It is the practical return
-// arquitetura hexagonal — e o motivo de os duplos morarem NESTE arquivo: o
-// architecture test scans the _test.go files too, and a double under
+// on the hexagonal architecture — and the reason the doubles live in THIS file:
+// the architecture test scans the _test.go files too, and a double under
 // internal/adapter would be the domain importing infra through a back door.
 
-// ── duplos ───────────────────────────────────────────────────────────────────
+// ── doubles ─────────────────────────────────────────────────────────────────
 
 // fixedClock makes what depends on time deterministic. A wall clock here would
 // make the versioning test pass by luck.
@@ -25,14 +25,14 @@ type fixedClock struct{ t time.Time }
 
 func (r *fixedClock) Now() time.Time { r.t = r.t.Add(time.Second); return r.t }
 
-type registro struct {
+type record struct {
 	meta     workflow.Flow // identity: owner, account, current version
 	versions map[int32]workflow.Flow
 	current  int32
 }
 
 type fakeRepo struct {
-	flows  map[string]*registro
+	flows  map[string]*record
 	keys   map[string]string // idempotency key → flow id
 	nextID int
 	// Counters, to prove the port's promises of shape.
@@ -40,7 +40,7 @@ type fakeRepo struct {
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{flows: map[string]*registro{}, keys: map[string]string{}}
+	return &fakeRepo{flows: map[string]*record{}, keys: map[string]string{}}
 }
 
 func (f *fakeRepo) id() string {
@@ -48,16 +48,16 @@ func (f *fakeRepo) id() string {
 	return "flw-" + string(rune('a'+f.nextID-1))
 }
 
-func (f *fakeRepo) visivel(accountID string, r *registro) bool {
+func (f *fakeRepo) visible(accountID string, r *record) bool {
 	return r.meta.AccountID == accountID || r.meta.OwnerScope == workflow.ScopePlatform
 }
 
-func (f *fakeRepo) current(r *registro) workflow.Flow { return r.versions[r.current] }
+func (f *fakeRepo) current(r *record) workflow.Flow { return r.versions[r.current] }
 
 func (f *fakeRepo) List(_ context.Context, accountID string, scope workflow.Scope, ownerID string) ([]workflow.Flow, error) {
 	var out []workflow.Flow
 	for _, r := range f.flows {
-		if !f.visivel(accountID, r) {
+		if !f.visible(accountID, r) {
 			continue
 		}
 		if scope != "" && r.meta.OwnerScope != scope {
@@ -73,7 +73,7 @@ func (f *fakeRepo) List(_ context.Context, accountID string, scope workflow.Scop
 
 func (f *fakeRepo) ByID(_ context.Context, accountID, id string) (*workflow.Flow, error) {
 	r, ok := f.flows[id]
-	if !ok || !f.visivel(accountID, r) {
+	if !ok || !f.visible(accountID, r) {
 		return nil, errs.NotFound("flow")
 	}
 	cur := f.current(r)
@@ -82,7 +82,7 @@ func (f *fakeRepo) ByID(_ context.Context, accountID, id string) (*workflow.Flow
 
 func (f *fakeRepo) VersionOf(_ context.Context, accountID, id string, version int32) (*workflow.Flow, error) {
 	r, ok := f.flows[id]
-	if !ok || !f.visivel(accountID, r) {
+	if !ok || !f.visible(accountID, r) {
 		return nil, errs.NotFound("flow")
 	}
 	v, ok := r.versions[version]
@@ -100,7 +100,7 @@ func (f *fakeRepo) ByOwners(_ context.Context, accountID string, refs []workflow
 	}
 	var out []workflow.Flow
 	for _, r := range f.flows {
-		if f.visivel(accountID, r) && want[r.meta.Ref()] {
+		if f.visible(accountID, r) && want[r.meta.Ref()] {
 			out = append(out, f.current(r))
 		}
 	}
@@ -108,7 +108,7 @@ func (f *fakeRepo) ByOwners(_ context.Context, accountID string, refs []workflow
 }
 
 func (f *fakeRepo) Create(_ context.Context, flow *workflow.Flow, key string) (*workflow.Flow, error) {
-	if id, repetida := f.keys[key]; repetida {
+	if id, already := f.keys[key]; already {
 		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
@@ -120,7 +120,7 @@ func (f *fakeRepo) Create(_ context.Context, flow *workflow.Flow, key string) (*
 	cp := *flow
 	cp.ID = f.id()
 	cp.Version = 1
-	f.flows[cp.ID] = &registro{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
+	f.flows[cp.ID] = &record{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
 	f.keys[key] = cp.ID
 	return &cp, nil
 }
@@ -139,7 +139,7 @@ func (f *fakeRepo) AppendVersion(_ context.Context, accountID string, flow *work
 	if !ok || r.meta.AccountID != accountID {
 		return nil, errs.NotFound("flow")
 	}
-	if id, repetida := f.keys[key]; repetida {
+	if id, already := f.keys[key]; already {
 		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
@@ -156,7 +156,7 @@ func (f *fakeRepo) AppendVersion(_ context.Context, accountID string, flow *work
 }
 
 func (f *fakeRepo) Promote(_ context.Context, accountID string, src *workflow.Flow, target workflow.ScopeRef, key string) (*workflow.Flow, error) {
-	if id, repetida := f.keys[key]; repetida {
+	if id, already := f.keys[key]; already {
 		cur := f.current(f.flows[id])
 		return &cur, nil
 	}
@@ -178,7 +178,7 @@ func (f *fakeRepo) Promote(_ context.Context, accountID string, src *workflow.Fl
 	cp.AccountID = accountID
 	cp.OwnerScope, cp.OwnerID = target.Scope, target.ID
 	cp.Version = 1
-	f.flows[cp.ID] = &registro{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
+	f.flows[cp.ID] = &record{meta: cp, versions: map[int32]workflow.Flow{1: cp}, current: 1}
 	f.keys[key] = cp.ID
 	return &cp, nil
 }
@@ -187,9 +187,9 @@ var _ workflow.Repository = (*fakeRepo)(nil)
 
 // fakeTree is the lineage's narrow port: who is inside whom.
 type fakeTree struct {
-	workspaceDe map[string]string // project → workspace
-	contaDe     map[string]string // workspace → account
-	projetoDe   map[string]string // demand → project
+	workspaceOf map[string]string // project → workspace
+	accountOf   map[string]string // workspace → account
+	projectOf   map[string]string // demand → project
 }
 
 func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.ScopeRef) ([]workflow.ScopeRef, error) {
@@ -212,12 +212,12 @@ func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.
 		workspace = target.ID
 	case workflow.ScopeProject:
 		project = target.ID
-		workspace = t.workspaceDe[project]
+		workspace = t.workspaceOf[project]
 	case workflow.ScopeDemand:
-		project = t.projetoDe[target.ID]
-		workspace = t.workspaceDe[project]
+		project = t.projectOf[target.ID]
+		workspace = t.workspaceOf[project]
 	}
-	if workspace == "" || t.contaDe[workspace] != accountID {
+	if workspace == "" || t.accountOf[workspace] != accountID {
 		return nil, errs.NotFound("%s", target.Scope.Label())
 	}
 	out := append(base, workflow.ScopeRef{Scope: workflow.ScopeWorkspace, ID: workspace})
@@ -233,10 +233,10 @@ func (t *fakeTree) ChainOf(_ context.Context, accountID string, target workflow.
 var _ workflow.Ancestry = (*fakeTree)(nil)
 
 // fakeAccess is identity's narrow port: only the role in the active account.
-type fakeAccess struct{ papel map[string]string }
+type fakeAccess struct{ role map[string]string }
 
 func (a *fakeAccess) RoleOf(_ context.Context, userID, accountID string) (string, error) {
-	p, ok := a.papel[userID+"@"+accountID]
+	p, ok := a.role[userID+"@"+accountID]
 	if !ok {
 		return "", errs.Permission("no membership in this account")
 	}
@@ -245,14 +245,14 @@ func (a *fakeAccess) RoleOf(_ context.Context, userID, accountID string) (string
 
 var _ workflow.Access = (*fakeAccess)(nil)
 
-// ── scenario ─────────────────────────────────────────────────────────────────
+// ── scenario ────────────────────────────────────────────────────────────────
 
 const (
 	account   = "acct-1"
 	workspace = "ws-1"
 	project   = "prj-1"
 	demand    = "dmd-1"
-	dono      = "usr-owner"
+	owner     = "usr-owner"
 	member    = "usr-dev"
 )
 
@@ -260,17 +260,17 @@ func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 	t.Helper()
 	repo := newFakeRepo()
 	tree := &fakeTree{
-		workspaceDe: map[string]string{project: workspace},
-		contaDe:     map[string]string{workspace: account, "ws-vizinho": account, "ws-alheio": "acct-2"},
-		projetoDe:   map[string]string{demand: project},
+		workspaceOf: map[string]string{project: workspace},
+		accountOf:   map[string]string{workspace: account, "ws-sibling": account, "ws-foreign": "acct-2"},
+		projectOf:   map[string]string{demand: project},
 	}
-	acc := &fakeAccess{papel: map[string]string{
-		dono + "@" + account:   workflow.RoleOwner,
+	acc := &fakeAccess{role: map[string]string{
+		owner + "@" + account:  workflow.RoleOwner,
 		member + "@" + account: "developer",
 	}}
 	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}, nil, nil)
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
-		AccountID: account, ActorID: dono, ActorKind: ctxutil.ActorUser,
+		AccountID: account, ActorID: owner, ActorKind: ctxutil.ActorUser,
 	})
 	return repo, svc, ctx
 }
@@ -282,7 +282,7 @@ func seed(repo *fakeRepo, accountID string, scope workflow.Scope, ownerID string
 		Name: string(scope) + " flow", Version: 1, Stages: stages,
 	}
 	f.ID = repo.id()
-	repo.flows[f.ID] = &registro{meta: f, versions: map[int32]workflow.Flow{1: f}, current: 1}
+	repo.flows[f.ID] = &record{meta: f, versions: map[int32]workflow.Flow{1: f}, current: 1}
 	return f
 }
 
@@ -306,7 +306,7 @@ func validFlow() workflow.Flow {
 	}
 }
 
-// ── the inheritance chain ────────────────────────────────────────────────────
+// ── the inheritance chain ───────────────────────────────────────────────────
 
 // The domain's central test: the whole chain, with overlay and PROVENANCE.
 // Without the provenance, nobody can debug why a demand followed a flow nobody
@@ -408,8 +408,8 @@ func TestResolveWithNoDeclaredLevelDoesNotInventAFlow(t *testing.T) {
 
 func TestResolveDoesNotReachAnotherAccount(t *testing.T) {
 	repo, svc, ctx := scenario(t)
-	seed(repo, "acct-2", workflow.ScopeWorkspace, "ws-alheio", stage("x", workflow.TypeGeneric))
-	if _, err := svc.Resolve(ctx, workflow.ScopeWorkspace, "ws-alheio"); errs.KindOf(err) != errs.KindNotFound {
+	seed(repo, "acct-2", workflow.ScopeWorkspace, "ws-foreign", stage("x", workflow.TypeGeneric))
+	if _, err := svc.Resolve(ctx, workflow.ScopeWorkspace, "ws-foreign"); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("a workspace of another account should give NotFound; err: %v", err)
 	}
 }
@@ -421,7 +421,7 @@ func TestResolveRequiresAnActiveAccount(t *testing.T) {
 	}
 }
 
-// ── version freezing ─────────────────────────────────────────────────────────
+// ── version freezing ────────────────────────────────────────────────────────
 
 // The invariant that protects a demand in execution: updating CREATES a new version and
 // a anterior fica exatamente como estava.
@@ -435,10 +435,10 @@ func TestUpdateCreatesANewVersionWithoutTouchingThePrevious(t *testing.T) {
 		t.Fatalf("a flow is born at version 1, got %d", created.Version)
 	}
 
-	alterado := *created
-	alterado.Stages = append([]workflow.StageSpec{}, created.Stages...)
-	alterado.Stages[0].Name = "Contexto revisado"
-	updated, err := svc.Update(ctx, alterado)
+	edited := *created
+	edited.Stages = append([]workflow.StageSpec{}, created.Stages...)
+	edited.Stages[0].Name = "Context revised"
+	updated, err := svc.Update(ctx, edited)
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -460,13 +460,13 @@ func TestUpdateCreatesANewVersionWithoutTouchingThePrevious(t *testing.T) {
 	}
 
 	// And the current version is the new one.
-	atual, err := svc.Get(ctx, created.ID)
+	latest, err := svc.Get(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if atual.Version != 2 || atual.Stages[0].Name != "Contexto revisado" {
+	if latest.Version != 2 || latest.Stages[0].Name != "Context revised" {
 		t.Errorf("the current version should be the revised 2, got v%d %q",
-			atual.Version, atual.Stages[0].Name)
+			latest.Version, latest.Stages[0].Name)
 	}
 }
 
@@ -506,6 +506,31 @@ func TestAnIdenticalResendCreatesNoVersion(t *testing.T) {
 	}
 }
 
+// Actions are executable content, same as a stage's type or gate: changing
+// only what fires on enter/exit must version, or a demand already in progress
+// would silently start seeing a different reaction than the one its frozen
+// version promised.
+func TestChangingOnlyAStagesActionsStillVersions(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, err := svc.Create(ctx, validFlow(), "k1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	edited := *created
+	edited.Stages = append([]workflow.StageSpec{}, created.Stages...)
+	edited.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentExit, Name: "send_email"},
+	}
+	updated, err := svc.Update(ctx, edited)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Version != 2 {
+		t.Fatalf("an actions-only change is still a change to the executable content; expected version 2, got %d", updated.Version)
+	}
+}
+
 func TestRepeatedCreateWithTheSameKeyDoesNotDuplicate(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	first, err := svc.Create(ctx, validFlow(), "k1")
@@ -534,7 +559,7 @@ func TestCreateWithNoKeyDerivesOneFromTheContent(t *testing.T) {
 	}
 }
 
-// ── recusas de ValidateFlow ──────────────────────────────────────────────────
+// ── ValidateFlow's refusals ─────────────────────────────────────────────────
 
 func TestValidateRefusesEveryDefectThatWouldBreakADemand(t *testing.T) {
 	cases := []struct {
@@ -641,13 +666,81 @@ func TestValidateWarnsWithoutRefusing(t *testing.T) {
 	}
 }
 
+// A stage declares what happens when it is ENTERED and when it is LEFT, in the
+// same closed vocabulary the outside-the-demand decider uses (reaction.ActionName)
+// — one platform, one list of things it knows how to do.
+func TestAStageDeclaresWhatHappensWhenItIsEnteredAndLeft(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentExit, Name: "provision_bench",
+			Params: map[string]string{"tier": "namespace"}},
+	}
+	if rep := workflow.Validate(f); !rep.Valid() {
+		t.Fatalf("a stage action with a known name and moment is valid: %v", rep.Err())
+	}
+
+	for name, action := range map[string]workflow.StageAction{
+		"an unknown action name": {On: workflow.MomentExit, Name: "run_script"},
+		"an unknown moment":      {On: "midway", Name: "provision_bench"},
+		"no name at all":         {On: workflow.MomentEnter, Name: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := validFlow()
+			f.Stages[0].Actions = []workflow.StageAction{action}
+			if rep := workflow.Validate(f); rep.Valid() {
+				t.Fatal("expected a refusal")
+			}
+		})
+	}
+}
+
+// TestTwoActionsWithTheSameNameAtOneMomentAreRefused pins the limit the
+// idempotency gate imposes on a stage. applied_actions is keyed on
+// (event_id, rule_ref, action_name), and DecideStage builds rule_ref as
+// flow/version/stage/moment — so two actions sharing a name at one moment
+// claim the SAME row: the first runs, the second is skipped forever as
+// already applied, with no error anywhere. Refusing here is what makes that
+// limit loud instead of silent.
+func TestTwoActionsWithTheSameNameAtOneMomentAreRefused(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentEnter, Name: "send_email", Params: map[string]string{"to": "owner"}},
+		{On: workflow.MomentEnter, Name: "send_email", Params: map[string]string{"to": "manager"}},
+	}
+	rep := workflow.Validate(f)
+	if rep.Valid() {
+		t.Fatal("two actions with one name at one moment collapse into one; it has to be refused")
+	}
+	if !containsSnippet(rep.Errors, "twice on enter") {
+		t.Errorf("the message has to locate the stage and the moment: %v", rep.Errors)
+	}
+	// And it has to say the way OUT, not only that the author was refused.
+	if !containsSnippet(rep.Errors, "two stages") && !containsSnippet(rep.Errors, "one action") {
+		t.Errorf("the message has to say how to reach two recipients: %v", rep.Errors)
+	}
+}
+
+// The uniqueness is PER MOMENT, and that is not an accident: rule_ref carries
+// the moment, so entering and leaving claim different rows. "Tell the room on
+// the way in and on the way out" is a legitimate flow and must stay writable.
+func TestTheSameActionOnEnterAndOnExitIsLegitimate(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentEnter, Name: "send_email"},
+		{On: workflow.MomentExit, Name: "send_email"},
+	}
+	if rep := workflow.Validate(f); !rep.Valid() {
+		t.Fatalf("enter and exit are different rule_refs and do not collide: %v", rep.Errors)
+	}
+}
+
 // In Create and Update the refusal becomes an error: there an invalid flow is
 // something somebody is writing, and storing it would leave a future demand
 // with no answer.
 func TestCreateRefusesAnInvalidFlow(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	f := validFlow()
-	f.Stages = append(f.Stages, stage("spec", workflow.TypeSpec)) // key repetida
+	f.Stages = append(f.Stages, stage("spec", workflow.TypeSpec)) // a repeated key
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a flow with a cycle should give Invalid; err: %v", err)
 	}
@@ -670,12 +763,12 @@ func TestValidateWritesNothing(t *testing.T) {
 	}
 }
 
-// ── level and promotion ──────────────────────────────────────────────────────
+// ── level and promotion ─────────────────────────────────────────────────────
 
 func TestCreateRefusesAnotherAccountsLevel(t *testing.T) {
 	_, svc, ctx := scenario(t)
 	f := validFlow()
-	f.OwnerScope, f.OwnerID = workflow.ScopeWorkspace, "ws-alheio"
+	f.OwnerScope, f.OwnerID = workflow.ScopeWorkspace, "ws-foreign"
 	if _, err := svc.Create(ctx, f, "k1"); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("another account's level does not exist from here; error: %v", err)
 	}
@@ -751,7 +844,7 @@ func TestPromotingToANeighbouringBranchIsRefused(t *testing.T) {
 	// ws-neighbour belongs to the SAME account — and is still outside this flow's
 	// lineage. Promoting is climbing your OWN chain, not landing on a branch next
 	// door that happens to belong to the same tenant.
-	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeWorkspace, "ws-vizinho"); errs.KindOf(err) != errs.KindInvalid {
+	if _, err := svc.Promote(ctx, created.ID, workflow.ScopeWorkspace, "ws-sibling"); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("promoting to a neighbouring branch should be Invalid; error: %v", err)
 	}
 }
@@ -786,7 +879,7 @@ func TestPromoteVersionsTheFlowThatAlreadyExistsAtTheTarget(t *testing.T) {
 	}
 }
 
-// ── required ports ───────────────────────────────────────────────────────────
+// ── required ports ──────────────────────────────────────────────────────────
 
 // A nil clock would switch the port off without anyone noticing and would hand
 // the test back the wall-clock dependency the port exists to remove.
