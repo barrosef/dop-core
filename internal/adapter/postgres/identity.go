@@ -86,15 +86,24 @@ func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*ident
 	return saved, err
 }
 
+// default_revocation_policy is read here, not just written by
+// SetDefaultRevocationPolicy: Task 5 stamps a grant's own policy from this
+// value at share time, and a read path that kept returning "" after a
+// successful write would make an account that chose `terminate` hand out
+// `prospective` grants — wrong, and silent (ADR-0021: an emulator/read path
+// that lies about a write is exactly the shape that has bitten this codebase
+// before).
 const accountCols = `id, kind, handle, display_name,
 	COALESCE(legal_id,''), COALESCE(legal_name,''), COALESCE(verified_domain,''),
+	default_revocation_policy::text,
 	created_at, updated_at`
 
 func scanAccount(row pgx.Row) (*identity.Account, error) {
 	var a identity.Account
 	var kind string
 	if err := row.Scan(&a.ID, &kind, &a.Handle, &a.DisplayName,
-		&a.LegalID, &a.LegalName, &a.VerifiedDomain, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		&a.LegalID, &a.LegalName, &a.VerifiedDomain, &a.DefaultRevocationPolicy,
+		&a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
 	}
 	a.Kind = identity.AccountKind(kind)

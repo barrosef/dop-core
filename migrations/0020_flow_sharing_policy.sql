@@ -12,5 +12,5 @@ ALTER TABLE accounts
   ADD COLUMN default_revocation_policy revocation_policy NOT NULL DEFAULT 'prospective';
 
 -- +goose Down
-ALTER TABLE accounts DROP COLUMN default_revocation_policy;
-DROP TYPE revocation_policy;
+ALTER TABLE accounts DROP COLUMN IF EXISTS default_revocation_policy;
+DROP TYPE IF EXISTS revocation_policy;

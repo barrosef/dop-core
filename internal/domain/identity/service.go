@@ -661,6 +661,14 @@ func (s *Service) SetDefaultRevocationPolicy(ctx context.Context, policy string)
 		return errs.Permission("changing the account's default requires owner or admin").
 			WithCode(KeyOnlyAdminsSetDefault, nil)
 	}
+	// These three literals ARE workflow.PolicyProspective, workflow.PolicyDrain
+	// and workflow.PolicyTerminate — repeated, not imported, because identity
+	// must not depend on the workflow domain's vocabulary (the same house rule
+	// that keeps every domain package free of a sibling domain's types, mirrored
+	// by the DefaultRevocationPolicy field on Account being a plain string).
+	// Adding or renaming a policy means editing both this switch and
+	// internal/domain/workflow/sharing.go; nothing but this comment ties them
+	// together, so drifting apart here would validate the wrong set silently.
 	switch policy {
 	case "prospective", "drain", "terminate":
 	default:
