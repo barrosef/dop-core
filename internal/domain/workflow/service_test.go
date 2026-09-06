@@ -259,7 +259,7 @@ func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 		dono + "@" + account:   workflow.RoleOwner,
 		member + "@" + account: "developer",
 	}}
-	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}, nil)
+	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}, nil, nil)
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: account, ActorID: dono, ActorKind: ctxutil.ActorUser,
 	})
@@ -787,7 +787,7 @@ func TestNewServiceRefusesANilClock(t *testing.T) {
 			t.Error("the constructor should refuse a nil clock")
 		}
 	}()
-	workflow.NewService(newFakeRepo(), &fakeTree{}, &fakeAccess{}, nil, nil)
+	workflow.NewService(newFakeRepo(), &fakeTree{}, &fakeAccess{}, nil, nil, nil)
 }
 
 func containsSnippet(msgs []string, snippet string) bool {

@@ -45,3 +45,9 @@ type SharingRepository interface {
 	Pin(ctx context.Context, accountID, flowID string, version int32, by string, at time.Time) error
 	PinOf(ctx context.Context, accountID, flowID string) (int32, bool, error)
 }
+
+// AccountDefaults is the NARROW port into identity: the flow domain needs one
+// value from an account and not the account.
+type AccountDefaults interface {
+	DefaultRevocationPolicy(ctx context.Context, accountID string) (string, error)
+}

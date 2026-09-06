@@ -96,7 +96,9 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// SharingRepository has no adapter yet — postgres.NewWorkflowSharing lands
 	// with the flow-sharing plan's Task 9. Until then nil is safe: no RPC calls
 	// Publish, Withdraw or anything else that reaches it (Task 10 wires those).
-	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio, nil)
+	// AccountDefaults has no adapter yet either — nil is safe alongside
+	// SharingRepository: nothing calls Grant until Task 10 wires the RPC.
+	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio, nil, nil)
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
 	// The router is this package's POLICY, not a port: nil chooses the default

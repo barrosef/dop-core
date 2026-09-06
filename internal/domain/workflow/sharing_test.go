@@ -320,6 +320,22 @@ func (f *fakeSharing) PinOf(_ context.Context, accountID, flowID string) (int32,
 
 var _ workflow.SharingRepository = (*fakeSharing)(nil)
 
+// fakeAccountDefaults plays the AccountDefaults port by reading the harness's
+// env LIVE, at call time — never a value captured when the double was built.
+// Grant is supposed to STAMP the default onto the Share and never consult this
+// port again; a double that snapshot the value at construction would let a
+// broken Grant (one that re-reads the account instead of the stamp) pass the
+// stamping test for the wrong reason.
+type fakeAccountDefaults struct {
+	env *sharingEnv
+}
+
+func (f *fakeAccountDefaults) DefaultRevocationPolicy(_ context.Context, _ string) (string, error) {
+	return f.env.AccountDefault, nil
+}
+
+var _ workflow.AccountDefaults = (*fakeAccountDefaults)(nil)
+
 // ── the harness ──────────────────────────────────────────────────────────────
 
 // sharingEnv is the fixed cast every sharing test plays against: a publisher
@@ -386,7 +402,6 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 	sharing.handles[sharingHandle] = sharingAccount
 
 	clock := &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	svc := workflow.NewService(repo, tree, access, clock, sharing)
 
 	// The publisher's flow, taken to version 2 directly through the repository
 	// (bypassing Update's rules on purpose, the same way seed() does): Publish
@@ -406,7 +421,7 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 	platformFlow := seed(repo, "", workflow.ScopePlatform, "",
 		stage("context", workflow.TypeContext, workflow.ArtifactDocument))
 
-	return svc, &sharingEnv{
+	env := &sharingEnv{
 		AccountID: sharingAccount, OtherAccountID: sharingOther, ThirdAccountID: sharingThird,
 		OwnerID: sharingOwner, DeveloperID: sharingDeveloper, OtherOwnerID: sharingOtherOwner,
 		FlowID: flow.ID, PlatformFlowID: platformFlow.ID, OtherProjectID: sharingProject,
@@ -415,6 +430,12 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 		roles:          access.papel,
 		sharing:        sharing,
 	}
+	// The double reads env.AccountDefault live: built AFTER env so it can hold a
+	// pointer to it, not a copy of whatever the field held at this moment.
+	defaults := &fakeAccountDefaults{env: env}
+	svc := workflow.NewService(repo, tree, access, clock, sharing, defaults)
+
+	return svc, env
 }
 
 // ── Publish / Withdraw ───────────────────────────────────────────────────────
@@ -547,5 +568,36 @@ func TestFakeSharingResolvePublicationAnswersNotFoundNeverPermission(t *testing.
 	}
 	if _, err := sharing.ResolvePublication(ctx, other, ref); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("a withdrawn publication has to be NotFound even for a granted account: %v", err)
+	}
+}
+
+// ── Grant ────────────────────────────────────────────────────────────────────
+
+func TestTheGrantStampsThePolicyItWasMadeUnder(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	env.AccountDefault = "prospective"
+	share, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if share.RevocationPolicy != workflow.PolicyProspective {
+		t.Fatalf("the grant had to carry the default in force, got %q", share.RevocationPolicy)
+	}
+
+	// Changing the account's default AFTERWARDS must not change the terms of a
+	// grant somebody already accepted.
+	env.AccountDefault = "terminate"
+	got, err := svc.SharesOf(ctx, pub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].RevocationPolicy != workflow.PolicyProspective {
+		t.Fatal("the account's default changed the terms of an existing grant: the stamp is not being honoured")
 	}
 }

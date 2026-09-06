@@ -14,22 +14,23 @@ import (
 
 // Service concentrates the work flow rules. It takes only PORTS.
 type Service struct {
-	repo    Repository
-	tree    Ancestry
-	access  Access
-	clock   ports.Clock
-	sharing SharingRepository
+	repo     Repository
+	tree     Ancestry
+	access   Access
+	clock    ports.Clock
+	sharing  SharingRepository
+	defaults AccountDefaults
 }
 
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally and no versioning test was
 // deterministic. The panic here is deliberate — it is a wiring error, caught at
 // boot.
-func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository) *Service {
+func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository, defaults AccountDefaults) *Service {
 	if clock == nil {
 		panic("workflow.NewService: clock is required — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing}
+	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing, defaults: defaults}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -398,6 +399,66 @@ func (s *Service) Withdraw(ctx context.Context, publicationID string) error {
 		return errs.Permission("withdrawing a publication requires owner or admin")
 	}
 	return s.sharing.Withdraw(ctx, accountID, publicationID, s.now())
+}
+
+// Grant lets ONE account derive from a publication.
+//
+// The revocation policy is COPIED here from the publisher's default and stored
+// on the grant. Reading it at revocation time would let the publisher change
+// the terms after they were accepted — the difference between "no new
+// derivations" and "your running demand stops now".
+func (s *Service) Grant(ctx context.Context, publicationID, toAccountID, idempotencyKey string) (*Share, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage(role) {
+		return nil, errs.Permission("granting a flow requires owner or admin")
+	}
+	if strings.TrimSpace(toAccountID) == "" {
+		return nil, errs.Invalid("no account to grant to")
+	}
+	if toAccountID == accountID {
+		return nil, errs.Invalid("an account already sees its own flows: there is nothing to grant")
+	}
+	pub, err := s.sharing.PublicationByID(ctx, accountID, publicationID)
+	if err != nil {
+		return nil, err
+	}
+	if pub.Withdrawn() {
+		return nil, errs.Precondition("this publication was withdrawn: publish a version again before granting it")
+	}
+	raw, err := s.defaults.DefaultRevocationPolicy(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	policy := RevocationPolicy(raw)
+	if !ValidRevocationPolicy(policy) {
+		policy = DefaultRevocationPolicy
+	}
+	sh := Share{
+		PublicationID: pub.ID, ToAccountID: toAccountID,
+		RevocationPolicy: policy, GrantedBy: call.ActorID, GrantedAt: s.now(),
+	}
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		key = "wf:" + idem.Hash("grant", pub.ID, toAccountID)
+	}
+	return s.sharing.CreateShare(ctx, &sh, key)
+}
+
+// SharesOf lists who a publication was granted to.
+func (s *Service) SharesOf(ctx context.Context, publicationID string) ([]Share, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.sharing.SharesOfPublication(ctx, accountID, publicationID)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
