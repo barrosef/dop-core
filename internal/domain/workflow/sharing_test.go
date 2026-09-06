@@ -351,17 +351,17 @@ func (f *fakeSharing) PinOf(_ context.Context, accountID, flowID string) (int32,
 
 var _ workflow.SharingRepository = (*fakeSharing)(nil)
 
-// fakeAccountDefaults plays the AccountDefaults port by reading the harness's
+// fakeAccountFacts plays the AccountFacts port by reading the harness's
 // env LIVE, at call time — never a value captured when the double was built.
 // Grant is supposed to STAMP the default onto the Share and never consult this
 // port again; a double that snapshot the value at construction would let a
 // broken Grant (one that re-reads the account instead of the stamp) pass the
 // stamping test for the wrong reason.
-type fakeAccountDefaults struct {
+type fakeAccountFacts struct {
 	env *sharingEnv
 }
 
-func (f *fakeAccountDefaults) DefaultRevocationPolicy(_ context.Context, _ string) (string, error) {
+func (f *fakeAccountFacts) DefaultRevocationPolicy(_ context.Context, _ string) (string, error) {
 	return f.env.AccountDefault, nil
 }
 
@@ -369,7 +369,7 @@ func (f *fakeAccountDefaults) DefaultRevocationPolicy(_ context.Context, _ strin
 // the same double ResolvePublication reads) — there is no second map to keep
 // in sync, and a test that registers a handle for ResolvePublication gets it
 // answered here too, for free.
-func (f *fakeAccountDefaults) HandleOf(_ context.Context, accountID string) (string, error) {
+func (f *fakeAccountFacts) HandleOf(_ context.Context, accountID string) (string, error) {
 	for handle, id := range f.env.sharing.handles {
 		if id == accountID {
 			return handle, nil
@@ -378,7 +378,7 @@ func (f *fakeAccountDefaults) HandleOf(_ context.Context, accountID string) (str
 	return "", errs.NotFound("account %q", accountID)
 }
 
-var _ workflow.AccountDefaults = (*fakeAccountDefaults)(nil)
+var _ workflow.AccountFacts = (*fakeAccountFacts)(nil)
 
 // ── the harness ──────────────────────────────────────────────────────────────
 
@@ -396,7 +396,7 @@ type sharingEnv struct {
 	// nothing of its own" needs that starting state to be reachable.
 	OtherFlowID    string
 	CurrentVersion int32
-	AccountDefault string // what the AccountDefaults port answers
+	AccountDefault string // what AccountFacts.DefaultRevocationPolicy answers
 	roles          map[string]string
 	sharing        *fakeSharing
 }
@@ -538,8 +538,8 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 	}
 	// The double reads env.AccountDefault live: built AFTER env so it can hold a
 	// pointer to it, not a copy of whatever the field held at this moment.
-	defaults := &fakeAccountDefaults{env: env}
-	svc := workflow.NewService(repo, tree, access, clock, sharing, defaults)
+	accounts := &fakeAccountFacts{env: env}
+	svc := workflow.NewService(repo, tree, access, clock, sharing, accounts)
 
 	return svc, env
 }

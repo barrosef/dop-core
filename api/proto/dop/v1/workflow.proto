@@ -163,9 +163,15 @@ message FlowPublication {
 
 message WithdrawFlowRequest { string publication_id = 1; }
 
+// `to_account` is an AccountRef, not a bare string (ADR-0017 convention 2: a
+// tenant is never an anonymous string) — the same shape `resource.proto`,
+// `identity.proto`, `event.proto`, `attention.proto` and `hierarchy.proto`
+// already use for every account reference in the contract. `workflow.proto`
+// had no account-shaped field before this file, so the precedent to follow
+// lives in those sibling files, not in this one.
 message GrantFlowRequest {
   string publication_id  = 1;
-  string to_account_id   = 2;
+  dop.v1.AccountRef to_account = 2;
   string idempotency_key = 3;
 }
 
@@ -174,10 +180,10 @@ message GrantFlowRequest {
 // publisher's CURRENT default at revocation time would let the terms change
 // after somebody already accepted them.
 message FlowGrant {
-  string id                  = 1;
-  string publication_id      = 2;
-  string to_account_id       = 3;
-  string revocation_policy   = 4; // prospective | drain | terminate
+  string id                    = 1;
+  string publication_id        = 2;
+  dop.v1.AccountRef to_account = 3;
+  string revocation_policy     = 4; // prospective | drain | terminate
   google.protobuf.Timestamp granted_at = 5;
   google.protobuf.Timestamp revoked_at = 6;
 }
@@ -205,7 +211,7 @@ message FlowAdoption {
   string id             = 1;
   string publication_id = 2;
   int32  version        = 3;
-  string by_account_id  = 4;
+  dop.v1.AccountRef by_account = 4;
   string flow_id        = 5; // the copy, in the OTHER account
   google.protobuf.Timestamp derived_at = 6;
   google.protobuf.Timestamp revoked_at = 7;

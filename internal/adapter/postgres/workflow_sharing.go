@@ -536,17 +536,19 @@ func (r *WorkflowSharing) PinOf(ctx context.Context, accountID, flowID string) (
 	return version, true, nil
 }
 
-// ── AccountDefaults ──────────────────────────────────────────────────────────
+// ── AccountFacts ─────────────────────────────────────────────────────────────
 
-// AccountDefaultsRepo is the narrow port into identity that workflow needs:
-// one field of an account, not the account.
-type AccountDefaultsRepo struct{ pool *pgxpool.Pool }
+// AccountFactsRepo is the narrow port into identity that workflow needs: two
+// unrelated fields of an account, not the account. It reads `accounts`
+// directly, the same table's row `ResolvePublication` already joins against —
+// a second read here is one more query, not a second source of truth.
+type AccountFactsRepo struct{ pool *pgxpool.Pool }
 
-func NewAccountDefaultsRepo(pool *pgxpool.Pool) *AccountDefaultsRepo {
-	return &AccountDefaultsRepo{pool: pool}
+func NewAccountFactsRepo(pool *pgxpool.Pool) *AccountFactsRepo {
+	return &AccountFactsRepo{pool: pool}
 }
 
-func (r *AccountDefaultsRepo) DefaultRevocationPolicy(ctx context.Context, accountID string) (string, error) {
+func (r *AccountFactsRepo) DefaultRevocationPolicy(ctx context.Context, accountID string) (string, error) {
 	var policy string
 	err := r.pool.QueryRow(ctx,
 		`SELECT default_revocation_policy::text FROM accounts WHERE id = $1`, accountID).Scan(&policy)
@@ -559,7 +561,7 @@ func (r *AccountDefaultsRepo) DefaultRevocationPolicy(ctx context.Context, accou
 // HandleOf is the same lookup ResolvePublication already runs the other way
 // (handle → account, in the JOIN above): here it is account → handle, which is
 // what the edge needs to render a publication's own reference server-side.
-func (r *AccountDefaultsRepo) HandleOf(ctx context.Context, accountID string) (string, error) {
+func (r *AccountFactsRepo) HandleOf(ctx context.Context, accountID string) (string, error) {
 	var handle string
 	err := r.pool.QueryRow(ctx,
 		`SELECT handle FROM accounts WHERE id = $1`, accountID).Scan(&handle)
@@ -569,4 +571,4 @@ func (r *AccountDefaultsRepo) HandleOf(ctx context.Context, accountID string) (s
 	return handle, nil
 }
 
-var _ workflow.AccountDefaults = (*AccountDefaultsRepo)(nil)
+var _ workflow.AccountFacts = (*AccountFactsRepo)(nil)

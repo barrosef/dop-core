@@ -53,9 +53,17 @@ type SharingRepository interface {
 	PinOf(ctx context.Context, accountID, flowID string) (int32, bool, error)
 }
 
-// AccountDefaults is the NARROW port into identity: the flow domain needs two
-// columns of an account, not the account.
-type AccountDefaults interface {
+// AccountFacts is the NARROW port into identity: two small, unrelated facts
+// about an account that the flow domain needs to read but never decides —
+// the default a grant is stamped with, and the handle a reference is rendered
+// under. A port this narrow, instead of importing the identity domain
+// outright, is what keeps workflow from depending on identity's shape: an
+// account gaining a dozen new fields tomorrow changes nothing here, because
+// this interface only ever asked for two of them.
+type AccountFacts interface {
+	// DefaultRevocationPolicy is the value Grant stamps onto a new Share (see
+	// Service.Grant): read once at grant time and then owned by the grant, not
+	// re-read at revocation.
 	DefaultRevocationPolicy(ctx context.Context, accountID string) (string, error)
 
 	// HandleOf resolves an account's public handle — the identity fact the

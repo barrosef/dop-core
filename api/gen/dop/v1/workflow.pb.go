@@ -1242,10 +1242,16 @@ func (x *WithdrawFlowRequest) GetPublicationId() string {
 	return ""
 }
 
+// `to_account` is an AccountRef, not a bare string (ADR-0017 convention 2: a
+// tenant is never an anonymous string) — the same shape `resource.proto`,
+// `identity.proto`, `event.proto`, `attention.proto` and `hierarchy.proto`
+// already use for every account reference in the contract. `workflow.proto`
+// had no account-shaped field before this file, so the precedent to follow
+// lives in those sibling files, not in this one.
 type GrantFlowRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	PublicationId  string                 `protobuf:"bytes,1,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
-	ToAccountId    string                 `protobuf:"bytes,2,opt,name=to_account_id,json=toAccountId,proto3" json:"to_account_id,omitempty"`
+	ToAccount      *AccountRef            `protobuf:"bytes,2,opt,name=to_account,json=toAccount,proto3" json:"to_account,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1288,11 +1294,11 @@ func (x *GrantFlowRequest) GetPublicationId() string {
 	return ""
 }
 
-func (x *GrantFlowRequest) GetToAccountId() string {
+func (x *GrantFlowRequest) GetToAccount() *AccountRef {
 	if x != nil {
-		return x.ToAccountId
+		return x.ToAccount
 	}
-	return ""
+	return nil
 }
 
 func (x *GrantFlowRequest) GetIdempotencyKey() string {
@@ -1310,7 +1316,7 @@ type FlowGrant struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	PublicationId    string                 `protobuf:"bytes,2,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
-	ToAccountId      string                 `protobuf:"bytes,3,opt,name=to_account_id,json=toAccountId,proto3" json:"to_account_id,omitempty"`
+	ToAccount        *AccountRef            `protobuf:"bytes,3,opt,name=to_account,json=toAccount,proto3" json:"to_account,omitempty"`
 	RevocationPolicy string                 `protobuf:"bytes,4,opt,name=revocation_policy,json=revocationPolicy,proto3" json:"revocation_policy,omitempty"` // prospective | drain | terminate
 	GrantedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=granted_at,json=grantedAt,proto3" json:"granted_at,omitempty"`
 	RevokedAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
@@ -1362,11 +1368,11 @@ func (x *FlowGrant) GetPublicationId() string {
 	return ""
 }
 
-func (x *FlowGrant) GetToAccountId() string {
+func (x *FlowGrant) GetToAccount() *AccountRef {
 	if x != nil {
-		return x.ToAccountId
+		return x.ToAccount
 	}
-	return ""
+	return nil
 }
 
 func (x *FlowGrant) GetRevocationPolicy() string {
@@ -1642,7 +1648,7 @@ type FlowAdoption struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	PublicationId string                 `protobuf:"bytes,2,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
 	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	ByAccountId   string                 `protobuf:"bytes,4,opt,name=by_account_id,json=byAccountId,proto3" json:"by_account_id,omitempty"`
+	ByAccount     *AccountRef            `protobuf:"bytes,4,opt,name=by_account,json=byAccount,proto3" json:"by_account,omitempty"`
 	FlowId        string                 `protobuf:"bytes,5,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"` // the copy, in the OTHER account
 	DerivedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=derived_at,json=derivedAt,proto3" json:"derived_at,omitempty"`
 	RevokedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
@@ -1701,11 +1707,11 @@ func (x *FlowAdoption) GetVersion() int32 {
 	return 0
 }
 
-func (x *FlowAdoption) GetByAccountId() string {
+func (x *FlowAdoption) GetByAccount() *AccountRef {
 	if x != nil {
-		return x.ByAccountId
+		return x.ByAccount
 	}
-	return ""
+	return nil
 }
 
 func (x *FlowAdoption) GetFlowId() string {
@@ -1891,15 +1897,17 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\fpublished_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vpublishedAt\x12=\n" +
 	"\fwithdrawn_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\"<\n" +
 	"\x13WithdrawFlowRequest\x12%\n" +
-	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"\x86\x01\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"\x95\x01\n" +
 	"\x10GrantFlowRequest\x12%\n" +
-	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\x12\"\n" +
-	"\rto_account_id\x18\x02 \x01(\tR\vtoAccountId\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x89\x02\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\x121\n" +
+	"\n" +
+	"to_account\x18\x02 \x01(\v2\x12.dop.v1.AccountRefR\ttoAccount\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x98\x02\n" +
 	"\tFlowGrant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0epublication_id\x18\x02 \x01(\tR\rpublicationId\x12\"\n" +
-	"\rto_account_id\x18\x03 \x01(\tR\vtoAccountId\x12+\n" +
+	"\x0epublication_id\x18\x02 \x01(\tR\rpublicationId\x121\n" +
+	"\n" +
+	"to_account\x18\x03 \x01(\v2\x12.dop.v1.AccountRefR\ttoAccount\x12+\n" +
 	"\x11revocation_policy\x18\x04 \x01(\tR\x10revocationPolicy\x129\n" +
 	"\n" +
 	"granted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tgrantedAt\x129\n" +
@@ -1917,12 +1925,13 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\x15ListFlowSharesRequest\x12%\n" +
 	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"C\n" +
 	"\x16ListFlowSharesResponse\x12)\n" +
-	"\x06shares\x18\x01 \x03(\v2\x11.dop.v1.FlowGrantR\x06shares\"\x92\x02\n" +
+	"\x06shares\x18\x01 \x03(\v2\x11.dop.v1.FlowGrantR\x06shares\"\xa1\x02\n" +
 	"\fFlowAdoption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0epublication_id\x18\x02 \x01(\tR\rpublicationId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion\x12\"\n" +
-	"\rby_account_id\x18\x04 \x01(\tR\vbyAccountId\x12\x17\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\x121\n" +
+	"\n" +
+	"by_account\x18\x04 \x01(\v2\x12.dop.v1.AccountRefR\tbyAccount\x12\x17\n" +
 	"\aflow_id\x18\x05 \x01(\tR\x06flowId\x129\n" +
 	"\n" +
 	"derived_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tderivedAt\x129\n" +
@@ -2024,7 +2033,8 @@ var file_dop_v1_workflow_proto_goTypes = []any{
 	(*ListFlowAdoptionsResponse)(nil), // 29: dop.v1.ListFlowAdoptionsResponse
 	(*AuditStamp)(nil),                // 30: dop.v1.AuditStamp
 	(*timestamppb.Timestamp)(nil),     // 31: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),             // 32: google.protobuf.Empty
+	(*AccountRef)(nil),                // 32: dop.v1.AccountRef
+	(*emptypb.Empty)(nil),             // 33: google.protobuf.Empty
 }
 var file_dop_v1_workflow_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
@@ -2041,48 +2051,51 @@ var file_dop_v1_workflow_proto_depIdxs = []int32{
 	4,  // 11: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
 	31, // 12: dop.v1.FlowPublication.published_at:type_name -> google.protobuf.Timestamp
 	31, // 13: dop.v1.FlowPublication.withdrawn_at:type_name -> google.protobuf.Timestamp
-	31, // 14: dop.v1.FlowGrant.granted_at:type_name -> google.protobuf.Timestamp
-	31, // 15: dop.v1.FlowGrant.revoked_at:type_name -> google.protobuf.Timestamp
-	7,  // 16: dop.v1.DeriveFlowRequest.target:type_name -> dop.v1.ScopeRef
-	21, // 17: dop.v1.ListFlowSharesResponse.shares:type_name -> dop.v1.FlowGrant
-	31, // 18: dop.v1.FlowAdoption.derived_at:type_name -> google.protobuf.Timestamp
-	31, // 19: dop.v1.FlowAdoption.revoked_at:type_name -> google.protobuf.Timestamp
-	27, // 20: dop.v1.ListFlowAdoptionsResponse.adoptions:type_name -> dop.v1.FlowAdoption
-	8,  // 21: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
-	10, // 22: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
-	11, // 23: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
-	12, // 24: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
-	13, // 25: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
-	15, // 26: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
-	16, // 27: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
-	17, // 28: dop.v1.WorkflowService.PublishFlow:input_type -> dop.v1.PublishFlowRequest
-	19, // 29: dop.v1.WorkflowService.WithdrawFlow:input_type -> dop.v1.WithdrawFlowRequest
-	20, // 30: dop.v1.WorkflowService.GrantFlow:input_type -> dop.v1.GrantFlowRequest
-	22, // 31: dop.v1.WorkflowService.RevokeFlowGrant:input_type -> dop.v1.RevokeFlowGrantRequest
-	23, // 32: dop.v1.WorkflowService.DeriveFlow:input_type -> dop.v1.DeriveFlowRequest
-	24, // 33: dop.v1.WorkflowService.BumpFlowPin:input_type -> dop.v1.BumpFlowPinRequest
-	25, // 34: dop.v1.WorkflowService.ListFlowShares:input_type -> dop.v1.ListFlowSharesRequest
-	28, // 35: dop.v1.WorkflowService.ListFlowAdoptions:input_type -> dop.v1.ListFlowAdoptionsRequest
-	9,  // 36: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
-	4,  // 37: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
-	4,  // 38: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
-	4,  // 39: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
-	14, // 40: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
-	6,  // 41: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
-	4,  // 42: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
-	18, // 43: dop.v1.WorkflowService.PublishFlow:output_type -> dop.v1.FlowPublication
-	32, // 44: dop.v1.WorkflowService.WithdrawFlow:output_type -> google.protobuf.Empty
-	21, // 45: dop.v1.WorkflowService.GrantFlow:output_type -> dop.v1.FlowGrant
-	32, // 46: dop.v1.WorkflowService.RevokeFlowGrant:output_type -> google.protobuf.Empty
-	4,  // 47: dop.v1.WorkflowService.DeriveFlow:output_type -> dop.v1.Flow
-	32, // 48: dop.v1.WorkflowService.BumpFlowPin:output_type -> google.protobuf.Empty
-	26, // 49: dop.v1.WorkflowService.ListFlowShares:output_type -> dop.v1.ListFlowSharesResponse
-	29, // 50: dop.v1.WorkflowService.ListFlowAdoptions:output_type -> dop.v1.ListFlowAdoptionsResponse
-	36, // [36:51] is the sub-list for method output_type
-	21, // [21:36] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	32, // 14: dop.v1.GrantFlowRequest.to_account:type_name -> dop.v1.AccountRef
+	32, // 15: dop.v1.FlowGrant.to_account:type_name -> dop.v1.AccountRef
+	31, // 16: dop.v1.FlowGrant.granted_at:type_name -> google.protobuf.Timestamp
+	31, // 17: dop.v1.FlowGrant.revoked_at:type_name -> google.protobuf.Timestamp
+	7,  // 18: dop.v1.DeriveFlowRequest.target:type_name -> dop.v1.ScopeRef
+	21, // 19: dop.v1.ListFlowSharesResponse.shares:type_name -> dop.v1.FlowGrant
+	32, // 20: dop.v1.FlowAdoption.by_account:type_name -> dop.v1.AccountRef
+	31, // 21: dop.v1.FlowAdoption.derived_at:type_name -> google.protobuf.Timestamp
+	31, // 22: dop.v1.FlowAdoption.revoked_at:type_name -> google.protobuf.Timestamp
+	27, // 23: dop.v1.ListFlowAdoptionsResponse.adoptions:type_name -> dop.v1.FlowAdoption
+	8,  // 24: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
+	10, // 25: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
+	11, // 26: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
+	12, // 27: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
+	13, // 28: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
+	15, // 29: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
+	16, // 30: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
+	17, // 31: dop.v1.WorkflowService.PublishFlow:input_type -> dop.v1.PublishFlowRequest
+	19, // 32: dop.v1.WorkflowService.WithdrawFlow:input_type -> dop.v1.WithdrawFlowRequest
+	20, // 33: dop.v1.WorkflowService.GrantFlow:input_type -> dop.v1.GrantFlowRequest
+	22, // 34: dop.v1.WorkflowService.RevokeFlowGrant:input_type -> dop.v1.RevokeFlowGrantRequest
+	23, // 35: dop.v1.WorkflowService.DeriveFlow:input_type -> dop.v1.DeriveFlowRequest
+	24, // 36: dop.v1.WorkflowService.BumpFlowPin:input_type -> dop.v1.BumpFlowPinRequest
+	25, // 37: dop.v1.WorkflowService.ListFlowShares:input_type -> dop.v1.ListFlowSharesRequest
+	28, // 38: dop.v1.WorkflowService.ListFlowAdoptions:input_type -> dop.v1.ListFlowAdoptionsRequest
+	9,  // 39: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
+	4,  // 40: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
+	4,  // 41: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
+	4,  // 42: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
+	14, // 43: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
+	6,  // 44: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
+	4,  // 45: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
+	18, // 46: dop.v1.WorkflowService.PublishFlow:output_type -> dop.v1.FlowPublication
+	33, // 47: dop.v1.WorkflowService.WithdrawFlow:output_type -> google.protobuf.Empty
+	21, // 48: dop.v1.WorkflowService.GrantFlow:output_type -> dop.v1.FlowGrant
+	33, // 49: dop.v1.WorkflowService.RevokeFlowGrant:output_type -> google.protobuf.Empty
+	4,  // 50: dop.v1.WorkflowService.DeriveFlow:output_type -> dop.v1.Flow
+	33, // 51: dop.v1.WorkflowService.BumpFlowPin:output_type -> google.protobuf.Empty
+	26, // 52: dop.v1.WorkflowService.ListFlowShares:output_type -> dop.v1.ListFlowSharesResponse
+	29, // 53: dop.v1.WorkflowService.ListFlowAdoptions:output_type -> dop.v1.ListFlowAdoptionsResponse
+	39, // [39:54] is the sub-list for method output_type
+	24, // [24:39] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_workflow_proto_init() }

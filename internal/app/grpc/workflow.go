@@ -119,6 +119,13 @@ func (s *WorkflowServer) PromoteFlow(ctx context.Context, req *dopv1.PromoteFlow
 // (Publish always publishes to the caller's own account) plus the slug and
 // version the domain just decided — never assembled by the client, which
 // would be three places for the format to drift instead of one.
+//
+// Publish already wrote the publication durably by the time HandleOf runs, so
+// a failure here (the handle lookup, not the write) reports an error for a
+// write that succeeded. Accepted trade-off: PublishFlowRequest carries an
+// idempotency_key, so the caller's retry replays onto the same row instead of
+// creating a second one — it does not lose the publication, only the first
+// response.
 func (s *WorkflowServer) PublishFlow(ctx context.Context, req *dopv1.PublishFlowRequest) (*dopv1.FlowPublication, error) {
 	p, err := s.svc.Publish(ctx, req.GetFlowId(), req.GetSlug(), req.GetNotes(), req.GetIdempotencyKey())
 	if err != nil {
@@ -139,7 +146,7 @@ func (s *WorkflowServer) WithdrawFlow(ctx context.Context, req *dopv1.WithdrawFl
 }
 
 func (s *WorkflowServer) GrantFlow(ctx context.Context, req *dopv1.GrantFlowRequest) (*dopv1.FlowGrant, error) {
-	sh, err := s.svc.Grant(ctx, req.GetPublicationId(), req.GetToAccountId(), req.GetIdempotencyKey())
+	sh, err := s.svc.Grant(ctx, req.GetPublicationId(), req.GetToAccount().GetId(), req.GetIdempotencyKey())
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +376,7 @@ func shareToProto(s *workflow.Share) *dopv1.FlowGrant {
 	out := &dopv1.FlowGrant{
 		Id:               s.ID,
 		PublicationId:    s.PublicationID,
-		ToAccountId:      s.ToAccountID,
+		ToAccount:        &dopv1.AccountRef{Id: s.ToAccountID},
 		RevocationPolicy: string(s.RevocationPolicy),
 		GrantedAt:        timestamppb.New(s.GrantedAt),
 	}
@@ -384,7 +391,7 @@ func adoptionToProto(a *workflow.Adoption) *dopv1.FlowAdoption {
 		Id:            a.ID,
 		PublicationId: a.PublicationID,
 		Version:       a.Version,
-		ByAccountId:   a.ByAccountID,
+		ByAccount:     &dopv1.AccountRef{Id: a.ByAccountID},
 		FlowId:        a.FlowID,
 		DerivedAt:     timestamppb.New(a.DerivedAt),
 	}

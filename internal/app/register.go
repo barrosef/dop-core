@@ -95,10 +95,10 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	wfRepo := postgres.NewWorkflowRepo(deps.Pool)
 	// SharingRepository (Task 9): publication, grant, revocation and
 	// derivation, all behind flow_shares' authorising join (migrations
-	// 0020/0021). AccountDefaultsRepo is the narrow read the domain needs —
-	// one column of accounts, not the account.
+	// 0020/0021). AccountFactsRepo is the narrow read the domain needs — two
+	// columns of accounts, not the account.
 	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio,
-		postgres.NewWorkflowSharing(deps.Pool), postgres.NewAccountDefaultsRepo(deps.Pool))
+		postgres.NewWorkflowSharing(deps.Pool), postgres.NewAccountFactsRepo(deps.Pool))
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
 	// The router is this package's POLICY, not a port: nil chooses the default

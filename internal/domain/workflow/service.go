@@ -19,18 +19,18 @@ type Service struct {
 	access   Access
 	clock    ports.Clock
 	sharing  SharingRepository
-	defaults AccountDefaults
+	accounts AccountFacts
 }
 
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally and no versioning test was
 // deterministic. The panic here is deliberate — it is a wiring error, caught at
 // boot.
-func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository, defaults AccountDefaults) *Service {
+func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository, accounts AccountFacts) *Service {
 	if clock == nil {
 		panic("workflow.NewService: clock is required — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing, defaults: defaults}
+	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing, accounts: accounts}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -594,7 +594,7 @@ func (s *Service) Grant(ctx context.Context, publicationID, toAccountID, idempot
 	if pub.Withdrawn() {
 		return nil, errs.Precondition("this publication was withdrawn: publish a version again before granting it")
 	}
-	raw, err := s.defaults.DefaultRevocationPolicy(ctx, accountID)
+	raw, err := s.accounts.DefaultRevocationPolicy(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -753,7 +753,7 @@ func (s *Service) AdoptionsOf(ctx context.Context, publicationID string) ([]Adop
 // identity fact — instead of every client guessing the same format and
 // eventually disagreeing on it.
 func (s *Service) HandleOf(ctx context.Context, accountID string) (string, error) {
-	return s.defaults.HandleOf(ctx, accountID)
+	return s.accounts.HandleOf(ctx, accountID)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
