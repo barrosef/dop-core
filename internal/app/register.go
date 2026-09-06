@@ -93,12 +93,12 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// the ports keeps the domain saying what it needs, not who it needs it
 	// from.
 	wfRepo := postgres.NewWorkflowRepo(deps.Pool)
-	// SharingRepository has no adapter yet — postgres.NewWorkflowSharing lands
-	// with the flow-sharing plan's Task 9. Until then nil is safe: no RPC calls
-	// Publish, Withdraw or anything else that reaches it (Task 10 wires those).
-	// AccountDefaults has no adapter yet either — nil is safe alongside
-	// SharingRepository: nothing calls Grant until Task 10 wires the RPC.
-	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio, nil, nil)
+	// SharingRepository (Task 9): publication, grant, revocation and
+	// derivation, all behind flow_shares' authorising join (migrations
+	// 0020/0021). AccountDefaultsRepo is the narrow read the domain needs —
+	// one column of accounts, not the account.
+	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio,
+		postgres.NewWorkflowSharing(deps.Pool), postgres.NewAccountDefaultsRepo(deps.Pool))
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
 	// The router is this package's POLICY, not a port: nil chooses the default
