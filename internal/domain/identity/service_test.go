@@ -262,7 +262,7 @@ func TestEnsureUserCreatesThePersonalAccount(t *testing.T) {
 	svc := identity.NewService(repo, fixedClock{now})
 
 	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
-		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", Providers: []string{"password"},
+		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", EmailVerified: true, Providers: []string{"password"},
 	})
 	if err != nil {
 		t.Fatalf("EnsureUser: %v", err)
@@ -284,7 +284,7 @@ func TestEnsureUserIsIdempotent(t *testing.T) {
 	repo := newFakeRepo()
 	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}}
+	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", EmailVerified: true, Providers: []string{"password"}}
 
 	u1, a1, _ := svc.EnsureUser(ctx, p)
 	u2, a2, err := svc.EnsureUser(ctx, p)
@@ -304,7 +304,7 @@ func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 
-	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}})
+	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", EmailVerified: true, Providers: []string{"password"}})
 	u, _, err := svc.EnsureUser(ctx, ports.Principal{
 		Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"google.com"},
 	})
@@ -313,6 +313,47 @@ func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	}
 	if len(u.Providers) != 2 {
 		t.Errorf("both providers should add up, got %v", u.Providers)
+	}
+}
+
+func TestAPasswordCredentialNeedsAVerifiedEmail(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "sub-1", Email: "ana@example.com", EmailVerified: false,
+		Providers: []string{"password"},
+	})
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("without verification anybody signs up with anybody's address: %v", err)
+	}
+}
+
+func TestASocialCredentialEntersWithAnUnverifiedEmail(t *testing.T) {
+	// GitHub frequently hands over an unverified e-mail. Refusing it here would
+	// lock out the provider this platform's users are most likely to have — and
+	// the e-mail is not the proof there, the provider's authentication is.
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "sub-2", Email: "bruno@example.com", EmailVerified: false,
+		Providers: []string{"github"},
+	})
+	if err != nil {
+		t.Fatalf("a social credential does not need the e-mail verified: %v", err)
+	}
+	if u == nil || acct == nil {
+		t.Fatal("the user and the personal account should exist")
+	}
+}
+
+func TestAPasswordLinkedToASocialProviderEnters(t *testing.T) {
+	// Once a social provider is on the same credential, the password is no
+	// longer the only thing vouching for the person.
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "sub-3", Email: "carla@example.com", EmailVerified: false,
+		Providers: []string{"password", "google"},
+	})
+	if err != nil {
+		t.Fatalf("password plus a social provider is not a password-only credential: %v", err)
 	}
 }
 

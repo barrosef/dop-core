@@ -97,6 +97,11 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 		return nil, nil, errs.Invalid("principal with no subject")
 	}
 
+	if passwordOnly(p.Providers) && !p.EmailVerified {
+		return nil, nil, errs.New(errs.KindPrecondition,
+			"this e-mail has not been verified yet")
+	}
+
 	existing, err := s.repo.UserBySubject(ctx, p.Subject)
 	if err != nil && errs.KindOf(err) != errs.KindNotFound {
 		return nil, nil, err
@@ -692,6 +697,24 @@ func mergeProviders(existing, incoming []string) []string {
 		}
 	}
 	return out
+}
+
+// passwordOnly answers whether a password is the ONLY thing vouching for this
+// person. It is the distinction the verification rule turns on: with a password
+// the e-mail is the sole link between the credential and a human, and nobody
+// checked it; with a social provider the provider already did the checking, and
+// the e-mail is metadata. Refusing every unverified e-mail would lock out
+// GitHub, which frequently delivers one (spec D-5).
+func passwordOnly(providers []string) bool {
+	if len(providers) == 0 {
+		return false // an unknown provider is not a password credential
+	}
+	for _, p := range providers {
+		if p != "password" {
+			return false
+		}
+	}
+	return true
 }
 
 func randomSuffix(n int) string {
