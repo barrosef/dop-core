@@ -94,10 +94,29 @@ func (r Rule) Validate() error {
 	if len(r.Actions) == 0 && len(r.Disables) == 0 {
 		return errs.Invalid("a rule that neither acts nor disables does nothing")
 	}
+	// WHY the names must be unique, so nobody "helpfully" relaxes it: the
+	// idempotency gate's primary key is (event_id, rule_ref, action_name), and
+	// a rule's rule_ref is its id. Two actions sharing a name in one rule
+	// therefore claim the SAME row — the first runs, the second is skipped as
+	// already applied, forever, with no error anywhere. The alternative was an
+	// ordinal in the key; it was rejected because it makes idempotency depend
+	// on ORDER, so inserting an action in the middle of the list would shift
+	// every later ordinal and make already-applied actions look unapplied,
+	// and a redelivery would re-run them.
+	seen := make(map[ActionName]bool, len(r.Actions))
 	for i, a := range r.Actions {
 		if !ValidActionName(a.Name) {
 			return errs.Invalid("action #%d has an unknown name %q: the vocabulary is the platform's", i+1, a.Name)
 		}
+		if seen[a.Name] {
+			return errs.Invalid(
+				"action %q appears twice in this rule: what marks an action as done is "+
+					"(event, rule, action name), so the second one would be skipped as "+
+					"already applied and would never run. To do %q twice — to reach two "+
+					"recipients, say — write two rules, or one action whose params name both",
+				a.Name, a.Name)
+		}
+		seen[a.Name] = true
 	}
 	if strings.TrimSpace(r.Why) == "" {
 		return errs.Invalid(

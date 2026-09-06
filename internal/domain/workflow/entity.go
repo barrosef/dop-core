@@ -518,6 +518,21 @@ func Validate(f Flow) Report {
 			}
 		}
 
+		// WHY a name may not repeat AT ONE MOMENT, so nobody "helpfully" relaxes
+		// it: what marks an action as done is (event, rule_ref, action name),
+		// and reaction.DecideStage builds rule_ref as
+		// flow/version/stage/moment. Two actions sharing a name at one moment
+		// therefore claim the SAME row — the first runs, the second is skipped
+		// as already applied, forever, with no error anywhere. The moment is
+		// part of rule_ref, which is why the scope is per moment and not per
+		// stage: enter and exit are genuinely different rows.
+		//
+		// The alternative was an ordinal in that key. It was rejected because
+		// it makes idempotency depend on ORDER: inserting an action in the
+		// middle of the list would shift every later ordinal, make
+		// already-applied actions look unapplied, and a redelivery would re-run
+		// them.
+		seenAction := map[string]bool{}
 		for _, a := range st.Actions {
 			if !ValidStageMoment(a.On) {
 				r.errf("stage %s: %q is not a moment — use enter or exit", where, a.On)
@@ -525,6 +540,16 @@ func Validate(f Flow) Report {
 			if !reaction.ValidActionName(reaction.ActionName(a.Name)) {
 				r.errf("stage %s: %q is not an action this platform implements", where, a.Name)
 			}
+			key := string(a.On) + "\x00" + a.Name
+			if seenAction[key] {
+				r.errf("stage %s declares %q twice on %s: what marks an action as done is "+
+					"(event, stage, moment, action name), so the second one would be skipped "+
+					"as already applied and would never run. The same name on the OTHER "+
+					"moment is fine; to do %q twice at this one — to reach two recipients, "+
+					"say — use two stages, or one action whose params name both",
+					where, a.Name, a.On, a.Name)
+			}
+			seenAction[key] = true
 		}
 
 		if st.Type == TypeSpec {

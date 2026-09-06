@@ -694,6 +694,46 @@ func TestAStageDeclaresWhatHappensWhenItIsEnteredAndLeft(t *testing.T) {
 	}
 }
 
+// TestTwoActionsWithTheSameNameAtOneMomentAreRefused pins the limit the
+// idempotency gate imposes on a stage. applied_actions is keyed on
+// (event_id, rule_ref, action_name), and DecideStage builds rule_ref as
+// flow/version/stage/moment — so two actions sharing a name at one moment
+// claim the SAME row: the first runs, the second is skipped forever as
+// already applied, with no error anywhere. Refusing here is what makes that
+// limit loud instead of silent.
+func TestTwoActionsWithTheSameNameAtOneMomentAreRefused(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentEnter, Name: "send_email", Params: map[string]string{"to": "owner"}},
+		{On: workflow.MomentEnter, Name: "send_email", Params: map[string]string{"to": "manager"}},
+	}
+	rep := workflow.Validate(f)
+	if rep.Valid() {
+		t.Fatal("two actions with one name at one moment collapse into one; it has to be refused")
+	}
+	if !containsSnippet(rep.Errors, "twice on enter") {
+		t.Errorf("the message has to locate the stage and the moment: %v", rep.Errors)
+	}
+	// And it has to say the way OUT, not only that the author was refused.
+	if !containsSnippet(rep.Errors, "two stages") && !containsSnippet(rep.Errors, "one action") {
+		t.Errorf("the message has to say how to reach two recipients: %v", rep.Errors)
+	}
+}
+
+// The uniqueness is PER MOMENT, and that is not an accident: rule_ref carries
+// the moment, so entering and leaving claim different rows. "Tell the room on
+// the way in and on the way out" is a legitimate flow and must stay writable.
+func TestTheSameActionOnEnterAndOnExitIsLegitimate(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentEnter, Name: "send_email"},
+		{On: workflow.MomentExit, Name: "send_email"},
+	}
+	if rep := workflow.Validate(f); !rep.Valid() {
+		t.Fatalf("enter and exit are different rule_refs and do not collide: %v", rep.Errors)
+	}
+}
+
 // In Create and Update the refusal becomes an error: there an invalid flow is
 // something somebody is writing, and storing it would leave a future demand
 // with no answer.

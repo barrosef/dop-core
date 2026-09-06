@@ -83,3 +83,38 @@ func TestTheReasonIsRequiredAndIsNotARestatement(t *testing.T) {
 		t.Fatal("the fixture's reason should say WHY, so the test above means something")
 	}
 }
+
+// TestTwoActionsWithTheSameNameInOneRuleAreRefused pins the limit the
+// idempotency gate imposes on a rule. applied_actions is keyed on
+// (event_id, rule_ref, action_name), and a rule's rule_ref is its id — so two
+// actions sharing a name in one rule claim the SAME row: the first runs, the
+// second is skipped forever as already applied. "E-mail the owner and e-mail
+// the manager" would e-mail one of them, with no error anywhere.
+func TestTwoActionsWithTheSameNameInOneRuleAreRefused(t *testing.T) {
+	r := good()
+	r.Actions = []reaction.Action{
+		{Name: reaction.ActionSendEmail, Params: map[string]string{"to_field": "owner_email"}},
+		{Name: reaction.ActionSendEmail, Params: map[string]string{"to_field": "manager_email"}},
+	}
+	err := r.Validate()
+	if errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("the second action would be skipped forever; expected a refusal, got %v", err)
+	}
+	// The message has to say the way OUT, not only that the author was refused.
+	if !strings.Contains(err.Error(), "two rules") {
+		t.Errorf("the refusal has to say how to reach two recipients: %v", err)
+	}
+}
+
+// Different names in one rule are the ordinary case and must stay writable:
+// they claim different rows, so the gate never confuses them.
+func TestTwoDifferentActionsInOneRuleAreLegitimate(t *testing.T) {
+	r := good()
+	r.Actions = []reaction.Action{
+		{Name: reaction.ActionSendEmail},
+		{Name: reaction.ActionOpenAttention},
+	}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("two different actions do not collide in the gate: %v", err)
+	}
+}
