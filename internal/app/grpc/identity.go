@@ -12,6 +12,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -24,14 +25,24 @@ func NewIdentityServer(svc *identity.Service) *IdentityServer {
 	return &IdentityServer{svc: svc}
 }
 
-func (s *IdentityServer) EnsureUser(ctx context.Context, req *dopv1.EnsureUserRequest) (*dopv1.User, error) {
+// EnsureUser is the bootstrap: it runs BEFORE the person has a user, so no actor
+// can authorize it. What authorizes it is the token, and the token is also the
+// only acceptable source for who the person is — the request's fields describe
+// an identity the caller merely asserts (ADR-0029). They are ignored, and stay
+// in the proto only so an older client is refused rather than misread.
+func (s *IdentityServer) EnsureUser(ctx context.Context, _ *dopv1.EnsureUserRequest) (*dopv1.User, error) {
+	call, _ := ctxutil.From(ctx)
+	if call.Verified == nil {
+		return nil, errs.New(errs.KindUnauthorized,
+			"EnsureUser needs the person's token: a request body cannot say who they are")
+	}
 	u, _, err := s.svc.EnsureUser(ctx, ports.Principal{
-		Subject:       req.GetSubject(),
-		Email:         req.GetEmail(),
-		EmailVerified: req.GetEmailVerified(),
-		Name:          req.GetName(),
-		AvatarURL:     req.GetAvatarUrl(),
-		Providers:     []string{req.GetProvider()},
+		Subject:       call.Verified.Subject,
+		Email:         call.Verified.Email,
+		EmailVerified: call.Verified.EmailVerified,
+		Name:          call.Verified.Name,
+		AvatarURL:     call.Verified.AvatarURL,
+		Providers:     call.Verified.Providers,
 	})
 	if err != nil {
 		return nil, err

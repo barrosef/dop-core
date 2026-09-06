@@ -17,13 +17,17 @@ import (
 var authKey = []byte("a-key-long-enough-for-a-test-0123")
 
 type fakeTokens struct {
-	subject string
-	err     error
+	subject   string
+	principal *ports.Principal
+	err       error
 }
 
 func (f fakeTokens) VerifyToken(context.Context, string) (*ports.Principal, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.principal != nil {
+		return f.principal, nil
 	}
 	return &ports.Principal{Subject: f.subject}, nil
 }
@@ -158,6 +162,43 @@ func TestTheSubjectLookupIsCached(t *testing.T) {
 	}
 	if users.calls != 1 {
 		t.Errorf("%d lookups for the same subject", users.calls)
+	}
+}
+
+func TestAVerifiedTokenProvesThePersonEvenWhenNoUserExistsYet(t *testing.T) {
+	// The bootstrap: EnsureUser is the call that runs BEFORE the user exists, so
+	// userOf finds nothing and strict mode proves no actor. The token still
+	// proved WHO, and that is what EnsureUser needs — without it the handler
+	// falls back to believing the request body, which ADR-0029 exists to stop.
+	users := &fakeUsers{bySubject: map[string]string{}}
+	a, _ := newAuth(t, "strict", fakeTokens{principal: &ports.Principal{
+		Subject: "sub-new", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"password"},
+	}}, users)
+
+	got := a.authenticate(context.Background(),
+		mdWith("authorization", "Bearer t"), ctxutil.Call{})
+
+	if got.ActorID != "" {
+		t.Fatalf("no user exists yet, so no actor may be proven: %+v", got)
+	}
+	if got.Verified == nil {
+		t.Fatal("the token was verified and its answer was thrown away")
+	}
+	if got.Verified.Subject != "sub-new" || !got.Verified.EmailVerified {
+		t.Fatalf("the verified identity did not survive: %+v", got.Verified)
+	}
+}
+
+func TestAForgedTokenLeavesNoVerifiedIdentity(t *testing.T) {
+	users := &fakeUsers{bySubject: map[string]string{}}
+	a, _ := newAuth(t, "strict", fakeTokens{err: errs.New(errs.KindUnauthorized, "forged")}, users)
+
+	got := a.authenticate(context.Background(),
+		mdWith("authorization", "Bearer t"), ctxutil.Call{})
+
+	if got.Verified != nil {
+		t.Fatal("a token that proved nothing left a verified identity behind")
 	}
 }
 
