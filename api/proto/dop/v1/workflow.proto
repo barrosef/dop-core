@@ -44,6 +44,19 @@ message StageSpec {
   repeated string subtypes = 6;  // e.g.: test → aaa, e2e, integration
 }
 
+// FlowOrigin is the provenance carried BY a copy derived from another
+// account's publication (task 9) — where it came from, at which version, and
+// when this account adopted it. It mirrors flow_versions/flows'
+// origin_ref/origin_version/origin_adopted_at columns, which are all-or-
+// nothing on a flow written directly in its own account (see workflow.go's
+// flowCols and the flow_origem_completa CHECK): a Flow with no FlowOrigin set
+// has no provenance at all, never a partial one.
+message FlowOrigin {
+  string reference = 1;  // "@acme/backend-go@v3", the publication this copy was derived from
+  int32  version   = 2;  // the publication's version at the moment of derivation
+  google.protobuf.Timestamp adopted_at = 3;
+}
+
 message Flow {
   string    id      = 1;
   string    name    = 2;
@@ -54,6 +67,16 @@ message Flow {
   string    owner_id    = 6;
   repeated StageSpec stages = 7;
   AuditStamp audit    = 8;
+  // Set only for a copy derived from another account's publication; absent
+  // for a flow written directly in its own account.
+  FlowOrigin origin = 9;
+  // Set only once the share this copy was derived under has been revoked
+  // under `drain` or `terminate` (never set on a Flow with no origin). The
+  // design's promise (flow-sharing spec §3.1): a revoked copy REMAINS
+  // visible in the adopting account, marked revoked by the origin on this
+  // date — vanishing silently would turn "my process stopped working" into a
+  // question with no answer.
+  google.protobuf.Timestamp revoked_at = 10;
 }
 
 // The result of the chain platform ◁ account ◁ workspace ◁ project ◁ demand.

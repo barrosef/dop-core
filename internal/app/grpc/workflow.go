@@ -246,6 +246,20 @@ func flowToProto(f *workflow.Flow) *dopv1.Flow {
 	if f.CreatedBy != "" {
 		out.Audit.CreatedBy = &dopv1.ActorRef{Kind: dopv1.ActorRef_KIND_USER, Id: f.CreatedBy}
 	}
+	// Origin and RevokedAt: without these, no client can tell a revoked copy
+	// from a live one, or explain where a derived flow came from — the design
+	// spec's promise (§2.3, §3.1) that a copy carries its provenance and a
+	// revocation stays visible, not silent.
+	if f.Origin != nil {
+		out.Origin = &dopv1.FlowOrigin{
+			Reference: f.Origin.Ref,
+			Version:   f.Origin.Version,
+			AdoptedAt: timestamppb.New(f.Origin.AdoptedAt),
+		}
+	}
+	if !f.RevokedAt.IsZero() {
+		out.RevokedAt = timestamppb.New(f.RevokedAt)
+	}
 	return out
 }
 
