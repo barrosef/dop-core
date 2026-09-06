@@ -465,6 +465,76 @@ func (s *Service) SharesOf(ctx context.Context, publicationID string) ([]Share, 
 	return s.sharing.SharesOfPublication(ctx, accountID, publicationID)
 }
 
+// Derive adopts a published flow: it creates a COPY in the caller's account, at
+// the level the caller chooses, carrying where it came from.
+//
+// A copy and not a reference, because a live reference would let one company's
+// edit change how another company's development runs, and revoking it would
+// break demands already moving.
+func (s *Service) Derive(ctx context.Context, rawRef string, target ScopeRef, idempotencyKey string) (*Flow, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	ref, err := ParseRef(rawRef)
+	if err != nil {
+		return nil, err
+	}
+	// The one deliberate crossing. It answers NotFound when there is no grant:
+	// whether a flow exists in another account is not an outsider's to learn.
+	pub, err := s.sharing.ResolvePublication(ctx, accountID, ref)
+	if err != nil {
+		return nil, err
+	}
+	// The CONTENT comes from the publisher's frozen version, read by id and
+	// version — the same path a demand uses to read what it froze on.
+	src, err := s.repo.VersionOf(ctx, pub.AccountID, pub.FlowID, pub.Version)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := s.resolveOwner(ctx, accountID, target)
+	if err != nil {
+		return nil, err
+	}
+	if owner.Scope == ScopePlatform {
+		return nil, errs.Permission("a derived flow does not go into the platform catalogue")
+	}
+	now := s.now()
+	copied := Flow{
+		AccountID: accountID, OwnerScope: owner.Scope, OwnerID: owner.ID,
+		Name: src.Name, Description: src.Description, Version: 1, Stages: src.Stages,
+		Origin:    &Origin{Ref: ref.WithoutVersion().String(), Version: pub.Version, AdoptedAt: now},
+		CreatedBy: call.ActorID, CreatedAt: now, UpdatedAt: now,
+	}
+	out, err := s.repo.Create(ctx, &copied, s.writeKey(idempotencyKey, "derive", copied, 0))
+	if err != nil {
+		return nil, err
+	}
+	// The publisher's half of the same fact. It is written after the copy
+	// exists, and it carries the copy's id — which is what makes revocation
+	// able to reach it later without scanning anything.
+	if err := s.sharing.RecordAdoption(ctx, &Adoption{
+		PublicationID: pub.ID, Version: pub.Version, ByAccountID: accountID,
+		FlowID: out.ID, DerivedAt: now,
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AdoptionsOf lists who derived from a publication.
+func (s *Service) AdoptionsOf(ctx context.Context, publicationID string) ([]Adoption, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.sharing.AdoptionsOfPublication(ctx, accountID, publicationID)
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // resolveOwner normalizes and CONFIRMS the addressed level.

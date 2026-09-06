@@ -62,6 +62,15 @@ type PublicationRef struct {
 
 func (r PublicationRef) Pinned() bool { return r.Version > 0 }
 
+// WithoutVersion is what gets stored as provenance: the reference identifies
+// WHERE it came from, and the version is a field of its own. Storing
+// "@acme/backend-go@v3" in Ref would put the same fact in two places and let
+// them disagree.
+func (r PublicationRef) WithoutVersion() PublicationRef {
+	r.Version = 0
+	return r
+}
+
 func (r PublicationRef) String() string {
 	s := "@" + r.Handle + "/" + r.Slug
 	if r.Pinned() {

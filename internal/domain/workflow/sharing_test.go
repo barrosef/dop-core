@@ -651,6 +651,46 @@ func TestGrantRefusesGrantingToYourOwnAccount(t *testing.T) {
 	}
 }
 
+// ── Derive ───────────────────────────────────────────────────────────────────
+
+func TestDerivingCopiesAndRecordsBothSides(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	pub, err := svc.Publish(env.CtxAs(env.OwnerID), env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Grant(env.CtxAs(env.OwnerID), pub.ID, env.OtherAccountID, "g1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The other account derives it at ITS OWN project level.
+	ctx := env.CtxAsOther(env.OtherOwnerID)
+	target := workflow.ScopeRef{Scope: workflow.ScopeProject, ID: env.OtherProjectID}
+	copied, err := svc.Derive(ctx, "@acme/backend-go", target, "d1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied.AccountID != env.OtherAccountID {
+		t.Fatal("the copy has to belong to whoever derived it")
+	}
+	if copied.Origin == nil || copied.Origin.Ref != "@acme/backend-go" || copied.Origin.Version != pub.Version {
+		t.Fatalf("the copy does not carry where it came from: %+v", copied.Origin)
+	}
+	// The publisher's side records where it went, so it never has to scan
+	// another account to find out.
+	ads, err := svc.AdoptionsOf(env.CtxAs(env.OwnerID), pub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ads) != 1 || ads[0].ByAccountID != env.OtherAccountID || ads[0].FlowID != copied.ID {
+		t.Fatalf("the derivation was not recorded on the publisher's side: %+v", ads)
+	}
+	// Without a grant, the reference does not even exist for the caller.
+	if _, err := svc.Derive(env.CtxAsThird(), "@acme/backend-go", target, "d2"); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("an account with no grant has to get not-found, not permission-denied: %v", err)
+	}
+}
+
 func TestGrantRefusesAWithdrawnPublication(t *testing.T) {
 	svc, env := newSharingHarness(t)
 	ctx := env.CtxAs(env.OwnerID)
