@@ -68,6 +68,20 @@ const (
 	KeyPolicyUnknown        = "identity.account.revocation_policy_unknown"
 )
 
+// MsgEmailBelongsToAnotherUser is the refusal an unknown subject gets when the
+// address it arrives on is already somebody else's (spec US-7).
+//
+// It is a constant because TWO places produce it: EnsureUser's guard, which is
+// the fast path, and the Postgres adapter, which catches the same collision off
+// `users_email_uniq` when the guard could not see it — the index has no
+// email_verified predicate, so an unverified row on either side slips past a
+// guard that requires verification. Whoever lands on the floor instead of the
+// fast path must not read a different sentence about the same situation, and
+// the sentence names the CAUSE (a provider that is not linking accounts sharing
+// an e-mail) because that is the only part anyone can act on.
+const MsgEmailBelongsToAnotherUser = "this e-mail already belongs to another sign-in method; " +
+	"the identity provider is not linking accounts that share an e-mail"
+
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally, no expiry test was
 // deterministic, and nobody noticed the abstraction was never proven. The panic
@@ -97,14 +111,45 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 		return nil, nil, errs.Invalid("principal with no subject")
 	}
 
+	if passwordOnly(p.Providers) && !p.EmailVerified {
+		return nil, nil, errs.New(errs.KindPrecondition,
+			"this e-mail has not been verified yet")
+	}
+
+	// Normalized ONCE, at the top, and used everywhere below. Looking up with the
+	// raw address while writing the trimmed one meant a padded e-mail missed the
+	// guard and then died on the unique index — the opaque failure the guard
+	// exists to replace. Case is covered by citext and by the index's lower(),
+	// but whitespace is not.
+	email := strings.ToLower(strings.TrimSpace(p.Email))
+
 	existing, err := s.repo.UserBySubject(ctx, p.Subject)
 	if err != nil && errs.KindOf(err) != errs.KindNotFound {
 		return nil, nil, err
 	}
 
+	// The e-mail is unique across the whole table (0001_foundation.sql), while
+	// the lookup above is by subject. Those two only agree because the identity
+	// provider links accounts that share an e-mail, which is configuration and
+	// not code. When it stops agreeing, say why: without this the insert dies on
+	// the unique index and the person reads "something went wrong".
+	//
+	// The verified predicate is load-bearing and stays: an UNVERIFIED claim must
+	// never be enough to decide two subjects are the same person. That leaves
+	// collisions this fast path cannot see — the index carries no
+	// email_verified predicate — and those are caught by the adapter, which
+	// returns this same refusal off the constraint itself.
+	if existing == nil && email != "" && p.EmailVerified {
+		if other, err := s.repo.UserByVerifiedEmail(ctx, email); err == nil && other != nil {
+			return nil, nil, errs.New(errs.KindConflict, MsgEmailBelongsToAnotherUser)
+		} else if err != nil && errs.KindOf(err) != errs.KindNotFound {
+			return nil, nil, err
+		}
+	}
+
 	u := &User{
 		Subject:       p.Subject,
-		Email:         strings.ToLower(strings.TrimSpace(p.Email)),
+		Email:         email,
 		EmailVerified: p.EmailVerified,
 		Name:          p.Name,
 		AvatarURL:     p.AvatarURL,
@@ -692,6 +737,54 @@ func mergeProviders(existing, incoming []string) []string {
 		}
 	}
 	return out
+}
+
+// socialProviders is the set of providers this platform enables whose own
+// authentication already vouches for the person (spec D-5). The strings are the
+// ones the ADAPTERS emit, not invented labels: Firebase puts "google.com" and
+// "github.com" in `sign_in_provider` and in the keys of `firebase.identities`,
+// and normalizeProviders lowercases both adapters' vocabularies into the same
+// shape.
+//
+// Adding a provider to the platform means adding it here. Until somebody does,
+// that provider's users whose e-mail is unverified are REFUSED — see
+// passwordOnly for why that is the direction we want the mistake to point in.
+var socialProviders = map[string]bool{
+	"google.com": true,
+	"github.com": true,
+}
+
+// passwordOnly answers whether a password is the ONLY thing vouching for this
+// person. It is the distinction the verification rule turns on: with a password
+// the e-mail is the sole link between the credential and a human, and nobody
+// checked it; with a social provider the provider already did the checking, and
+// the e-mail is metadata. Refusing every unverified e-mail would lock out
+// GitHub, which frequently delivers one (spec D-5).
+//
+// It asks whether a SOCIAL provider is present instead of asking whether EVERY
+// entry is "password", and the direction is the entire point. Firebase keys
+// `firebase.identities` by identifier TYPE, so a real e-mail/password token
+// arrives as ["email","password"] — under "every entry must be password" the
+// rule answered false for exactly the credential it exists to stop, and any
+// unfamiliar value silently switched it OFF. That is fail-open, in the one place
+// that must not be.
+//
+// This way round an UNKNOWN value counts as not-social and the rule still fires.
+// The cost is stated so nobody meets it by surprise: enabling a new social
+// provider without listing it in socialProviders refuses that provider's users
+// whose e-mail is unverified until somebody adds it. A locked-out user tells us;
+// a rule that quietly stopped running does not.
+func passwordOnly(providers []string) bool {
+	password := false
+	for _, p := range providers {
+		if socialProviders[p] {
+			return false
+		}
+		if p == "password" {
+			password = true
+		}
+	}
+	return password
 }
 
 func randomSuffix(n int) string {

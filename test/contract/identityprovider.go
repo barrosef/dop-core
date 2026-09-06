@@ -244,27 +244,56 @@ func IdentityProviderSuite(t *testing.T, name string, newEnv func(t *testing.T) 
 		})
 
 		t.Run("6_providers_is_informative_and_normalized", func(t *testing.T) {
-			env := newEnv(t)
-			raw := mint(t, env, TokenSpec{Subject: "s", Providers: []string{"password"}})
-			p, err := env.Provider.VerifyToken(ctx, raw)
-			if err != nil {
-				t.Fatalf("VerifyToken: %v", err)
-			}
-			vistos := map[string]bool{}
-			for _, v := range p.Providers {
-				if v == "" {
-					t.Error("an empty entry in Providers")
-				}
-				if v != strings.ToLower(v) || v != strings.TrimSpace(v) {
-					t.Errorf("a provider outside the normalized vocabulary: %q", v)
-				}
-				if vistos[v] {
-					t.Errorf("provedor repetido: %q", v)
-				}
-				vistos[v] = true
-			}
-			if !vistos["password"] {
-				t.Errorf("the token says the sign-in was by password and Providers does not reflect it: %v", p.Providers)
+			// More than one vocabulary is asked for on purpose. A list that is
+			// merely NON-EMPTY proves nothing, and that weakness is what let a
+			// whole class of provider-shape bugs ship: the domain rule
+			// downstream reads the VALUES — a password-only credential needs a
+			// verified e-mail, a social one does not (spec D-5) — so an adapter
+			// that dropped the social provider, or renamed it, would silently
+			// disable that rule with every assertion here still green.
+			//
+			// What genuinely holds for BOTH adapters, whose claim vocabularies
+			// really do differ (Firebase's `sign_in_provider`, OIDC's `amr` and
+			// `idp`), is this: whatever the issuer asserted about how the person
+			// signed in SURVIVES the crossing, normalized. The adapter may ADD
+			// to the list — Firebase reports the identifier type next to the
+			// provider, so a password login legitimately arrives as
+			// ["email","password"] — but it may not lose what was asserted. So
+			// the check is containment, never equality: pinning one adapter's
+			// exact strings would make this suite a Firebase test wearing a
+			// port's name.
+			for name, requested := range map[string][]string{
+				"password": {"password"},
+				"google":   {"google.com"},
+				"github":   {"github.com"},
+			} {
+				t.Run(name, func(t *testing.T) {
+					env := newEnv(t)
+					raw := mint(t, env, TokenSpec{Subject: "s", Providers: requested})
+					p, err := env.Provider.VerifyToken(ctx, raw)
+					if err != nil {
+						t.Fatalf("VerifyToken: %v", err)
+					}
+					seen := map[string]bool{}
+					for _, v := range p.Providers {
+						if v == "" {
+							t.Error("an empty entry in Providers")
+						}
+						if v != strings.ToLower(v) || v != strings.TrimSpace(v) {
+							t.Errorf("a provider outside the normalized vocabulary: %q", v)
+						}
+						if seen[v] {
+							t.Errorf("repeated provider: %q", v)
+						}
+						seen[v] = true
+					}
+					for _, want := range requested {
+						if !seen[strings.ToLower(want)] {
+							t.Errorf("the token says the sign-in was by %q and Providers "+
+								"does not carry it: %v", want, p.Providers)
+						}
+					}
+				})
 			}
 
 			env2 := newEnv(t)

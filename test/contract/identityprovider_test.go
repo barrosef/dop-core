@@ -174,6 +174,35 @@ func claimsBase(s contract.TokenSpec, iss, aud string) map[string]any {
 	return c
 }
 
+// firebaseProviderClaims builds the `firebase` claim the way Firebase really
+// builds it, and getting that shape right is the whole reason this helper is
+// not one line inline.
+//
+// `sign_in_provider` names the provider used THIS time; `identities` is keyed by
+// IDENTIFIER TYPE — "email" for an e-mail/password account, the provider's own
+// domain for a social one. So a password login crosses the port as
+// ["email","password"] and never as ["password"] alone.
+//
+// Minting only `sign_in_provider` handed the adapter a list no Firebase token
+// ever produces, and every assertion downstream then agreed with that fiction:
+// a domain rule that reads the values passed its tests and did nothing in
+// production. An environment that lies about the provider's output is worse than
+// no environment, because it reports success.
+func firebaseProviderClaims(providers []string) map[string]any {
+	identities := map[string]any{}
+	for _, p := range providers {
+		key := p
+		if p == "password" {
+			key = "email"
+		}
+		identities[key] = []string{"identifier-of-" + key}
+	}
+	return map[string]any{
+		"sign_in_provider": providers[0],
+		"identities":       identities,
+	}
+}
+
 // ───────────────────────── a make-believe OIDC issuer ──────────────────────
 
 // oidcIssuer serves /.well-known/openid-configuration and a JWKS, counting the
@@ -232,9 +261,22 @@ func novoAmbienteOIDC(t *testing.T) contract.IdentityEnv {
 		Provider: idp,
 		Mint: func(t *testing.T, s contract.TokenSpec) (string, bool) {
 			c := claimsBase(s, e.srv.URL, audienciaOIDC)
-			// OIDC's vocabulary for "how they signed in" is `amr`.
-			if len(s.Providers) > 0 {
-				c["amr"] = s.Providers
+			// OIDC splits the question in two, and routing each request to the
+			// claim that really carries it is what keeps this environment from
+			// grading the adapter against a fiction: `amr` says HOW the person
+			// authenticated — Keycloak sends "pwd", never "password", which is
+			// exactly the normalization the adapter has to perform — while `idp`
+			// names the brokered external provider.
+			var amr []string
+			for _, prov := range s.Providers {
+				if prov == "password" {
+					amr = append(amr, "pwd")
+					continue
+				}
+				c["idp"] = prov
+			}
+			if len(amr) > 0 {
+				c["amr"] = amr
 			}
 			// The rotation swaps the issuer's key; the new token has to come out
 			// signed by it.
@@ -323,7 +365,7 @@ func newLocalFirebaseEnv(t *testing.T) contract.IdentityEnv {
 			}
 			// Firebase's vocabulary for "how they signed in".
 			if len(s.Providers) > 0 {
-				c["firebase"] = map[string]any{"sign_in_provider": s.Providers[0]}
+				c["firebase"] = firebaseProviderClaims(s.Providers)
 			}
 			e.mu.Lock()
 			rotated := e.key != keyA

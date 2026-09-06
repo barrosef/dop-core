@@ -134,41 +134,54 @@ func (a *callAuth) authenticate(ctx context.Context, md metadata.MD, claimed ctx
 		}
 	}
 
+	var verified *ctxutil.VerifiedIdentity
 	if tok := bearer(md); tok != "" && a.tokens != nil {
 		p, err := a.tokens.VerifyToken(ctx, tok)
 		if err != nil {
 			log.Warn("token refused")
-		} else if userID, err := a.userOf(ctx, p.Subject); err != nil {
-			log.Warn("token verified but the subject has no user", "error", err.Error())
 		} else {
-			// The token is the stronger proof of WHO: it overrides the actor the
-			// assertion asserted. A disagreement between the two is not a
-			// preference — it is a bug or an attack, and it is refused below.
-			if signed && proven.ActorID != "" && proven.ActorID != userID {
-				log.Warn("assertion and token disagree about the actor")
-				return a.refuse(claimed)
+			// Kept regardless of what follows: the token proved the PERSON, and
+			// the bootstrap that creates their user runs precisely when the
+			// lookup below cannot succeed.
+			verified = &ctxutil.VerifiedIdentity{
+				Subject: p.Subject, Email: p.Email, EmailVerified: p.EmailVerified,
+				Name: p.Name, AvatarURL: p.AvatarURL, Providers: p.Providers,
 			}
-			signed = true
-			proven.ActorID = userID
-			proven.ActorKind = ctxutil.ActorUser
-			if proven.AccountID == "" {
-				proven.AccountID = claimed.AccountID
-			}
-			if proven.SessionID == "" {
-				proven.SessionID = claimed.SessionID
-			}
-			if proven.ActorName == "" {
-				proven.ActorName = claimed.ActorName
+			if userID, err := a.userOf(ctx, p.Subject); err != nil {
+				log.Warn("token verified but the subject has no user", "error", err.Error())
+			} else {
+				// The token is the stronger proof of WHO: it overrides the actor the
+				// assertion asserted. A disagreement between the two is not a
+				// preference — it is a bug or an attack, and it is refused below.
+				if signed && proven.ActorID != "" && proven.ActorID != userID {
+					log.Warn("assertion and token disagree about the actor")
+					return a.refuse(claimed)
+				}
+				signed = true
+				proven.ActorID = userID
+				proven.ActorKind = ctxutil.ActorUser
+				if proven.AccountID == "" {
+					proven.AccountID = claimed.AccountID
+				}
+				if proven.SessionID == "" {
+					proven.SessionID = claimed.SessionID
+				}
+				if proven.ActorName == "" {
+					proven.ActorName = claimed.ActorName
+				}
 			}
 		}
 	}
 
 	if !signed {
-		return a.refuse(claimed)
+		r := a.refuse(claimed)
+		r.Verified = verified
+		return r
 	}
 	if proven.ActorKind == "" {
 		proven.ActorKind = ctxutil.ActorUser
 	}
+	proven.Verified = verified
 	return proven
 }
 

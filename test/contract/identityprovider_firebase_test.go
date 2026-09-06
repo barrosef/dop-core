@@ -104,7 +104,7 @@ func TestIdentityProviderContractFirebaseEmulador(t *testing.T) {
 					c["user_id"] = s.Subject
 				}
 				if len(s.Providers) > 0 {
-					c["firebase"] = map[string]any{"sign_in_provider": s.Providers[0]}
+					c["firebase"] = firebaseProviderClaims(s.Providers)
 				}
 				cab := objectB64(t, map[string]any{"alg": "none", "typ": "JWT"})
 				return cab + "." + objectB64(t, c) + ".", true
@@ -162,8 +162,22 @@ func TestIdentityProviderFirebaseRealEmulatorToken(t *testing.T) {
 	if p.EmailVerified {
 		t.Error("a user just created by password has no verified e-mail, and the adapter said it does")
 	}
-	if len(p.Providers) == 0 {
-		t.Error("the token carries firebase.sign_in_provider and Providers came out empty")
+	// This is the ONE place a real Firebase token's provider shape is observed
+	// rather than assembled, so it asserts the VALUES and not just the length.
+	// "not empty" was the assertion here before, and it is what let the domain
+	// believe a password login arrives as ["password"]: the emulator signs this
+	// person up with an e-mail and a password, and what actually comes back is
+	// the identifier type "email" ALONGSIDE the provider "password".
+	seen := map[string]bool{}
+	for _, v := range p.Providers {
+		seen[v] = true
 	}
-	t.Logf("principal normalizado do token real: %+v", p)
+	if !seen["password"] {
+		t.Errorf("an e-mail/password sign-up and Providers does not report the password: %v", p.Providers)
+	}
+	if !seen["email"] {
+		t.Errorf("firebase.identities is keyed by identifier type and the adapter dropped it — "+
+			"the domain would be reading a list Firebase never sends: %v", p.Providers)
+	}
+	t.Logf("normalized principal from the real token: %+v", p)
 }

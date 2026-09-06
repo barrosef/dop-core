@@ -40,6 +40,33 @@ type Call struct {
 	// about the person: only the collector writes metrics, and no person ever
 	// does.
 	Caller string
+	// Verified is non-nil only when a bearer token was verified on this call. It
+	// is INDEPENDENT of ActorID: a token proves the person, and the person may
+	// not have a user yet. Anything that needs an actor keeps reading ActorID.
+	Verified *VerifiedIdentity
+}
+
+// VerifiedIdentity is what the person's TOKEN proved, as opposed to what a
+// request body claimed. It exists for exactly one caller: the bootstrap that
+// creates a user, which runs before any user exists and therefore cannot be
+// authorized by an actor.
+//
+// It restates ports.Principal instead of importing it. This package is platform
+// and today depends on nothing in the domain; inverting that to reuse one struct
+// buys nothing. The codebase already makes the same trade where reaction
+// restates a workflow stage's action rather than importing the package.
+//
+// KEEP IN SYNC with ports.Principal (internal/domain/ports). The compiler will
+// NOT tell you: a new field there simply stops arriving here, and what the token
+// proved reaches EnsureUser missing a piece — silently, which is the failure
+// mode the restating buys and has to be paid for by hand.
+type VerifiedIdentity struct {
+	Subject       string
+	Email         string
+	EmailVerified bool
+	Name          string
+	AvatarURL     string
+	Providers     []string
 }
 
 // ErrNoAccount signals a request with no active account — invalid by

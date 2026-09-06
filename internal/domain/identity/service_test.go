@@ -129,6 +129,35 @@ func (f *fakeRepo) UserByID(_ context.Context, id string) (*identity.User, error
 	}
 	return nil, errs.NotFound("user")
 }
+
+// strings.ToLower, not strings.EqualFold, because it is what the SQL adapter
+// actually does (`lower(email) = lower($1)`) — measured against a live
+// database, Go's Unicode-aware EqualFold and glibc's locale-aware lower()
+// disagree on at least one real address (Turkish dotted İ folds to "i̇stanbul"
+// under Go, "istanbul" under glibc's en_US.utf8). Exact parity with the
+// database's lower() is NOT achievable here without reimplementing a locale,
+// so this double does not attempt it: it matches the ASCII-common case and
+// stays silent about the rest. A domain test must never assert
+// account-linking behaviour (this is Task 4's territory) on a non-ASCII
+// address — that assertion belongs in test/integration, against the real
+// adapter, or a passing domain suite would be hiding a broken product.
+func (f *fakeRepo) UserByVerifiedEmail(_ context.Context, email string) (*identity.User, error) {
+	// An empty address matches NOBODY, because the adapter cannot match on one:
+	// the column is NULL when there is no e-mail, and `lower(NULL) = lower('')`
+	// is NULL, never true. Without this line the double answered "yes, that user"
+	// for every row with no address — a divergence in exactly the direction the
+	// port's own comment warns about, and one that would let a test assert
+	// account linking the product cannot do.
+	if email == "" {
+		return nil, errs.NotFound("user")
+	}
+	for _, u := range f.users {
+		if u.EmailVerified && strings.ToLower(u.Email) == strings.ToLower(email) {
+			return u, nil
+		}
+	}
+	return nil, errs.NotFound("user")
+}
 func (f *fakeRepo) UpsertUser(_ context.Context, u *identity.User) (*identity.User, error) {
 	if u.ID == "" {
 		u.ID = f.id("usr")
@@ -262,7 +291,7 @@ func TestEnsureUserCreatesThePersonalAccount(t *testing.T) {
 	svc := identity.NewService(repo, fixedClock{now})
 
 	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
-		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", Providers: []string{"password"},
+		Subject: "sub-1", Email: "dev@dop.local", Name: "Dev", EmailVerified: true, Providers: []string{"password"},
 	})
 	if err != nil {
 		t.Fatalf("EnsureUser: %v", err)
@@ -284,7 +313,7 @@ func TestEnsureUserIsIdempotent(t *testing.T) {
 	repo := newFakeRepo()
 	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
-	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}}
+	p := ports.Principal{Subject: "sub-1", Email: "dev@dop.local", EmailVerified: true, Providers: []string{"password"}}
 
 	u1, a1, _ := svc.EnsureUser(ctx, p)
 	u2, a2, err := svc.EnsureUser(ctx, p)
@@ -304,7 +333,7 @@ func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	svc := identity.NewService(repo, fixedClock{now})
 	ctx := context.Background()
 
-	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"password"}})
+	svc.EnsureUser(ctx, ports.Principal{Subject: "sub-1", Email: "dev@dop.local", EmailVerified: true, Providers: []string{"password"}})
 	u, _, err := svc.EnsureUser(ctx, ports.Principal{
 		Subject: "sub-1", Email: "dev@dop.local", Providers: []string{"google.com"},
 	})
@@ -313,6 +342,136 @@ func TestAccountLinkingAccumulatesProviders(t *testing.T) {
 	}
 	if len(u.Providers) != 2 {
 		t.Errorf("both providers should add up, got %v", u.Providers)
+	}
+}
+
+func TestASecondSubjectOnAVerifiedEmailIsRefusedByName(t *testing.T) {
+	// Reaching here means the provider stopped linking accounts that share an
+	// e-mail. The e-mail is unique in the schema, so the insert would fail on the
+	// index and the person would read "something went wrong". The cause is a
+	// configuration, and the error has to say so.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	ctx := context.Background()
+
+	if _, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-google", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"google"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-github", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"github"},
+	})
+	if errs.KindOf(err) != errs.KindConflict {
+		t.Fatalf("expected a conflict naming the configuration, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "linking") {
+		t.Fatalf("the message does not name the cause: %v", err)
+	}
+}
+
+func TestTheSameSubjectComingBackIsNotAConflict(t *testing.T) {
+	// The guard must not fire on the ordinary case: the same person, same
+	// subject, signing in again on an e-mail that is already theirs.
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	ctx := context.Background()
+	p := ports.Principal{Subject: "sub-1", Email: "ana@example.com",
+		EmailVerified: true, Providers: []string{"google"}}
+
+	u1, _, _ := svc.EnsureUser(ctx, p)
+	u2, _, err := svc.EnsureUser(ctx, p)
+	if err != nil {
+		t.Fatalf("signing in twice is not a conflict: %v", err)
+	}
+	if u1.ID != u2.ID {
+		t.Fatal("the same subject produced two users")
+	}
+}
+
+// The provider lists below are the ones the ADAPTERS actually produce, and
+// nothing else. It matters more than it looks: Firebase keys
+// `firebase.identities` by IDENTIFIER TYPE, so an e-mail/password account
+// arrives as ["email","password"] and never as ["password"] on its own. These
+// tests used to hand the service the convenient shape, which is why the rule
+// they cover could be dead against the default adapter with every one of them
+// green (spec D-5).
+func TestAPasswordCredentialNeedsAVerifiedEmail(t *testing.T) {
+	cases := map[string][]string{
+		// Firebase: identities key "email" + sign_in_provider "password".
+		"firebase_email_password": {"email", "password"},
+		// OIDC: amr ["pwd"], which the adapter normalizes to "password".
+		"oidc_pwd_normalized": {"password"},
+	}
+	for name, providers := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc := identity.NewService(newFakeRepo(), fixedClock{now})
+			_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+				Subject: "sub-1", Email: "ana@example.com", EmailVerified: false,
+				Providers: providers,
+			})
+			if errs.KindOf(err) != errs.KindPrecondition {
+				t.Fatalf("without verification anybody signs up with anybody's address: %v", err)
+			}
+		})
+	}
+}
+
+// An unfamiliar provider must not switch the rule OFF. That is the whole reason
+// the check asks for a SOCIAL provider instead of asking whether every entry is
+// "password": under the old wording, one value nobody had seen before turned the
+// refusal into a silent pass — fail-open, in the one place that must not.
+func TestAnUnknownProviderDoesNotDisableTheVerificationRule(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "sub-4", Email: "dora@example.com", EmailVerified: false,
+		Providers: []string{"email", "password", "some-new-idp.example"},
+	})
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("an unrecognized provider must not be read as a social one: %v", err)
+	}
+}
+
+func TestASocialCredentialEntersWithAnUnverifiedEmail(t *testing.T) {
+	// GitHub frequently hands over an unverified e-mail. Refusing it here would
+	// lock out the provider this platform's users are most likely to have — and
+	// the e-mail is not the proof there, the provider's authentication is.
+	cases := map[string][]string{
+		"google": {"google.com"},
+		"github": {"github.com"},
+	}
+	for name, providers := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc := identity.NewService(newFakeRepo(), fixedClock{now})
+			u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+				Subject: "sub-2-" + name, Email: name + "@example.com", EmailVerified: false,
+				Providers: providers,
+			})
+			if err != nil {
+				t.Fatalf("a social credential does not need the e-mail verified: %v", err)
+			}
+			if u == nil || acct == nil {
+				t.Fatal("the user and the personal account should exist")
+			}
+		})
+	}
+}
+
+func TestAPasswordLinkedToASocialProviderEnters(t *testing.T) {
+	// Once a social provider is on the same credential, the password is no
+	// longer the only thing vouching for the person. This is the shape Firebase
+	// sends for an account that has both: the identities keys sorted, then the
+	// provider used this time.
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "sub-3", Email: "carla@example.com", EmailVerified: false,
+		Providers: []string{"email", "google.com", "password"},
+	})
+	if err != nil {
+		t.Fatalf("password plus a social provider is not a password-only credential: %v", err)
 	}
 }
 
@@ -932,5 +1091,29 @@ func TestOnlyOwnerOrAdminChangesTheDefaultRevocationPolicy(t *testing.T) {
 
 	if err := svc.SetDefaultRevocationPolicy(ownerCtx, "cascade"); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a value outside the vocabulary has to be refused: %v", err)
+	}
+}
+
+// A padded address has to meet the GUARD, not the unique index. The write always
+// trimmed; the lookup used to be handed the raw value, so "  ana@example.com  "
+// matched nobody and the insert then died on users_email_uniq as an opaque
+// error — precisely the failure the guard exists to replace. Case is not at risk
+// (citext, plus the index's lower()); whitespace was.
+func TestAPaddedEmailStillMeetsTheGuard(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	ctx := context.Background()
+	if _, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-1", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"google.com"},
+	}); err != nil {
+		t.Fatalf("the first user could not be created: %v", err)
+	}
+
+	_, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-2", Email: "  ana@example.com  ", EmailVerified: true,
+		Providers: []string{"github.com"},
+	})
+	if errs.KindOf(err) != errs.KindConflict {
+		t.Fatalf("whitespace must not carry an address past the guard: %v", err)
 	}
 }
