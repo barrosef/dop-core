@@ -181,6 +181,19 @@ func (r *IdentityRepo) AccountsOfUser(ctx context.Context, userID string) ([]ide
 	return accounts, members, rows.Err()
 }
 
+// SetDefaultRevocationPolicy stores the account's default; a grant's own
+// policy is stamped from it only at share time (flow sharing spec §3.2) — this
+// write never touches a grant already made.
+func (r *IdentityRepo) SetDefaultRevocationPolicy(ctx context.Context, accountID, policy string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE accounts SET default_revocation_policy = $2, updated_at = now() WHERE id = $1`,
+		accountID, policy)
+	if err != nil {
+		return Translate(err, "account")
+	}
+	return nil
+}
+
 func (r *IdentityRepo) MembershipsOfAccount(ctx context.Context, accountID string) ([]identity.Membership, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, user_id, account_id, role, created_at, updated_at

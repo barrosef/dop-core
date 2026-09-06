@@ -160,6 +160,16 @@ func (f *fakeRepo) CreateAccountWithOwner(_ context.Context, a *identity.Account
 	})
 	return &cp, nil
 }
+func (f *fakeRepo) SetDefaultRevocationPolicy(_ context.Context, accountID, policy string) error {
+	a, ok := f.accounts[accountID]
+	if !ok {
+		return errs.NotFound("account")
+	}
+	// accounts and byHandle share the same pointer (see CreateAccountWithOwner),
+	// so mutating through either map is visible from both.
+	a.DefaultRevocationPolicy = policy
+	return nil
+}
 func (f *fakeRepo) AccountsOfUser(_ context.Context, uid string) ([]identity.Account, []identity.Membership, error) {
 	var accs []identity.Account
 	var mems []identity.Membership
@@ -888,5 +898,39 @@ func TestRemovingAMemberAsksTheStepUpGate(t *testing.T) {
 	}
 	if len(grants.swept) != 0 {
 		t.Error("it swept the grants before the gate refused")
+	}
+}
+
+// ── the account's default revocation policy (flow sharing spec §3.2) ───────
+
+func TestOnlyOwnerOrAdminChangesTheDefaultRevocationPolicy(t *testing.T) {
+	repo := newFakeRepo()
+	svc := identity.NewService(repo, fixedClock{now})
+	owner, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+		Subject: "s-owner", Email: "owner@x.com", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.members = append(repo.members, identity.Membership{
+		ID: "mem-dev", UserID: "usr-dev", AccountID: acct.ID, Role: identity.RoleDeveloper})
+
+	devCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: "usr-dev", ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+	if err := svc.SetDefaultRevocationPolicy(devCtx, "terminate"); errs.KindOf(err) != errs.KindPermission {
+		t.Fatalf("a developer must not change an account setting: %v", err)
+	}
+
+	ownerCtx := ctxutil.Into(context.Background(), ctxutil.Call{
+		ActorID: owner.ID, ActorKind: ctxutil.ActorUser, AccountID: acct.ID})
+	if err := svc.SetDefaultRevocationPolicy(ownerCtx, "terminate"); err != nil {
+		t.Fatalf("the owner has to be able to: %v", err)
+	}
+	got, err := repo.AccountByID(context.Background(), acct.ID)
+	if err != nil || got.DefaultRevocationPolicy != "terminate" {
+		t.Fatalf("the default was not stored: %+v (err=%v)", got, err)
+	}
+
+	if err := svc.SetDefaultRevocationPolicy(ownerCtx, "cascade"); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("a value outside the vocabulary has to be refused: %v", err)
 	}
 }
