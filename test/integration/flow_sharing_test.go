@@ -607,12 +607,108 @@ func TestPinRoundTripsThroughPinOf(t *testing.T) {
 	}
 }
 
+// TestPinOnThePlatformCatalogueSurvivesAVersionBump is the fix for C2. Both
+// Resolve's pinned branch and BumpPin's precondition check call
+// WorkflowRepo.VersionOf with the FLOW's own account — which, for the
+// platform catalogue, is the empty string, because the catalogue has no
+// owner at all. `flows.account_id` is `uuid`: before the fix, sending ""
+// against it raised `invalid input syntax for type uuid: ""` before the
+// `OR f.owner_scope = 'platform'` half of the WHERE clause ever got a chance
+// to match — so the pin could never survive a version bump, exactly when it
+// matters. The domain's fake repo (fakeRepo.visivel in service_test.go)
+// cannot catch this: in Go, "" is a harmless string, never a type error.
+// This is why the fix needs proof against real Postgres, not just the fake.
+//
+// It pins against the SINGLE flow migration 0005_workflow.sql seeds at the
+// platform level, rather than inserting a second one: flows_um_por_nivel is a
+// unique index on (owner_scope, owner_id), and the platform level's owner_id
+// is always NULL — there can only ever be ONE platform flow in the whole
+// database, by construction. The version this test adds to it is NOT
+// cleaned up: flow_versions_imutaveis (migration 0005_workflow.sql) refuses
+// to delete a version for as long as its flow exists, on purpose — a flow
+// version is permanent history, the same as any other version ever appended
+// to the catalogue in production. Only current_version and the pin, both
+// genuinely mutable, are put back.
+func TestPinOnThePlatformCatalogueSurvivesAVersionBump(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	sharing := postgres.NewWorkflowSharing(pool)
+	flows := postgres.NewWorkflowRepo(pool)
+	_, otherAccount, _ := seedThreeAccounts(t, pool)
+
+	var flowID string
+	var v1 int32
+	if err := pool.QueryRow(ctx,
+		`SELECT id, current_version FROM flows WHERE owner_scope = 'platform'`).Scan(&flowID, &v1); err != nil {
+		t.Fatalf("reading the platform catalogue's flow: %v", err)
+	}
+
+	// Pin the account to the catalogue's current version — the write
+	// Resolve's first crossing performs.
+	if err := sharing.Pin(ctx, otherAccount, flowID, v1, "", time.Now()); err != nil {
+		t.Fatalf("pinning a platform flow has to succeed: %v", err)
+	}
+	if version, pinned, err := sharing.PinOf(ctx, otherAccount, flowID); err != nil || !pinned || version != v1 {
+		t.Fatalf("pinned=%v version=%d err=%v, want pinned=true version=%d", pinned, version, err, v1)
+	}
+
+	// A second version, published later — the platform moving on without
+	// dragging the pinned account with it. MAX(version), not current_version
+	// + 1: an earlier run of this SAME test against a persistent database
+	// left its own (permanent — see the comment above) version behind, and
+	// current_version was put back to v1 by that run's cleanup, so v1 + 1
+	// would collide with it.
+	var maxVersion int32
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(version), 0) FROM flow_versions WHERE flow_id = $1`, flowID).Scan(&maxVersion); err != nil {
+		t.Fatal(err)
+	}
+	v2 := maxVersion + 1
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO flow_versions (flow_id, version, name, stages, idempotency_key, created_at)
+		VALUES ($1, $2, 'platform flow bump', $3::jsonb, $4, now())`,
+		flowID, v2,
+		`[{"key":"context","name":"Context","type":"context","artifacts":[],"gate":"none","subtypes":[]}]`,
+		fmt.Sprintf("shr-platform-flow-bump-%d", time.Now().UnixNano())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE flows SET current_version = $2 WHERE id = $1`, flowID, v2); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM account_flow_pins WHERE account_id = $1 AND flow_id = $2`, otherAccount, flowID)
+		_, _ = pool.Exec(bg, `UPDATE flows SET current_version = $2 WHERE id = $1`, flowID, v1)
+	})
+
+	// This is exactly what BumpPin's precondition check and Resolve's re-read
+	// of a diverged pinned level do: VersionOf, called with the FLOW's
+	// account — the empty string — never the caller's. Before the fix, this
+	// failed with "invalid input syntax for type uuid: """.
+	frozen, err := flows.VersionOf(ctx, "", flowID, v1)
+	if err != nil {
+		t.Fatalf("resolving the pinned (old) version of a platform flow: %v", err)
+	}
+	if frozen.Version != v1 {
+		t.Fatalf("got version %d, want %d", frozen.Version, v1)
+	}
+
+	// BumpPin's own write, moving the account onto the new version, and the
+	// same VersionOf call Resolve makes right after.
+	if err := sharing.Pin(ctx, otherAccount, flowID, v2, "", time.Now()); err != nil {
+		t.Fatalf("bumping the pin has to succeed: %v", err)
+	}
+	if _, err := flows.VersionOf(ctx, "", flowID, v2); err != nil {
+		t.Fatalf("resolving the bumped pinned version of a platform flow: %v", err)
+	}
+}
+
 // ── AccountDefaults ──────────────────────────────────────────────────────────
 
 func TestAccountDefaultsReadsTheColumn(t *testing.T) {
 	pool := poolWithCleanup(t)
 	ctx := context.Background()
-	defaults := postgres.NewAccountDefaultsRepo(pool)
+	defaults := postgres.NewAccountFactsRepo(pool)
 
 	handle := fmt.Sprintf("shr-defaults-%d", time.Now().UnixNano())
 	var id string

@@ -112,10 +112,19 @@ func (r *WorkflowRepo) ByID(ctx context.Context, accountID, id string) (*workflo
 // VersionOf reads a frozen version. It does not go through current_version on
 // purpose: whoever asks for version 3 wants 3, even if the flow is already on 7
 // — it is how a running demand keeps seeing what it signed up to.
+//
+// The comparison is `f.account_id::text = $1`, not `f.account_id = $1`: the
+// platform catalogue is the ONLY flow a pin can ever apply to (ByOwners
+// returns nothing else outside the caller's own account), and a platform
+// flow's account_id is the empty string, not a UUID. Sent as a bare
+// parameter against a `uuid` column, `''` is not a value the type accepts —
+// Postgres raises `invalid input syntax for type uuid: ""` before the OR
+// even gets a chance to match on owner_scope. Casting to text is the same
+// fix flowCols already applies for the identical reason (see its comment).
 func (r *WorkflowRepo) VersionOf(ctx context.Context, accountID, id string, version int32) (*workflow.Flow, error) {
 	f, err := scanFlow(r.pool.QueryRow(ctx, `SELECT `+flowCols+`
 		  FROM flows f JOIN flow_versions v ON v.flow_id = f.id
-		 WHERE (f.account_id = $1 OR f.owner_scope = 'platform')
+		 WHERE (f.account_id::text = $1 OR f.owner_scope = 'platform')
 		   AND f.id = $2 AND v.version = $3`, accountID, id, version))
 	if err != nil {
 		return nil, Translate(err, "the flow's version")
