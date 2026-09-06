@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
@@ -61,13 +62,15 @@ var identitySeq atomic.Int64
 
 // uniqueSubject and uniqueEmail keep repeated runs against the same database
 // from colliding with users_email_uniq and the subject unique constraint —
-// same shape as reaction_test.go's uniqueEventType.
+// same shape as reaction_test.go's uniqueEventType. The counter alone only
+// tells two calls in the SAME process apart; UnixNano is what tells two
+// separate `go test` invocations apart, exactly as in uniqueEventType.
 func uniqueSubject(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf("subject-%s-%d", t.Name(), identitySeq.Add(1))
+	return fmt.Sprintf("subject-%s-%d-%d", t.Name(), time.Now().UnixNano(), identitySeq.Add(1))
 }
 
 func uniqueEmail(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf("%s-%d@example.test", t.Name(), identitySeq.Add(1))
+	return fmt.Sprintf("%s-%d-%d@example.test", t.Name(), time.Now().UnixNano(), identitySeq.Add(1))
 }

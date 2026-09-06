@@ -129,9 +129,21 @@ func (f *fakeRepo) UserByID(_ context.Context, id string) (*identity.User, error
 	}
 	return nil, errs.NotFound("user")
 }
+
+// strings.ToLower, not strings.EqualFold, because it is what the SQL adapter
+// actually does (`lower(email) = lower($1)`) — measured against a live
+// database, Go's Unicode-aware EqualFold and glibc's locale-aware lower()
+// disagree on at least one real address (Turkish dotted İ folds to "i̇stanbul"
+// under Go, "istanbul" under glibc's en_US.utf8). Exact parity with the
+// database's lower() is NOT achievable here without reimplementing a locale,
+// so this double does not attempt it: it matches the ASCII-common case and
+// stays silent about the rest. A domain test must never assert
+// account-linking behaviour (this is Task 4's territory) on a non-ASCII
+// address — that assertion belongs in test/integration, against the real
+// adapter, or a passing domain suite would be hiding a broken product.
 func (f *fakeRepo) UserByVerifiedEmail(_ context.Context, email string) (*identity.User, error) {
 	for _, u := range f.users {
-		if u.EmailVerified && strings.EqualFold(u.Email, email) {
+		if u.EmailVerified && strings.ToLower(u.Email) == strings.ToLower(email) {
 			return u, nil
 		}
 	}
