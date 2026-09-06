@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,9 +26,17 @@ func NewWorkflowRepo(pool *pgxpool.Pool) *WorkflowRepo { return &WorkflowRepo{po
 // flowCols joins identity (flows) and frozen content (flow_versions). The flow
 // the domain manipulates is always ONE version — never the flows row on its own,
 // which has no stage at all.
+//
+// origin_ref/origin_version/origin_adopted_at and revoked_at are NULL for a
+// flow written directly in its own account and populated for a copy derived
+// from another account's publication (migration 0021). They have to be in
+// EVERY read, not a sharing-specific one: the spec promises a revoked copy
+// stays visible, marked revoked — and a Get/List that dropped these columns
+// would leave production unable to tell a revoked copy from a live one.
 const flowCols = `f.id, COALESCE(f.account_id::text,''), f.owner_scope::text,
 	COALESCE(f.owner_id::text,''), v.name, COALESCE(v.description,''), v.version,
-	v.stages, COALESCE(v.created_by::text,''), f.created_at, v.created_at`
+	v.stages, COALESCE(v.created_by::text,''), f.created_at, v.created_at,
+	f.origin_ref, f.origin_version, f.origin_adopted_at, f.revoked_at`
 
 // currentJoin ties the CURRENT version; frozenJoin ties a requested version.
 const currentJoin = ` FROM flows f JOIN flow_versions v
@@ -42,16 +51,29 @@ const visibleToAccount = ` WHERE (f.account_id = $1 OR f.owner_scope = 'platform
 
 func scanFlow(row pgx.Row) (*workflow.Flow, error) {
 	var (
-		f      workflow.Flow
-		scope  string
-		stages []byte
+		f               workflow.Flow
+		scope           string
+		stages          []byte
+		originRef       *string
+		originVersion   *int32
+		originAdoptedAt *time.Time
+		revokedAt       *time.Time
 	)
 	if err := row.Scan(&f.ID, &f.AccountID, &scope, &f.OwnerID, &f.Name, &f.Description,
-		&f.Version, &stages, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		&f.Version, &stages, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt,
+		&originRef, &originVersion, &originAdoptedAt, &revokedAt); err != nil {
 		return nil, err
 	}
 	f.OwnerScope = workflow.Scope(scope)
 	f.Stages = decodeStages(stages)
+	// All-or-nothing, mirroring the flow_origem_completa CHECK: a NULL ref
+	// means no provenance at all, never a half one.
+	if originRef != nil {
+		f.Origin = &workflow.Origin{Ref: *originRef, Version: *originVersion, AdoptedAt: *originAdoptedAt}
+	}
+	if revokedAt != nil {
+		f.RevokedAt = *revokedAt
+	}
 	return &f, nil
 }
 

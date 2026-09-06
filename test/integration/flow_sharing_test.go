@@ -443,7 +443,7 @@ func TestRevokeShareUnderProspectiveEmitsBothEventsAndTouchesNoCopy(t *testing.T
 
 	// Both events, still fired, one per side of the grant.
 	rows, err := pool.Query(ctx,
-		`SELECT type, account_id::text FROM events WHERE aggregate = 'flow' AND aggregate_id = $1 ORDER BY type`,
+		`SELECT type, account_id::text FROM events WHERE aggregate = 'flow_share' AND aggregate_id = $1 ORDER BY type`,
 		share.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -472,7 +472,7 @@ func TestRevokeShareUnderProspectiveEmitsBothEventsAndTouchesNoCopy(t *testing.T
 	var outboxed int
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM outbox o JOIN events e ON e.id = o.event_id
-		 WHERE e.aggregate = 'flow' AND e.aggregate_id = $1`, share.ID).Scan(&outboxed); err != nil {
+		 WHERE e.aggregate = 'flow_share' AND e.aggregate_id = $1`, share.ID).Scan(&outboxed); err != nil {
 		t.Fatal(err)
 	}
 	if outboxed != 2 {
@@ -629,5 +629,344 @@ func TestAccountDefaultsReadsTheColumn(t *testing.T) {
 	}
 	if got != "terminate" {
 		t.Fatalf("got %q, want %q", got, "terminate")
+	}
+}
+
+// ── fix round 1: the joined-write proof, the shared read path, re-grant,
+// and tenant isolation on the three methods the review flagged ───────────────
+
+// TestRevokeShareRefusesAMismatchedAdoptionFlowPair is the fix for the
+// review's Important finding: the flows UPDATE used to trust the caller's
+// AdoptionRef.FlowID verbatim, with nothing in SQL proving that flow is the
+// one the named adoption actually points at. Two accounts derive from the
+// SAME publication, giving two adoption/flow pairs; the revocation names the
+// first adoption's id together with the SECOND adoption's flow id — a pair
+// that cannot come from any real derivation. Nothing may be revoked: the
+// share's own UPDATE happens in the SAME transaction as the mismatched one, so
+// the whole thing must roll back, not just skip the bad pair.
+func TestRevokeShareRefusesAMismatchedAdoptionFlowPair(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, thirdAccount := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shareOther, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyDrain, GrantedAt: time.Now(),
+	}, "g-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: thirdAccount,
+		RevocationPolicy: workflow.PolicyDrain, GrantedAt: time.Now(),
+	}, "g-third"); err != nil {
+		t.Fatal(err)
+	}
+
+	ref := "@" + handleOf(t, pool, pubAccount) + "/backend-go"
+	derive := func(account string) (*workflow.Flow, *workflow.Adoption) {
+		now := time.Now().UTC()
+		copied := &workflow.Flow{
+			AccountID: account, OwnerScope: workflow.ScopeAccount, OwnerID: account,
+			Name: "copied flow", Version: 1, Stages: []workflow.StageSpec{stageSpec("context")},
+			Origin:    &workflow.Origin{Ref: ref, Version: pub.Version, AdoptedAt: now},
+			CreatedAt: now, UpdatedAt: now,
+		}
+		adoption := &workflow.Adoption{PublicationID: pub.ID, Version: pub.Version, ByAccountID: account, DerivedAt: now}
+		saved, err := repo.RecordDerivation(ctx, account, copied, adoption, fmt.Sprintf("derive-%s-%d", account, time.Now().UnixNano()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved, adoption
+	}
+	otherFlow, otherAdoption := derive(otherAccount)
+	thirdFlow, _ := derive(thirdAccount)
+
+	// The mismatched pair: otherAdoption's ID, paired with THIRD's flow id.
+	err = repo.RevokeShare(ctx, pubAccount, workflow.Revocation{
+		ShareID: shareOther.ID, PublicationID: pub.ID, ToAccountID: otherAccount,
+		Policy: workflow.PolicyDrain, At: time.Now(),
+		Adoptions: []workflow.AdoptionRef{{ID: otherAdoption.ID, FlowID: thirdFlow.ID}},
+	})
+	if err == nil {
+		t.Fatal("a mismatched adoption/flow pair had to be refused")
+	}
+
+	// NOTHING may have been revoked: not the share, not either flow, not
+	// either adoption. A partial revocation would be worse than none.
+	var shareRevoked, otherFlowRevoked, thirdFlowRevoked, adoptionRevoked *time.Time
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flow_shares WHERE id = $1`, shareOther.ID).Scan(&shareRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if shareRevoked != nil {
+		t.Fatal("the share was revoked despite the mismatched pair — the transaction did not roll back")
+	}
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flows WHERE id = $1`, otherFlow.ID).Scan(&otherFlowRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if otherFlowRevoked != nil {
+		t.Fatal("the named (but mismatched) flow was revoked")
+	}
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flows WHERE id = $1`, thirdFlow.ID).Scan(&thirdFlowRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if thirdFlowRevoked != nil {
+		t.Fatal("a THIRD account's flow was revoked by a mismatched pair naming it — exactly the exploit this fix closes")
+	}
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flow_adoptions WHERE id = $1`, otherAdoption.ID).Scan(&adoptionRevoked); err != nil {
+		t.Fatal(err)
+	}
+	if adoptionRevoked != nil {
+		t.Fatal("the adoption record was revoked despite the mismatched pair")
+	}
+}
+
+// ── the shared read path (fix for my own concern #2) ────────────────────────
+
+// TestGetSurfacesOriginAndRevokedAtForADerivedCopy proves the read path fix:
+// WorkflowRepo.ByID — the same method a demand or the cockpit calls — now
+// returns a derived copy's provenance AND its revoked state. Before this fix,
+// flowCols dropped both columns and a revoked copy was indistinguishable from
+// a live one once read back.
+func TestGetSurfacesOriginAndRevokedAtForADerivedCopy(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	sharing := postgres.NewWorkflowSharing(pool)
+	flows := postgres.NewWorkflowRepo(pool)
+	pubAccount, otherAccount, _ := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := sharing.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := sharing.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyDrain, GrantedAt: time.Now(),
+	}, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	ref := "@" + handleOf(t, pool, pubAccount) + "/backend-go"
+	copied := &workflow.Flow{
+		AccountID: otherAccount, OwnerScope: workflow.ScopeAccount, OwnerID: otherAccount,
+		Name: "copied flow", Version: 1, Stages: []workflow.StageSpec{stageSpec("context")},
+		Origin:    &workflow.Origin{Ref: ref, Version: pub.Version, AdoptedAt: now},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	adoption := &workflow.Adoption{PublicationID: pub.ID, Version: pub.Version, ByAccountID: otherAccount, DerivedAt: now}
+	saved, err := sharing.RecordDerivation(ctx, otherAccount, copied, adoption, fmt.Sprintf("derive-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Before revocation: Origin is there, RevokedAt is zero.
+	got, err := flows.ByID(ctx, otherAccount, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Origin == nil || got.Origin.Ref != ref || got.Origin.Version != pub.Version {
+		t.Fatalf("Get did not surface the copy's provenance: %+v", got.Origin)
+	}
+	if !got.RevokedAt.IsZero() {
+		t.Fatal("a fresh copy came back already revoked")
+	}
+
+	if err := sharing.RevokeShare(ctx, pubAccount, workflow.Revocation{
+		ShareID: share.ID, PublicationID: pub.ID, ToAccountID: otherAccount,
+		Policy: workflow.PolicyDrain, At: time.Now(),
+		Adoptions: []workflow.AdoptionRef{{ID: adoption.ID, FlowID: saved.ID}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// After revocation: still Get-able (marked, not deleted), Origin intact,
+	// AND now visibly revoked — the spec's promise, now actually readable.
+	after, err := flows.ByID(ctx, otherAccount, saved.ID)
+	if err != nil {
+		t.Fatalf("a revoked copy has to stay retrievable: %v", err)
+	}
+	if after.Origin == nil || after.Origin.Ref != ref {
+		t.Fatal("revocation lost the copy's provenance")
+	}
+	if after.RevokedAt.IsZero() {
+		t.Fatal("a revoked copy read back as NOT revoked — production cannot tell a revoked copy from a live one")
+	}
+}
+
+// ── re-grant after revoke (fix for my own concern #3) ───────────────────────
+
+// TestCreateShareAllowsARegrantAfterRevoke proves migration 0022: the unique
+// index is now partial (WHERE revoked_at IS NULL), so a revoked share no
+// longer occupies the (publication, account) key forever.
+func TestCreateShareAllowsARegrantAfterRevoke(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, _ := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyProspective, GrantedAt: time.Now(),
+	}, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RevokeShare(ctx, pubAccount, workflow.Revocation{
+		ShareID: first.ID, PublicationID: pub.ID, ToAccountID: otherAccount,
+		Policy: workflow.PolicyProspective, At: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh grant to the SAME account on the SAME publication: this used to
+	// collide against the (now revoked) row forever. It must now succeed as a
+	// NEW, active row.
+	second, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyProspective, GrantedAt: time.Now(),
+	}, "g2")
+	if err != nil {
+		t.Fatalf("re-granting after a revoke has to succeed: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("the re-grant came back as the SAME (revoked) row instead of a new one")
+	}
+	if !second.RevokedAt.IsZero() {
+		t.Fatal("the new grant came back already revoked")
+	}
+
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM flow_shares WHERE publication_id = $1 AND to_account_id = $2`,
+		pub.ID, otherAccount).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 rows (the revoked one and the new one), got %d", n)
+	}
+
+	// The new grant actually works: ResolvePublication finds it.
+	ref := workflow.PublicationRef{Handle: handleOf(t, pool, pubAccount), Slug: "backend-go"}
+	if _, err := repo.ResolvePublication(ctx, otherAccount, ref); err != nil {
+		t.Fatalf("the re-granted account has to resolve the publication again: %v", err)
+	}
+}
+
+// ── tenant isolation on the three joins the review flagged (Minor #5) ───────
+
+func TestRevokeShareRefusesAShareUnderAnotherAccount(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, thirdAccount := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyProspective, GrantedAt: time.Now(),
+	}, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// thirdAccount does not publish this share — the join on flow_publications
+	// has to keep it from touching another account's grant.
+	err = repo.RevokeShare(ctx, thirdAccount, workflow.Revocation{
+		ShareID: share.ID, PublicationID: pub.ID, ToAccountID: otherAccount,
+		Policy: workflow.PolicyProspective, At: time.Now(),
+	})
+	if errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("revoking a share under the WRONG account has to be not-found: %v", err)
+	}
+
+	var revokedAt *time.Time
+	if err := pool.QueryRow(ctx, `SELECT revoked_at FROM flow_shares WHERE id = $1`, share.ID).Scan(&revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	if revokedAt != nil {
+		t.Fatal("a share was revoked by an account that does not own its publication")
+	}
+}
+
+func TestShareByIDRefusesAShareUnderAnotherAccount(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, thirdAccount := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyProspective, GrantedAt: time.Now(),
+	}, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.ShareByID(ctx, pubAccount, share.ID); err != nil {
+		t.Fatalf("the publisher had to read its own grant: %v", err)
+	}
+	if _, err := repo.ShareByID(ctx, thirdAccount, share.ID); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("reading a grant under the WRONG account has to be not-found: %v", err)
+	}
+}
+
+func TestSharesOfPublicationRefusesAPublicationUnderAnotherAccount(t *testing.T) {
+	pool := poolWithCleanup(t)
+	ctx := context.Background()
+	repo := postgres.NewWorkflowSharing(pool)
+	pubAccount, otherAccount, thirdAccount := seedThreeAccounts(t, pool)
+	flowID, version := seedFlow(t, pool, pubAccount)
+
+	pub, err := repo.CreatePublication(ctx, &workflow.Publication{
+		FlowID: flowID, AccountID: pubAccount, Slug: "backend-go", Version: version,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: otherAccount,
+		RevocationPolicy: workflow.PolicyProspective, GrantedAt: time.Now(),
+	}, "g1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.SharesOfPublication(ctx, pubAccount, pub.ID); err != nil {
+		t.Fatalf("the publisher had to list its own grants: %v", err)
+	}
+	if _, err := repo.SharesOfPublication(ctx, thirdAccount, pub.ID); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("listing another account's publication's grants has to be not-found: %v", err)
 	}
 }

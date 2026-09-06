@@ -146,14 +146,20 @@ SELECT p.id, p.flow_id, p.account_id, p.slug, p.version, COALESCE(p.notes, ''),
 // CreateShare follows CreatePublication's shape: the unique key that absorbs a
 // retry is flow_shares' own natural key, (publication_id, to_account_id) —
 // there is no idempotency_key column here either. A second grant to the same
-// account on the same publication comes back as the row already there,
-// exactly like a repeated publish comes back as the version already
-// published.
+// ACTIVE account/publication pair comes back as the row already there, exactly
+// like a repeated publish comes back as the version already published.
+//
+// The ON CONFLICT target carries `WHERE revoked_at IS NULL` because the
+// unique index it matches (migration 0022) is partial: a REVOKED row does not
+// occupy the key, so granting again after a revoke does not collide at all —
+// it inserts a fresh row, which is exactly the audit trail a re-grant should
+// leave (the old, revoked row stays, a new active one appears alongside it).
 func (r *WorkflowSharing) CreateShare(ctx context.Context, s *workflow.Share, key string) (*workflow.Share, error) {
 	const q = `
 INSERT INTO flow_shares (publication_id, to_account_id, revocation_policy, granted_by, granted_at)
 VALUES ($1, $2, $3::revocation_policy, $4, $5)
-ON CONFLICT (publication_id, to_account_id) DO UPDATE SET to_account_id = EXCLUDED.to_account_id
+ON CONFLICT (publication_id, to_account_id) WHERE revoked_at IS NULL
+DO UPDATE SET to_account_id = EXCLUDED.to_account_id
 RETURNING id, publication_id, to_account_id, revocation_policy::text,
           COALESCE(granted_by::text, ''), granted_at, revoked_at`
 	var grantedBy any
@@ -265,23 +271,45 @@ func (r *WorkflowSharing) RevokeShare(ctx context.Context, accountID string, rev
 		// already ran under it have to survive.
 		flowIDs := make([]string, 0, len(rev.Adoptions))
 		for _, a := range rev.Adoptions {
-			if _, err := tx.Exec(ctx, `
+			ct, err := tx.Exec(ctx, `
 				UPDATE flow_adoptions ad SET revoked_at = $2
 				  FROM flow_publications p
 				 WHERE ad.id = $1 AND ad.publication_id = p.id AND p.account_id = $3
 				   AND ad.revoked_at IS NULL`,
-				a.ID, rev.At, accountID); err != nil {
+				a.ID, rev.At, accountID)
+			if err != nil {
 				return Translate(err, "the adoption record")
 			}
-			// No account filter here on purpose: the copy lives in the OTHER
-			// account by design (flow_adoptions.flow_id carries no FK, exactly
-			// so one account's cascade cannot reach into another's rows) — this
-			// is the one write in the adapter that reaches across the boundary,
-			// authorised by the adoption record just marked above.
-			if _, err := tx.Exec(ctx,
-				`UPDATE flows SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL`,
-				a.FlowID, rev.At); err != nil {
+			if ct.RowsAffected() == 0 {
+				// Not found under this account, or already revoked: either way
+				// a revocation that silently reached zero rows is worse than one
+				// that fails — the caller asked for something specific to
+				// happen and nothing did.
+				return errs.NotFound("the adoption record %s, for this account's publication", a.ID)
+			}
+
+			// No account filter on the FLOW itself on purpose: the copy lives
+			// in the OTHER account by design (flow_adoptions.flow_id carries no
+			// FK, exactly so one account's cascade cannot reach into another's
+			// rows) — this is the one write in the adapter that crosses the
+			// boundary. What authorises it is not the caller-supplied a.FlowID
+			// taken on faith, but `ad.flow_id = $4`: the WHERE clause proves,
+			// IN SQL, that flow $4 is the one adoption $1 actually points at —
+			// a mismatched pair matches no row instead of silently revoking
+			// whichever flow the caller named.
+			ct, err = tx.Exec(ctx, `
+				UPDATE flows f SET revoked_at = $2
+				  FROM flow_adoptions ad
+				  JOIN flow_publications p ON p.id = ad.publication_id
+				 WHERE f.id = $4 AND ad.id = $1 AND ad.flow_id = $4
+				   AND p.account_id = $3 AND f.revoked_at IS NULL`,
+				a.ID, rev.At, accountID, a.FlowID)
+			if err != nil {
 				return Translate(err, "the derived copy")
+			}
+			if ct.RowsAffected() == 0 {
+				return errs.NotFound(
+					"flow %s as the copy adoption %s points at, for this account's publication", a.FlowID, a.ID)
 			}
 			flowIDs = append(flowIDs, a.FlowID)
 		}
@@ -293,55 +321,25 @@ func (r *WorkflowSharing) RevokeShare(ctx context.Context, accountID string, rev
 			"policy":         string(rev.Policy),
 			"flow_ids":       flowIDs,
 		})
+		// "flow_share" and not "flow": what is being revoked is the SHARE, not
+		// the flow itself — the flow (and its copies) are reached AS A
+		// CONSEQUENCE, not as the aggregate this event is about. This is the
+		// first Emit call in the tree, so the name set here is the one every
+		// later caller copies.
 		if err := Emit(ctx, tx, ports.Event{
-			AccountID: accountID, Aggregate: "flow", AggregateID: rev.ShareID,
+			AccountID: accountID, Aggregate: "flow_share", AggregateID: rev.ShareID,
 			Type: "flow.share.revoked", Payload: payload,
 		}); err != nil {
 			return err
 		}
 		return Emit(ctx, tx, ports.Event{
-			AccountID: rev.ToAccountID, Aggregate: "flow", AggregateID: rev.ShareID,
+			AccountID: rev.ToAccountID, Aggregate: "flow_share", AggregateID: rev.ShareID,
 			Type: "flow.grant.revoked", Payload: payload,
 		})
 	})
 }
 
 // ── derivation (R17) ─────────────────────────────────────────────────────────
-
-// derivedFlowCols mirrors workflow.go's flowCols plus the provenance and
-// revocation columns that only a DERIVED flow ever carries — WorkflowRepo's
-// own reads never need them, which is why they are not there.
-const derivedFlowCols = `f.id, f.account_id::text, f.owner_scope::text, COALESCE(f.owner_id::text,''),
-	v.name, COALESCE(v.description,''), v.version, v.stages, COALESCE(f.created_by::text,''),
-	f.created_at, v.created_at, f.origin_ref, f.origin_version, f.origin_adopted_at, f.revoked_at`
-
-func scanDerivedFlow(row pgx.Row) (*workflow.Flow, error) {
-	var (
-		f               workflow.Flow
-		scope           string
-		stages          []byte
-		originRef       *string
-		originVersion   *int32
-		originAdoptedAt *time.Time
-		revokedAt       *time.Time
-	)
-	if err := row.Scan(&f.ID, &f.AccountID, &scope, &f.OwnerID, &f.Name, &f.Description,
-		&f.Version, &stages, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt,
-		&originRef, &originVersion, &originAdoptedAt, &revokedAt); err != nil {
-		return nil, err
-	}
-	f.OwnerScope = workflow.Scope(scope)
-	f.Stages = decodeStages(stages)
-	// All-or-nothing, mirroring the flow_origem_completa CHECK: a NULL ref
-	// means no provenance at all, never a half one.
-	if originRef != nil {
-		f.Origin = &workflow.Origin{Ref: *originRef, Version: *originVersion, AdoptedAt: *originAdoptedAt}
-	}
-	if revokedAt != nil {
-		f.RevokedAt = *revokedAt
-	}
-	return &f, nil
-}
 
 // insertDerivedFlowRow is insertFlowRow's counterpart for a COPY: it also
 // writes origin_ref/origin_version/origin_adopted_at, which a flow written
@@ -382,22 +380,15 @@ func insertDerivedFlowRow(ctx context.Context, tx pgx.Tx, f *workflow.Flow, key 
 	return id, true, nil
 }
 
-func loadDerivedFlowByID(ctx context.Context, tx pgx.Tx, accountID, id string) (*workflow.Flow, error) {
-	f, err := scanDerivedFlow(tx.QueryRow(ctx, `
-		SELECT `+derivedFlowCols+`
-		  FROM flows f JOIN flow_versions v ON v.flow_id = f.id AND v.version = f.current_version
-		 WHERE f.account_id = $1 AND f.id = $2`, accountID, id))
-	if err != nil {
-		return nil, Translate(err, "the derived flow")
-	}
-	return f, nil
-}
-
+// derivedFlowByKey mirrors workflow.go's flowByKey, with the account filter
+// flowByKey does not need (its only caller already holds the right account by
+// construction — a fresh Create). RecordDerivation's retry path is reached
+// from RECORD-DERIVATION, called with whatever accountID the caller passes, so
+// the filter here is the tenant check that keeps a colliding key from another
+// account's flow from ever being handed back.
 func derivedFlowByKey(ctx context.Context, tx pgx.Tx, accountID, key string) (*workflow.Flow, error) {
-	f, err := scanDerivedFlow(tx.QueryRow(ctx, `
-		SELECT `+derivedFlowCols+`
-		  FROM flows f JOIN flow_versions v ON v.flow_id = f.id AND v.version = f.current_version
-		 WHERE f.idempotency_key = $1 AND f.account_id = $2`, key, accountID))
+	f, err := scanFlow(tx.QueryRow(ctx, `SELECT `+flowCols+currentJoin+
+		` WHERE f.idempotency_key = $1 AND f.account_id = $2`, key, accountID))
 	if err != nil {
 		return nil, Translate(err, "the derived flow")
 	}
@@ -468,7 +459,10 @@ func (r *WorkflowSharing) RecordDerivation(ctx context.Context, accountID string
 		if err := insertAdoption(ctx, tx, adoption); err != nil {
 			return err
 		}
-		saved, err = loadDerivedFlowByID(ctx, tx, accountID, id)
+		// loadFlow is workflow.go's own loader: now that flowCols carries the
+		// provenance and revocation columns too (see the comment on flowCols),
+		// a derived flow needs no reader of its own.
+		saved, err = loadFlow(ctx, tx, accountID, id)
 		return err
 	})
 	return saved, err
