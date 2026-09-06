@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -405,6 +406,103 @@ func TestAWhenThatIsNotStringsFailsLoudlyInsteadOfBeingDropped(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "when") {
 		t.Errorf("the failure does not say what is wrong: %v", err)
+	}
+}
+
+// The idempotency gate's whole reason to exist: JetStream is at-least-once, so
+// two deliveries of the SAME event can race MarkApplied for the SAME triple at
+// the SAME time. This can only be proven against the real database — an
+// in-memory fake (as used by the domain's own executor_test.go) takes a mutex
+// and never actually races, so it would pass even if the gate's SQL were
+// wrong. Here, `racers` goroutines are held at a channel until every one of
+// them is parked on it, then released together so the inserts genuinely
+// overlap, and the assertion is on the COUNT of winners, not on any particular
+// goroutine's outcome — sequential calls would trivially yield "one winner"
+// for the wrong reason.
+func TestConcurrentClaimsOnTheSameTripleYieldExactlyOneWinner(t *testing.T) {
+	pool := openPool(t)
+	defer pool.Close()
+	ctx := context.Background()
+	repo := postgres.NewReaction(pool)
+
+	// event_id is a uuid column; any well-formed uuid does, since no row in
+	// `events` needs to exist for this table's own primary key to work.
+	var eventID string
+	if err := pool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+	ruleRef := fmt.Sprintf("race-rule-%d-%d", time.Now().UnixNano(), nextSeq())
+	actionName := string(reaction.ActionSendEmail)
+
+	const racers = 16
+	var (
+		ready sync.WaitGroup // released only once every racer is parked at the gate
+		done  sync.WaitGroup
+		wins  int32
+		mu    sync.Mutex
+		errs  []error
+	)
+	gate := make(chan struct{})
+	ready.Add(racers)
+	done.Add(racers)
+	for i := 0; i < racers; i++ {
+		go func() {
+			defer done.Done()
+			ready.Done()
+			<-gate // held here until every goroutine is waiting, then released as one
+			claimed, err := repo.MarkApplied(ctx, eventID, ruleRef, actionName)
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+				return
+			}
+			if claimed {
+				atomic.AddInt32(&wins, 1)
+			}
+		}()
+	}
+	ready.Wait() // every racer is now blocked on <-gate
+	close(gate)  // ...and they all proceed together
+	done.Wait()
+
+	for _, err := range errs {
+		t.Fatalf("MarkApplied returned an error instead of a clean claim/no-claim: %v", err)
+	}
+	if wins != 1 {
+		t.Fatalf("expected exactly one winner among %d concurrent claims, got %d", racers, wins)
+	}
+
+	var rows int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM applied_actions WHERE event_id=$1 AND rule_ref=$2 AND action_name=$3`,
+		eventID, ruleRef, actionName).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("expected exactly one row for the triple, the race left %d", rows)
+	}
+
+	// Release, then a fresh claim succeeds — proving the gate is not a
+	// one-shot lock but genuinely gives the claim back.
+	if err := repo.Release(ctx, eventID, ruleRef, actionName); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.MarkApplied(ctx, eventID, ruleRef, actionName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed {
+		t.Fatal("a released claim could not be re-claimed")
+	}
+
+	// Release is safe to call twice: the second call finds nothing left to
+	// remove and must not error.
+	if err := repo.Release(ctx, eventID, ruleRef, actionName); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Release(ctx, eventID, ruleRef, actionName); err != nil {
+		t.Fatalf("a second release on an already-released triple returned an error: %v", err)
 	}
 }
 

@@ -309,4 +309,50 @@ func ruleByKey(ctx context.Context, tx pgx.Tx, accountID, key string) (*reaction
 	return rule, nil
 }
 
+// ── the idempotency gate ─────────────────────────────────────────────────────
+
+// MarkApplied claims the right to run this action, for this event, once.
+//
+// The claim's whole mechanism is the table's primary key
+// (event_id, rule_ref, action_name): two callers racing this INSERT for the
+// same triple, even from different processes, can only have one of them land
+// the row — Postgres serializes concurrent inserts against the same key.
+// ON CONFLICT DO NOTHING turns the loser's outcome from an error (a unique
+// violation) into an ordinary zero-row result, and RowsAffected() is how the
+// caller tells the two apart: 1 for the winner, 0 for everyone else. Verified
+// against a real database with concurrent goroutines
+// (test/integration/reaction_test.go) rather than assumed — ON CONFLICT DO
+// NOTHING's RowsAffected is easy to get backwards from documentation alone.
+//
+// See reaction.Applied's doc comment for the gap this does NOT close: the
+// claim has no lease, so a crash between this call returning and the handler
+// finishing leaves the row stuck forever.
+func (r *ReactionRepo) MarkApplied(ctx context.Context, eventID, ruleRef, actionName string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO applied_actions (event_id, rule_ref, action_name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING`, eventID, ruleRef, actionName)
+	if err != nil {
+		return false, Translate(err, "claiming the action")
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// Release gives the claim back after a handler failed, so a redelivery retries
+// the action instead of finding the row and skipping it as already done.
+//
+// It is safe to call twice, and safe to call on a triple it never claimed: the
+// DELETE matches on the triple's value, not on who inserted it or whether a
+// row is even there, and removing zero rows is not an error — a second
+// release, or one racing another release for the same triple, simply finds
+// nothing left to remove.
+func (r *ReactionRepo) Release(ctx context.Context, eventID, ruleRef, actionName string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM applied_actions
+		 WHERE event_id = $1 AND rule_ref = $2 AND action_name = $3`,
+		eventID, ruleRef, actionName)
+	return Translate(err, "releasing the action's claim")
+}
+
 var _ reaction.Repository = (*ReactionRepo)(nil)
+var _ reaction.Applied = (*ReactionRepo)(nil)
