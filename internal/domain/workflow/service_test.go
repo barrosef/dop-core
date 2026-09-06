@@ -506,6 +506,31 @@ func TestAnIdenticalResendCreatesNoVersion(t *testing.T) {
 	}
 }
 
+// Actions are executable content, same as a stage's type or gate: changing
+// only what fires on enter/exit must version, or a demand already in progress
+// would silently start seeing a different reaction than the one its frozen
+// version promised.
+func TestChangingOnlyAStagesActionsStillVersions(t *testing.T) {
+	_, svc, ctx := scenario(t)
+	created, err := svc.Create(ctx, validFlow(), "k1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	alterado := *created
+	alterado.Stages = append([]workflow.StageSpec{}, created.Stages...)
+	alterado.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentExit, Name: "send_email"},
+	}
+	updated, err := svc.Update(ctx, alterado)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Version != 2 {
+		t.Fatalf("an actions-only change is still a change to the executable content; expected version 2, got %d", updated.Version)
+	}
+}
+
 func TestRepeatedCreateWithTheSameKeyDoesNotDuplicate(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 	first, err := svc.Create(ctx, validFlow(), "k1")
@@ -638,6 +663,34 @@ func TestValidateWarnsWithoutRefusing(t *testing.T) {
 	}
 	if len(rep.Warnings) < 2 {
 		t.Errorf("warnings are missing (no spec, no gate, substages outside a test): %v", rep.Warnings)
+	}
+}
+
+// A stage declares what happens when it is ENTERED and when it is LEFT, in the
+// same closed vocabulary the outside-the-demand decider uses (reaction.ActionName)
+// — one platform, one list of things it knows how to do.
+func TestAStageDeclaresWhatHappensWhenItIsEnteredAndLeft(t *testing.T) {
+	f := validFlow()
+	f.Stages[0].Actions = []workflow.StageAction{
+		{On: workflow.MomentExit, Name: "provision_bench",
+			Params: map[string]string{"tier": "namespace"}},
+	}
+	if rep := workflow.Validate(f); !rep.Valid() {
+		t.Fatalf("a stage action with a known name and moment is valid: %v", rep.Err())
+	}
+
+	for name, action := range map[string]workflow.StageAction{
+		"an unknown action name": {On: workflow.MomentExit, Name: "run_script"},
+		"an unknown moment":      {On: "midway", Name: "provision_bench"},
+		"no name at all":         {On: workflow.MomentEnter, Name: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := validFlow()
+			f.Stages[0].Actions = []workflow.StageAction{action}
+			if rep := workflow.Validate(f); rep.Valid() {
+				t.Fatal("expected a refusal")
+			}
+		})
 	}
 }
 
