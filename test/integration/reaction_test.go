@@ -101,29 +101,45 @@ func TestRulesForDoesNotLeakAnotherAccountsRules(t *testing.T) {
 }
 
 // Two rules at the SAME level share a position in the chain, so ordering by the
-// level alone leaves their relative order to the planner. That is not cosmetic:
-// `Decide` only lets a rule disable what came BEFORE it, so a plan that swapped
-// these two would flip which one switches the other off — the same input
-// deciding differently between two runs.
-func TestTwoRulesAtTheSameLevelKeepAStableOrder(t *testing.T) {
+// level alone leaves their relative order to the storage. That is not cosmetic:
+// `Decide` only lets a rule disable what came BEFORE it, so a swap flips which
+// one switches the other off — the same input deciding differently between two
+// runs.
+//
+// The arrangement here is deliberate and it is the whole test: the two rules are
+// written in one order and one of them is then BACKDATED, so insertion order and
+// created_at order disagree. That is the only arrangement in which the
+// tiebreaker is observable at all — with the two agreeing, the heap order the
+// planner returns for free is already the right answer, and a query with no
+// tiebreaker would pass. Deleting `created_at` from the ORDER BY must turn this
+// test red, and it does.
+func TestTheOrderWithinALevelFollowsCreatedAtAndNotTheHeap(t *testing.T) {
 	pool := openPool(t)
 	ctx := context.Background()
 	repo := postgres.NewReaction(pool)
 	account, workspace, project := seedChain(t, pool)
 	event := uniqueEventType()
 
-	first := mustCreateRule(t, repo, reaction.Rule{
+	writtenFirst := mustCreateRule(t, repo, reaction.Rule{
 		AccountID: account, OwnerScope: "project", OwnerID: project,
 		Trigger: reaction.TriggerEvent, EventType: event,
 		Actions: []reaction.Action{{Name: reaction.ActionSendEmail}},
-		Enabled: true, Why: "the first one written at this level",
+		Enabled: true, Why: "written first, but not the older of the two",
 	})
-	second := mustCreateRule(t, repo, reaction.Rule{
+	backdated := mustCreateRule(t, repo, reaction.Rule{
 		AccountID: account, OwnerScope: "project", OwnerID: project,
 		Trigger: reaction.TriggerEvent, EventType: event,
-		Disables: []string{first},
-		Enabled:  true, Why: "and the one that later refused it",
+		Disables: []string{writtenFirst},
+		Enabled:  true, Why: "written second, and older — it refuses the other",
 	})
+	// A row can arrive older than the row before it: an import, a restore, a
+	// backfill that preserves the policy's real dates. The chain must follow
+	// what the rows SAY, not the order they happened to land in.
+	if _, err := pool.Exec(ctx,
+		`UPDATE reaction_rules SET created_at = now() - interval '1 hour' WHERE id = $1`,
+		backdated); err != nil {
+		t.Fatal(err)
+	}
 
 	chain := []reaction.ScopeRef{
 		{Scope: "platform"}, {Scope: "account", ID: account},
@@ -137,12 +153,72 @@ func TestTwoRulesAtTheSameLevelKeepAStableOrder(t *testing.T) {
 		if len(got) != 2 {
 			t.Fatalf("run %d: two rules at one level, got %d", i, len(got))
 		}
-		// Written first, so returned first: the tiebreaker is created_at then
-		// id, which is a total order over the rows rather than the planner's
-		// mood.
-		if got[0].ID != first || got[1].ID != second {
-			t.Fatalf("run %d: unstable order within a level: %s then %s", i, got[0].ID, got[1].ID)
+		if got[0].ID != backdated || got[1].ID != writtenFirst {
+			t.Fatalf("run %d: the level's order came from the heap, not from created_at: %s then %s",
+				i, got[0].ID, got[1].ID)
 		}
+	}
+}
+
+// And when created_at cannot break the tie, the id does.
+//
+// created_at defaults to now(), which is TRANSACTION time: two rules written in
+// one transaction carry the same timestamp to the microsecond. That is not a
+// corner case — it is what a service creating a rule set in one unit of work
+// produces every time.
+//
+// The two rows are inserted with CHOSEN ids, in the order that makes id order
+// the REVERSE of insertion order, for the same reason the test above backdates:
+// with the two agreeing, the heap order would already be the answer and the id
+// key would look load-bearing without being it. They go in as one INSERT so
+// they genuinely share a created_at, which is also what makes writing them
+// through the adapter no use here.
+func TestTwoRulesWrittenAtTheSameInstantAreOrderedByID(t *testing.T) {
+	pool := openPool(t)
+	ctx := context.Background()
+	repo := postgres.NewReaction(pool)
+	account, _, project := seedChain(t, pool)
+	event := uniqueEventType()
+
+	var lowID, highID string
+	if err := pool.QueryRow(ctx,
+		`SELECT least(a,b)::text, greatest(a,b)::text
+		   FROM (SELECT gen_random_uuid() AS a, gen_random_uuid() AS b) p`).
+		Scan(&lowID, &highID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO reaction_rules (id, account_id, owner_scope, owner_id, event_type,
+		                            actions, why, idempotency_key)
+		VALUES ($1, $3, 'project', $4, $5, '[{"name":"send_email"}]',
+		        'inserted first, and the higher id', $6),
+		       ($2, $3, 'project', $4, $5, '[{"name":"send_email"}]',
+		        'inserted second, and the lower id', $7)`,
+		highID, lowID, account, project, event,
+		fmt.Sprintf("tie-high-%d-%d", time.Now().UnixNano(), nextSeq()),
+		fmt.Sprintf("tie-low-%d-%d", time.Now().UnixNano(), nextSeq())); err != nil {
+		t.Fatal(err)
+	}
+
+	var same bool
+	if err := pool.QueryRow(ctx,
+		`SELECT count(DISTINCT created_at) = 1 FROM reaction_rules WHERE id IN ($1,$2)`,
+		lowID, highID).Scan(&same); err != nil {
+		t.Fatal(err)
+	}
+	if !same {
+		t.Fatal("the two rules did not end up sharing a created_at, so this proves nothing")
+	}
+
+	got, err := repo.RulesFor(ctx, account, event, []reaction.ScopeRef{{Scope: "project", ID: project}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("two rules at one level, got %d", len(got))
+	}
+	if got[0].ID != lowID || got[1].ID != highID {
+		t.Fatalf("a created_at tie was left to the heap: %s then %s", got[0].ID, got[1].ID)
 	}
 }
 
@@ -198,10 +274,12 @@ func TestCreatingAPlatformRuleWritesNullsAndNotEmptyStrings(t *testing.T) {
 	}
 }
 
-// The write path's tenancy guard. idempotency_key is globally unique, so the
-// conflict lookup that resolves a repeat has to filter by account — without it,
-// the second account gets the FIRST account's rule back and believes it created
-// it. That leak already shipped once through flowByKey.
+// The write path's tenancy guard. The key is client-supplied and passed through
+// verbatim, so two accounts picking the same one is ordinary, not an attack:
+// the key's namespace is the ACCOUNT, and each of them gets its own rule. Were
+// the namespace the whole table — as it is in `flows` — the second account's
+// write would collide with a row it is not allowed to see, and the conflict
+// path would hand it over. That leak already shipped once through flowByKey.
 func TestTheSameIdempotencyKeyInTwoAccountsMakesTwoRules(t *testing.T) {
 	pool := openPool(t)
 	ctx := context.Background()

@@ -143,6 +143,14 @@ func decodeActions(raw []byte) []reaction.Action {
 // two rules at one level share a position, and `Decide` only lets a rule disable
 // what came before it, so an unstable order there would make the same two rules
 // decide differently between two runs.
+//
+// BOTH tiebreakers do work. created_at defaults to now(), which is TRANSACTION
+// time, so two rules written in one transaction carry the same timestamp to the
+// microsecond and created_at alone leaves them tied — the id is what orders them
+// then. It is qualified as `reaction_rules.id` and not left bare because a bare
+// `id` would bind to the output column `id::text` and sort the uuids AS TEXT;
+// the two orders happen to agree for canonical lowercase uuids, but the sort
+// key should say which column it means.
 func (r *ReactionRepo) RulesFor(ctx context.Context, accountID, eventType string, chain []reaction.ScopeRef) ([]reaction.Rule, error) {
 	if len(chain) == 0 {
 		return nil, nil
@@ -162,7 +170,8 @@ func (r *ReactionRepo) RulesFor(ctx context.Context, accountID, eventType string
 		   AND (owner_scope, COALESCE(owner_id::text,''))
 		       IN (SELECT * FROM unnest($3::text[], $4::text[]))
 		   AND (owner_scope = 'platform' OR account_id::text = $2)
-		 ORDER BY array_position($3::text[], owner_scope), created_at, id`,
+		 ORDER BY array_position($3::text[], owner_scope), created_at,
+		          reaction_rules.id`,
 		eventType, accountID, scopes, owners)
 	if err != nil {
 		return nil, Translate(err, "the chain's rules")
