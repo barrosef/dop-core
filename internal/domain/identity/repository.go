@@ -11,6 +11,11 @@ type Repository interface {
 	UserBySubject(ctx context.Context, subject string) (*User, error)
 	UserByID(ctx context.Context, id string) (*User, error)
 	UpsertUser(ctx context.Context, u *User) (*User, error)
+	// UserByVerifiedEmail finds the user who PROVED this address. The predicate
+	// is in the query and not in the caller because the caller that forgets it
+	// hands one person's account to another: an unverified e-mail is a claim,
+	// and two subjects agreeing on a claim are not the same person.
+	UserByVerifiedEmail(ctx context.Context, email string) (*User, error)
 
 	// Accounts and memberships
 	AccountByID(ctx context.Context, id string) (*Account, error)

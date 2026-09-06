@@ -56,6 +56,17 @@ func (r *IdentityRepo) UserByID(ctx context.Context, id string) (*identity.User,
 	return u, nil
 }
 
+// The unique index is on lower(email); comparing the same way is what makes it
+// usable instead of forcing a scan.
+func (r *IdentityRepo) UserByVerifiedEmail(ctx context.Context, email string) (*identity.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx,
+		`SELECT `+userCols+` FROM users WHERE lower(email) = lower($1) AND email_verified`, email))
+	if err != nil {
+		return nil, Translate(err, "user")
+	}
+	return u, nil
+}
+
 // UpsertUser is idempotent by the natural key (subject) — EnsureUser runs on
 // every login and must not duplicate.
 func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*identity.User, error) {

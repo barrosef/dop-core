@@ -129,6 +129,14 @@ func (f *fakeRepo) UserByID(_ context.Context, id string) (*identity.User, error
 	}
 	return nil, errs.NotFound("user")
 }
+func (f *fakeRepo) UserByVerifiedEmail(_ context.Context, email string) (*identity.User, error) {
+	for _, u := range f.users {
+		if u.EmailVerified && strings.EqualFold(u.Email, email) {
+			return u, nil
+		}
+	}
+	return nil, errs.NotFound("user")
+}
 func (f *fakeRepo) UpsertUser(_ context.Context, u *identity.User) (*identity.User, error) {
 	if u.ID == "" {
 		u.ID = f.id("usr")
