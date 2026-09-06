@@ -233,10 +233,11 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 		return nil, err
 	}
 
-	eff, err := s.resolveChain(ctx, accountID, ref)
+	levels, err := s.resolveLevels(ctx, accountID, ref)
 	if err != nil {
 		return nil, err
 	}
+	eff := MergeChain(levels)
 	if len(eff.Flow.Stages) == 0 {
 		return nil, errs.NotFound(
 			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
@@ -261,35 +262,51 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 			// A first resolution pins to what is current, so the account starts
 			// on a known version instead of on "whatever is newest today".
 			version = eff.Flow.Version
+			// If this write fails, the honest move is to fail the READ too — not
+			// to fall through and hand back the unpinned, current version. That
+			// fallback would resolve the account onto "whatever the owner
+			// published today" exactly once, unrecorded, which is the very
+			// automatic change the pin exists to prevent. This is the hottest
+			// path in the domain, and it still fails loudly on purpose: a
+			// resolution that silently degraded its own guarantee would be
+			// worse than one that errors and gets retried.
 			if err := s.sharing.Pin(ctx, accountID, eff.Flow.ID, version, "", s.now()); err != nil {
 				return nil, err
 			}
 		}
 		if version != eff.Flow.Version {
+			// The pinned version's STAGES can differ from the current one's —
+			// that is the whole reason a pin exists. Re-running the overlay with
+			// the pinned level swapped in — rather than patching eff.Flow alone
+			// and leaving Contributors/Origins/ResolvedFrom describing the
+			// CURRENT stage set — is what keeps the provenance honest: those
+			// fields exist so support can explain a flow nobody remembers
+			// writing (EffectiveFlow's own doc comment), and that guarantee
+			// matters most exactly when the pinned and current versions differ.
 			frozen, err := s.repo.VersionOf(ctx, eff.Flow.AccountID, eff.Flow.ID, version)
 			if err != nil {
 				return nil, err
 			}
-			eff.Flow = *frozen
+			eff = MergeChain(replaceLevel(levels, *frozen))
 		}
 	}
 	return &eff, nil
 }
 
-// resolveChain walks the account's chain and overlays what it declares, with
-// NO pin applied. Resolve builds on it and then decides whether the result
-// crossed an ownership boundary; BumpPin builds on it to confirm the flow it
-// is asked to pin is actually the one the account would inherit that way —
-// splitting the walk out is what lets both share it instead of drifting apart
-// over time into two slightly different ideas of "what this account inherits".
-func (s *Service) resolveChain(ctx context.Context, accountID string, ref ScopeRef) (EffectiveFlow, error) {
+// resolveLevels walks the account's chain and returns, IN CHAIN ORDER, the
+// levels that actually declared something — the raw material MergeChain
+// overlays. Returning the levels themselves (not the merged result) is what
+// lets Resolve swap ONE level for its pinned version and re-run the overlay,
+// instead of patching the merged flow after the fact and leaving its own
+// provenance describing a stage set that no longer matches.
+func (s *Service) resolveLevels(ctx context.Context, accountID string, ref ScopeRef) ([]Flow, error) {
 	chain, err := s.tree.ChainOf(ctx, accountID, ref)
 	if err != nil {
-		return EffectiveFlow{}, err
+		return nil, err
 	}
 	declared, err := s.repo.ByOwners(ctx, accountID, chain)
 	if err != nil {
-		return EffectiveFlow{}, err
+		return nil, err
 	}
 
 	// Reorder what the repository returned according to the CHAIN — the overlay
@@ -305,7 +322,37 @@ func (s *Service) resolveChain(ctx context.Context, accountID string, ref ScopeR
 			levels = append(levels, f)
 		}
 	}
+	return levels, nil
+}
+
+// resolveChain is resolveLevels plus the overlay, with NO pin applied.
+// BumpPin uses it to confirm the flow it is asked to pin is actually the one
+// the account would inherit across an ownership boundary — it never needs to
+// substitute a level's version, so it does not need resolveLevels' raw slice.
+func (s *Service) resolveChain(ctx context.Context, accountID string, ref ScopeRef) (EffectiveFlow, error) {
+	levels, err := s.resolveLevels(ctx, accountID, ref)
+	if err != nil {
+		return EffectiveFlow{}, err
+	}
 	return MergeChain(levels), nil
+}
+
+// replaceLevel returns a COPY of levels with the entry matching frozen's flow
+// id swapped for frozen — used to rebuild the overlay from a pinned version's
+// stages instead of the current one's. It copies rather than mutates in place
+// because resolveLevels' result is not documented as exclusively owned by its
+// caller, and a slice quietly mutated behind its own return value is exactly
+// the kind of thing a later caller gets bitten by.
+func replaceLevel(levels []Flow, frozen Flow) []Flow {
+	out := make([]Flow, len(levels))
+	copy(out, levels)
+	for i, lv := range out {
+		if lv.ID == frozen.ID {
+			out[i] = frozen
+			break
+		}
+	}
+	return out
 }
 
 // BumpPin moves the account onto a different (usually newer) version of a
@@ -319,6 +366,9 @@ func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) err
 		return err
 	}
 	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
 	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
 	if err != nil {
 		return err
@@ -354,6 +404,18 @@ func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) err
 	if eff.Flow.AccountID == accountID || eff.Flow.ID != flowID {
 		return errs.Invalid(
 			"%q is not a flow this account inherits across an ownership boundary: there is nothing to pin", flowID)
+	}
+
+	// A version that was never written is not a typo Resolve can shrug off:
+	// every future Resolve crossing this boundary would call VersionOf for a
+	// version that does not exist and fail — flow resolution broken for every
+	// demand under this account until somebody re-pins by hand. Checking here,
+	// once, is cheap; discovering it later on the hottest path is not.
+	if _, err := s.repo.VersionOf(ctx, eff.Flow.AccountID, flowID, version); err != nil {
+		if errs.KindOf(err) == errs.KindNotFound {
+			return errs.Invalid("flow %q has no version %d to pin to: it was never written", flowID, version)
+		}
+		return err
 	}
 
 	return s.sharing.Pin(ctx, accountID, flowID, version, call.ActorID, s.now())

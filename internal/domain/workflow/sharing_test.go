@@ -1135,3 +1135,107 @@ func TestBumpPinRefusesAFlowTheAccountDoesNotInherit(t *testing.T) {
 		t.Fatalf("pinning the account's OWN live flow has to be refused: %v", err)
 	}
 }
+
+// TestBumpPinRequiresAnIdentifiedActor mirrors
+// TestGrantRequiresAnIdentifiedActor: fakeAccess also rejects an empty actor
+// key (there is no membership row for ""), which would mask a missing guard
+// behind a Permission error instead of Unauthorized — asserting the SPECIFIC
+// kind is what makes this test able to fail if the guard is ever removed.
+func TestBumpPinRequiresAnIdentifiedActor(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	if _, err := svc.Resolve(env.CtxAsOther(env.OtherOwnerID), workflow.ScopeProject, env.OtherProjectID); err != nil {
+		t.Fatal(err)
+	}
+	anon := ctxutil.Into(context.Background(), ctxutil.Call{
+		AccountID: env.OtherAccountID, ActorKind: ctxutil.ActorUser,
+	})
+	if err := svc.BumpPin(anon, env.PlatformFlowID, 2); errs.KindOf(err) != errs.KindUnauthorized {
+		t.Fatalf("an unidentified actor must not move the account's pin, and it must never be recorded empty: %v", err)
+	}
+}
+
+// TestBumpPinRefusesAVersionThatWasNeverWritten is the fix for the review's
+// Important finding #2: without this check, BumpPin(flowID, 99) succeeded
+// unconditionally, and every FUTURE Resolve crossing this boundary would call
+// VersionOf for a version nobody ever wrote and fail — flow resolution broken
+// for every demand under the account until somebody re-pinned by hand.
+func TestBumpPinRefusesAVersionThatWasNeverWritten(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAsOther(env.OtherOwnerID)
+	// Resolve once so the account is actually pinned (to v1 — the only
+	// version the platform's flow has in this harness).
+	if _, err := svc.Resolve(ctx, workflow.ScopeProject, env.OtherProjectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.BumpPin(ctx, env.PlatformFlowID, 99); errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("pinning a version that was never written has to be refused: %v", err)
+	}
+	// A refused bump must leave the EXISTING pin untouched — otherwise the
+	// refusal itself would be the thing that breaks every future Resolve.
+	version, pinned, err := env.sharing.PinOf(context.Background(), env.OtherAccountID, env.PlatformFlowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pinned || version != 1 {
+		t.Fatalf("a refused BumpPin changed the existing pin: version=%d pinned=%v", version, pinned)
+	}
+}
+
+// TestPinnedVersionsProvenanceReflectsThePinnedStagesNotTheCurrentOnes is the
+// fix for the review's Important finding #1: substituting eff.Flow alone
+// after MergeChain had already run left Contributors, Origins and
+// ResolvedFrom describing the CURRENT stage set — exactly backwards from what
+// EffectiveFlow's own doc comment promises support ("no way to explain a flow
+// nobody remembers writing"), and exactly the case a pin is built for: the
+// pinned and current versions declaring DIFFERENT stages.
+func TestPinnedVersionsProvenanceReflectsThePinnedStagesNotTheCurrentOnes(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAsOther(env.OtherOwnerID)
+
+	// The first resolution pins to v1, which declares "context".
+	eff, err := svc.Resolve(ctx, workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := eff.OriginOf("context"); !ok {
+		t.Fatalf("v1's stage has to be in the provenance from the start: %+v", eff.Origins)
+	}
+
+	// The platform publishes v2 with a COMPLETELY DIFFERENT stage key — not
+	// merely a new artifact on the same key, so a bug that reused the old
+	// Origins/Contributors wholesale (instead of recomputing them) cannot
+	// pass this test by accident.
+	repo := env.sharing.repo
+	r := repo.flows[env.PlatformFlowID]
+	next := repo.current(r)
+	next.Version = r.current + 1
+	next.Stages = []workflow.StageSpec{stage("only-in-v2", workflow.TypeContext, workflow.ArtifactDocument)}
+	if _, err := repo.AppendVersion(context.Background(), "", &next, r.current, "diff-stage-v2"); err != nil {
+		t.Fatal(err)
+	}
+
+	eff, err = svc.Resolve(ctx, workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Flow.Version != 1 {
+		t.Fatalf("still pinned to v1, got %d", eff.Flow.Version)
+	}
+	if len(eff.Flow.Stages) != 1 || eff.Flow.Stages[0].Key != "context" {
+		t.Fatalf("the effective flow's own stages have to match the PINNED version: %+v", eff.Flow.Stages)
+	}
+	// The bug: patching eff.Flow alone while Origins/Contributors/ResolvedFrom
+	// stayed computed against v2.
+	if _, ok := eff.OriginOf("context"); !ok {
+		t.Fatal("the pinned version's stage is missing from the provenance — Origins were computed against v2, not the pinned v1")
+	}
+	if _, ok := eff.OriginOf("only-in-v2"); ok {
+		t.Fatal("a stage that exists ONLY in the unpinned current version leaked into the provenance")
+	}
+	// Only ONE level ever declares here (platform) — the point of this check
+	// is that Contributors/Origins came out of re-running MergeChain against
+	// the PINNED level, not that the trail happens to look a particular way.
+	if len(eff.Contributors) != 1 || eff.Contributors[0].Scope != workflow.ScopePlatform {
+		t.Fatalf("the provenance has to trace back to the platform level that declared the pinned stage: %+v", eff.Contributors)
+	}
+}
