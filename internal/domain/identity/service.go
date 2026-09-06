@@ -68,6 +68,20 @@ const (
 	KeyPolicyUnknown        = "identity.account.revocation_policy_unknown"
 )
 
+// MsgEmailBelongsToAnotherUser is the refusal an unknown subject gets when the
+// address it arrives on is already somebody else's (spec US-7).
+//
+// It is a constant because TWO places produce it: EnsureUser's guard, which is
+// the fast path, and the Postgres adapter, which catches the same collision off
+// `users_email_uniq` when the guard could not see it — the index has no
+// email_verified predicate, so an unverified row on either side slips past a
+// guard that requires verification. Whoever lands on the floor instead of the
+// fast path must not read a different sentence about the same situation, and
+// the sentence names the CAUSE (a provider that is not linking accounts sharing
+// an e-mail) because that is the only part anyone can act on.
+const MsgEmailBelongsToAnotherUser = "this e-mail already belongs to another sign-in method; " +
+	"the identity provider is not linking accounts that share an e-mail"
+
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally, no expiry test was
 // deterministic, and nobody noticed the abstraction was never proven. The panic
@@ -102,6 +116,13 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 			"this e-mail has not been verified yet")
 	}
 
+	// Normalized ONCE, at the top, and used everywhere below. Looking up with the
+	// raw address while writing the trimmed one meant a padded e-mail missed the
+	// guard and then died on the unique index — the opaque failure the guard
+	// exists to replace. Case is covered by citext and by the index's lower(),
+	// but whitespace is not.
+	email := strings.ToLower(strings.TrimSpace(p.Email))
+
 	existing, err := s.repo.UserBySubject(ctx, p.Subject)
 	if err != nil && errs.KindOf(err) != errs.KindNotFound {
 		return nil, nil, err
@@ -112,11 +133,15 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 	// provider links accounts that share an e-mail, which is configuration and
 	// not code. When it stops agreeing, say why: without this the insert dies on
 	// the unique index and the person reads "something went wrong".
-	if existing == nil && p.Email != "" && p.EmailVerified {
-		if other, err := s.repo.UserByVerifiedEmail(ctx, p.Email); err == nil && other != nil {
-			return nil, nil, errs.New(errs.KindConflict,
-				"this e-mail already belongs to another sign-in method; "+
-					"the identity provider is not linking accounts that share an e-mail")
+	//
+	// The verified predicate is load-bearing and stays: an UNVERIFIED claim must
+	// never be enough to decide two subjects are the same person. That leaves
+	// collisions this fast path cannot see — the index carries no
+	// email_verified predicate — and those are caught by the adapter, which
+	// returns this same refusal off the constraint itself.
+	if existing == nil && email != "" && p.EmailVerified {
+		if other, err := s.repo.UserByVerifiedEmail(ctx, email); err == nil && other != nil {
+			return nil, nil, errs.New(errs.KindConflict, MsgEmailBelongsToAnotherUser)
 		} else if err != nil && errs.KindOf(err) != errs.KindNotFound {
 			return nil, nil, err
 		}
@@ -124,7 +149,7 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 
 	u := &User{
 		Subject:       p.Subject,
-		Email:         strings.ToLower(strings.TrimSpace(p.Email)),
+		Email:         email,
 		EmailVerified: p.EmailVerified,
 		Name:          p.Name,
 		AvatarURL:     p.AvatarURL,

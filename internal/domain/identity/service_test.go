@@ -142,6 +142,15 @@ func (f *fakeRepo) UserByID(_ context.Context, id string) (*identity.User, error
 // address — that assertion belongs in test/integration, against the real
 // adapter, or a passing domain suite would be hiding a broken product.
 func (f *fakeRepo) UserByVerifiedEmail(_ context.Context, email string) (*identity.User, error) {
+	// An empty address matches NOBODY, because the adapter cannot match on one:
+	// the column is NULL when there is no e-mail, and `lower(NULL) = lower('')`
+	// is NULL, never true. Without this line the double answered "yes, that user"
+	// for every row with no address — a divergence in exactly the direction the
+	// port's own comment warns about, and one that would let a test assert
+	// account linking the product cannot do.
+	if email == "" {
+		return nil, errs.NotFound("user")
+	}
 	for _, u := range f.users {
 		if u.EmailVerified && strings.ToLower(u.Email) == strings.ToLower(email) {
 			return u, nil
@@ -1082,5 +1091,29 @@ func TestOnlyOwnerOrAdminChangesTheDefaultRevocationPolicy(t *testing.T) {
 
 	if err := svc.SetDefaultRevocationPolicy(ownerCtx, "cascade"); errs.KindOf(err) != errs.KindInvalid {
 		t.Fatalf("a value outside the vocabulary has to be refused: %v", err)
+	}
+}
+
+// A padded address has to meet the GUARD, not the unique index. The write always
+// trimmed; the lookup used to be handed the raw value, so "  ana@example.com  "
+// matched nobody and the insert then died on users_email_uniq as an opaque
+// error — precisely the failure the guard exists to replace. Case is not at risk
+// (citext, plus the index's lower()); whitespace was.
+func TestAPaddedEmailStillMeetsTheGuard(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	ctx := context.Background()
+	if _, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-1", Email: "ana@example.com", EmailVerified: true,
+		Providers: []string{"google.com"},
+	}); err != nil {
+		t.Fatalf("the first user could not be created: %v", err)
+	}
+
+	_, _, err := svc.EnsureUser(ctx, ports.Principal{
+		Subject: "sub-2", Email: "  ana@example.com  ", EmailVerified: true,
+		Providers: []string{"github.com"},
+	})
+	if errs.KindOf(err) != errs.KindConflict {
+		t.Fatalf("whitespace must not carry an address past the guard: %v", err)
 	}
 }

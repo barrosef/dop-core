@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
@@ -67,6 +69,36 @@ func (r *IdentityRepo) UserByVerifiedEmail(ctx context.Context, email string) (*
 	return u, nil
 }
 
+// usersEmailUniq is the index that makes an address belong to exactly one user
+// (0001_foundation.sql). Note what it does NOT carry: an email_verified
+// predicate. It fires on ANY two rows sharing an address, verified or not.
+const usersEmailUniq = "users_email_uniq"
+
+// translateUserWrite is Translate plus the one constraint whose generic answer
+// is useless.
+//
+// The domain refuses this collision on its own, and does it earlier and better —
+// it can name the other user's provider before writing anything. But its guard
+// asks for a VERIFIED e-mail on both sides, on purpose: an unverified claim must
+// not be allowed to decide two subjects are one person. That makes the guard
+// strictly narrower than the index, and the difference is not hypothetical —
+// with an unverified row on file, or an unverified principal arriving (the
+// GitHub case), the write reaches the constraint.
+//
+// So this is the FLOOR, not a duplicate of the rule: whatever the guard misses,
+// the person still reads why instead of "user already exists". It is deliberately
+// the only constraint singled out here; every other violation of this table is
+// genuinely "that already exists" and gains nothing from a longer sentence.
+func translateUserWrite(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) &&
+		pgErr.Code == codeUniqueViolation &&
+		pgErr.ConstraintName == usersEmailUniq {
+		return errs.New(errs.KindConflict, identity.MsgEmailBelongsToAnotherUser)
+	}
+	return Translate(err, "user")
+}
+
 // UpsertUser is idempotent by the natural key (subject) — EnsureUser runs on
 // every login and must not duplicate.
 func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*identity.User, error) {
@@ -87,7 +119,7 @@ func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*ident
 		var err error
 		saved, err = scanUser(row)
 		if err != nil {
-			return Translate(err, "user")
+			return translateUserWrite(err)
 		}
 		return Emit(ctx, tx, ports.Event{
 			Aggregate: "user", AggregateID: saved.ID, Type: "dop.identity.user.ensured",
