@@ -6,7 +6,11 @@ proto:            ## generate Go from the .proto files (the source of truth — 
 	cd api/proto && buf lint && buf generate
 
 proto-breaking:   ## refuse an incompatible contract change
-	cd api/proto && buf breaking --against '.git#subdir=api/proto'
+	@# Run from the REPOSITORY ROOT, not from api/proto. `.git#subdir=api/proto`
+	@# is resolved relative to the working directory, so `cd api/proto` first made
+	@# buf look for api/proto/api/proto — the gate reported nothing and looked
+	@# green. It ran that way for months.
+	buf breaking api/proto --against '.git#subdir=api/proto'
 
 build:
 	go build -o bin/dop-core ./cmd/dop-core
