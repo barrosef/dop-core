@@ -714,22 +714,52 @@ func mergeProviders(existing, incoming []string) []string {
 	return out
 }
 
+// socialProviders is the set of providers this platform enables whose own
+// authentication already vouches for the person (spec D-5). The strings are the
+// ones the ADAPTERS emit, not invented labels: Firebase puts "google.com" and
+// "github.com" in `sign_in_provider` and in the keys of `firebase.identities`,
+// and normalizeProviders lowercases both adapters' vocabularies into the same
+// shape.
+//
+// Adding a provider to the platform means adding it here. Until somebody does,
+// that provider's users whose e-mail is unverified are REFUSED — see
+// passwordOnly for why that is the direction we want the mistake to point in.
+var socialProviders = map[string]bool{
+	"google.com": true,
+	"github.com": true,
+}
+
 // passwordOnly answers whether a password is the ONLY thing vouching for this
 // person. It is the distinction the verification rule turns on: with a password
 // the e-mail is the sole link between the credential and a human, and nobody
 // checked it; with a social provider the provider already did the checking, and
 // the e-mail is metadata. Refusing every unverified e-mail would lock out
 // GitHub, which frequently delivers one (spec D-5).
+//
+// It asks whether a SOCIAL provider is present instead of asking whether EVERY
+// entry is "password", and the direction is the entire point. Firebase keys
+// `firebase.identities` by identifier TYPE, so a real e-mail/password token
+// arrives as ["email","password"] — under "every entry must be password" the
+// rule answered false for exactly the credential it exists to stop, and any
+// unfamiliar value silently switched it OFF. That is fail-open, in the one place
+// that must not be.
+//
+// This way round an UNKNOWN value counts as not-social and the rule still fires.
+// The cost is stated so nobody meets it by surprise: enabling a new social
+// provider without listing it in socialProviders refuses that provider's users
+// whose e-mail is unverified until somebody adds it. A locked-out user tells us;
+// a rule that quietly stopped running does not.
 func passwordOnly(providers []string) bool {
-	if len(providers) == 0 {
-		return false // an unknown provider is not a password credential
-	}
+	password := false
 	for _, p := range providers {
-		if p != "password" {
+		if socialProviders[p] {
 			return false
 		}
+		if p == "password" {
+			password = true
+		}
 	}
-	return true
+	return password
 }
 
 func randomSuffix(n int) string {

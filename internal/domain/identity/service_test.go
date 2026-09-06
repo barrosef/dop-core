@@ -383,14 +383,46 @@ func TestTheSameSubjectComingBackIsNotAConflict(t *testing.T) {
 	}
 }
 
+// The provider lists below are the ones the ADAPTERS actually produce, and
+// nothing else. It matters more than it looks: Firebase keys
+// `firebase.identities` by IDENTIFIER TYPE, so an e-mail/password account
+// arrives as ["email","password"] and never as ["password"] on its own. These
+// tests used to hand the service the convenient shape, which is why the rule
+// they cover could be dead against the default adapter with every one of them
+// green (spec D-5).
 func TestAPasswordCredentialNeedsAVerifiedEmail(t *testing.T) {
+	cases := map[string][]string{
+		// Firebase: identities key "email" + sign_in_provider "password".
+		"firebase_email_password": {"email", "password"},
+		// OIDC: amr ["pwd"], which the adapter normalizes to "password".
+		"oidc_pwd_normalized": {"password"},
+	}
+	for name, providers := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc := identity.NewService(newFakeRepo(), fixedClock{now})
+			_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
+				Subject: "sub-1", Email: "ana@example.com", EmailVerified: false,
+				Providers: providers,
+			})
+			if errs.KindOf(err) != errs.KindPrecondition {
+				t.Fatalf("without verification anybody signs up with anybody's address: %v", err)
+			}
+		})
+	}
+}
+
+// An unfamiliar provider must not switch the rule OFF. That is the whole reason
+// the check asks for a SOCIAL provider instead of asking whether every entry is
+// "password": under the old wording, one value nobody had seen before turned the
+// refusal into a silent pass — fail-open, in the one place that must not.
+func TestAnUnknownProviderDoesNotDisableTheVerificationRule(t *testing.T) {
 	svc := identity.NewService(newFakeRepo(), fixedClock{now})
 	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
-		Subject: "sub-1", Email: "ana@example.com", EmailVerified: false,
-		Providers: []string{"password"},
+		Subject: "sub-4", Email: "dora@example.com", EmailVerified: false,
+		Providers: []string{"email", "password", "some-new-idp.example"},
 	})
 	if errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("without verification anybody signs up with anybody's address: %v", err)
+		t.Fatalf("an unrecognized provider must not be read as a social one: %v", err)
 	}
 }
 
@@ -398,26 +430,36 @@ func TestASocialCredentialEntersWithAnUnverifiedEmail(t *testing.T) {
 	// GitHub frequently hands over an unverified e-mail. Refusing it here would
 	// lock out the provider this platform's users are most likely to have — and
 	// the e-mail is not the proof there, the provider's authentication is.
-	svc := identity.NewService(newFakeRepo(), fixedClock{now})
-	u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
-		Subject: "sub-2", Email: "bruno@example.com", EmailVerified: false,
-		Providers: []string{"github"},
-	})
-	if err != nil {
-		t.Fatalf("a social credential does not need the e-mail verified: %v", err)
+	cases := map[string][]string{
+		"google": {"google.com"},
+		"github": {"github.com"},
 	}
-	if u == nil || acct == nil {
-		t.Fatal("the user and the personal account should exist")
+	for name, providers := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc := identity.NewService(newFakeRepo(), fixedClock{now})
+			u, acct, err := svc.EnsureUser(context.Background(), ports.Principal{
+				Subject: "sub-2-" + name, Email: name + "@example.com", EmailVerified: false,
+				Providers: providers,
+			})
+			if err != nil {
+				t.Fatalf("a social credential does not need the e-mail verified: %v", err)
+			}
+			if u == nil || acct == nil {
+				t.Fatal("the user and the personal account should exist")
+			}
+		})
 	}
 }
 
 func TestAPasswordLinkedToASocialProviderEnters(t *testing.T) {
 	// Once a social provider is on the same credential, the password is no
-	// longer the only thing vouching for the person.
+	// longer the only thing vouching for the person. This is the shape Firebase
+	// sends for an account that has both: the identities keys sorted, then the
+	// provider used this time.
 	svc := identity.NewService(newFakeRepo(), fixedClock{now})
 	_, _, err := svc.EnsureUser(context.Background(), ports.Principal{
 		Subject: "sub-3", Email: "carla@example.com", EmailVerified: false,
-		Providers: []string{"password", "google"},
+		Providers: []string{"email", "google.com", "password"},
 	})
 	if err != nil {
 		t.Fatalf("password plus a social provider is not a password-only credential: %v", err)
