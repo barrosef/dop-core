@@ -11,8 +11,9 @@
 // ResolvePublication's join is the whole authorisation (R2's ONE deliberate
 // crossing), RecordDerivation writes the copy and the adoption record in ONE
 // transaction (R17), and RevokeShare writes the share, every reached copy and
-// adoption, and both events, in another (R1). postgres.InTx and postgres.Emit
-// have no other caller in the tree yet — this is the first.
+// adoption, and both events, in another (R1) — using postgres.InTx and
+// postgres.Emit, the same pattern every other transactional write in the
+// tree already follows (see db.go and outbox.go).
 package integration
 
 import (
@@ -457,7 +458,7 @@ func TestRevokeShareUnderProspectiveEmitsBothEventsAndTouchesNoCopy(t *testing.T
 		}
 		got = append(got, typ+":"+acct)
 	}
-	want := []string{"flow.grant.revoked:" + otherAccount, "flow.share.revoked:" + pubAccount}
+	want := []string{"dop.workflow.grant.revoked:" + otherAccount, "dop.workflow.share.revoked:" + pubAccount}
 	if len(got) != len(want) {
 		t.Fatalf("got %v events, want %v", got, want)
 	}

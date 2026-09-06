@@ -240,8 +240,9 @@ func scanShare(row pgx.Row) (*workflow.Share, error) {
 
 // RevokeShare does the WHOLE revocation in one transaction: the share, the
 // copies rev.Adoptions reaches, their adoption records, and both events
-// (ADR-0019). This is the first caller of InTx/Emit in the tree — see db.go
-// and outbox.go for the pattern this follows.
+// (ADR-0019) — the same InTx/Emit pattern every other write in this package,
+// and the workflow package beside it, already follows; see db.go and
+// outbox.go for where the pattern itself is defined.
 //
 // Under `prospective`, rev.Adoptions is empty: the loop below simply does not
 // run, and the two events still fire. That is not a special case in the code —
@@ -336,18 +337,24 @@ func (r *WorkflowSharing) RevokeShare(ctx context.Context, accountID string, rev
 		})
 		// "flow_share" and not "flow": what is being revoked is the SHARE, not
 		// the flow itself — the flow (and its copies) are reached AS A
-		// CONSEQUENCE, not as the aggregate this event is about. This is the
-		// first Emit call in the tree, so the name set here is the one every
-		// later caller copies.
+		// CONSEQUENCE, not as the aggregate this event is about.
+		//
+		// `dop.workflow.share.revoked` / `dop.workflow.grant.revoked`, not
+		// `dop.flow.*`: every event in the tree follows
+		// `dop.<domain>.<aggregate>.<verb>` — including
+		// `dop.workflow.flow.created` a few lines away in workflow.go — and
+		// Subject() prepends `dop.` verbatim, so a `flow.*` type here would
+		// have put these two on `dop.flow.*` subjects, invisible to anything
+		// subscribed to `dop.workflow.>`.
 		if err := Emit(ctx, tx, ports.Event{
 			AccountID: accountID, Aggregate: "flow_share", AggregateID: rev.ShareID,
-			Type: "flow.share.revoked", Payload: payload,
+			Type: "dop.workflow.share.revoked", Payload: payload,
 		}); err != nil {
 			return err
 		}
 		return Emit(ctx, tx, ports.Event{
 			AccountID: rev.ToAccountID, Aggregate: "flow_share", AggregateID: rev.ShareID,
-			Type: "flow.grant.revoked", Payload: payload,
+			Type: "dop.workflow.grant.revoked", Payload: payload,
 		})
 	})
 }
