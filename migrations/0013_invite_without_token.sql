@@ -1,3 +1,4 @@
+-- +goose Up
 -- The invite stops having a secret.
 --
 -- Before: the link carried an opaque token and acceptance only checked its
@@ -13,3 +14,7 @@
 -- The column is dropped instead of left NULL: keeping the hash of a secret
 -- nobody checks any more is keeping surface with no owner.
 ALTER TABLE invites DROP COLUMN IF EXISTS token_hash;
+
+-- +goose Down
+-- Irreversible by design: this migration adds or corrects data the rest of the
+-- schema now assumes. Rolling it back would leave a database the code cannot read.
