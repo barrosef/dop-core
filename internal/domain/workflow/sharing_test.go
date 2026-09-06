@@ -885,3 +885,97 @@ func TestWhatARevocationReachesDependsOnTheStampedPolicy(t *testing.T) {
 		})
 	}
 }
+
+// TestRevocationReachesOnlyTheRevokedAccountsCopy is fix round 1's Important
+// finding: a publication is granted to SEVERAL accounts over time — that is
+// what the design is for — and the filter in Revoke that keeps a revocation
+// to the account whose grant was actually revoked
+// (`a.ByAccountID != share.ToAccountID`) had no test that could catch it
+// being deleted. The original test only ever had one account derive from the
+// publication, so `len(rev.Adoptions) == 1` held whether or not that filter
+// existed.
+//
+// Here two accounts hold independent grants on the SAME publication and both
+// derive from it. Revoking the SECOND account's grant must reach only its own
+// copy — a THIRD account's copy, derived under its OWN still-standing grant,
+// has to be left alone. Without the filter, revoking one company's grant
+// would mark another company's copy revoked, and the first anyone would
+// learn of it is a customer whose flow stopped resolving.
+func TestRevocationReachesOnlyTheRevokedAccountsCopy(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	env.AccountDefault = string(workflow.PolicyDrain)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherShare, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Grant(ctx, pub.ID, env.ThirdAccountID, "g-third"); err != nil {
+		t.Fatal(err)
+	}
+
+	otherCtx := env.CtxAsOther(env.OtherOwnerID)
+	otherCopy, err := svc.Derive(otherCtx,
+		"@acme/backend-go", workflow.ScopeRef{Scope: workflow.ScopeProject, ID: env.OtherProjectID}, "d-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The third account derives at its OWN account level — it needs no
+	// workspace/project fixture, and Derive does not care which level within
+	// the caller's own tree the copy lands at.
+	thirdCopy, err := svc.Derive(env.CtxAsThird(),
+		"@acme/backend-go", workflow.ScopeRef{Scope: workflow.ScopeAccount}, "d-third")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Revoke only the OTHER account's grant. The third account's grant is
+	// untouched.
+	if err := svc.Revoke(ctx, otherShare.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if !env.FlowRevoked(otherCopy.ID) {
+		t.Fatal("revoking the other account's grant has to reach its own copy")
+	}
+	if env.FlowRevoked(thirdCopy.ID) {
+		t.Fatal("revoking one account's grant reached a DIFFERENT account's copy on the same publication")
+	}
+	rev := env.LastRevocation()
+	if len(rev.Adoptions) != 1 || rev.Adoptions[0].FlowID != otherCopy.ID {
+		t.Fatalf("the revocation has to carry only the revoked account's own adoption, got %+v", rev.Adoptions)
+	}
+}
+
+// TestRevokingAnAlreadyRevokedShareIsIdempotent covers the early return in
+// Revoke: asking for an outcome that already holds is success, and the
+// second call must not touch anything a second time — not the share (already
+// revoked, unchanged timestamp) and not the revocation log (RevokeShare is
+// not called again).
+func TestRevokingAnAlreadyRevokedShareIsIdempotent(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Revoke(ctx, share.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := len(env.sharing.revocations)
+
+	if err := svc.Revoke(ctx, share.ID); err != nil {
+		t.Fatalf("revoking an already-revoked share has to be success, not an error: %v", err)
+	}
+	if got := len(env.sharing.revocations); got != before {
+		t.Fatalf("a second revoke recorded another revocation: had %d, now %d — RevokeShare must not be called again", before, got)
+	}
+}
