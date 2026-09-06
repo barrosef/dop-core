@@ -10,7 +10,13 @@ proto-breaking:   ## refuse an incompatible contract change
 	@# is resolved relative to the working directory, so `cd api/proto` first made
 	@# buf look for api/proto/api/proto — the gate reported nothing and looked
 	@# green. It ran that way for months.
-	buf breaking api/proto --against '.git#subdir=api/proto'
+	@#
+	@# And `branch=main` is not decoration either: without it buf compares the
+	@# working tree against the current HEAD, so the moment a change is committed
+	@# the gate compares that commit with itself and passes by construction. A
+	@# gate that cannot fail after you commit is a gate that never guarded a
+	@# merge.
+	buf breaking api/proto --against '.git#branch=main,subdir=api/proto'
 
 build:
 	go build -o bin/dop-core ./cmd/dop-core
