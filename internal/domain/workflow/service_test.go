@@ -125,6 +125,15 @@ func (f *fakeRepo) Create(_ context.Context, flow *workflow.Flow, key string) (*
 	return &cp, nil
 }
 
+// forget undoes a Create. It exists for fakeSharing.RecordDerivation: the only
+// way a double can prove a simulated transaction actually rolled back — rather
+// than merely skipping the write it was told to fail — is to reverse the write
+// that already happened.
+func (f *fakeRepo) forget(id, key string) {
+	delete(f.flows, id)
+	delete(f.keys, key)
+}
+
 func (f *fakeRepo) AppendVersion(_ context.Context, accountID string, flow *workflow.Flow, base int32, key string) (*workflow.Flow, error) {
 	r, ok := f.flows[flow.ID]
 	if !ok || r.meta.AccountID != accountID {

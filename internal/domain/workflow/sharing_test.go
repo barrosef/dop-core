@@ -93,6 +93,18 @@ type fakeSharing struct {
 	adoptions   map[string]*workflow.Adoption
 	nextAdoptID int
 
+	// repo is the SAME flow storage RecordDerivation writes the copy into —
+	// standing in for the real adapter, which writes both the copy and the
+	// adoption record through one DB connection in one transaction. Wiring it
+	// in is what lets the double actually enforce "one write or neither",
+	// instead of merely promising it.
+	repo *fakeRepo
+	// failDerivationAdoption is a test hook: when set, RecordDerivation's
+	// adoption half fails AFTER the copy would have been written, so a test can
+	// assert the copy does not survive — no orphaned copy left for a
+	// revocation nobody can ever reach.
+	failDerivationAdoption bool
+
 	pins map[string]pinRow // "accountID|flowID" → row
 
 	// handles stands in for identity's account-by-handle lookup: the real
@@ -283,12 +295,31 @@ func (f *fakeSharing) RevokeShare(_ context.Context, accountID string, rev workf
 	return nil
 }
 
-func (f *fakeSharing) RecordAdoption(_ context.Context, a *workflow.Adoption) error {
-	cp := *a
+// RecordDerivation writes the copy and the adoption record as ONE unit,
+// mirroring the real adapter's transaction: it creates the flow through the
+// same repo the domain would otherwise have called directly, and — if the
+// adoption half is made to fail — UNDOES that creation rather than merely
+// skipping the adoption write. A double that left the copy standing on a
+// simulated failure would let the "no orphaned copy" test pass for the wrong
+// reason: nothing would prove the copy was actually rolled back.
+func (f *fakeSharing) RecordDerivation(ctx context.Context, accountID string, flow *workflow.Flow, adoption *workflow.Adoption, key string) (*workflow.Flow, error) {
+	if f.repo == nil {
+		panic("fakeSharing.RecordDerivation: repo not wired — see newSharingHarness")
+	}
+	out, err := f.repo.Create(ctx, flow, key)
+	if err != nil {
+		return nil, err
+	}
+	if f.failDerivationAdoption {
+		f.repo.forget(out.ID, key)
+		return nil, errs.New(errs.KindUnavailable, "simulated: the adoption half of the derivation's transaction failed")
+	}
+	cp := *adoption
 	cp.ID = nextID("adp", &f.nextAdoptID)
+	cp.FlowID = out.ID
 	f.adoptions[cp.ID] = &cp
-	*a = cp
-	return nil
+	*adoption = cp
+	return out, nil
 }
 
 func (f *fakeSharing) AdoptionsOfPublication(_ context.Context, accountID, publicationID string) ([]workflow.Adoption, error) {
@@ -400,6 +431,10 @@ func newSharingHarness(t *testing.T) (*workflow.Service, *sharingEnv) {
 	}}
 	sharing := newFakeSharing()
 	sharing.handles[sharingHandle] = sharingAccount
+	// RecordDerivation writes the copy through this SAME repo — the double's
+	// way of enforcing "one transaction, or neither write happens", the same
+	// guarantee the real adapter gives by sharing one DB connection.
+	sharing.repo = repo
 
 	clock := &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}
 
@@ -663,6 +698,22 @@ func TestDerivingCopiesAndRecordsBothSides(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The publisher keeps developing AFTER publishing: a new version, with a
+	// DIFFERENT stage set, so the frozen publication and the flow's current
+	// state diverge. Without this, `VersionOf` (the frozen version) and `ByID`
+	// (the current one) would return byte-identical content, and a regression
+	// that swapped one for the other would pass this test unnoticed.
+	newStages := []workflow.StageSpec{
+		stage("context", workflow.TypeContext, workflow.ArtifactDocument),
+		stage("spec", workflow.TypeSpec, workflow.ArtifactSpec),
+		stage("test", workflow.TypeTest, workflow.ArtifactTestPlan),
+	}
+	if _, err := svc.Update(env.CtxAs(env.OwnerID), workflow.Flow{
+		ID: env.FlowID, Name: "account flow", Stages: newStages,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	// The other account derives it at ITS OWN project level.
 	ctx := env.CtxAsOther(env.OtherOwnerID)
 	target := workflow.ScopeRef{Scope: workflow.ScopeProject, ID: env.OtherProjectID}
@@ -676,18 +727,67 @@ func TestDerivingCopiesAndRecordsBothSides(t *testing.T) {
 	if copied.Origin == nil || copied.Origin.Ref != "@acme/backend-go" || copied.Origin.Version != pub.Version {
 		t.Fatalf("the copy does not carry where it came from: %+v", copied.Origin)
 	}
+	// The content has to be the FROZEN version — two stages — and not what the
+	// publisher moved on to since (three, after the Update above).
+	if len(copied.Stages) != 2 || copied.Stages[0].Key != "context" || copied.Stages[1].Key != "spec" {
+		t.Fatalf("the copy carries the publisher's CURRENT flow, not the version it froze on: %+v", copied.Stages)
+	}
 	// The publisher's side records where it went, so it never has to scan
 	// another account to find out.
 	ads, err := svc.AdoptionsOf(env.CtxAs(env.OwnerID), pub.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ads) != 1 || ads[0].ByAccountID != env.OtherAccountID || ads[0].FlowID != copied.ID {
+	if len(ads) != 1 || ads[0].ByAccountID != env.OtherAccountID || ads[0].FlowID != copied.ID || ads[0].Version != pub.Version {
 		t.Fatalf("the derivation was not recorded on the publisher's side: %+v", ads)
 	}
 	// Without a grant, the reference does not even exist for the caller.
 	if _, err := svc.Derive(env.CtxAsThird(), "@acme/backend-go", target, "d2"); errs.KindOf(err) != errs.KindNotFound {
 		t.Fatalf("an account with no grant has to get not-found, not permission-denied: %v", err)
+	}
+}
+
+// TestDerivingRollsBackWhenTheAdoptionWriteFails is the fix for the defect the
+// review caught: RecordDerivation writes the copy and the adoption record as
+// ONE unit precisely because a crash between two separate writes would leave
+// the copy standing with nobody — least of all the publisher — ever learning
+// it exists, and no revocation able to reach it. This proves the double
+// actually enforces that: a simulated failure on the adoption half leaves NO
+// copy and NO adoption record, not a half-written pair.
+func TestDerivingRollsBackWhenTheAdoptionWriteFails(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	pub, err := svc.Publish(env.CtxAs(env.OwnerID), env.FlowID, "backend-go", "", "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Grant(env.CtxAs(env.OwnerID), pub.ID, env.OtherAccountID, "g1"); err != nil {
+		t.Fatal(err)
+	}
+
+	env.sharing.failDerivationAdoption = true
+	ctx := env.CtxAsOther(env.OtherOwnerID)
+	target := workflow.ScopeRef{Scope: workflow.ScopeProject, ID: env.OtherProjectID}
+	if _, err := svc.Derive(ctx, "@acme/backend-go", target, "d-fail"); errs.KindOf(err) != errs.KindUnavailable {
+		t.Fatalf("expected the simulated transaction failure to surface: %v", err)
+	}
+
+	// No orphaned copy: the target project has to see NOTHING that was not
+	// there before the failed attempt.
+	list, err := svc.List(ctx, workflow.ScopeProject, env.OtherProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("a failed derivation left an orphaned copy nobody can ever revoke: %+v", list)
+	}
+	// And the publisher's side has to record nothing either — there is nothing
+	// for it to have learned about.
+	ads, err := svc.AdoptionsOf(env.CtxAs(env.OwnerID), pub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ads) != 0 {
+		t.Fatalf("a failed derivation still left an adoption record behind: %+v", ads)
 	}
 }
 

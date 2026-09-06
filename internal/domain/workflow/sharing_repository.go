@@ -39,7 +39,14 @@ type SharingRepository interface {
 	// job is to decide WHAT the policy reaches and hand it over.
 	RevokeShare(ctx context.Context, accountID string, rev Revocation) error
 
-	RecordAdoption(ctx context.Context, a *Adoption) error
+	// RecordDerivation writes the COPY and the publisher's adoption record in one
+	// transaction.
+	//
+	// Two calls would let the copy exist while the publisher never learns of it —
+	// and the adoption record is what a later revocation uses to reach the copy, so
+	// an orphaned copy is one nobody can revoke. Atomicity here is not tidiness; it
+	// is the difference between a share that can be taken back and one that cannot.
+	RecordDerivation(ctx context.Context, accountID string, flow *Flow, adoption *Adoption, idempotencyKey string) (*Flow, error)
 	AdoptionsOfPublication(ctx context.Context, accountID, publicationID string) ([]Adoption, error)
 
 	Pin(ctx context.Context, accountID, flowID string, version int32, by string, at time.Time) error

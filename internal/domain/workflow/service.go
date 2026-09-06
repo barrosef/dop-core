@@ -510,20 +510,16 @@ func (s *Service) Derive(ctx context.Context, rawRef string, target ScopeRef, id
 		Origin:    &Origin{Ref: ref.WithoutVersion().String(), Version: pub.Version, AdoptedAt: now},
 		CreatedBy: call.ActorID, CreatedAt: now, UpdatedAt: now,
 	}
-	out, err := s.repo.Create(ctx, &copied, s.writeKey(idempotencyKey, "derive", copied, 0))
-	if err != nil {
-		return nil, err
+	// The copy and the publisher's half of the same fact are written together.
+	// Two separate calls (create the copy, then record the adoption) would let a
+	// crash between them leave a copy the publisher never learns of — and the
+	// adoption record is exactly what a later revocation uses to reach the copy,
+	// so an orphaned copy is one nobody could ever revoke.
+	adoption := &Adoption{
+		PublicationID: pub.ID, Version: pub.Version, ByAccountID: accountID, DerivedAt: now,
 	}
-	// The publisher's half of the same fact. It is written after the copy
-	// exists, and it carries the copy's id — which is what makes revocation
-	// able to reach it later without scanning anything.
-	if err := s.sharing.RecordAdoption(ctx, &Adoption{
-		PublicationID: pub.ID, Version: pub.Version, ByAccountID: accountID,
-		FlowID: out.ID, DerivedAt: now,
-	}); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return s.sharing.RecordDerivation(ctx, accountID, &copied, adoption,
+		s.writeKey(idempotencyKey, "derive", copied, 0))
 }
 
 // AdoptionsOf lists who derived from a publication.
