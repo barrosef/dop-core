@@ -53,8 +53,14 @@ type SharingRepository interface {
 	PinOf(ctx context.Context, accountID, flowID string) (int32, bool, error)
 }
 
-// AccountDefaults is the NARROW port into identity: the flow domain needs one
-// value from an account and not the account.
+// AccountDefaults is the NARROW port into identity: the flow domain needs two
+// columns of an account, not the account.
 type AccountDefaults interface {
 	DefaultRevocationPolicy(ctx context.Context, accountID string) (string, error)
+
+	// HandleOf resolves an account's public handle — the identity fact the
+	// edge needs to render a publication's reference (@handle/slug@vN)
+	// server-side (see PublicationRef.String and ADR-0017): three clients
+	// assembling that string themselves is three places for it to drift.
+	HandleOf(ctx context.Context, accountID string) (string, error)
 }

@@ -9,6 +9,8 @@ package dopv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -1032,11 +1034,794 @@ func (x *PromoteFlowRequest) GetTargetId() string {
 	return ""
 }
 
+type PublishFlowRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FlowId         string                 `protobuf:"bytes,1,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
+	Slug           string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"` // completes @handle/slug
+	Notes          string                 `protobuf:"bytes,3,opt,name=notes,proto3" json:"notes,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PublishFlowRequest) Reset() {
+	*x = PublishFlowRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishFlowRequest) ProtoMessage() {}
+
+func (x *PublishFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishFlowRequest.ProtoReflect.Descriptor instead.
+func (*PublishFlowRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *PublishFlowRequest) GetFlowId() string {
+	if x != nil {
+		return x.FlowId
+	}
+	return ""
+}
+
+func (x *PublishFlowRequest) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *PublishFlowRequest) GetNotes() string {
+	if x != nil {
+		return x.Notes
+	}
+	return ""
+}
+
+func (x *PublishFlowRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+// FlowPublication is one version of a flow made addressable outside the
+// account. `reference` is rendered by the SERVER from the publisher's handle,
+// the slug and the version: three clients assembling "@handle/slug@vN"
+// themselves is three places for the format to drift.
+type FlowPublication struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	FlowId        string                 `protobuf:"bytes,2,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
+	Reference     string                 `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"` // "@acme/backend-go@v3"
+	Version       int32                  `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`
+	Notes         string                 `protobuf:"bytes,5,opt,name=notes,proto3" json:"notes,omitempty"`
+	PublishedAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=published_at,json=publishedAt,proto3" json:"published_at,omitempty"`
+	WithdrawnAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=withdrawn_at,json=withdrawnAt,proto3" json:"withdrawn_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FlowPublication) Reset() {
+	*x = FlowPublication{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FlowPublication) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FlowPublication) ProtoMessage() {}
+
+func (x *FlowPublication) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FlowPublication.ProtoReflect.Descriptor instead.
+func (*FlowPublication) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *FlowPublication) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FlowPublication) GetFlowId() string {
+	if x != nil {
+		return x.FlowId
+	}
+	return ""
+}
+
+func (x *FlowPublication) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *FlowPublication) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *FlowPublication) GetNotes() string {
+	if x != nil {
+		return x.Notes
+	}
+	return ""
+}
+
+func (x *FlowPublication) GetPublishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PublishedAt
+	}
+	return nil
+}
+
+func (x *FlowPublication) GetWithdrawnAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WithdrawnAt
+	}
+	return nil
+}
+
+type WithdrawFlowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PublicationId string                 `protobuf:"bytes,1,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawFlowRequest) Reset() {
+	*x = WithdrawFlowRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawFlowRequest) ProtoMessage() {}
+
+func (x *WithdrawFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawFlowRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawFlowRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *WithdrawFlowRequest) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+type GrantFlowRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PublicationId  string                 `protobuf:"bytes,1,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	ToAccountId    string                 `protobuf:"bytes,2,opt,name=to_account_id,json=toAccountId,proto3" json:"to_account_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GrantFlowRequest) Reset() {
+	*x = GrantFlowRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantFlowRequest) ProtoMessage() {}
+
+func (x *GrantFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantFlowRequest.ProtoReflect.Descriptor instead.
+func (*GrantFlowRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GrantFlowRequest) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+func (x *GrantFlowRequest) GetToAccountId() string {
+	if x != nil {
+		return x.ToAccountId
+	}
+	return ""
+}
+
+func (x *GrantFlowRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+// FlowGrant is permission for ONE account to derive from a publication, with
+// the revocation policy stamped at the moment it was granted — reading the
+// publisher's CURRENT default at revocation time would let the terms change
+// after somebody already accepted them.
+type FlowGrant struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PublicationId    string                 `protobuf:"bytes,2,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	ToAccountId      string                 `protobuf:"bytes,3,opt,name=to_account_id,json=toAccountId,proto3" json:"to_account_id,omitempty"`
+	RevocationPolicy string                 `protobuf:"bytes,4,opt,name=revocation_policy,json=revocationPolicy,proto3" json:"revocation_policy,omitempty"` // prospective | drain | terminate
+	GrantedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=granted_at,json=grantedAt,proto3" json:"granted_at,omitempty"`
+	RevokedAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *FlowGrant) Reset() {
+	*x = FlowGrant{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FlowGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FlowGrant) ProtoMessage() {}
+
+func (x *FlowGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FlowGrant.ProtoReflect.Descriptor instead.
+func (*FlowGrant) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *FlowGrant) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FlowGrant) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+func (x *FlowGrant) GetToAccountId() string {
+	if x != nil {
+		return x.ToAccountId
+	}
+	return ""
+}
+
+func (x *FlowGrant) GetRevocationPolicy() string {
+	if x != nil {
+		return x.RevocationPolicy
+	}
+	return ""
+}
+
+func (x *FlowGrant) GetGrantedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.GrantedAt
+	}
+	return nil
+}
+
+func (x *FlowGrant) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+type RevokeFlowGrantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShareId       string                 `protobuf:"bytes,1,opt,name=share_id,json=shareId,proto3" json:"share_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeFlowGrantRequest) Reset() {
+	*x = RevokeFlowGrantRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeFlowGrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeFlowGrantRequest) ProtoMessage() {}
+
+func (x *RevokeFlowGrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeFlowGrantRequest.ProtoReflect.Descriptor instead.
+func (*RevokeFlowGrantRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RevokeFlowGrantRequest) GetShareId() string {
+	if x != nil {
+		return x.ShareId
+	}
+	return ""
+}
+
+type DeriveFlowRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Reference      string                 `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"` // "@acme/backend-go" or pinned
+	Target         *ScopeRef              `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`       // where to install the copy
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeriveFlowRequest) Reset() {
+	*x = DeriveFlowRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeriveFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeriveFlowRequest) ProtoMessage() {}
+
+func (x *DeriveFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeriveFlowRequest.ProtoReflect.Descriptor instead.
+func (*DeriveFlowRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeriveFlowRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *DeriveFlowRequest) GetTarget() *ScopeRef {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *DeriveFlowRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type BumpFlowPinRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FlowId        string                 `protobuf:"bytes,1,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
+	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BumpFlowPinRequest) Reset() {
+	*x = BumpFlowPinRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BumpFlowPinRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BumpFlowPinRequest) ProtoMessage() {}
+
+func (x *BumpFlowPinRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BumpFlowPinRequest.ProtoReflect.Descriptor instead.
+func (*BumpFlowPinRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *BumpFlowPinRequest) GetFlowId() string {
+	if x != nil {
+		return x.FlowId
+	}
+	return ""
+}
+
+func (x *BumpFlowPinRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type ListFlowSharesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PublicationId string                 `protobuf:"bytes,1,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFlowSharesRequest) Reset() {
+	*x = ListFlowSharesRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFlowSharesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFlowSharesRequest) ProtoMessage() {}
+
+func (x *ListFlowSharesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFlowSharesRequest.ProtoReflect.Descriptor instead.
+func (*ListFlowSharesRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListFlowSharesRequest) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+type ListFlowSharesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Shares        []*FlowGrant           `protobuf:"bytes,1,rep,name=shares,proto3" json:"shares,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFlowSharesResponse) Reset() {
+	*x = ListFlowSharesResponse{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFlowSharesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFlowSharesResponse) ProtoMessage() {}
+
+func (x *ListFlowSharesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFlowSharesResponse.ProtoReflect.Descriptor instead.
+func (*ListFlowSharesResponse) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListFlowSharesResponse) GetShares() []*FlowGrant {
+	if x != nil {
+		return x.Shares
+	}
+	return nil
+}
+
+// FlowAdoption is the PUBLISHER's own record that another account derived a
+// copy — the outbound half of the provenance the copy itself carries
+// (see Flow's origin, task 9).
+type FlowAdoption struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	PublicationId string                 `protobuf:"bytes,2,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	ByAccountId   string                 `protobuf:"bytes,4,opt,name=by_account_id,json=byAccountId,proto3" json:"by_account_id,omitempty"`
+	FlowId        string                 `protobuf:"bytes,5,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"` // the copy, in the OTHER account
+	DerivedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=derived_at,json=derivedAt,proto3" json:"derived_at,omitempty"`
+	RevokedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FlowAdoption) Reset() {
+	*x = FlowAdoption{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FlowAdoption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FlowAdoption) ProtoMessage() {}
+
+func (x *FlowAdoption) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FlowAdoption.ProtoReflect.Descriptor instead.
+func (*FlowAdoption) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *FlowAdoption) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FlowAdoption) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+func (x *FlowAdoption) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *FlowAdoption) GetByAccountId() string {
+	if x != nil {
+		return x.ByAccountId
+	}
+	return ""
+}
+
+func (x *FlowAdoption) GetFlowId() string {
+	if x != nil {
+		return x.FlowId
+	}
+	return ""
+}
+
+func (x *FlowAdoption) GetDerivedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DerivedAt
+	}
+	return nil
+}
+
+func (x *FlowAdoption) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+type ListFlowAdoptionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PublicationId string                 `protobuf:"bytes,1,opt,name=publication_id,json=publicationId,proto3" json:"publication_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFlowAdoptionsRequest) Reset() {
+	*x = ListFlowAdoptionsRequest{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFlowAdoptionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFlowAdoptionsRequest) ProtoMessage() {}
+
+func (x *ListFlowAdoptionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFlowAdoptionsRequest.ProtoReflect.Descriptor instead.
+func (*ListFlowAdoptionsRequest) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListFlowAdoptionsRequest) GetPublicationId() string {
+	if x != nil {
+		return x.PublicationId
+	}
+	return ""
+}
+
+type ListFlowAdoptionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Adoptions     []*FlowAdoption        `protobuf:"bytes,1,rep,name=adoptions,proto3" json:"adoptions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFlowAdoptionsResponse) Reset() {
+	*x = ListFlowAdoptionsResponse{}
+	mi := &file_dop_v1_workflow_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFlowAdoptionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFlowAdoptionsResponse) ProtoMessage() {}
+
+func (x *ListFlowAdoptionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dop_v1_workflow_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFlowAdoptionsResponse.ProtoReflect.Descriptor instead.
+func (*ListFlowAdoptionsResponse) Descriptor() ([]byte, []int) {
+	return file_dop_v1_workflow_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListFlowAdoptionsResponse) GetAdoptions() []*FlowAdoption {
+	if x != nil {
+		return x.Adoptions
+	}
+	return nil
+}
+
 var File_dop_v1_workflow_proto protoreflect.FileDescriptor
 
 const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x15dop/v1/workflow.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\"\xca\x01\n" +
+	"\x15dop/v1/workflow.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xca\x01\n" +
 	"\tStageSpec\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12%\n" +
@@ -1091,7 +1876,62 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\x12PromoteFlowRequest\x12\x17\n" +
 	"\aflow_id\x18\x02 \x01(\tR\x06flowId\x12!\n" +
 	"\ftarget_scope\x18\x03 \x01(\tR\vtargetScope\x12\x1b\n" +
-	"\ttarget_id\x18\x04 \x01(\tR\btargetIdJ\x04\b\x01\x10\x02*\xf3\x01\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetIdJ\x04\b\x01\x10\x02\"\x80\x01\n" +
+	"\x12PublishFlowRequest\x12\x17\n" +
+	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x12\x12\n" +
+	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x14\n" +
+	"\x05notes\x18\x03 \x01(\tR\x05notes\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"\x86\x02\n" +
+	"\x0fFlowPublication\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\aflow_id\x18\x02 \x01(\tR\x06flowId\x12\x1c\n" +
+	"\treference\x18\x03 \x01(\tR\treference\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\x05R\aversion\x12\x14\n" +
+	"\x05notes\x18\x05 \x01(\tR\x05notes\x12=\n" +
+	"\fpublished_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vpublishedAt\x12=\n" +
+	"\fwithdrawn_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\"<\n" +
+	"\x13WithdrawFlowRequest\x12%\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"\x86\x01\n" +
+	"\x10GrantFlowRequest\x12%\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\x12\"\n" +
+	"\rto_account_id\x18\x02 \x01(\tR\vtoAccountId\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x89\x02\n" +
+	"\tFlowGrant\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x0epublication_id\x18\x02 \x01(\tR\rpublicationId\x12\"\n" +
+	"\rto_account_id\x18\x03 \x01(\tR\vtoAccountId\x12+\n" +
+	"\x11revocation_policy\x18\x04 \x01(\tR\x10revocationPolicy\x129\n" +
+	"\n" +
+	"granted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tgrantedAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"3\n" +
+	"\x16RevokeFlowGrantRequest\x12\x19\n" +
+	"\bshare_id\x18\x01 \x01(\tR\ashareId\"\x84\x01\n" +
+	"\x11DeriveFlowRequest\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\x12(\n" +
+	"\x06target\x18\x02 \x01(\v2\x10.dop.v1.ScopeRefR\x06target\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"G\n" +
+	"\x12BumpFlowPinRequest\x12\x17\n" +
+	"\aflow_id\x18\x01 \x01(\tR\x06flowId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\">\n" +
+	"\x15ListFlowSharesRequest\x12%\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"C\n" +
+	"\x16ListFlowSharesResponse\x12)\n" +
+	"\x06shares\x18\x01 \x03(\v2\x11.dop.v1.FlowGrantR\x06shares\"\x92\x02\n" +
+	"\fFlowAdoption\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x0epublication_id\x18\x02 \x01(\tR\rpublicationId\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\x12\"\n" +
+	"\rby_account_id\x18\x04 \x01(\tR\vbyAccountId\x12\x17\n" +
+	"\aflow_id\x18\x05 \x01(\tR\x06flowId\x129\n" +
+	"\n" +
+	"derived_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tderivedAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"A\n" +
+	"\x18ListFlowAdoptionsRequest\x12%\n" +
+	"\x0epublication_id\x18\x01 \x01(\tR\rpublicationId\"O\n" +
+	"\x19ListFlowAdoptionsResponse\x122\n" +
+	"\tadoptions\x18\x01 \x03(\v2\x14.dop.v1.FlowAdoptionR\tadoptions*\xf3\x01\n" +
 	"\tStageType\x12\x1a\n" +
 	"\x16STAGE_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12STAGE_TYPE_CONTEXT\x10\x01\x12\x13\n" +
@@ -1114,7 +1954,7 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"\x10GATE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tGATE_NONE\x10\x01\x12\x0e\n" +
 	"\n" +
-	"GATE_HUMAN\x10\x022\xb8\x03\n" +
+	"GATE_HUMAN\x10\x022\xeb\a\n" +
 	"\x0fWorkflowService\x12@\n" +
 	"\tListFlows\x12\x18.dop.v1.ListFlowsRequest\x1a\x19.dop.v1.ListFlowsResponse\x12/\n" +
 	"\aGetFlow\x12\x16.dop.v1.GetFlowRequest\x1a\f.dop.v1.Flow\x125\n" +
@@ -1124,7 +1964,16 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"UpdateFlow\x12\x19.dop.v1.UpdateFlowRequest\x1a\f.dop.v1.Flow\x12I\n" +
 	"\fValidateFlow\x12\x1b.dop.v1.ValidateFlowRequest\x1a\x1c.dop.v1.ValidateFlowResponse\x12@\n" +
 	"\vResolveFlow\x12\x1a.dop.v1.ResolveFlowRequest\x1a\x15.dop.v1.EffectiveFlow\x127\n" +
-	"\vPromoteFlow\x12\x1a.dop.v1.PromoteFlowRequest\x1a\f.dop.v1.FlowB\x93\x01\n" +
+	"\vPromoteFlow\x12\x1a.dop.v1.PromoteFlowRequest\x1a\f.dop.v1.Flow\x12B\n" +
+	"\vPublishFlow\x12\x1a.dop.v1.PublishFlowRequest\x1a\x17.dop.v1.FlowPublication\x12C\n" +
+	"\fWithdrawFlow\x12\x1b.dop.v1.WithdrawFlowRequest\x1a\x16.google.protobuf.Empty\x128\n" +
+	"\tGrantFlow\x12\x18.dop.v1.GrantFlowRequest\x1a\x11.dop.v1.FlowGrant\x12I\n" +
+	"\x0fRevokeFlowGrant\x12\x1e.dop.v1.RevokeFlowGrantRequest\x1a\x16.google.protobuf.Empty\x125\n" +
+	"\n" +
+	"DeriveFlow\x12\x19.dop.v1.DeriveFlowRequest\x1a\f.dop.v1.Flow\x12A\n" +
+	"\vBumpFlowPin\x12\x1a.dop.v1.BumpFlowPinRequest\x1a\x16.google.protobuf.Empty\x12O\n" +
+	"\x0eListFlowShares\x12\x1d.dop.v1.ListFlowSharesRequest\x1a\x1e.dop.v1.ListFlowSharesResponse\x12X\n" +
+	"\x11ListFlowAdoptions\x12 .dop.v1.ListFlowAdoptionsRequest\x1a!.dop.v1.ListFlowAdoptionsResponseB\x93\x01\n" +
 	"\n" +
 	"com.dop.v1B\rWorkflowProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
@@ -1141,33 +1990,48 @@ func file_dop_v1_workflow_proto_rawDescGZIP() []byte {
 }
 
 var file_dop_v1_workflow_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_dop_v1_workflow_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_dop_v1_workflow_proto_goTypes = []any{
-	(StageType)(0),               // 0: dop.v1.StageType
-	(ArtifactKind)(0),            // 1: dop.v1.ArtifactKind
-	(Gate)(0),                    // 2: dop.v1.Gate
-	(*StageSpec)(nil),            // 3: dop.v1.StageSpec
-	(*Flow)(nil),                 // 4: dop.v1.Flow
-	(*StageOrigin)(nil),          // 5: dop.v1.StageOrigin
-	(*EffectiveFlow)(nil),        // 6: dop.v1.EffectiveFlow
-	(*ScopeRef)(nil),             // 7: dop.v1.ScopeRef
-	(*ListFlowsRequest)(nil),     // 8: dop.v1.ListFlowsRequest
-	(*ListFlowsResponse)(nil),    // 9: dop.v1.ListFlowsResponse
-	(*GetFlowRequest)(nil),       // 10: dop.v1.GetFlowRequest
-	(*CreateFlowRequest)(nil),    // 11: dop.v1.CreateFlowRequest
-	(*UpdateFlowRequest)(nil),    // 12: dop.v1.UpdateFlowRequest
-	(*ValidateFlowRequest)(nil),  // 13: dop.v1.ValidateFlowRequest
-	(*ValidateFlowResponse)(nil), // 14: dop.v1.ValidateFlowResponse
-	(*ResolveFlowRequest)(nil),   // 15: dop.v1.ResolveFlowRequest
-	(*PromoteFlowRequest)(nil),   // 16: dop.v1.PromoteFlowRequest
-	(*AuditStamp)(nil),           // 17: dop.v1.AuditStamp
+	(StageType)(0),                    // 0: dop.v1.StageType
+	(ArtifactKind)(0),                 // 1: dop.v1.ArtifactKind
+	(Gate)(0),                         // 2: dop.v1.Gate
+	(*StageSpec)(nil),                 // 3: dop.v1.StageSpec
+	(*Flow)(nil),                      // 4: dop.v1.Flow
+	(*StageOrigin)(nil),               // 5: dop.v1.StageOrigin
+	(*EffectiveFlow)(nil),             // 6: dop.v1.EffectiveFlow
+	(*ScopeRef)(nil),                  // 7: dop.v1.ScopeRef
+	(*ListFlowsRequest)(nil),          // 8: dop.v1.ListFlowsRequest
+	(*ListFlowsResponse)(nil),         // 9: dop.v1.ListFlowsResponse
+	(*GetFlowRequest)(nil),            // 10: dop.v1.GetFlowRequest
+	(*CreateFlowRequest)(nil),         // 11: dop.v1.CreateFlowRequest
+	(*UpdateFlowRequest)(nil),         // 12: dop.v1.UpdateFlowRequest
+	(*ValidateFlowRequest)(nil),       // 13: dop.v1.ValidateFlowRequest
+	(*ValidateFlowResponse)(nil),      // 14: dop.v1.ValidateFlowResponse
+	(*ResolveFlowRequest)(nil),        // 15: dop.v1.ResolveFlowRequest
+	(*PromoteFlowRequest)(nil),        // 16: dop.v1.PromoteFlowRequest
+	(*PublishFlowRequest)(nil),        // 17: dop.v1.PublishFlowRequest
+	(*FlowPublication)(nil),           // 18: dop.v1.FlowPublication
+	(*WithdrawFlowRequest)(nil),       // 19: dop.v1.WithdrawFlowRequest
+	(*GrantFlowRequest)(nil),          // 20: dop.v1.GrantFlowRequest
+	(*FlowGrant)(nil),                 // 21: dop.v1.FlowGrant
+	(*RevokeFlowGrantRequest)(nil),    // 22: dop.v1.RevokeFlowGrantRequest
+	(*DeriveFlowRequest)(nil),         // 23: dop.v1.DeriveFlowRequest
+	(*BumpFlowPinRequest)(nil),        // 24: dop.v1.BumpFlowPinRequest
+	(*ListFlowSharesRequest)(nil),     // 25: dop.v1.ListFlowSharesRequest
+	(*ListFlowSharesResponse)(nil),    // 26: dop.v1.ListFlowSharesResponse
+	(*FlowAdoption)(nil),              // 27: dop.v1.FlowAdoption
+	(*ListFlowAdoptionsRequest)(nil),  // 28: dop.v1.ListFlowAdoptionsRequest
+	(*ListFlowAdoptionsResponse)(nil), // 29: dop.v1.ListFlowAdoptionsResponse
+	(*AuditStamp)(nil),                // 30: dop.v1.AuditStamp
+	(*timestamppb.Timestamp)(nil),     // 31: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),             // 32: google.protobuf.Empty
 }
 var file_dop_v1_workflow_proto_depIdxs = []int32{
 	0,  // 0: dop.v1.StageSpec.type:type_name -> dop.v1.StageType
 	1,  // 1: dop.v1.StageSpec.artifacts:type_name -> dop.v1.ArtifactKind
 	2,  // 2: dop.v1.StageSpec.gate:type_name -> dop.v1.Gate
 	3,  // 3: dop.v1.Flow.stages:type_name -> dop.v1.StageSpec
-	17, // 4: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
+	30, // 4: dop.v1.Flow.audit:type_name -> dop.v1.AuditStamp
 	4,  // 5: dop.v1.EffectiveFlow.flow:type_name -> dop.v1.Flow
 	7,  // 6: dop.v1.EffectiveFlow.contributors:type_name -> dop.v1.ScopeRef
 	5,  // 7: dop.v1.EffectiveFlow.origins:type_name -> dop.v1.StageOrigin
@@ -1175,25 +2039,50 @@ var file_dop_v1_workflow_proto_depIdxs = []int32{
 	4,  // 9: dop.v1.CreateFlowRequest.flow:type_name -> dop.v1.Flow
 	4,  // 10: dop.v1.UpdateFlowRequest.flow:type_name -> dop.v1.Flow
 	4,  // 11: dop.v1.ValidateFlowRequest.flow:type_name -> dop.v1.Flow
-	8,  // 12: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
-	10, // 13: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
-	11, // 14: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
-	12, // 15: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
-	13, // 16: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
-	15, // 17: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
-	16, // 18: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
-	9,  // 19: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
-	4,  // 20: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
-	4,  // 21: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
-	4,  // 22: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
-	14, // 23: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
-	6,  // 24: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
-	4,  // 25: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
-	19, // [19:26] is the sub-list for method output_type
-	12, // [12:19] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	31, // 12: dop.v1.FlowPublication.published_at:type_name -> google.protobuf.Timestamp
+	31, // 13: dop.v1.FlowPublication.withdrawn_at:type_name -> google.protobuf.Timestamp
+	31, // 14: dop.v1.FlowGrant.granted_at:type_name -> google.protobuf.Timestamp
+	31, // 15: dop.v1.FlowGrant.revoked_at:type_name -> google.protobuf.Timestamp
+	7,  // 16: dop.v1.DeriveFlowRequest.target:type_name -> dop.v1.ScopeRef
+	21, // 17: dop.v1.ListFlowSharesResponse.shares:type_name -> dop.v1.FlowGrant
+	31, // 18: dop.v1.FlowAdoption.derived_at:type_name -> google.protobuf.Timestamp
+	31, // 19: dop.v1.FlowAdoption.revoked_at:type_name -> google.protobuf.Timestamp
+	27, // 20: dop.v1.ListFlowAdoptionsResponse.adoptions:type_name -> dop.v1.FlowAdoption
+	8,  // 21: dop.v1.WorkflowService.ListFlows:input_type -> dop.v1.ListFlowsRequest
+	10, // 22: dop.v1.WorkflowService.GetFlow:input_type -> dop.v1.GetFlowRequest
+	11, // 23: dop.v1.WorkflowService.CreateFlow:input_type -> dop.v1.CreateFlowRequest
+	12, // 24: dop.v1.WorkflowService.UpdateFlow:input_type -> dop.v1.UpdateFlowRequest
+	13, // 25: dop.v1.WorkflowService.ValidateFlow:input_type -> dop.v1.ValidateFlowRequest
+	15, // 26: dop.v1.WorkflowService.ResolveFlow:input_type -> dop.v1.ResolveFlowRequest
+	16, // 27: dop.v1.WorkflowService.PromoteFlow:input_type -> dop.v1.PromoteFlowRequest
+	17, // 28: dop.v1.WorkflowService.PublishFlow:input_type -> dop.v1.PublishFlowRequest
+	19, // 29: dop.v1.WorkflowService.WithdrawFlow:input_type -> dop.v1.WithdrawFlowRequest
+	20, // 30: dop.v1.WorkflowService.GrantFlow:input_type -> dop.v1.GrantFlowRequest
+	22, // 31: dop.v1.WorkflowService.RevokeFlowGrant:input_type -> dop.v1.RevokeFlowGrantRequest
+	23, // 32: dop.v1.WorkflowService.DeriveFlow:input_type -> dop.v1.DeriveFlowRequest
+	24, // 33: dop.v1.WorkflowService.BumpFlowPin:input_type -> dop.v1.BumpFlowPinRequest
+	25, // 34: dop.v1.WorkflowService.ListFlowShares:input_type -> dop.v1.ListFlowSharesRequest
+	28, // 35: dop.v1.WorkflowService.ListFlowAdoptions:input_type -> dop.v1.ListFlowAdoptionsRequest
+	9,  // 36: dop.v1.WorkflowService.ListFlows:output_type -> dop.v1.ListFlowsResponse
+	4,  // 37: dop.v1.WorkflowService.GetFlow:output_type -> dop.v1.Flow
+	4,  // 38: dop.v1.WorkflowService.CreateFlow:output_type -> dop.v1.Flow
+	4,  // 39: dop.v1.WorkflowService.UpdateFlow:output_type -> dop.v1.Flow
+	14, // 40: dop.v1.WorkflowService.ValidateFlow:output_type -> dop.v1.ValidateFlowResponse
+	6,  // 41: dop.v1.WorkflowService.ResolveFlow:output_type -> dop.v1.EffectiveFlow
+	4,  // 42: dop.v1.WorkflowService.PromoteFlow:output_type -> dop.v1.Flow
+	18, // 43: dop.v1.WorkflowService.PublishFlow:output_type -> dop.v1.FlowPublication
+	32, // 44: dop.v1.WorkflowService.WithdrawFlow:output_type -> google.protobuf.Empty
+	21, // 45: dop.v1.WorkflowService.GrantFlow:output_type -> dop.v1.FlowGrant
+	32, // 46: dop.v1.WorkflowService.RevokeFlowGrant:output_type -> google.protobuf.Empty
+	4,  // 47: dop.v1.WorkflowService.DeriveFlow:output_type -> dop.v1.Flow
+	32, // 48: dop.v1.WorkflowService.BumpFlowPin:output_type -> google.protobuf.Empty
+	26, // 49: dop.v1.WorkflowService.ListFlowShares:output_type -> dop.v1.ListFlowSharesResponse
+	29, // 50: dop.v1.WorkflowService.ListFlowAdoptions:output_type -> dop.v1.ListFlowAdoptionsResponse
+	36, // [36:51] is the sub-list for method output_type
+	21, // [21:36] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_dop_v1_workflow_proto_init() }
@@ -1208,7 +2097,7 @@ func file_dop_v1_workflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dop_v1_workflow_proto_rawDesc), len(file_dop_v1_workflow_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   14,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

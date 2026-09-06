@@ -365,6 +365,19 @@ func (f *fakeAccountDefaults) DefaultRevocationPolicy(_ context.Context, _ strin
 	return f.env.AccountDefault, nil
 }
 
+// HandleOf reverse-looks-up the fakeSharing.handles map (handle → accountID,
+// the same double ResolvePublication reads) — there is no second map to keep
+// in sync, and a test that registers a handle for ResolvePublication gets it
+// answered here too, for free.
+func (f *fakeAccountDefaults) HandleOf(_ context.Context, accountID string) (string, error) {
+	for handle, id := range f.env.sharing.handles {
+		if id == accountID {
+			return handle, nil
+		}
+	}
+	return "", errs.NotFound("account %q", accountID)
+}
+
 var _ workflow.AccountDefaults = (*fakeAccountDefaults)(nil)
 
 // ── the harness ──────────────────────────────────────────────────────────────

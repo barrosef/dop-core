@@ -747,6 +747,15 @@ func (s *Service) AdoptionsOf(ctx context.Context, publicationID string) ([]Adop
 	return s.sharing.AdoptionsOfPublication(ctx, accountID, publicationID)
 }
 
+// HandleOf resolves an account's public handle. It exists so the edge can
+// render a publication's reference (@handle/slug@vN) itself, from data the
+// domain already decided (Publication.Slug, Publication.Version) plus this one
+// identity fact — instead of every client guessing the same format and
+// eventually disagreeing on it.
+func (s *Service) HandleOf(ctx context.Context, accountID string) (string, error) {
+	return s.defaults.HandleOf(ctx, accountID)
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // resolveOwner normalizes and CONFIRMS the addressed level.

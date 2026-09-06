@@ -556,4 +556,17 @@ func (r *AccountDefaultsRepo) DefaultRevocationPolicy(ctx context.Context, accou
 	return policy, nil
 }
 
+// HandleOf is the same lookup ResolvePublication already runs the other way
+// (handle → account, in the JOIN above): here it is account → handle, which is
+// what the edge needs to render a publication's own reference server-side.
+func (r *AccountDefaultsRepo) HandleOf(ctx context.Context, accountID string) (string, error) {
+	var handle string
+	err := r.pool.QueryRow(ctx,
+		`SELECT handle FROM accounts WHERE id = $1`, accountID).Scan(&handle)
+	if err != nil {
+		return "", Translate(err, "account")
+	}
+	return handle, nil
+}
+
 var _ workflow.AccountDefaults = (*AccountDefaultsRepo)(nil)
