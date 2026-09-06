@@ -34,6 +34,11 @@ CREATE TABLE reaction_rules (
   -- with "invite.created sends an email"; anybody can disagree with the reason.
   -- Without it the policy is not auditable.
   why         text NOT NULL,
+  -- Every write carries an idempotency key (ADR-0017): repeating the creation
+  -- collides on reaction_rules_idempotency below and returns the rule already
+  -- created, instead of a twin. Same column as `flows`; the uniqueness is
+  -- scoped differently, and the index says why.
+  idempotency_key text NOT NULL,
   created_by  uuid REFERENCES users(id),
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -66,6 +71,21 @@ CREATE TABLE reaction_rules (
     owner_scope <> 'account' OR owner_id = account_id
   )
 );
+
+-- The idempotency key is unique WITHIN an account, not globally as in `flows`.
+-- Global uniqueness is where flows' cross-tenant leak came from: the key is
+-- client-supplied and passed through verbatim, so account B sending a key
+-- account A had already used collides with a row B is not allowed to see, and
+-- the conflict path hands it over. Scoping the uniqueness means that collision
+-- cannot happen at all — B's key is B's — and the adapter's conflict lookup
+-- filters by account anyway: one guard is the invariant, the other is what
+-- stops a future query from reading around it.
+--
+-- COALESCE with the nil uuid because NULL never collides in a unique index, and
+-- the platform level (account_id IS NULL) needs its keys to collide with each
+-- other. Same shape, and the same reason, as flows_um_por_nivel.
+CREATE UNIQUE INDEX reaction_rules_idempotency ON reaction_rules
+  (COALESCE(account_id, '00000000-0000-0000-0000-000000000000'::uuid), idempotency_key);
 
 -- The resolution's query: every rule of the chain for one event type.
 CREATE INDEX reaction_rules_lookup ON reaction_rules (event_type, owner_scope, owner_id)
