@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
@@ -105,4 +106,74 @@ func ParseRef(raw string) (PublicationRef, error) {
 		return PublicationRef{}, errs.Invalid("%q is not a usable name: lowercase letters, digits and hyphens", slug)
 	}
 	return PublicationRef{Handle: handle, Slug: slug, Version: version}, nil
+}
+
+// ── sharing entities ─────────────────────────────────────────────────────────
+
+// Publication is one VERSION of a flow made addressable under @handle/slug.
+type Publication struct {
+	ID          string
+	FlowID      string
+	AccountID   string
+	Slug        string
+	Version     int32
+	Notes       string
+	PublishedBy string
+	PublishedAt time.Time
+	WithdrawnAt time.Time // zero = in circulation
+}
+
+func (p Publication) Withdrawn() bool { return !p.WithdrawnAt.IsZero() }
+
+// Share is permission for ONE account to derive from a publication, with the
+// revocation terms stamped at the moment it was granted.
+type Share struct {
+	ID               string
+	PublicationID    string
+	ToAccountID      string
+	RevocationPolicy RevocationPolicy
+	GrantedBy        string
+	GrantedAt        time.Time
+	RevokedAt        time.Time
+}
+
+func (s Share) Revoked() bool { return !s.RevokedAt.IsZero() }
+
+// Adoption is the PUBLISHER's record that somebody derived a copy. It is the
+// outbound half of the provenance the copy carries.
+type Adoption struct {
+	ID            string
+	PublicationID string
+	Version       int32
+	ByAccountID   string
+	FlowID        string // the copy, in the other account
+	DerivedAt     time.Time
+	RevokedAt     time.Time
+}
+
+// Origin is the provenance carried BY the copy.
+type Origin struct {
+	Ref       string
+	Version   int32
+	AdoptedAt time.Time
+}
+
+// Revocation is everything one revocation has to write, handed over as one
+// value so the adapter can do it in one transaction.
+type Revocation struct {
+	ShareID       string
+	PublicationID string
+	ToAccountID   string
+	Policy        RevocationPolicy
+	// Adoptions is EMPTY under `prospective`: that policy reaches the grant and
+	// nothing else.
+	Adoptions []AdoptionRef
+	At        time.Time
+}
+
+// AdoptionRef is one derivation the revocation reaches: the record on the
+// publisher's side, and the copy in the other account.
+type AdoptionRef struct {
+	ID     string
+	FlowID string
 }

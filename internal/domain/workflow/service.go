@@ -14,21 +14,22 @@ import (
 
 // Service concentrates the work flow rules. It takes only PORTS.
 type Service struct {
-	repo   Repository
-	tree   Ancestry
-	access Access
-	clock  ports.Clock
+	repo    Repository
+	tree    Ancestry
+	access  Access
+	clock   ports.Clock
+	sharing SharingRepository
 }
 
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally and no versioning test was
 // deterministic. The panic here is deliberate — it is a wiring error, caught at
 // boot.
-func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock) *Service {
+func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository) *Service {
 	if clock == nil {
 		panic("workflow.NewService: clock is required — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, tree: tree, access: access, clock: clock}
+	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -333,6 +334,67 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 	src.UpdatedAt = s.now()
 	return s.repo.Promote(ctx, accountID, src, want,
 		s.writeKey("", "promote:"+string(want.Scope)+":"+want.ID, *src, src.Version))
+}
+
+// ── sharing ──────────────────────────────────────────────────────────────────
+
+// Publish makes the flow's CURRENT version addressable as @handle/slug@vN.
+//
+// It freezes a version rather than pointing at the flow: publishing again
+// publishes a newer one, and what somebody already derived never moves under
+// them.
+func (s *Service) Publish(ctx context.Context, flowID, slug, notes, idempotencyKey string) (*Publication, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage(role) {
+		return nil, errs.Permission("publishing a flow outside the account requires owner or admin")
+	}
+	// The slug is validated with the SAME rule the reference parser uses: a slug
+	// accepted here and unusable in a reference would produce a publication
+	// nobody can address.
+	if !refPart.MatchString(slug) {
+		return nil, errs.Invalid("%q is not a usable name for a reference: lowercase letters, digits and hyphens", slug)
+	}
+	f, err := s.repo.ByID(ctx, accountID, flowID)
+	if err != nil {
+		return nil, err
+	}
+	if f.OwnerScope == ScopePlatform {
+		return nil, errs.Precondition("the platform's flow is inherited by the chain, not published for adoption")
+	}
+	p := Publication{
+		FlowID: f.ID, AccountID: accountID, Slug: slug, Version: f.Version,
+		Notes: notes, PublishedBy: call.ActorID, PublishedAt: s.now(),
+	}
+	return s.sharing.CreatePublication(ctx, &p, s.writeKey(idempotencyKey, "publish", *f, f.Version))
+}
+
+// Withdraw takes a publication out of circulation. It reaches NOBODY who has
+// already derived: that is revocation's job, and it has its own policy.
+func (s *Service) Withdraw(ctx context.Context, publicationID string) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	call, _ := ctxutil.From(ctx)
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("withdrawing a publication requires owner or admin")
+	}
+	return s.sharing.Withdraw(ctx, accountID, publicationID, s.now())
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
