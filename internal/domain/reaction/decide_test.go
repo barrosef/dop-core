@@ -94,11 +94,11 @@ func TestWhenMatchesEveryEntryOrTheRuleDoesNotApply(t *testing.T) {
 		when  map[string]string
 		plans int
 	}{
-		"no condition":             {nil, 1},
-		"one entry that matches":   {map[string]string{"role": "admin"}, 1},
-		"one entry that does not":  {map[string]string{"role": "viewer"}, 0},
-		"both match":               {map[string]string{"role": "admin", "email": "a@b.c"}, 1},
-		"one of two does not":      {map[string]string{"role": "admin", "email": "x@y.z"}, 0},
+		"no condition":              {nil, 1},
+		"one entry that matches":    {map[string]string{"role": "admin"}, 1},
+		"one entry that does not":   {map[string]string{"role": "viewer"}, 0},
+		"both match":                {map[string]string{"role": "admin", "email": "a@b.c"}, 1},
+		"one of two does not":       {map[string]string{"role": "admin", "email": "x@y.z"}, 0},
 		"a field the payload lacks": {map[string]string{"absent": "x"}, 0},
 	}
 	for name, tc := range cases {
