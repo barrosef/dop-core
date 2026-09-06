@@ -93,7 +93,12 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// the ports keeps the domain saying what it needs, not who it needs it
 	// from.
 	wfRepo := postgres.NewWorkflowRepo(deps.Pool)
-	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio)
+	// SharingRepository (Task 9): publication, grant, revocation and
+	// derivation, all behind flow_shares' authorising join (migrations
+	// 0020/0021). AccountFactsRepo is the narrow read the domain needs — two
+	// columns of accounts, not the account.
+	workflowSvc := workflow.NewService(wfRepo, wfRepo, workflowAccess{identitySvc}, relogio,
+		postgres.NewWorkflowSharing(deps.Pool), postgres.NewAccountFactsRepo(deps.Pool))
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
 	// The router is this package's POLICY, not a port: nil chooses the default

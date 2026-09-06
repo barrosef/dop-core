@@ -1,3 +1,4 @@
+-- +goose Up
 -- ADR-0030 — the verification runs in a runner, and a project declares which
 -- suites it has in `.dop/verification.yml`.
 --
@@ -12,3 +13,7 @@
 -- values for one concept is how a projection ends up counting the same run
 -- twice.
 ALTER TYPE verification_kind ADD VALUE IF NOT EXISTS 'integration';
+
+-- +goose Down
+-- Irreversible by design: this migration adds or corrects data the rest of the
+-- schema now assumes. Rolling it back would leave a database the code cannot read.

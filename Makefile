@@ -6,7 +6,17 @@ proto:            ## generate Go from the .proto files (the source of truth — 
 	cd api/proto && buf lint && buf generate
 
 proto-breaking:   ## refuse an incompatible contract change
-	cd api/proto && buf breaking --against '.git#subdir=api/proto'
+	@# Run from the REPOSITORY ROOT, not from api/proto. `.git#subdir=api/proto`
+	@# is resolved relative to the working directory, so `cd api/proto` first made
+	@# buf look for api/proto/api/proto — the gate reported nothing and looked
+	@# green. It ran that way for months.
+	@#
+	@# And `branch=main` is not decoration either: without it buf compares the
+	@# working tree against the current HEAD, so the moment a change is committed
+	@# the gate compares that commit with itself and passes by construction. A
+	@# gate that cannot fail after you commit is a gate that never guarded a
+	@# merge.
+	buf breaking api/proto --against '.git#branch=main,subdir=api/proto'
 
 build:
 	go build -o bin/dop-core ./cmd/dop-core

@@ -125,6 +125,15 @@ func (f *fakeRepo) Create(_ context.Context, flow *workflow.Flow, key string) (*
 	return &cp, nil
 }
 
+// forget undoes a Create. It exists for fakeSharing.RecordDerivation: the only
+// way a double can prove a simulated transaction actually rolled back — rather
+// than merely skipping the write it was told to fail — is to reverse the write
+// that already happened.
+func (f *fakeRepo) forget(id, key string) {
+	delete(f.flows, id)
+	delete(f.keys, key)
+}
+
 func (f *fakeRepo) AppendVersion(_ context.Context, accountID string, flow *workflow.Flow, base int32, key string) (*workflow.Flow, error) {
 	r, ok := f.flows[flow.ID]
 	if !ok || r.meta.AccountID != accountID {
@@ -259,7 +268,7 @@ func scenario(t *testing.T) (*fakeRepo, *workflow.Service, context.Context) {
 		dono + "@" + account:   workflow.RoleOwner,
 		member + "@" + account: "developer",
 	}}
-	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()})
+	svc := workflow.NewService(repo, tree, acc, &fixedClock{t: time.Unix(1_700_000_000, 0).UTC()}, nil, nil)
 	ctx := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: account, ActorID: dono, ActorKind: ctxutil.ActorUser,
 	})
@@ -787,7 +796,7 @@ func TestNewServiceRefusesANilClock(t *testing.T) {
 			t.Error("the constructor should refuse a nil clock")
 		}
 	}()
-	workflow.NewService(newFakeRepo(), &fakeTree{}, &fakeAccess{}, nil)
+	workflow.NewService(newFakeRepo(), &fakeTree{}, &fakeAccess{}, nil, nil, nil)
 }
 
 func containsSnippet(msgs []string, snippet string) bool {

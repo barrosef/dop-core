@@ -17,6 +17,10 @@ type Repository interface {
 	AccountByHandle(ctx context.Context, handle string) (*Account, error)
 	CreateAccountWithOwner(ctx context.Context, a *Account, ownerUserID string) (*Account, error)
 	AccountsOfUser(ctx context.Context, userID string) ([]Account, []Membership, error)
+	// SetDefaultRevocationPolicy stores the value that will be COPIED onto a
+	// grant's own policy at share time (flow sharing spec §3.2). It changes only
+	// the default; grants already made are untouched.
+	SetDefaultRevocationPolicy(ctx context.Context, accountID, policy string) error
 
 	MembershipsOfAccount(ctx context.Context, accountID string) ([]Membership, error)
 	MembershipOf(ctx context.Context, userID, accountID string) (*Membership, error)

@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
@@ -111,6 +112,103 @@ func (s *WorkflowServer) PromoteFlow(ctx context.Context, req *dopv1.PromoteFlow
 	return flowToProto(f), nil
 }
 
+// ── sharing ──────────────────────────────────────────────────────────────────
+
+// PublishFlow freezes the flow's current version under @handle/slug. The
+// reference in the response is RENDERED HERE, from the caller's own handle
+// (Publish always publishes to the caller's own account) plus the slug and
+// version the domain just decided — never assembled by the client, which
+// would be three places for the format to drift instead of one.
+//
+// Publish already wrote the publication durably by the time HandleOf runs, so
+// a failure here (the handle lookup, not the write) reports an error for a
+// write that succeeded. Accepted trade-off: PublishFlowRequest carries an
+// idempotency_key, so the caller's retry replays onto the same row instead of
+// creating a second one — it does not lose the publication, only the first
+// response.
+func (s *WorkflowServer) PublishFlow(ctx context.Context, req *dopv1.PublishFlowRequest) (*dopv1.FlowPublication, error) {
+	p, err := s.svc.Publish(ctx, req.GetFlowId(), req.GetSlug(), req.GetNotes(), req.GetIdempotencyKey())
+	if err != nil {
+		return nil, err
+	}
+	handle, err := s.svc.HandleOf(ctx, p.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	return publicationToProto(p, handle), nil
+}
+
+func (s *WorkflowServer) WithdrawFlow(ctx context.Context, req *dopv1.WithdrawFlowRequest) (*emptypb.Empty, error) {
+	if err := s.svc.Withdraw(ctx, req.GetPublicationId()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *WorkflowServer) GrantFlow(ctx context.Context, req *dopv1.GrantFlowRequest) (*dopv1.FlowGrant, error) {
+	sh, err := s.svc.Grant(ctx, req.GetPublicationId(), req.GetToAccount().GetId(), req.GetIdempotencyKey())
+	if err != nil {
+		return nil, err
+	}
+	return shareToProto(sh), nil
+}
+
+func (s *WorkflowServer) RevokeFlowGrant(ctx context.Context, req *dopv1.RevokeFlowGrantRequest) (*emptypb.Empty, error) {
+	if err := s.svc.Revoke(ctx, req.GetShareId()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// DeriveFlow adopts a published flow into the caller's own account. The
+// reference the caller typed is parsed by the DOMAIN (workflow.ParseRef, via
+// Service.Derive) — its refusals already name what is wrong with the string
+// (a missing @, an unusable handle, a malformed version), and returning them
+// unchanged is what lets a person act on them instead of a generic parse
+// error.
+func (s *WorkflowServer) DeriveFlow(ctx context.Context, req *dopv1.DeriveFlowRequest) (*dopv1.Flow, error) {
+	target := workflow.ScopeRef{
+		Scope: workflow.Scope(req.GetTarget().GetScope()),
+		ID:    req.GetTarget().GetId(),
+	}
+	f, err := s.svc.Derive(ctx, req.GetReference(), target, req.GetIdempotencyKey())
+	if err != nil {
+		return nil, err
+	}
+	return flowToProto(f), nil
+}
+
+func (s *WorkflowServer) BumpFlowPin(ctx context.Context, req *dopv1.BumpFlowPinRequest) (*emptypb.Empty, error) {
+	if err := s.svc.BumpPin(ctx, req.GetFlowId(), req.GetVersion()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *WorkflowServer) ListFlowShares(ctx context.Context, req *dopv1.ListFlowSharesRequest) (*dopv1.ListFlowSharesResponse, error) {
+	shares, err := s.svc.SharesOf(ctx, req.GetPublicationId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dopv1.FlowGrant, 0, len(shares))
+	for i := range shares {
+		out = append(out, shareToProto(&shares[i]))
+	}
+	return &dopv1.ListFlowSharesResponse{Shares: out}, nil
+}
+
+func (s *WorkflowServer) ListFlowAdoptions(ctx context.Context, req *dopv1.ListFlowAdoptionsRequest) (*dopv1.ListFlowAdoptionsResponse, error) {
+	adoptions, err := s.svc.AdoptionsOf(ctx, req.GetPublicationId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*dopv1.FlowAdoption, 0, len(adoptions))
+	for i := range adoptions {
+		out = append(out, adoptionToProto(&adoptions[i]))
+	}
+	return &dopv1.ListFlowAdoptionsResponse{Adoptions: out}, nil
+}
+
 // ── conversions ──────────────────────────────────────────────────────────────
 
 func flowToProto(f *workflow.Flow) *dopv1.Flow {
@@ -147,6 +245,20 @@ func flowToProto(f *workflow.Flow) *dopv1.Flow {
 	}
 	if f.CreatedBy != "" {
 		out.Audit.CreatedBy = &dopv1.ActorRef{Kind: dopv1.ActorRef_KIND_USER, Id: f.CreatedBy}
+	}
+	// Origin and RevokedAt: without these, no client can tell a revoked copy
+	// from a live one, or explain where a derived flow came from — the design
+	// spec's promise (§2.3, §3.1) that a copy carries its provenance and a
+	// revocation stays visible, not silent.
+	if f.Origin != nil {
+		out.Origin = &dopv1.FlowOrigin{
+			Reference: f.Origin.Ref,
+			Version:   f.Origin.Version,
+			AdoptedAt: timestamppb.New(f.Origin.AdoptedAt),
+		}
+	}
+	if !f.RevokedAt.IsZero() {
+		out.RevokedAt = timestamppb.New(f.RevokedAt)
 	}
 	return out
 }
@@ -253,6 +365,54 @@ func flowGateFromProto(g dopv1.Gate) workflow.GateKind {
 		return workflow.GateNone
 	}
 	return workflow.GateKind("")
+}
+
+// publicationToProto renders `reference` from the caller's handle plus the
+// publication's own slug and version — the ONE place this format is built,
+// via PublicationRef.String, the same formatter Derive's provenance uses.
+func publicationToProto(p *workflow.Publication, handle string) *dopv1.FlowPublication {
+	ref := workflow.PublicationRef{Handle: handle, Slug: p.Slug, Version: p.Version}
+	out := &dopv1.FlowPublication{
+		Id:          p.ID,
+		FlowId:      p.FlowID,
+		Reference:   ref.String(),
+		Version:     p.Version,
+		Notes:       p.Notes,
+		PublishedAt: timestamppb.New(p.PublishedAt),
+	}
+	if !p.WithdrawnAt.IsZero() {
+		out.WithdrawnAt = timestamppb.New(p.WithdrawnAt)
+	}
+	return out
+}
+
+func shareToProto(s *workflow.Share) *dopv1.FlowGrant {
+	out := &dopv1.FlowGrant{
+		Id:               s.ID,
+		PublicationId:    s.PublicationID,
+		ToAccount:        &dopv1.AccountRef{Id: s.ToAccountID},
+		RevocationPolicy: string(s.RevocationPolicy),
+		GrantedAt:        timestamppb.New(s.GrantedAt),
+	}
+	if !s.RevokedAt.IsZero() {
+		out.RevokedAt = timestamppb.New(s.RevokedAt)
+	}
+	return out
+}
+
+func adoptionToProto(a *workflow.Adoption) *dopv1.FlowAdoption {
+	out := &dopv1.FlowAdoption{
+		Id:            a.ID,
+		PublicationId: a.PublicationID,
+		Version:       a.Version,
+		ByAccount:     &dopv1.AccountRef{Id: a.ByAccountID},
+		FlowId:        a.FlowID,
+		DerivedAt:     timestamppb.New(a.DerivedAt),
+	}
+	if !a.RevokedAt.IsZero() {
+		out.RevokedAt = timestamppb.New(a.RevokedAt)
+	}
+	return out
 }
 
 var _ dopv1.WorkflowServiceServer = (*WorkflowServer)(nil)

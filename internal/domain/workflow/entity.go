@@ -187,6 +187,13 @@ type Flow struct {
 	CreatedBy   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// Origin is the provenance carried by a flow DERIVED from another account's
+	// publication — nil for a flow written directly in this account.
+	Origin *Origin
+	// RevokedAt marks a derived copy whose grant was revoked under `drain` or
+	// `terminate`. It is a state change, never a deletion: the adopter's own
+	// edits and the audit of a demand that already ran under it have to survive.
+	RevokedAt time.Time
 }
 
 func (f Flow) Ref() ScopeRef { return ScopeRef{Scope: f.OwnerScope, ID: f.OwnerID} }

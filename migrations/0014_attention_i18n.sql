@@ -1,3 +1,4 @@
+-- +goose Up
 -- The attention box becomes localizable.
 --
 -- `title` and `summary` were free Portuguese text written by the domain. Text a
@@ -15,3 +16,7 @@
 ALTER TABLE attention_items
   ADD COLUMN IF NOT EXISTS title_key text,
   ADD COLUMN IF NOT EXISTS params    jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+-- +goose Down
+-- Irreversible by design: this migration adds or corrects data the rest of the
+-- schema now assumes. Rolling it back would leave a database the code cannot read.

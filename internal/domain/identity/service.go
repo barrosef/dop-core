@@ -64,6 +64,8 @@ const (
 	KeyInviteNeedsSession   = "identity.invite.session_required"
 	KeyInviteEmailUnverif   = "identity.invite.email_unverified"
 	KeyInviteWrongRecipient = "identity.invite.wrong_recipient"
+	KeyOnlyAdminsSetDefault = "identity.account.only_admins_default"
+	KeyPolicyUnknown        = "identity.account.revocation_policy_unknown"
 )
 
 // NewService requires a clock. Accepting nil is what kept the port decorative:
@@ -634,6 +636,46 @@ func (s *Service) GetUser(ctx context.Context, id string) (*User, error) {
 
 func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	return s.repo.AccountByID(ctx, id)
+}
+
+// SetDefaultRevocationPolicy changes the value that will be STAMPED on future
+// flow grants (flow sharing spec §3.2). It never touches grants already made:
+// the terms somebody accepted are theirs, and reading the account at
+// revocation time — instead of the grant — would let the publisher change
+// those terms after the fact.
+//
+// The vocabulary is checked here, against plain strings, not against
+// workflow.RevocationPolicy: this domain does not import workflow, the same
+// way it does not import Postgres.
+func (s *Service) SetDefaultRevocationPolicy(ctx context.Context, policy string) error {
+	call, _ := ctxutil.From(ctx)
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	actor, err := s.Authorize(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !actor.Role.CanManageMembers() {
+		return errs.Permission("changing the account's default requires owner or admin").
+			WithCode(KeyOnlyAdminsSetDefault, nil)
+	}
+	// These three literals ARE workflow.PolicyProspective, workflow.PolicyDrain
+	// and workflow.PolicyTerminate — repeated, not imported, because identity
+	// must not depend on the workflow domain's vocabulary (the same house rule
+	// that keeps every domain package free of a sibling domain's types, mirrored
+	// by the DefaultRevocationPolicy field on Account being a plain string).
+	// Adding or renaming a policy means editing both this switch and
+	// internal/domain/workflow/sharing.go; nothing but this comment ties them
+	// together, so drifting apart here would validate the wrong set silently.
+	switch policy {
+	case "prospective", "drain", "terminate":
+	default:
+		return errs.Invalid("unknown revocation policy: %q — use prospective, drain or terminate", policy).
+			WithCode(KeyPolicyUnknown, map[string]any{"policy": policy})
+	}
+	return s.repo.SetDefaultRevocationPolicy(ctx, accountID, policy)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

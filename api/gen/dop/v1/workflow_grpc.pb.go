@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -19,13 +20,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkflowService_ListFlows_FullMethodName    = "/dop.v1.WorkflowService/ListFlows"
-	WorkflowService_GetFlow_FullMethodName      = "/dop.v1.WorkflowService/GetFlow"
-	WorkflowService_CreateFlow_FullMethodName   = "/dop.v1.WorkflowService/CreateFlow"
-	WorkflowService_UpdateFlow_FullMethodName   = "/dop.v1.WorkflowService/UpdateFlow"
-	WorkflowService_ValidateFlow_FullMethodName = "/dop.v1.WorkflowService/ValidateFlow"
-	WorkflowService_ResolveFlow_FullMethodName  = "/dop.v1.WorkflowService/ResolveFlow"
-	WorkflowService_PromoteFlow_FullMethodName  = "/dop.v1.WorkflowService/PromoteFlow"
+	WorkflowService_ListFlows_FullMethodName         = "/dop.v1.WorkflowService/ListFlows"
+	WorkflowService_GetFlow_FullMethodName           = "/dop.v1.WorkflowService/GetFlow"
+	WorkflowService_CreateFlow_FullMethodName        = "/dop.v1.WorkflowService/CreateFlow"
+	WorkflowService_UpdateFlow_FullMethodName        = "/dop.v1.WorkflowService/UpdateFlow"
+	WorkflowService_ValidateFlow_FullMethodName      = "/dop.v1.WorkflowService/ValidateFlow"
+	WorkflowService_ResolveFlow_FullMethodName       = "/dop.v1.WorkflowService/ResolveFlow"
+	WorkflowService_PromoteFlow_FullMethodName       = "/dop.v1.WorkflowService/PromoteFlow"
+	WorkflowService_PublishFlow_FullMethodName       = "/dop.v1.WorkflowService/PublishFlow"
+	WorkflowService_WithdrawFlow_FullMethodName      = "/dop.v1.WorkflowService/WithdrawFlow"
+	WorkflowService_GrantFlow_FullMethodName         = "/dop.v1.WorkflowService/GrantFlow"
+	WorkflowService_RevokeFlowGrant_FullMethodName   = "/dop.v1.WorkflowService/RevokeFlowGrant"
+	WorkflowService_DeriveFlow_FullMethodName        = "/dop.v1.WorkflowService/DeriveFlow"
+	WorkflowService_BumpFlowPin_FullMethodName       = "/dop.v1.WorkflowService/BumpFlowPin"
+	WorkflowService_ListFlowShares_FullMethodName    = "/dop.v1.WorkflowService/ListFlowShares"
+	WorkflowService_ListFlowAdoptions_FullMethodName = "/dop.v1.WorkflowService/ListFlowAdoptions"
 )
 
 // WorkflowServiceClient is the client API for WorkflowService service.
@@ -39,6 +48,19 @@ type WorkflowServiceClient interface {
 	ValidateFlow(ctx context.Context, in *ValidateFlowRequest, opts ...grpc.CallOption) (*ValidateFlowResponse, error)
 	ResolveFlow(ctx context.Context, in *ResolveFlowRequest, opts ...grpc.CallOption) (*EffectiveFlow, error)
 	PromoteFlow(ctx context.Context, in *PromoteFlowRequest, opts ...grpc.CallOption) (*Flow, error)
+	// ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
+	//
+	// Nothing here is live — every RPC below is request/response, never a
+	// stream, matching ADR-0017 convention 1: server-side streaming is reserved
+	// for what actually changes while the client is looking at it.
+	PublishFlow(ctx context.Context, in *PublishFlowRequest, opts ...grpc.CallOption) (*FlowPublication, error)
+	WithdrawFlow(ctx context.Context, in *WithdrawFlowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GrantFlow(ctx context.Context, in *GrantFlowRequest, opts ...grpc.CallOption) (*FlowGrant, error)
+	RevokeFlowGrant(ctx context.Context, in *RevokeFlowGrantRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	DeriveFlow(ctx context.Context, in *DeriveFlowRequest, opts ...grpc.CallOption) (*Flow, error)
+	BumpFlowPin(ctx context.Context, in *BumpFlowPinRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListFlowShares(ctx context.Context, in *ListFlowSharesRequest, opts ...grpc.CallOption) (*ListFlowSharesResponse, error)
+	ListFlowAdoptions(ctx context.Context, in *ListFlowAdoptionsRequest, opts ...grpc.CallOption) (*ListFlowAdoptionsResponse, error)
 }
 
 type workflowServiceClient struct {
@@ -119,6 +141,86 @@ func (c *workflowServiceClient) PromoteFlow(ctx context.Context, in *PromoteFlow
 	return out, nil
 }
 
+func (c *workflowServiceClient) PublishFlow(ctx context.Context, in *PublishFlowRequest, opts ...grpc.CallOption) (*FlowPublication, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FlowPublication)
+	err := c.cc.Invoke(ctx, WorkflowService_PublishFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) WithdrawFlow(ctx context.Context, in *WithdrawFlowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkflowService_WithdrawFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GrantFlow(ctx context.Context, in *GrantFlowRequest, opts ...grpc.CallOption) (*FlowGrant, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FlowGrant)
+	err := c.cc.Invoke(ctx, WorkflowService_GrantFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RevokeFlowGrant(ctx context.Context, in *RevokeFlowGrantRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkflowService_RevokeFlowGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) DeriveFlow(ctx context.Context, in *DeriveFlowRequest, opts ...grpc.CallOption) (*Flow, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Flow)
+	err := c.cc.Invoke(ctx, WorkflowService_DeriveFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) BumpFlowPin(ctx context.Context, in *BumpFlowPinRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, WorkflowService_BumpFlowPin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListFlowShares(ctx context.Context, in *ListFlowSharesRequest, opts ...grpc.CallOption) (*ListFlowSharesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFlowSharesResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListFlowShares_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListFlowAdoptions(ctx context.Context, in *ListFlowAdoptionsRequest, opts ...grpc.CallOption) (*ListFlowAdoptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFlowAdoptionsResponse)
+	err := c.cc.Invoke(ctx, WorkflowService_ListFlowAdoptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkflowServiceServer is the server API for WorkflowService service.
 // All implementations must embed UnimplementedWorkflowServiceServer
 // for forward compatibility.
@@ -130,6 +232,19 @@ type WorkflowServiceServer interface {
 	ValidateFlow(context.Context, *ValidateFlowRequest) (*ValidateFlowResponse, error)
 	ResolveFlow(context.Context, *ResolveFlowRequest) (*EffectiveFlow, error)
 	PromoteFlow(context.Context, *PromoteFlowRequest) (*Flow, error)
+	// ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
+	//
+	// Nothing here is live — every RPC below is request/response, never a
+	// stream, matching ADR-0017 convention 1: server-side streaming is reserved
+	// for what actually changes while the client is looking at it.
+	PublishFlow(context.Context, *PublishFlowRequest) (*FlowPublication, error)
+	WithdrawFlow(context.Context, *WithdrawFlowRequest) (*emptypb.Empty, error)
+	GrantFlow(context.Context, *GrantFlowRequest) (*FlowGrant, error)
+	RevokeFlowGrant(context.Context, *RevokeFlowGrantRequest) (*emptypb.Empty, error)
+	DeriveFlow(context.Context, *DeriveFlowRequest) (*Flow, error)
+	BumpFlowPin(context.Context, *BumpFlowPinRequest) (*emptypb.Empty, error)
+	ListFlowShares(context.Context, *ListFlowSharesRequest) (*ListFlowSharesResponse, error)
+	ListFlowAdoptions(context.Context, *ListFlowAdoptionsRequest) (*ListFlowAdoptionsResponse, error)
 	mustEmbedUnimplementedWorkflowServiceServer()
 }
 
@@ -160,6 +275,30 @@ func (UnimplementedWorkflowServiceServer) ResolveFlow(context.Context, *ResolveF
 }
 func (UnimplementedWorkflowServiceServer) PromoteFlow(context.Context, *PromoteFlowRequest) (*Flow, error) {
 	return nil, status.Error(codes.Unimplemented, "method PromoteFlow not implemented")
+}
+func (UnimplementedWorkflowServiceServer) PublishFlow(context.Context, *PublishFlowRequest) (*FlowPublication, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishFlow not implemented")
+}
+func (UnimplementedWorkflowServiceServer) WithdrawFlow(context.Context, *WithdrawFlowRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method WithdrawFlow not implemented")
+}
+func (UnimplementedWorkflowServiceServer) GrantFlow(context.Context, *GrantFlowRequest) (*FlowGrant, error) {
+	return nil, status.Error(codes.Unimplemented, "method GrantFlow not implemented")
+}
+func (UnimplementedWorkflowServiceServer) RevokeFlowGrant(context.Context, *RevokeFlowGrantRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeFlowGrant not implemented")
+}
+func (UnimplementedWorkflowServiceServer) DeriveFlow(context.Context, *DeriveFlowRequest) (*Flow, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeriveFlow not implemented")
+}
+func (UnimplementedWorkflowServiceServer) BumpFlowPin(context.Context, *BumpFlowPinRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method BumpFlowPin not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListFlowShares(context.Context, *ListFlowSharesRequest) (*ListFlowSharesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFlowShares not implemented")
+}
+func (UnimplementedWorkflowServiceServer) ListFlowAdoptions(context.Context, *ListFlowAdoptionsRequest) (*ListFlowAdoptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFlowAdoptions not implemented")
 }
 func (UnimplementedWorkflowServiceServer) mustEmbedUnimplementedWorkflowServiceServer() {}
 func (UnimplementedWorkflowServiceServer) testEmbeddedByValue()                         {}
@@ -308,6 +447,150 @@ func _WorkflowService_PromoteFlow_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowService_PublishFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).PublishFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_PublishFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).PublishFlow(ctx, req.(*PublishFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_WithdrawFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).WithdrawFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_WithdrawFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).WithdrawFlow(ctx, req.(*WithdrawFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GrantFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GrantFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_GrantFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GrantFlow(ctx, req.(*GrantFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RevokeFlowGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeFlowGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RevokeFlowGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_RevokeFlowGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RevokeFlowGrant(ctx, req.(*RevokeFlowGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_DeriveFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeriveFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).DeriveFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_DeriveFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).DeriveFlow(ctx, req.(*DeriveFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_BumpFlowPin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BumpFlowPinRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).BumpFlowPin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_BumpFlowPin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).BumpFlowPin(ctx, req.(*BumpFlowPinRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListFlowShares_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFlowSharesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListFlowShares(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListFlowShares_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListFlowShares(ctx, req.(*ListFlowSharesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListFlowAdoptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFlowAdoptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListFlowAdoptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowService_ListFlowAdoptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListFlowAdoptions(ctx, req.(*ListFlowAdoptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkflowService_ServiceDesc is the grpc.ServiceDesc for WorkflowService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -342,6 +625,38 @@ var WorkflowService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromoteFlow",
 			Handler:    _WorkflowService_PromoteFlow_Handler,
+		},
+		{
+			MethodName: "PublishFlow",
+			Handler:    _WorkflowService_PublishFlow_Handler,
+		},
+		{
+			MethodName: "WithdrawFlow",
+			Handler:    _WorkflowService_WithdrawFlow_Handler,
+		},
+		{
+			MethodName: "GrantFlow",
+			Handler:    _WorkflowService_GrantFlow_Handler,
+		},
+		{
+			MethodName: "RevokeFlowGrant",
+			Handler:    _WorkflowService_RevokeFlowGrant_Handler,
+		},
+		{
+			MethodName: "DeriveFlow",
+			Handler:    _WorkflowService_DeriveFlow_Handler,
+		},
+		{
+			MethodName: "BumpFlowPin",
+			Handler:    _WorkflowService_BumpFlowPin_Handler,
+		},
+		{
+			MethodName: "ListFlowShares",
+			Handler:    _WorkflowService_ListFlowShares_Handler,
+		},
+		{
+			MethodName: "ListFlowAdoptions",
+			Handler:    _WorkflowService_ListFlowAdoptions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

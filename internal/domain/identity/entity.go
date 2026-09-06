@@ -66,8 +66,14 @@ type Account struct {
 	LegalID        string // company registration number (CNPJ in Brazil)
 	LegalName      string
 	VerifiedDomain string // empty = not verified
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// DefaultRevocationPolicy is stamped onto a grant when a flow is shared FROM
+	// this account (flow sharing spec §3.2). It is a plain string, not
+	// workflow.RevocationPolicy: identity does not know the sharing domain, the
+	// same way it does not know Postgres — the vocabulary is validated at the
+	// service boundary, not by the type.
+	DefaultRevocationPolicy string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 // IsVerified unlocks domain-based joining, the badge and handle disputes

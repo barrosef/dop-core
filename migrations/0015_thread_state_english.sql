@@ -1,3 +1,4 @@
+-- +goose Up
 -- The thread state stops speaking Portuguese.
 --
 -- `demand_threads.state` held 'aberta'/'ativa'/'bloqueada'/'concluida'. Those
@@ -49,3 +50,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 -- +goose StatementEnd
+
+-- +goose Down
+-- Irreversible by design: this migration adds or corrects data the rest of the
+-- schema now assumes. Rolling it back would leave a database the code cannot read.

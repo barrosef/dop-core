@@ -14,21 +14,23 @@ import (
 
 // Service concentrates the work flow rules. It takes only PORTS.
 type Service struct {
-	repo   Repository
-	tree   Ancestry
-	access Access
-	clock  ports.Clock
+	repo     Repository
+	tree     Ancestry
+	access   Access
+	clock    ports.Clock
+	sharing  SharingRepository
+	accounts AccountFacts
 }
 
 // NewService requires a clock. Accepting nil is what kept the port decorative:
 // the service fell back to time.Now() internally and no versioning test was
 // deterministic. The panic here is deliberate — it is a wiring error, caught at
 // boot.
-func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock) *Service {
+func NewService(repo Repository, tree Ancestry, access Access, clock ports.Clock, sharing SharingRepository, accounts AccountFacts) *Service {
 	if clock == nil {
 		panic("workflow.NewService: clock is required — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, tree: tree, access: access, clock: clock}
+	return &Service{repo: repo, tree: tree, access: access, clock: clock, sharing: sharing, accounts: accounts}
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -231,6 +233,73 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 		return nil, err
 	}
 
+	levels, err := s.resolveLevels(ctx, accountID, ref)
+	if err != nil {
+		return nil, err
+	}
+	eff := MergeChain(levels)
+	if len(eff.Flow.Stages) == 0 {
+		return nil, errs.NotFound(
+			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
+	}
+
+	// A flow whose owner is not this account crossed an OWNERSHIP boundary, and
+	// the version that applies is the pinned one — not the newest. Whoever
+	// changes it is not whoever lives with the change, and an automatic change
+	// to how somebody's development runs is what the copy-versus-reference
+	// decision refused in the first place (see Derive).
+	//
+	// Inheritance INSIDE one account is deliberately untouched: there, the
+	// person changing the flow is the same owner who lives with it, and a pin
+	// would be ceremony. That is why this compares ACCOUNTS, not chain depth —
+	// account ▷ workspace ▷ project ▷ demand all share one owner and stay live.
+	if eff.Flow.AccountID != accountID {
+		version, pinned, err := s.sharing.PinOf(ctx, accountID, eff.Flow.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !pinned {
+			// A first resolution pins to what is current, so the account starts
+			// on a known version instead of on "whatever is newest today".
+			version = eff.Flow.Version
+			// If this write fails, the honest move is to fail the READ too — not
+			// to fall through and hand back the unpinned, current version. That
+			// fallback would resolve the account onto "whatever the owner
+			// published today" exactly once, unrecorded, which is the very
+			// automatic change the pin exists to prevent. This is the hottest
+			// path in the domain, and it still fails loudly on purpose: a
+			// resolution that silently degraded its own guarantee would be
+			// worse than one that errors and gets retried.
+			if err := s.sharing.Pin(ctx, accountID, eff.Flow.ID, version, "", s.now()); err != nil {
+				return nil, err
+			}
+		}
+		if version != eff.Flow.Version {
+			// The pinned version's STAGES can differ from the current one's —
+			// that is the whole reason a pin exists. Re-running the overlay with
+			// the pinned level swapped in — rather than patching eff.Flow alone
+			// and leaving Contributors/Origins/ResolvedFrom describing the
+			// CURRENT stage set — is what keeps the provenance honest: those
+			// fields exist so support can explain a flow nobody remembers
+			// writing (EffectiveFlow's own doc comment), and that guarantee
+			// matters most exactly when the pinned and current versions differ.
+			frozen, err := s.repo.VersionOf(ctx, eff.Flow.AccountID, eff.Flow.ID, version)
+			if err != nil {
+				return nil, err
+			}
+			eff = MergeChain(replaceLevel(levels, *frozen))
+		}
+	}
+	return &eff, nil
+}
+
+// resolveLevels walks the account's chain and returns, IN CHAIN ORDER, the
+// levels that actually declared something — the raw material MergeChain
+// overlays. Returning the levels themselves (not the merged result) is what
+// lets Resolve swap ONE level for its pinned version and re-run the overlay,
+// instead of patching the merged flow after the fact and leaving its own
+// provenance describing a stage set that no longer matches.
+func (s *Service) resolveLevels(ctx context.Context, accountID string, ref ScopeRef) ([]Flow, error) {
 	chain, err := s.tree.ChainOf(ctx, accountID, ref)
 	if err != nil {
 		return nil, err
@@ -253,13 +322,103 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, scopeID string) (*Ef
 			levels = append(levels, f)
 		}
 	}
+	return levels, nil
+}
 
-	eff := MergeChain(levels)
-	if len(eff.Flow.Stages) == 0 {
-		return nil, errs.NotFound(
-			"a flow applicable to %s: no level of the chain declares stages, not even the platform catalogue", ref)
+// resolveChain is resolveLevels plus the overlay, with NO pin applied.
+// BumpPin uses it to confirm the flow it is asked to pin is actually the one
+// the account would inherit across an ownership boundary — it never needs to
+// substitute a level's version, so it does not need resolveLevels' raw slice.
+func (s *Service) resolveChain(ctx context.Context, accountID string, ref ScopeRef) (EffectiveFlow, error) {
+	levels, err := s.resolveLevels(ctx, accountID, ref)
+	if err != nil {
+		return EffectiveFlow{}, err
 	}
-	return &eff, nil
+	return MergeChain(levels), nil
+}
+
+// replaceLevel returns a COPY of levels with the entry matching frozen's flow
+// id swapped for frozen — used to rebuild the overlay from a pinned version's
+// stages instead of the current one's. It copies rather than mutates in place
+// because resolveLevels' result is not documented as exclusively owned by its
+// caller, and a slice quietly mutated behind its own return value is exactly
+// the kind of thing a later caller gets bitten by.
+func replaceLevel(levels []Flow, frozen Flow) []Flow {
+	out := make([]Flow, len(levels))
+	copy(out, levels)
+	for i, lv := range out {
+		if lv.ID == frozen.ID {
+			out[i] = frozen
+			break
+		}
+	}
+	return out
+}
+
+// BumpPin moves the account onto a different (usually newer) version of a
+// flow it inherits across an ownership boundary. It is the deliberate act
+// that a live reference would have taken away: the platform (or another
+// account's publication) can move on without dragging every inheritor with
+// it, and moving is something an owner or admin chooses, on purpose.
+func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("moving the account onto another version requires owner or admin")
+	}
+	flowID = strings.TrimSpace(flowID)
+	if flowID == "" {
+		return errs.Invalid("flow identifier not provided")
+	}
+	if version <= 0 {
+		return errs.Invalid("version has to be positive")
+	}
+
+	// R10: nothing in the schema can check, ACROSS TABLES, that flowID is
+	// something this account actually inherits — a Postgres CHECK cannot see
+	// another table, which is exactly why flows.owner_id is validated in
+	// Service.resolveOwner instead of in SQL. Without this, any account could
+	// pin — and freeze itself onto — a flow it has no relationship with at
+	// all, including one it was never granted and cannot even read.
+	//
+	// The account's OWN chain (rooted at the account level, not at whatever
+	// scope the caller happens to be resolving today) is what decides this: the
+	// pin is stored per (account, flow), not per resolution path, so the flow
+	// it is allowed to reach is the one the account would inherit ACROSS AN
+	// OWNERSHIP BOUNDARY by default — the same flow Resolve would pin the very
+	// first time it crossed one.
+	eff, err := s.resolveChain(ctx, accountID, ScopeRef{Scope: ScopeAccount, ID: accountID})
+	if err != nil {
+		return err
+	}
+	if eff.Flow.AccountID == accountID || eff.Flow.ID != flowID {
+		return errs.Invalid(
+			"%q is not a flow this account inherits across an ownership boundary: there is nothing to pin", flowID)
+	}
+
+	// A version that was never written is not a typo Resolve can shrug off:
+	// every future Resolve crossing this boundary would call VersionOf for a
+	// version that does not exist and fail — flow resolution broken for every
+	// demand under this account until somebody re-pins by hand. Checking here,
+	// once, is cheap; discovering it later on the hottest path is not.
+	if _, err := s.repo.VersionOf(ctx, eff.Flow.AccountID, flowID, version); err != nil {
+		if errs.KindOf(err) == errs.KindNotFound {
+			return errs.Invalid("flow %q has no version %d to pin to: it was never written", flowID, version)
+		}
+		return err
+	}
+
+	return s.sharing.Pin(ctx, accountID, flowID, version, call.ActorID, s.now())
 }
 
 // ── promotion ────────────────────────────────────────────────────────────────
@@ -333,6 +492,268 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 	src.UpdatedAt = s.now()
 	return s.repo.Promote(ctx, accountID, src, want,
 		s.writeKey("", "promote:"+string(want.Scope)+":"+want.ID, *src, src.Version))
+}
+
+// ── sharing ──────────────────────────────────────────────────────────────────
+
+// Publish makes the flow's CURRENT version addressable as @handle/slug@vN.
+//
+// It freezes a version rather than pointing at the flow: publishing again
+// publishes a newer one, and what somebody already derived never moves under
+// them.
+func (s *Service) Publish(ctx context.Context, flowID, slug, notes, idempotencyKey string) (*Publication, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage(role) {
+		return nil, errs.Permission("publishing a flow outside the account requires owner or admin")
+	}
+	// The slug is validated with the SAME rule the reference parser uses: a slug
+	// accepted here and unusable in a reference would produce a publication
+	// nobody can address.
+	if !refPart.MatchString(slug) {
+		return nil, errs.Invalid("%q is not a usable name for a reference: lowercase letters, digits and hyphens", slug)
+	}
+	f, err := s.repo.ByID(ctx, accountID, flowID)
+	if err != nil {
+		return nil, err
+	}
+	if f.OwnerScope == ScopePlatform {
+		return nil, errs.Precondition("the platform's flow is inherited by the chain, not published for adoption")
+	}
+	p := Publication{
+		FlowID: f.ID, AccountID: accountID, Slug: slug, Version: f.Version,
+		Notes: notes, PublishedBy: call.ActorID, PublishedAt: s.now(),
+	}
+	return s.sharing.CreatePublication(ctx, &p, s.writeKey(idempotencyKey, "publish", *f, f.Version))
+}
+
+// Withdraw takes a publication out of circulation. It reaches NOBODY who has
+// already derived: that is revocation's job, and it has its own policy.
+func (s *Service) Withdraw(ctx context.Context, publicationID string) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("withdrawing a publication requires owner or admin")
+	}
+	return s.sharing.Withdraw(ctx, accountID, publicationID, s.now())
+}
+
+// Grant lets ONE account derive from a publication.
+//
+// The revocation policy is COPIED here from the publisher's default and stored
+// on the grant. Reading it at revocation time would let the publisher change
+// the terms after they were accepted — the difference between "no new
+// derivations" and "your running demand stops now".
+func (s *Service) Grant(ctx context.Context, publicationID, toAccountID, idempotencyKey string) (*Share, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage(role) {
+		return nil, errs.Permission("granting a flow requires owner or admin")
+	}
+	toAccountID = strings.TrimSpace(toAccountID)
+	if toAccountID == "" {
+		return nil, errs.Invalid("no account to grant to")
+	}
+	if toAccountID == accountID {
+		return nil, errs.Invalid("an account already sees its own flows: there is nothing to grant")
+	}
+	pub, err := s.sharing.PublicationByID(ctx, accountID, publicationID)
+	if err != nil {
+		return nil, err
+	}
+	if pub.Withdrawn() {
+		return nil, errs.Precondition("this publication was withdrawn: publish a version again before granting it")
+	}
+	raw, err := s.accounts.DefaultRevocationPolicy(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	policy := RevocationPolicy(raw)
+	if !ValidRevocationPolicy(policy) {
+		policy = DefaultRevocationPolicy
+	}
+	sh := Share{
+		PublicationID: pub.ID, ToAccountID: toAccountID,
+		RevocationPolicy: policy, GrantedBy: call.ActorID, GrantedAt: s.now(),
+	}
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		key = "wf:" + idem.Hash("grant", pub.ID, toAccountID)
+	}
+	return s.sharing.CreateShare(ctx, &sh, key)
+}
+
+// SharesOf lists who a publication was granted to.
+func (s *Service) SharesOf(ctx context.Context, publicationID string) ([]Share, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.sharing.SharesOfPublication(ctx, accountID, publicationID)
+}
+
+// Derive adopts a published flow: it creates a COPY in the caller's account, at
+// the level the caller chooses, carrying where it came from.
+//
+// A copy and not a reference, because a live reference would let one company's
+// edit change how another company's development runs, and revoking it would
+// break demands already moving.
+func (s *Service) Derive(ctx context.Context, rawRef string, target ScopeRef, idempotencyKey string) (*Flow, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return nil, errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	ref, err := ParseRef(rawRef)
+	if err != nil {
+		return nil, err
+	}
+	// The one deliberate crossing. It answers NotFound when there is no grant:
+	// whether a flow exists in another account is not an outsider's to learn.
+	pub, err := s.sharing.ResolvePublication(ctx, accountID, ref)
+	if err != nil {
+		return nil, err
+	}
+	// The CONTENT comes from the publisher's frozen version, read by id and
+	// version — the same path a demand uses to read what it froze on.
+	src, err := s.repo.VersionOf(ctx, pub.AccountID, pub.FlowID, pub.Version)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := s.resolveOwner(ctx, accountID, target)
+	if err != nil {
+		return nil, err
+	}
+	if owner.Scope == ScopePlatform {
+		return nil, errs.Permission("a derived flow does not go into the platform catalogue")
+	}
+	now := s.now()
+	copied := Flow{
+		AccountID: accountID, OwnerScope: owner.Scope, OwnerID: owner.ID,
+		Name: src.Name, Description: src.Description, Version: 1, Stages: src.Stages,
+		Origin:    &Origin{Ref: ref.WithoutVersion().String(), Version: pub.Version, AdoptedAt: now},
+		CreatedBy: call.ActorID, CreatedAt: now, UpdatedAt: now,
+	}
+	// The copy and the publisher's half of the same fact are written together.
+	// Two separate calls (create the copy, then record the adoption) would let a
+	// crash between them leave a copy the publisher never learns of — and the
+	// adoption record is exactly what a later revocation uses to reach the copy,
+	// so an orphaned copy is one nobody could ever revoke.
+	adoption := &Adoption{
+		PublicationID: pub.ID, Version: pub.Version, ByAccountID: accountID, DerivedAt: now,
+	}
+	return s.sharing.RecordDerivation(ctx, accountID, &copied, adoption,
+		s.writeKey(idempotencyKey, "derive", copied, 0))
+}
+
+// Revoke withdraws a grant. WHAT it reaches is the policy stamped on that
+// grant when it was made, never the account's current default: reading the
+// live default here would let the publisher change the terms after somebody
+// already accepted them.
+//
+// Under `prospective` it reaches the grant and nothing else. Under `drain`
+// and `terminate` it also marks the copies derived under it as revoked — a
+// STATE CHANGE, never a deletion: the adopter's own edits and the audit trail
+// of a demand that already ran have to survive, or a green becomes
+// uncheckable.
+//
+// The DIFFERENCE between drain and terminate is what happens to a demand
+// already running, and that does not happen here: this decides which
+// adoptions the policy reaches and hands the whole thing to RevokeShare in
+// one call, which writes it — and, from Task 9, the events — in one
+// transaction (ADR-0019). Putting demand control in this service would make
+// the flow domain a client of the demand domain over one decision.
+func (s *Service) Revoke(ctx context.Context, shareID string) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("revoking a grant requires owner or admin")
+	}
+	share, err := s.sharing.ShareByID(ctx, accountID, shareID)
+	if err != nil {
+		return err
+	}
+	if share.Revoked() {
+		return nil // idempotent: the outcome asked for is already true
+	}
+	rev := Revocation{
+		ShareID: share.ID, PublicationID: share.PublicationID,
+		ToAccountID: share.ToAccountID, Policy: share.RevocationPolicy, At: s.now(),
+	}
+	if share.RevocationPolicy != PolicyProspective {
+		ads, err := s.sharing.AdoptionsOfPublication(ctx, accountID, share.PublicationID)
+		if err != nil {
+			return err
+		}
+		for _, a := range ads {
+			if a.ByAccountID != share.ToAccountID || !a.RevokedAt.IsZero() {
+				continue
+			}
+			rev.Adoptions = append(rev.Adoptions, AdoptionRef{ID: a.ID, FlowID: a.FlowID})
+		}
+	}
+	return s.sharing.RevokeShare(ctx, accountID, rev)
+}
+
+// AdoptionsOf lists who derived from a publication.
+func (s *Service) AdoptionsOf(ctx context.Context, publicationID string) ([]Adoption, error) {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.sharing.AdoptionsOfPublication(ctx, accountID, publicationID)
+}
+
+// HandleOf resolves an account's public handle. It exists so the edge can
+// render a publication's reference (@handle/slug@vN) itself, from data the
+// domain already decided (Publication.Slug, Publication.Version) plus this one
+// identity fact — instead of every client guessing the same format and
+// eventually disagreeing on it.
+func (s *Service) HandleOf(ctx context.Context, accountID string) (string, error) {
+	return s.accounts.HandleOf(ctx, accountID)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

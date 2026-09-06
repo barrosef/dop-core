@@ -2,6 +2,8 @@ syntax = "proto3";
 package dop.v1;
 
 import "dop/v1/common.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 // The stage's semantic type: it decides the renderer on the screen and the
 // agent's behaviour. The platform's vocabulary; composition is free (ADR-0014).
@@ -42,6 +44,19 @@ message StageSpec {
   repeated string subtypes = 6;  // e.g.: test → aaa, e2e, integration
 }
 
+// FlowOrigin is the provenance carried BY a copy derived from another
+// account's publication (task 9) — where it came from, at which version, and
+// when this account adopted it. It mirrors flow_versions/flows'
+// origin_ref/origin_version/origin_adopted_at columns, which are all-or-
+// nothing on a flow written directly in its own account (see workflow.go's
+// flowCols and the flow_origem_completa CHECK): a Flow with no FlowOrigin set
+// has no provenance at all, never a partial one.
+message FlowOrigin {
+  string reference = 1;  // "@acme/backend-go@v3", the publication this copy was derived from
+  int32  version   = 2;  // the publication's version at the moment of derivation
+  google.protobuf.Timestamp adopted_at = 3;
+}
+
 message Flow {
   string    id      = 1;
   string    name    = 2;
@@ -52,6 +67,16 @@ message Flow {
   string    owner_id    = 6;
   repeated StageSpec stages = 7;
   AuditStamp audit    = 8;
+  // Set only for a copy derived from another account's publication; absent
+  // for a flow written directly in its own account.
+  FlowOrigin origin = 9;
+  // Set only once the share this copy was derived under has been revoked
+  // under `drain` or `terminate` (never set on a Flow with no origin). The
+  // design's promise (flow-sharing spec §3.1): a revoked copy REMAINS
+  // visible in the adopting account, marked revoked by the origin on this
+  // date — vanishing silently would turn "my process stopped working" into a
+  // question with no answer.
+  google.protobuf.Timestamp revoked_at = 10;
 }
 
 // The result of the chain platform ◁ account ◁ workspace ◁ project ◁ demand.
@@ -95,6 +120,20 @@ service WorkflowService {
   rpc ValidateFlow  (ValidateFlowRequest)  returns (ValidateFlowResponse);
   rpc ResolveFlow   (ResolveFlowRequest)   returns (EffectiveFlow);
   rpc PromoteFlow   (PromoteFlowRequest)   returns (Flow);
+
+  // ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
+  //
+  // Nothing here is live — every RPC below is request/response, never a
+  // stream, matching ADR-0017 convention 1: server-side streaming is reserved
+  // for what actually changes while the client is looking at it.
+  rpc PublishFlow       (PublishFlowRequest)       returns (FlowPublication);
+  rpc WithdrawFlow      (WithdrawFlowRequest)      returns (google.protobuf.Empty);
+  rpc GrantFlow         (GrantFlowRequest)         returns (FlowGrant);
+  rpc RevokeFlowGrant   (RevokeFlowGrantRequest)   returns (google.protobuf.Empty);
+  rpc DeriveFlow        (DeriveFlowRequest)        returns (Flow);
+  rpc BumpFlowPin       (BumpFlowPinRequest)       returns (google.protobuf.Empty);
+  rpc ListFlowShares    (ListFlowSharesRequest)    returns (ListFlowSharesResponse);
+  rpc ListFlowAdoptions (ListFlowAdoptionsRequest) returns (ListFlowAdoptionsResponse);
 }
 
 message ListFlowsRequest  { reserved 1; string owner_scope = 2; string owner_id = 3; }
@@ -110,3 +149,96 @@ message ValidateFlowResponse {
 }
 message ResolveFlowRequest { reserved 1; string scope = 2; string scope_id = 3; }
 message PromoteFlowRequest { reserved 1; string flow_id = 2; string target_scope = 3; string target_id = 4; }
+
+// ── sharing (flow sharing spec) ─────────────────────────────────────────────
+//
+// These messages are new — there was never a `CallContext ctx = 1` on any of
+// them, so none reserves field 1 (ADR-0017 convention 5).
+//
+// WithdrawFlowRequest, RevokeFlowGrantRequest and BumpFlowPinRequest carry no
+// idempotency_key: the Service methods behind them (Withdraw, Revoke, BumpPin)
+// take none — each is naturally idempotent by construction (a withdrawal that
+// finds the row already withdrawn, a revocation that finds the share already
+// revoked, a pin write that is itself an upsert), so there is nowhere for the
+// key to go. Declaring one here anyway is exactly the field-with-no-effect
+// ADR-0017 §5 already paid down once for CallContext.
+
+message PublishFlowRequest {
+  string flow_id = 1;
+  string slug    = 2;   // completes @handle/slug
+  string notes   = 3;
+  string idempotency_key = 4;
+}
+
+// FlowPublication is one version of a flow made addressable outside the
+// account. `reference` is rendered by the SERVER from the publisher's handle,
+// the slug and the version: three clients assembling "@handle/slug@vN"
+// themselves is three places for the format to drift.
+message FlowPublication {
+  string id = 1;
+  string flow_id = 2;
+  string reference = 3;  // "@acme/backend-go@v3"
+  int32  version = 4;
+  string notes = 5;
+  google.protobuf.Timestamp published_at = 6;
+  google.protobuf.Timestamp withdrawn_at = 7;
+}
+
+message WithdrawFlowRequest { string publication_id = 1; }
+
+// `to_account` is an AccountRef, not a bare string (ADR-0017 convention 2: a
+// tenant is never an anonymous string) — the same shape `resource.proto`,
+// `identity.proto`, `event.proto`, `attention.proto` and `hierarchy.proto`
+// already use for every account reference in the contract. `workflow.proto`
+// had no account-shaped field before this file, so the precedent to follow
+// lives in those sibling files, not in this one.
+message GrantFlowRequest {
+  string publication_id  = 1;
+  dop.v1.AccountRef to_account = 2;
+  string idempotency_key = 3;
+}
+
+// FlowGrant is permission for ONE account to derive from a publication, with
+// the revocation policy stamped at the moment it was granted — reading the
+// publisher's CURRENT default at revocation time would let the terms change
+// after somebody already accepted them.
+message FlowGrant {
+  string id                    = 1;
+  string publication_id        = 2;
+  dop.v1.AccountRef to_account = 3;
+  string revocation_policy     = 4; // prospective | drain | terminate
+  google.protobuf.Timestamp granted_at = 5;
+  google.protobuf.Timestamp revoked_at = 6;
+}
+
+message RevokeFlowGrantRequest { string share_id = 1; }
+
+message DeriveFlowRequest {
+  string reference = 1;             // "@acme/backend-go" or pinned
+  dop.v1.ScopeRef target = 2;       // where to install the copy
+  string idempotency_key = 3;
+}
+
+message BumpFlowPinRequest {
+  string flow_id = 1;
+  int32  version = 2;
+}
+
+message ListFlowSharesRequest  { string publication_id = 1; }
+message ListFlowSharesResponse { repeated FlowGrant shares = 1; }
+
+// FlowAdoption is the PUBLISHER's own record that another account derived a
+// copy — the outbound half of the provenance the copy itself carries
+// (see Flow's origin, task 9).
+message FlowAdoption {
+  string id             = 1;
+  string publication_id = 2;
+  int32  version        = 3;
+  dop.v1.AccountRef by_account = 4;
+  string flow_id        = 5; // the copy, in the OTHER account
+  google.protobuf.Timestamp derived_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+message ListFlowAdoptionsRequest  { string publication_id = 1; }
+message ListFlowAdoptionsResponse { repeated FlowAdoption adoptions = 1; }
