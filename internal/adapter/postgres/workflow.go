@@ -180,7 +180,7 @@ func (r *WorkflowRepo) Create(ctx context.Context, f *workflow.Flow, idempotency
 			return err
 		}
 		if !created {
-			saved, err = flowByKey(ctx, tx, idempotencyKey)
+			saved, err = flowByKey(ctx, tx, f.AccountID, idempotencyKey)
 			return err
 		}
 		if _, err := insertVersion(ctx, tx, id, 1, f, idempotencyKey+":1"); err != nil {
@@ -269,7 +269,7 @@ func (r *WorkflowRepo) Promote(ctx context.Context, accountID string, src *workf
 				return err
 			}
 			if !created {
-				saved, err = flowByKey(ctx, tx, idempotencyKey)
+				saved, err = flowByKey(ctx, tx, accountID, idempotencyKey)
 				return err
 			}
 			if _, err := insertVersion(ctx, tx, id, 1, &promoted, idempotencyKey+":1"); err != nil {
@@ -461,9 +461,15 @@ func loadFlow(ctx context.Context, tx pgx.Tx, accountID, id string) (*workflow.F
 // flowByKey and flowVersionByKey are the repetition's return: the already
 // written key points at what the caller wanted to create, and returning that is
 // what makes the write genuinely idempotent (ADR-0017).
-func flowByKey(ctx context.Context, tx pgx.Tx, key string) (*workflow.Flow, error) {
+//
+// The account filter is load-bearing, not decoration: flows.idempotency_key is
+// globally unique across every account, and Service.Create passes the
+// client-supplied key through verbatim. Without `f.account_id = $2`, account B
+// sending a key already used by account A would get A's flow back — a
+// cross-tenant leak through nothing more than a guessed or reused key.
+func flowByKey(ctx context.Context, tx pgx.Tx, accountID, key string) (*workflow.Flow, error) {
 	f, err := scanFlow(tx.QueryRow(ctx, `SELECT `+flowCols+currentJoin+
-		` WHERE f.idempotency_key = $1`, key))
+		` WHERE f.idempotency_key = $1 AND f.account_id = $2`, key, accountID))
 	if err != nil {
 		return nil, Translate(err, "flow")
 	}

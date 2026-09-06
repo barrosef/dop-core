@@ -400,12 +400,10 @@ func insertDerivedFlowRow(ctx context.Context, tx pgx.Tx, f *workflow.Flow, key 
 	return id, true, nil
 }
 
-// derivedFlowByKey mirrors workflow.go's flowByKey, with the account filter
-// flowByKey does not need (its only caller already holds the right account by
-// construction — a fresh Create). RecordDerivation's retry path is reached
-// from RECORD-DERIVATION, called with whatever accountID the caller passes, so
-// the filter here is the tenant check that keeps a colliding key from another
-// account's flow from ever being handed back.
+// derivedFlowByKey mirrors workflow.go's flowByKey, including its account
+// filter — flows.idempotency_key is globally unique, so RecordDerivation's
+// retry path needs exactly the same tenant check flowByKey needs: without it,
+// a colliding key from another account's flow could be handed back here too.
 func derivedFlowByKey(ctx context.Context, tx pgx.Tx, accountID, key string) (*workflow.Flow, error) {
 	f, err := scanFlow(tx.QueryRow(ctx, `SELECT `+flowCols+currentJoin+
 		` WHERE f.idempotency_key = $1 AND f.account_id = $2`, key, accountID))
