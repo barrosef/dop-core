@@ -522,6 +522,65 @@ func (s *Service) Derive(ctx context.Context, rawRef string, target ScopeRef, id
 		s.writeKey(idempotencyKey, "derive", copied, 0))
 }
 
+// Revoke withdraws a grant. WHAT it reaches is the policy stamped on that
+// grant when it was made, never the account's current default: reading the
+// live default here would let the publisher change the terms after somebody
+// already accepted them.
+//
+// Under `prospective` it reaches the grant and nothing else. Under `drain`
+// and `terminate` it also marks the copies derived under it as revoked — a
+// STATE CHANGE, never a deletion: the adopter's own edits and the audit trail
+// of a demand that already ran have to survive, or a green becomes
+// uncheckable.
+//
+// The DIFFERENCE between drain and terminate is what happens to a demand
+// already running, and that does not happen here: this decides which
+// adoptions the policy reaches and hands the whole thing to RevokeShare in
+// one call, which writes it — and, from Task 9, the events — in one
+// transaction (ADR-0019). Putting demand control in this service would make
+// the flow domain a client of the demand domain over one decision.
+func (s *Service) Revoke(ctx context.Context, shareID string) error {
+	accountID, err := ctxutil.MustAccount(ctx)
+	if err != nil {
+		return err
+	}
+	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
+	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
+	if err != nil {
+		return err
+	}
+	if !canManage(role) {
+		return errs.Permission("revoking a grant requires owner or admin")
+	}
+	share, err := s.sharing.ShareByID(ctx, accountID, shareID)
+	if err != nil {
+		return err
+	}
+	if share.Revoked() {
+		return nil // idempotent: the outcome asked for is already true
+	}
+	rev := Revocation{
+		ShareID: share.ID, PublicationID: share.PublicationID,
+		ToAccountID: share.ToAccountID, Policy: share.RevocationPolicy, At: s.now(),
+	}
+	if share.RevocationPolicy != PolicyProspective {
+		ads, err := s.sharing.AdoptionsOfPublication(ctx, accountID, share.PublicationID)
+		if err != nil {
+			return err
+		}
+		for _, a := range ads {
+			if a.ByAccountID != share.ToAccountID || !a.RevokedAt.IsZero() {
+				continue
+			}
+			rev.Adoptions = append(rev.Adoptions, AdoptionRef{ID: a.ID, FlowID: a.FlowID})
+		}
+	}
+	return s.sharing.RevokeShare(ctx, accountID, rev)
+}
+
 // AdoptionsOf lists who derived from a publication.
 func (s *Service) AdoptionsOf(ctx context.Context, publicationID string) ([]Adoption, error) {
 	accountID, err := ctxutil.MustAccount(ctx)

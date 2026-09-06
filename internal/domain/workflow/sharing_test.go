@@ -403,6 +403,17 @@ func (e *sharingEnv) CtxAsThird() context.Context {
 
 func (e *sharingEnv) FlowRevoked(id string) bool { return e.sharing.revokedFlows[id] }
 
+// LastRevocation returns the most recent Revocation RevokeShare received —
+// a real recording of what the domain decided to hand to the port, not a
+// boolean nothing sets.
+func (e *sharingEnv) LastRevocation() workflow.Revocation {
+	n := len(e.sharing.revocations)
+	if n == 0 {
+		return workflow.Revocation{}
+	}
+	return e.sharing.revocations[n-1]
+}
+
 const (
 	sharingOwner      = "usr-sharing-owner"
 	sharingDeveloper  = "usr-sharing-dev"
@@ -803,5 +814,74 @@ func TestGrantRefusesAWithdrawnPublication(t *testing.T) {
 	}
 	if _, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g1"); errs.KindOf(err) != errs.KindPrecondition {
 		t.Fatalf("a withdrawn publication has to be granted again, not still granted from: %v", err)
+	}
+}
+
+// ── Revoke ───────────────────────────────────────────────────────────────────
+
+// TestWhatARevocationReachesDependsOnTheStampedPolicy is the test the brief
+// asked for, amended per ruling R14: the brief's own assertion —
+// `env.FlowDeleted(copied.ID)` — called a map that was removed in an earlier
+// fix round precisely because nothing ever wrote to it, which made the
+// assertion unable to fail. "Revoking marks, never deletes" is checked here
+// for real: the copy has to still be RETRIEVABLE, with its stages intact,
+// after the revocation — that is the behaviour the design promises, and a
+// boolean nothing sets is not it.
+func TestWhatARevocationReachesDependsOnTheStampedPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		policy      workflow.RevocationPolicy
+		copyRevoked bool
+	}{
+		{workflow.PolicyProspective, false}, // reaches the grant only
+		{workflow.PolicyDrain, true},
+		{workflow.PolicyTerminate, true},
+	} {
+		t.Run(string(tc.policy), func(t *testing.T) {
+			svc, env := newSharingHarness(t)
+			env.AccountDefault = string(tc.policy)
+			ctx := env.CtxAs(env.OwnerID)
+			pub, err := svc.Publish(ctx, env.FlowID, "backend-go", "", "k1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			share, err := svc.Grant(ctx, pub.ID, env.OtherAccountID, "g1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			otherCtx := env.CtxAsOther(env.OtherOwnerID)
+			copied, err := svc.Derive(otherCtx,
+				"@acme/backend-go", workflow.ScopeRef{Scope: workflow.ScopeProject, ID: env.OtherProjectID}, "d1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.Revoke(ctx, share.ID); err != nil {
+				t.Fatal(err)
+			}
+			if got := env.FlowRevoked(copied.ID); got != tc.copyRevoked {
+				t.Fatalf("under %s the copy revoked = %v, wanted %v", tc.policy, got, tc.copyRevoked)
+			}
+			// Revoking marks, never deletes: the adopter's own edits and the audit
+			// of a demand that already ran under the copy have to survive. That
+			// means the copy is still there, retrievable, with its content whole —
+			// so fetch it back and check exactly that, instead of asking a map
+			// nothing writes to.
+			still, err := svc.Get(otherCtx, copied.ID)
+			if err != nil {
+				t.Fatalf("the copy has to survive a revocation, retrievable: %v", err)
+			}
+			if len(still.Stages) != len(copied.Stages) {
+				t.Fatalf("the copy's content changed on revocation: got %d stages, wanted %d", len(still.Stages), len(copied.Stages))
+			}
+			// The events are written by the adapter, in the same transaction
+			// (ADR-0019), so what the DOMAIN owes is the decision: which
+			// adoptions the policy reaches. Task 9 proves the events exist.
+			rev := env.LastRevocation()
+			if rev.Policy != tc.policy {
+				t.Fatalf("the revocation carried %q, wanted %q", rev.Policy, tc.policy)
+			}
+			if want := map[bool]int{true: 1, false: 0}[tc.copyRevoked]; len(rev.Adoptions) != want {
+				t.Fatalf("under %s the revocation reached %d adoptions, wanted %d", tc.policy, len(rev.Adoptions), want)
+			}
+		})
 	}
 }
