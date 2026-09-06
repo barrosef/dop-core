@@ -387,6 +387,9 @@ func (s *Service) Withdraw(ctx context.Context, publicationID string) error {
 		return err
 	}
 	call, _ := ctxutil.From(ctx)
+	if call.ActorID == "" {
+		return errs.New(errs.KindUnauthorized, "actor not identified")
+	}
 	role, err := s.access.RoleOf(ctx, call.ActorID, accountID)
 	if err != nil {
 		return err

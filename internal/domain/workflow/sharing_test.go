@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
@@ -103,7 +102,6 @@ type fakeSharing struct {
 	// Side channels the harness reads to prove what a revocation reached,
 	// without the domain having to expose its own storage.
 	revokedFlows map[string]bool
-	deletedFlows map[string]bool
 	revocations  []workflow.Revocation
 }
 
@@ -121,7 +119,6 @@ func newFakeSharing() *fakeSharing {
 		handles: map[string]string{},
 
 		revokedFlows: map[string]bool{},
-		deletedFlows: map[string]bool{},
 	}
 }
 
@@ -336,7 +333,6 @@ type sharingEnv struct {
 	CurrentVersion                            int32
 	AccountDefault                            string // what the AccountDefaults port answers
 	roles                                     map[string]string
-	events                                    []ports.Event
 	sharing                                   *fakeSharing
 }
 
@@ -359,8 +355,6 @@ func (e *sharingEnv) CtxAsThird() context.Context {
 }
 
 func (e *sharingEnv) FlowRevoked(id string) bool { return e.sharing.revokedFlows[id] }
-func (e *sharingEnv) FlowDeleted(id string) bool { return e.sharing.deletedFlows[id] }
-func (e *sharingEnv) LastEvent() ports.Event     { return e.events[len(e.events)-1] }
 
 const (
 	sharingOwner      = "usr-sharing-owner"
@@ -466,5 +460,92 @@ func TestWithdrawStopsNewDerivationsAndNothingElse(t *testing.T) {
 	}
 	if err := svc.Withdraw(ctx, pub.ID); err != nil {
 		t.Fatalf("withdrawing what is already withdrawn is success: %v", err)
+	}
+}
+
+// The platform catalogue is inherited by the chain, never published for
+// adoption — the same refusal Create and Promote already give it
+// (TestCreatingInThePlatformCatalogueIsRefused,
+// TestPromotingToThePlatformCatalogueIsRefused): a level with no owner of its
+// own has nothing an account boundary could cross.
+func TestPublishingThePlatformCatalogueIsRefused(t *testing.T) {
+	svc, env := newSharingHarness(t)
+	ctx := env.CtxAs(env.OwnerID)
+	if _, err := svc.Publish(ctx, env.PlatformFlowID, "backend-go", "", "k1"); errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("the platform's flow is inherited by the chain, not published for adoption; err: %v", err)
+	}
+}
+
+// ── the double's isolation guarantee ─────────────────────────────────────────
+
+// ResolvePublication is the one deliberate crossing the whole feature rests
+// on, and fakeSharing is what every later task's tests trust to enforce it.
+// This tests the DOUBLE directly, not a Service method, because nothing in
+// this domain calls ResolvePublication yet (Task 6 does) — and because a
+// later "fix" that quietly turned one of these branches into Permission would
+// otherwise break the isolation guarantee with nothing red.
+func TestFakeSharingResolvePublicationAnswersNotFoundNeverPermission(t *testing.T) {
+	const (
+		publisher = "acct-resolve-pub"
+		granted   = "acct-resolve-granted"
+		other     = "acct-resolve-other"
+	)
+	ctx := context.Background()
+	sharing := newFakeSharing()
+	sharing.handles["acme"] = publisher
+	ref := workflow.PublicationRef{Handle: "acme", Slug: "backend-go"}
+
+	// An unknown handle: nothing to resolve against at all.
+	if _, err := sharing.ResolvePublication(ctx, granted, workflow.PublicationRef{Handle: "ghost", Slug: "backend-go"}); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("an unknown handle has to be NotFound: %v", err)
+	}
+
+	pub, err := sharing.CreatePublication(ctx, &workflow.Publication{
+		FlowID: "flw-1", AccountID: publisher, Slug: "backend-go", Version: 1,
+	}, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A known handle, a real publication, and NO grant at all.
+	if _, err := sharing.ResolvePublication(ctx, granted, ref); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("no grant has to be NotFound, never Permission: %v", err)
+	}
+
+	share, err := sharing.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: granted, RevocationPolicy: workflow.PolicyProspective,
+	}, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The grant, while it holds, resolves — the positive control for the three
+	// refusals around it.
+	if _, err := sharing.ResolvePublication(ctx, granted, ref); err != nil {
+		t.Fatalf("the granted account had to resolve it: %v", err)
+	}
+
+	// A grant that WAS revoked.
+	if err := sharing.RevokeShare(ctx, publisher, workflow.Revocation{
+		ShareID: share.ID, PublicationID: pub.ID, ToAccountID: granted,
+		Policy: workflow.PolicyProspective, At: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sharing.ResolvePublication(ctx, granted, ref); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("a revoked grant has to be NotFound: %v", err)
+	}
+
+	// A publication that was WITHDRAWN — checked against a fresh, still-valid
+	// grant, so withdrawal and revocation are not conflated.
+	if _, err := sharing.CreateShare(ctx, &workflow.Share{
+		PublicationID: pub.ID, ToAccountID: other, RevocationPolicy: workflow.PolicyProspective,
+	}, "g2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sharing.Withdraw(ctx, publisher, pub.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sharing.ResolvePublication(ctx, other, ref); errs.KindOf(err) != errs.KindNotFound {
+		t.Fatalf("a withdrawn publication has to be NotFound even for a granted account: %v", err)
 	}
 }
