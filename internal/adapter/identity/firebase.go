@@ -39,7 +39,7 @@ import (
 // Google's JWKS document (`/oauth2/v3/certs`) serves Google Sign-In tokens,
 // which are different ones. Pointing at the wrong one gives "unknown key" on
 // every login — a silent failure and an expensive one to find.
-const googleSecureTokenCerts = "https://www.googleapis.com/robots/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+const googleSecureTokenCerts = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
 
 // firebaseIssuerPrefix + projectID is the `iss` every Firebase ID token
 // carries, the emulator included.

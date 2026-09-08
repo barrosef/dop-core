@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 	"github.com/Digital-Business-One/dop-core/test/contract"
 )
 
@@ -180,4 +181,54 @@ func TestIdentityProviderFirebaseRealEmulatorToken(t *testing.T) {
 			"the domain would be reading a list Firebase never sends: %v", p.Providers)
 	}
 	t.Logf("normalized principal from the real token: %+v", p)
+}
+
+// TestFirebaseReachesGooglesRealSigningCertificates covers the one thing no
+// other test in this repository could: the address the adapter uses WHEN NOBODY
+// CONFIGURES IT.
+//
+// Every other path hides it. The emulator signs nothing, so it never fetches a
+// key; the always-on suite in identityprovider_test.go serves its own X.509
+// certificates over CertsURL, precisely so it can run with no internet. Between
+// the two, the default URL was exercised for the first time by a real user's
+// token in a real environment — and it was wrong: `/robots/` instead of
+// `/robot/`, an endpoint that answers 404. The adapter reported an
+// unavailability, the edge turned that into "no credential", and the log said
+// `token refused`. A typo in a constant read as a permission problem.
+//
+// The assertion is about the KIND, not the message: an unknown `kid` is the
+// caller's problem (Unauthorized). Unavailable means the adapter never got to
+// look — it could not read Google's key list at all.
+func TestFirebaseReachesGooglesRealSigningCertificates(t *testing.T) {
+	// The adapter as the composition root builds it: project only, no CertsURL,
+	// no emulator. Anything else here would test this file instead of the code.
+	t.Setenv("FIREBASE_AUTH_EMULATOR_HOST", "")
+	idp := identity.NewFirebase("dop-qa")
+	if idp.UsingEmulator() {
+		t.Fatal("the adapter entered emulator mode: it would fetch no key and prove nothing")
+	}
+
+	header := objectB64(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": "a-kid-google-never-published"})
+	token := header + "." + objectB64(t, map[string]any{"sub": "nobody"}) + ".AAAA"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, err := idp.VerifyToken(ctx, token)
+	if err == nil {
+		t.Fatal("a token signed by an unpublished key was accepted")
+	}
+	if errs.KindOf(err) != errs.KindUnavailable {
+		return // the keys were read and the token judged: what this test is for.
+	}
+	// Unavailable can also mean this machine simply has no internet. Ask a
+	// different question of the same host to tell the two apart, rather than
+	// failing a build for being offline.
+	probe, cancelProbe := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelProbe()
+	req, _ := http.NewRequestWithContext(probe, http.MethodGet, "https://www.googleapis.com/", nil)
+	if _, probeErr := http.DefaultClient.Do(req); probeErr != nil {
+		t.Skipf("www.googleapis.com is unreachable from here (%v) — this test needs the internet", probeErr)
+	}
+	t.Fatalf("Google's host answers, and the adapter could not read its signing certificates: %v\n"+
+		"the address it uses by default is wrong, and EVERY real token is refused with it", err)
 }
