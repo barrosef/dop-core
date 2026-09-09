@@ -121,6 +121,22 @@ func (s *IdentityServer) CreateAccount(ctx context.Context, req *dopv1.CreateAcc
 	return accountToProto(a), nil
 }
 
+// SendEmailVerification is the one RPC here that takes an address from the
+// request body and acts on it. Everywhere else in this file the identity comes
+// from the verified token (D-10) — here it cannot, because the person HAS NO
+// USER yet: EnsureUser refuses their unverified credential before creating
+// anything, which is the very thing this message exists to undo.
+//
+// What stands in for that: only a signed caller reaches the core at all
+// (ADR-0029), and the domain caps sends per address.
+func (s *IdentityServer) SendEmailVerification(ctx context.Context, req *dopv1.SendEmailVerificationRequest) (*dopv1.SendEmailVerificationResponse, error) {
+	if err := s.svc.SendEmailVerification(ctx, req.GetEmail(), req.GetSubject(),
+		req.GetLink(), req.GetDisplayName()); err != nil {
+		return nil, err
+	}
+	return &dopv1.SendEmailVerificationResponse{}, nil
+}
+
 func (s *IdentityServer) ListMemberships(ctx context.Context, _ *dopv1.ListMembershipsRequest) (*dopv1.ListMembershipsResponse, error) {
 	members, err := s.svc.ListMemberships(ctx)
 	if err != nil {
