@@ -62,6 +62,16 @@ const (
 	// It is a Kind all the same because a Kind is what a channel adapter has to
 	// know how to BUILD, and this one does go out through the Mailer.
 	KindSecondFactorCode Kind = "second_factor_code"
+	// KindEmailVerification — proving a password credential's address before the
+	// session counts (spec SP-0 D-5, US-2).
+	//
+	// It has no row in the table for the same reason the second factor has none:
+	// there is nobody to notify yet. The person is on the sign-up screen waiting
+	// for it, and — the sharper reason — the CORE HAS NO USER for them. EnsureUser
+	// refuses an unverified password credential before creating anything, so a
+	// rule keyed on a user, an account or a membership would have nothing to
+	// match on. This is request/response, straight from the action.
+	KindEmailVerification Kind = "email_verification"
 )
 
 // directKinds are the kinds emitted WITHOUT a rule — straight from a domain, in
@@ -72,7 +82,7 @@ const (
 // no row. Leaving them out of Kinds() would let the Mailer's guarantee 1 pass
 // green while an adapter had no template — which is the silence ADR-0025 orders
 // us to test.
-var directKinds = []Kind{KindSecondFactorCode}
+var directKinds = []Kind{KindSecondFactorCode, KindEmailVerification}
 
 // Action is WHAT is done when the rule matches, addressable by NAME.
 //

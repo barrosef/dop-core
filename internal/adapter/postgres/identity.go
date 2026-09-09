@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -513,3 +514,36 @@ func accountFromCtx(ctx context.Context) (string, error) {
 }
 
 var _ identity.Repository = (*IdentityRepo)(nil)
+
+// VerificationRequestsSince answers the rate limit's two questions in ONE round
+// trip: how many messages went to this address inside the window, and when the
+// last one left (spec SP-0 US-2.5).
+//
+// Two queries would be the obvious shape and would also be a race: between the
+// count and the max(sent_at), another request can land, and the limit would let
+// through the one it exists to stop.
+func (r *IdentityRepo) VerificationRequestsSince(ctx context.Context, email string, since time.Time) (int, time.Time, error) {
+	var count int
+	var last *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*), max(sent_at)
+		  FROM email_verification_requests
+		 WHERE email = $1 AND sent_at >= $2`, email, since).Scan(&count, &last)
+	if err != nil {
+		return 0, time.Time{}, Translate(err, "the verification messages already sent")
+	}
+	// max() over no rows is NULL, which is "none yet" and not an error. It is
+	// scanned into a pointer for exactly that reason: a time.Time would take
+	// NULL as the zero year and read the same as "never", by accident.
+	if last == nil {
+		return count, time.Time{}, nil
+	}
+	return count, *last, nil
+}
+
+func (r *IdentityRepo) RecordVerificationRequest(ctx context.Context, email, subject string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO email_verification_requests (email, subject) VALUES ($1, $2)`,
+		email, subject)
+	return Translate(err, "the verification message record")
+}

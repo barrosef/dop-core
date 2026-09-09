@@ -71,6 +71,10 @@ var smtpIndex = map[string]smtpTemplate{
 		Subject: "{{.code}} é o seu código de verificação do DOP",
 		File:    "templates/smtp/second_factor_code.html",
 	},
+	string(notification.KindEmailVerification): {
+		Subject: "Confirme seu e-mail para entrar no DOP",
+		File:    "templates/smtp/email_verification.html",
+	},
 }
 
 type SMTPConfig struct {

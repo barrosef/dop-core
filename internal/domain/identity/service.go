@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
@@ -18,6 +19,7 @@ type Service struct {
 	clock  ports.Clock
 	stepUp StepUpGate
 	grants Grants
+	mailer ports.Mailer
 }
 
 // StepUpGate is the second factor's gate, in the narrowest possible shape: one
@@ -87,11 +89,27 @@ const MsgEmailBelongsToAnotherUser = "this e-mail already belongs to another sig
 // deterministic, and nobody noticed the abstraction was never proven. The panic
 // here is deliberate — this is a wiring error, caught at boot, not in production
 // at three in the morning.
-func NewService(repo Repository, clock ports.Clock) *Service {
+// Option is how the OPTIONAL dependencies arrive. The repository and the clock
+// are required and stay positional; a channel is not — most of what this service
+// does sends nothing, and every one of its callers would otherwise have to name
+// a mailer it has no use for.
+type Option func(*Service)
+
+// WithMailer wires the channel used by SendEmailVerification. Without it that
+// one method refuses; everything else is unaffected.
+func WithMailer(m ports.Mailer) Option {
+	return func(s *Service) { s.mailer = m }
+}
+
+func NewService(repo Repository, clock ports.Clock, opts ...Option) *Service {
 	if clock == nil {
 		panic("identity.NewService: clock is required — use clock.NewSystem()")
 	}
-	return &Service{repo: repo, clock: clock}
+	s := &Service{repo: repo, clock: clock}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 func (s *Service) now() time.Time { return s.clock.Now() }
@@ -791,4 +809,80 @@ func randomSuffix(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)[:n]
+}
+
+// ── Proving the address ──────────────────────────────────────────────────────
+
+// ResendInterval is the floor between two verification messages to the SAME
+// address. Same value as the second factor's, and for the same reason: it is
+// long enough that a person who did not receive the first one has actually
+// looked, and short enough that they do not give up.
+const ResendInterval = 60 * time.Second
+
+// MaxVerificationsPerHour is the ceiling per address. Five is generous for
+// somebody genuinely stuck and cheap enough that using this endpoint to post
+// mail to a stranger costs more than it is worth.
+const MaxVerificationsPerHour = 5
+
+// VerificationWindow is the window the ceiling is counted in.
+const VerificationWindow = time.Hour
+
+// SendEmailVerification sends the message that proves a password credential's
+// address (spec SP-0 US-2).
+//
+// The link is GENERATED ELSEWHERE and arrives ready: the BFF holds the Firebase
+// Admin capability and this core does not. What is here is the part that must
+// not be improvised — the rate limit, which needs state, and the channel, which
+// is the platform's and not a provider's.
+//
+// The rate limit is keyed on the ADDRESS and not on a user, because at this
+// moment THERE IS NO USER: EnsureUser refuses an unverified password credential
+// before creating anything. Whoever asks for this message exists in Firebase and
+// nowhere on this side.
+//
+// Read it also as what it would be if it were open: an endpoint that sends
+// arbitrary text to an arbitrary address is a mail relay. It is not open —
+// ADR-0029 means only a signed caller reaches it — and the ceiling is the second
+// line, for the day the first one has a hole.
+func (s *Service) SendEmailVerification(ctx context.Context, email, subject, link, name string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return errs.Invalid("e-mail not provided")
+	}
+	if link == "" {
+		// Sending the message without the link would produce an e-mail that
+		// looks right, arrives, and cannot be acted on — the worst of the three
+		// possible failures, because nobody reports it as broken.
+		return errs.Invalid("verification link not provided")
+	}
+	if s.mailer == nil {
+		return errs.New(errs.KindUnavailable, "no channel wired for the verification message")
+	}
+
+	count, last, err := s.repo.VerificationRequestsSince(ctx, email, s.clock.Now().Add(-VerificationWindow))
+	if err != nil {
+		return err
+	}
+	if !last.IsZero() {
+		if wait := ResendInterval - s.clock.Now().Sub(last); wait > 0 {
+			return errs.Precondition("wait %d seconds before asking for another message",
+				int(wait.Seconds()+0.999))
+		}
+	}
+	if count >= MaxVerificationsPerHour {
+		return errs.Precondition("too many verification messages for this address; try again later")
+	}
+
+	if _, err := s.mailer.Send(ctx, ports.Mail{
+		Kind:   string(notification.KindEmailVerification),
+		To:     email,
+		ToName: name,
+		Data:   map[string]any{"link": link, "name": name},
+	}); err != nil {
+		return err
+	}
+	// Recorded AFTER the send, on purpose: a provider that refused the message
+	// consumed nobody's allowance. The opposite order would let a broken channel
+	// lock a person out of retrying once it came back.
+	return s.repo.RecordVerificationRequest(ctx, email, subject)
 }

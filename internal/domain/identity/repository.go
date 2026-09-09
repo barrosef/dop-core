@@ -1,6 +1,9 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository is the identity domain's persistence PORT.
 //
@@ -22,6 +25,13 @@ type Repository interface {
 	AccountByHandle(ctx context.Context, handle string) (*Account, error)
 	CreateAccountWithOwner(ctx context.Context, a *Account, ownerUserID string) (*Account, error)
 	AccountsOfUser(ctx context.Context, userID string) ([]Account, []Membership, error)
+
+	// VerificationRequestsSince answers the rate limit's two questions at once:
+	// how many messages went to this address inside the window, and when the
+	// last one left. A zero time means none.
+	VerificationRequestsSince(ctx context.Context, email string, since time.Time) (int, time.Time, error)
+	// RecordVerificationRequest notes that one went out.
+	RecordVerificationRequest(ctx context.Context, email, subject string) error
 	// SetDefaultRevocationPolicy stores the value that will be COPIED onto a
 	// grant's own policy at share time (flow sharing spec §3.2). It changes only
 	// the default; grants already made are untouched.

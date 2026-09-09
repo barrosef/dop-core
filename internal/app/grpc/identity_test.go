@@ -155,6 +155,14 @@ func (s *stubIdentityRepo) AccountsOfUser(context.Context, string) ([]identity.A
 	return s.accounts, s.memberships, nil
 }
 
+func (s *stubIdentityRepo) VerificationRequestsSince(context.Context, string, time.Time) (int, time.Time, error) {
+	panic("VerificationRequestsSince: not taught to this double")
+}
+
+func (s *stubIdentityRepo) RecordVerificationRequest(context.Context, string, string) error {
+	panic("RecordVerificationRequest: not taught to this double")
+}
+
 func (s *stubIdentityRepo) CreateAccountWithOwner(_ context.Context, a *identity.Account, ownerID string) (*identity.Account, error) {
 	s.n++
 	a.ID = fmt.Sprintf("acct-%d", s.n)
