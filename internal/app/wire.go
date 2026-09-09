@@ -162,6 +162,15 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	// testable without spending a send or polluting anybody's inbox.
 	var correio ports.Mailer
 	switch cfg.MailBackend {
+	case "onesignal":
+		correio = mailer.NewOneSignal(mailer.OneSignalConfig{
+			AppID:      cfg.OneSignalAppID,
+			APIKey:     cfg.OneSignalAPIKey,
+			AuthScheme: cfg.OneSignalAuthScheme,
+			BaseURL:    cfg.OneSignalAPI,
+			From:       cfg.MailFrom,
+			FromName:   cfg.MailFromName,
+		})
 	case "sendgrid":
 		correio = mailer.NewSendGrid(mailer.SendGridConfig{
 			APIKey:    cfg.SendGridAPIKey,
