@@ -129,7 +129,7 @@ func (a *callAuth) authenticate(ctx context.Context, md metadata.MD, claimed ctx
 				proven.SessionID = as.SessionID
 				proven.ActorName = claimed.ActorName
 			} else {
-				log.Warn("assertion refused", "caller", caller)
+				log.Warn("assertion refused", "caller", caller, "error", err.Error())
 			}
 		}
 	}
@@ -138,7 +138,13 @@ func (a *callAuth) authenticate(ctx context.Context, md metadata.MD, claimed ctx
 	if tok := bearer(md); tok != "" && a.tokens != nil {
 		p, err := a.tokens.VerifyToken(ctx, tok)
 		if err != nil {
-			log.Warn("token refused")
+			// The kind travels with the message because the two mean opposite
+			// things and the refusal looks identical from outside: unauthorized
+			// is the CALLER's token being bad, unavailable is this process not
+			// managing to check it — a misconfigured issuer address, a network
+			// with no route to it. Logging neither cost an afternoon of reading
+			// `token refused` about a token that was perfectly valid.
+			log.Warn("token refused", "kind", string(errs.KindOf(err)), "error", err.Error())
 		} else {
 			// Kept regardless of what follows: the token proved the PERSON, and
 			// the bootstrap that creates their user runs precisely when the
