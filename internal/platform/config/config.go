@@ -388,9 +388,9 @@ func Load(mode string) (*Config, error) {
 	// path — discovered on the first invite that never arrives, with the process
 	// green for weeks.
 	switch c.MailBackend {
-	case "sendgrid", "smtp":
+	case "onesignal", "sendgrid", "smtp":
 	default:
-		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use sendgrid or smtp)", c.MailBackend)
+		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use onesignal, sendgrid or smtp)", c.MailBackend)
 	}
 	return c, nil
 }
