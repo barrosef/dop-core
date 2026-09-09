@@ -121,7 +121,23 @@ message EnsureUserRequest {
   string idempotency_key = 7;
 }
 message ListAccountsRequest  { reserved 1; UserRef user = 2; }
-message ListAccountsResponse { repeated Account accounts = 1; }
+// The account as ONE PERSON sees it.
+//
+// The role is not a property of the account — the same account is owned by one
+// person and merely viewed by another. Putting it on `Account` would be a
+// category error, and worse: a field relative to the observer, sitting inside a
+// shared entity that gets cached and passed around.
+message AccountMembership {
+  Account account = 1;
+  Role    role    = 2;
+}
+
+message ListAccountsResponse {
+  // Deprecated: carries no role, so a caller cannot tell an owner from a
+  // viewer. Still filled during the transition; `items` replaces it.
+  repeated Account accounts = 1 [deprecated = true];
+  repeated AccountMembership items = 2;
+}
 message GetAccountRequest    { reserved 1; string id = 2; }
 message CreateAccountRequest {
   reserved 1;

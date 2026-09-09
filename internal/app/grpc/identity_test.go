@@ -27,6 +27,55 @@ func TestEnsureUserWithoutAVerifiedTokenIsRefused(t *testing.T) {
 	}
 }
 
+func TestListAccountsSaysWhichRoleInWhichAccount(t *testing.T) {
+	// The same person is an owner in one account and a viewer in another. That
+	// is the whole point of the role living on the membership: without it the
+	// cockpit cannot tell the two apart until after switching into each one.
+	repo := &stubIdentityRepo{
+		users: map[string]*identity.User{},
+		accounts: []identity.Account{
+			{ID: "acct-own", Kind: identity.AccountPersonal, Handle: "ana"},
+			{ID: "acct-view", Kind: identity.AccountOrganization, Handle: "acme"},
+		},
+		memberships: []identity.Membership{
+			// DELIBERATELY in the opposite order to the accounts. The two slices
+			// happen to be aligned in the Postgres adapter, and the port never
+			// promised it — a positional join would pass every day until it
+			// handed somebody an owner's screen.
+			{UserID: "u-1", AccountID: "acct-view", Role: identity.RoleViewer},
+			{UserID: "u-1", AccountID: "acct-own", Role: identity.RoleOwner},
+		},
+	}
+	srv := NewIdentityServer(identity.NewService(repo, stubClock{}))
+
+	got, err := srv.ListAccounts(context.Background(), &dopv1.ListAccountsRequest{
+		User: &dopv1.UserRef{Id: "u-1"},
+	})
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+
+	want := map[string]dopv1.Role{
+		"acct-own":  dopv1.Role_ROLE_OWNER,
+		"acct-view": dopv1.Role_ROLE_VIEWER,
+	}
+	if len(got.GetItems()) != len(want) {
+		t.Fatalf("expected %d accounts with a role, got %d", len(want), len(got.GetItems()))
+	}
+	for _, it := range got.GetItems() {
+		id := it.GetAccount().GetId()
+		if it.GetRole() != want[id] {
+			t.Errorf("account %s came back as %s, expected %s", id, it.GetRole(), want[id])
+		}
+	}
+
+	// The deprecated field keeps answering: a caller still reading it must not
+	// silently start seeing an empty list in the middle of the transition.
+	if len(got.GetAccounts()) != len(want) {
+		t.Errorf("the deprecated `accounts` stopped being filled: %d", len(got.GetAccounts()))
+	}
+}
+
 func TestEnsureUserIgnoresWhatTheBodyClaims(t *testing.T) {
 	// The body says the e-mail is verified and the subject is somebody else's.
 	// Both are text. Only the token's answer may decide.
@@ -60,9 +109,10 @@ func (stubClock) Now() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, tim
 // value: a double that answers questions nobody taught it makes the test that
 // leans on it pass for the wrong reason.
 type stubIdentityRepo struct {
-	users    map[string]*identity.User
-	accounts []identity.Account
-	n        int
+	users       map[string]*identity.User
+	accounts    []identity.Account
+	memberships []identity.Membership
+	n           int
 }
 
 func (s *stubIdentityRepo) UserBySubject(_ context.Context, sub string) (*identity.User, error) {
@@ -102,13 +152,16 @@ func (s *stubIdentityRepo) UserByVerifiedEmail(_ context.Context, email string) 
 }
 
 func (s *stubIdentityRepo) AccountsOfUser(context.Context, string) ([]identity.Account, []identity.Membership, error) {
-	return s.accounts, nil, nil
+	return s.accounts, s.memberships, nil
 }
 
-func (s *stubIdentityRepo) CreateAccountWithOwner(_ context.Context, a *identity.Account, _ string) (*identity.Account, error) {
+func (s *stubIdentityRepo) CreateAccountWithOwner(_ context.Context, a *identity.Account, ownerID string) (*identity.Account, error) {
 	s.n++
 	a.ID = fmt.Sprintf("acct-%d", s.n)
 	s.accounts = append(s.accounts, *a)
+	s.memberships = append(s.memberships, identity.Membership{
+		UserID: ownerID, AccountID: a.ID, Role: identity.RoleOwner,
+	})
 	return a, nil
 }
 
