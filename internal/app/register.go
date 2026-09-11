@@ -47,7 +47,12 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// because accepting nil was what kept the abstraction decorative.
 	relogio := clock.NewSystem()
 
-	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), relogio)
+	// The mailer arrives so identity can send the verification message (US-2).
+	// It is an option and not a positional argument because everything else this
+	// service does sends nothing; when it is absent, only that one method
+	// refuses, and it says so.
+	identitySvc := identity.NewService(postgres.NewIdentityRepo(deps.Pool), relogio,
+		identity.WithMailer(deps.Mailer))
 	dopv1.RegisterIdentityServiceServer(srv, appgrpc.NewIdentityServer(identitySvc))
 
 	// The second factor is born right after identity, and BEFORE the domains

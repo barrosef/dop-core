@@ -75,6 +75,11 @@ var sendgridIndex = map[string]sgTemplate{
 		Subject: "{{code}} é o seu código de verificação do DOP",
 		File:    "second_factor_code.html",
 	},
+	string(notification.KindEmailVerification): {
+		Name:    "DOP — Confirmação de e-mail",
+		Subject: "Confirme seu e-mail para entrar no DOP",
+		File:    "email_verification.html",
+	},
 }
 
 type SendGridConfig struct {

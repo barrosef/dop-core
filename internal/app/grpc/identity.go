@@ -72,15 +72,37 @@ func (s *IdentityServer) ListAccounts(ctx context.Context, req *dopv1.ListAccoun
 			userID = call.ActorID
 		}
 	}
-	accounts, _, err := s.svc.ListAccounts(ctx, userID)
+	accounts, memberships, err := s.svc.ListAccounts(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*dopv1.Account, 0, len(accounts))
-	for i := range accounts {
-		out = append(out, accountToProto(&accounts[i]))
+	// Joined by account id rather than by position. The adapter happens to build
+	// both slices from the same rows, but the PORT does not promise that, and a
+	// silent misalignment would show one account carrying another's role — an
+	// authorization answer, wrong, with nothing to indicate it.
+	roleOf := make(map[string]identity.Role, len(memberships))
+	for i := range memberships {
+		roleOf[memberships[i].AccountID] = memberships[i].Role
 	}
-	return &dopv1.ListAccountsResponse{Accounts: out}, nil
+
+	out := make([]*dopv1.Account, 0, len(accounts))
+	items := make([]*dopv1.AccountMembership, 0, len(accounts))
+	for i := range accounts {
+		a := accountToProto(&accounts[i])
+		out = append(out, a)
+		items = append(items, &dopv1.AccountMembership{
+			Account: a,
+			// A membership with no role is not a role of "none": it is this
+			// account having no membership for this user, which cannot happen —
+			// the query joins ON the membership. ROLE_UNSPECIFIED says "the core
+			// did not answer" and nothing else, which is what a caller must be
+			// able to distinguish from "viewer".
+			Role: roleToProto(roleOf[accounts[i].ID]),
+		})
+	}
+	// `accounts` stays filled through the transition: it is deprecated, not gone,
+	// and a reader still on it must not silently start seeing an empty list.
+	return &dopv1.ListAccountsResponse{Accounts: out, Items: items}, nil
 }
 
 func (s *IdentityServer) GetAccount(ctx context.Context, req *dopv1.GetAccountRequest) (*dopv1.Account, error) {
@@ -97,6 +119,22 @@ func (s *IdentityServer) CreateAccount(ctx context.Context, req *dopv1.CreateAcc
 		return nil, err
 	}
 	return accountToProto(a), nil
+}
+
+// SendEmailVerification is the one RPC here that takes an address from the
+// request body and acts on it. Everywhere else in this file the identity comes
+// from the verified token (D-10) — here it cannot, because the person HAS NO
+// USER yet: EnsureUser refuses their unverified credential before creating
+// anything, which is the very thing this message exists to undo.
+//
+// What stands in for that: only a signed caller reaches the core at all
+// (ADR-0029), and the domain caps sends per address.
+func (s *IdentityServer) SendEmailVerification(ctx context.Context, req *dopv1.SendEmailVerificationRequest) (*dopv1.SendEmailVerificationResponse, error) {
+	if err := s.svc.SendEmailVerification(ctx, req.GetEmail(), req.GetSubject(),
+		req.GetLink(), req.GetDisplayName()); err != nil {
+		return nil, err
+	}
+	return &dopv1.SendEmailVerificationResponse{}, nil
 }
 
 func (s *IdentityServer) ListMemberships(ctx context.Context, _ *dopv1.ListMembershipsRequest) (*dopv1.ListMembershipsResponse, error) {

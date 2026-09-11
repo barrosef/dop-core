@@ -281,3 +281,82 @@ func extractAddress(cmd string) string {
 	}
 	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(cmd, "RCPT TO:")))
 }
+
+// ── OneSignal ───────────────────────────────────────────────────────────────
+
+// NewOneSignalDouble stands in for OneSignal's notifications endpoint.
+//
+// One thing it does that the others do not: it can answer 200 AND report that
+// nothing was delivered. That is not an invented shape — it is how OneSignal
+// reports an unsubscribed address or an application with no e-mail channel, and
+// it is the failure this adapter exists to not swallow. FailureContent uses it
+// on purpose, so the suite proves a "success" that reached nobody is refused.
+func NewOneSignalDouble(t *testing.T, f Failure, secret string) (string, *Inbox) {
+	t.Helper()
+	inbox := &Inbox{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inbox.Touched()
+		if r.URL.Path != "/notifications" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		switch f {
+		case FailureCredential:
+			// Echoes the credential back, exactly as SendGrid's double does: it
+			// is how the suite proves the adapter redacts rather than relays.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			writeError(w, "key "+r.Header.Get("Authorization")+" not authorized")
+			return
+		case FailureUnavailable:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			writeError(w, "instabilidade ao processar a key "+secret)
+			return
+		case FailureContent:
+			// 200. The refusal is INSIDE the success — the whole point.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "", "recipients": 0,
+				"errors": []string{"All included players are not subscribed"},
+			})
+			return
+		}
+
+		var body struct {
+			AppID              string            `json:"app_id"`
+			TargetChannel      string            `json:"target_channel"`
+			IncludeEmailTokens []string          `json:"include_email_tokens"`
+			EmailSubject       string            `json:"email_subject"`
+			EmailBody          string            `json:"email_body"`
+			Data               map[string]string `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// Without target_channel="email" OneSignal would treat this as a push
+		// and deliver it to nobody, with a 200. Refusing it here is what stops
+		// the adapter from being able to make that mistake quietly.
+		if body.TargetChannel != "email" {
+			w.WriteHeader(http.StatusBadRequest)
+			writeError(w, "target_channel must be email")
+			return
+		}
+		to := ""
+		if len(body.IncludeEmailTokens) > 0 {
+			to = body.IncludeEmailTokens[0]
+		}
+		inbox.Received(SentMail{
+			To: to, Kind: body.Data["dop_kind"],
+			Subject: body.EmailSubject, Body: body.EmailBody,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "os-" + to, "recipients": 1,
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, inbox
+}

@@ -41,8 +41,14 @@ import (
 // where it was mounted — and the day the volume was not there, the notice would
 // fail in production for a reason invisible at build time.
 //
+// The rendered bodies. NOT smtp-only despite the directory name: OneSignal
+// renders locally too and uses these same files, because the brand is one and a
+// second copy of the same HTML drifts from the first the week after it is made.
+// What stays separate per adapter is the INDEX (kind → file), which is the
+// thing the contract suite exists to catch a hole in.
+//
 //go:embed templates/smtp/*.html
-var smtpFiles embed.FS
+var htmlBodies embed.FS
 
 // smtpTemplate is one line of THIS provider's INDEX. An index INDEPENDENT of
 // SendGrid's on purpose — see the package header.
@@ -70,6 +76,10 @@ var smtpIndex = map[string]smtpTemplate{
 		// is where a person actually reads it.
 		Subject: "{{.code}} é o seu código de verificação do DOP",
 		File:    "templates/smtp/second_factor_code.html",
+	},
+	string(notification.KindEmailVerification): {
+		Subject: "Confirme seu e-mail para entrar no DOP",
+		File:    "templates/smtp/email_verification.html",
 	},
 }
 
@@ -124,7 +134,7 @@ func NewSMTP(cfg SMTPConfig) *SMTP {
 	// access block.
 	bodies := template.Must(template.New("smtp").
 		Option("missingkey=zero").
-		ParseFS(smtpFiles, "templates/smtp/*.html"))
+		ParseFS(htmlBodies, "templates/smtp/*.html"))
 
 	subjects := texttemplate.New("subjects").Option("missingkey=zero")
 	for kind, spec := range smtpIndex {
@@ -378,7 +388,7 @@ func baseName(p string) string {
 // is silent: the email goes out in both providers, only one of them without the
 // information that matters.
 func SMTPTemplateSource(file string) (string, error) {
-	b, err := smtpFiles.ReadFile("templates/smtp/" + baseName(file))
+	b, err := htmlBodies.ReadFile("templates/smtp/" + baseName(file))
 	if err != nil {
 		return "", errs.NotFound("SMTP template %q was not embedded", file)
 	}

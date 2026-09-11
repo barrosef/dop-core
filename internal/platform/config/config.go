@@ -167,7 +167,7 @@ type Config struct {
 	// ── communication (ADR-0025) ──
 	// MailBackend chooses the Mailer port's adapter. `smtp` is the self-hosted
 	// path; `sendgrid` the SaaS one. Both pass the same contract suite.
-	MailBackend string // sendgrid | smtp
+	MailBackend string // onesignal | sendgrid | smtp
 	// MailFrom/MailFromName are the INSTALLATION's sender. Not domain
 	// vocabulary: the platform is who notifies, and its address changes per
 	// installation.
@@ -200,8 +200,20 @@ type Config struct {
 	// to own it, and would loosen the port's guarantee 5 to accommodate the
 	// exception.
 	SendGridAPIKey string
-	SMTPPassword   string
-	SMTPStartTLS   bool
+	// OneSignal is the multi-channel provider (e-mail here; SMS and push are
+	// their own ports). An empty key OR an empty app id turns on the LOCAL DRY
+	// RUN — both are needed to send anything, so either being absent means the
+	// same thing.
+	OneSignalAppID string
+	// OneSignalAuthScheme prefixes the Authorization header. OneSignal moved
+	// from "Basic" to "Key" as it rotated its credential format and both are
+	// alive in the wild; getting it wrong produces a 401 indistinguishable from
+	// a bad key, which is a bad afternoon.
+	OneSignalAuthScheme string
+	OneSignalAPI        string
+	OneSignalAPIKey     string
+	SMTPPassword        string
+	SMTPStartTLS        bool
 	// SMSBackend chooses the SMSer port's adapter (ADR-0027 §4). An empty
 	// credential turns on the LOCAL REHEARSAL, the same gesture as SMTP's: the
 	// adapter prints the message instead of sending it, which is the local
@@ -288,24 +300,29 @@ func Load(mode string) (*Config, error) {
 			envInt("GIT_TIMEOUT_SECONDS", 30)) * time.Second,
 		GitRebaseTimeout: time.Duration(
 			envInt("GIT_REBASE_TIMEOUT_SECONDS", 180)) * time.Second,
-		GitMergeMethod:   env("GIT_MERGE_METHOD", "merge"),
-		MailBackend:      env("MAIL_BACKEND", "smtp"),
-		MailFrom:         env("MAIL_FROM", "noreply@dop.local"),
-		MailFromName:     env("MAIL_FROM_NAME", "DOP"),
-		SendGridAPI:      env("SENDGRID_API", "https://api.sendgrid.com"),
-		SMTPAddr:         env("SMTP_ADDR", ""),
-		SMTPUser:         env("SMTP_USER", ""),
-		SendGridAPIKey:   env("SENDGRID_API_KEY", ""),
-		SMTPPassword:     env("SMTP_PASSWORD", ""),
-		SMTPStartTLS:     env("SMTP_STARTTLS", "") == "true",
-		SMSBackend:       env("SMS_BACKEND", "twilio"),
-		SMSFrom:          env("SMS_FROM", ""),
-		TwilioAPI:        env("TWILIO_API", ""),
-		TwilioAccountSID: env("TWILIO_ACCOUNT_SID", ""),
-		TwilioAuthToken:  env("TWILIO_AUTH_TOKEN", ""),
-		ZenviaAPI:        env("ZENVIA_API", ""),
-		ZenviaToken:      env("ZENVIA_TOKEN", ""),
-		CockpitBaseURL:   env("COCKPIT_BASE_URL", ""),
+		GitMergeMethod: env("GIT_MERGE_METHOD", "merge"),
+		MailBackend:    env("MAIL_BACKEND", "smtp"),
+		MailFrom:       env("MAIL_FROM", "noreply@dop.local"),
+		MailFromName:   env("MAIL_FROM_NAME", "DOP"),
+		SendGridAPI:    env("SENDGRID_API", "https://api.sendgrid.com"),
+		SMTPAddr:       env("SMTP_ADDR", ""),
+		SMTPUser:       env("SMTP_USER", ""),
+		SendGridAPIKey: env("SENDGRID_API_KEY", ""),
+
+		OneSignalAppID:      env("ONESIGNAL_APP_ID", ""),
+		OneSignalAPI:        env("ONESIGNAL_API", "https://api.onesignal.com"),
+		OneSignalAuthScheme: env("ONESIGNAL_AUTH_SCHEME", "Key"),
+		OneSignalAPIKey:     env("ONESIGNAL_API_KEY", ""),
+		SMTPPassword:        env("SMTP_PASSWORD", ""),
+		SMTPStartTLS:        env("SMTP_STARTTLS", "") == "true",
+		SMSBackend:          env("SMS_BACKEND", "twilio"),
+		SMSFrom:             env("SMS_FROM", ""),
+		TwilioAPI:           env("TWILIO_API", ""),
+		TwilioAccountSID:    env("TWILIO_ACCOUNT_SID", ""),
+		TwilioAuthToken:     env("TWILIO_AUTH_TOKEN", ""),
+		ZenviaAPI:           env("ZENVIA_API", ""),
+		ZenviaToken:         env("ZENVIA_TOKEN", ""),
+		CockpitBaseURL:      env("COCKPIT_BASE_URL", ""),
 		DigestDelay: time.Duration(
 			envInt("DIGEST_DELAY_SECONDS", 900)) * time.Second,
 		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
@@ -371,9 +388,9 @@ func Load(mode string) (*Config, error) {
 	// path — discovered on the first invite that never arrives, with the process
 	// green for weeks.
 	switch c.MailBackend {
-	case "sendgrid", "smtp":
+	case "onesignal", "sendgrid", "smtp":
 	default:
-		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use sendgrid or smtp)", c.MailBackend)
+		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use onesignal, sendgrid or smtp)", c.MailBackend)
 	}
 	return c, nil
 }

@@ -103,6 +103,12 @@ type fakeRepo struct {
 	invites  map[string]*identity.Invite
 	accepted []string
 	nextID   int
+	// sends is the rate limit's whole memory: address → when each message left.
+	// The test drives the clock, so the fake is told the instant rather than
+	// reading one — a double with its own notion of now is a second clock, and
+	// two clocks in one test is how a flake is born.
+	sends map[string][]time.Time
+	now   time.Time
 }
 
 func newFakeRepo() *fakeRepo {
@@ -110,6 +116,29 @@ func newFakeRepo() *fakeRepo {
 		users: map[string]*identity.User{}, byID: map[string]*identity.User{},
 		accounts: map[string]*identity.Account{}, byHandle: map[string]*identity.Account{},
 	}
+}
+
+func (f *fakeRepo) VerificationRequestsSince(_ context.Context, email string, since time.Time) (int, time.Time, error) {
+	var count int
+	var last time.Time
+	for _, at := range f.sends[email] {
+		if at.Before(since) {
+			continue
+		}
+		count++
+		if at.After(last) {
+			last = at
+		}
+	}
+	return count, last, nil
+}
+
+func (f *fakeRepo) RecordVerificationRequest(_ context.Context, email, _ string) error {
+	if f.sends == nil {
+		f.sends = map[string][]time.Time{}
+	}
+	f.sends[email] = append(f.sends[email], f.now)
+	return nil
 }
 
 func (f *fakeRepo) id(prefix string) string {
@@ -1115,5 +1144,119 @@ func TestAPaddedEmailStillMeetsTheGuard(t *testing.T) {
 	})
 	if errs.KindOf(err) != errs.KindConflict {
 		t.Fatalf("whitespace must not carry an address past the guard: %v", err)
+	}
+}
+
+// ── The verification message (spec SP-0 US-2) ────────────────────────────────
+
+type recordingMailer struct {
+	sent []ports.Mail
+	fail error
+}
+
+func (m *recordingMailer) Send(_ context.Context, mail ports.Mail) (*ports.MailReceipt, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	m.sent = append(m.sent, mail)
+	return &ports.MailReceipt{}, nil
+}
+
+func (m *recordingMailer) Resolve(context.Context, string) error { return nil }
+
+func TestTheVerificationMessageCarriesTheLink(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	repo.now = now
+	mailer := &recordingMailer{}
+	svc := identity.NewService(repo, fixedClock{now}, identity.WithMailer(mailer))
+
+	if err := svc.SendEmailVerification(context.Background(),
+		" Ana@Example.com ", "sub-1", "https://dop-t.com/verify?oob=x", "Ana"); err != nil {
+		t.Fatalf("SendEmailVerification: %v", err)
+	}
+
+	if len(mailer.sent) != 1 {
+		t.Fatalf("expected one message, got %d", len(mailer.sent))
+	}
+	got := mailer.sent[0]
+	// Normalized before it leaves: the address is the rate limit's key, and
+	// " Ana@Example.com " counting separately from "ana@example.com" would be a
+	// limit anybody can walk around with a space bar.
+	if got.To != "ana@example.com" {
+		t.Errorf("the address was not normalized: %q", got.To)
+	}
+	if got.Kind != "email_verification" {
+		t.Errorf("wrong kind on the wire: %q", got.Kind)
+	}
+	if got.Data["link"] != "https://dop-t.com/verify?oob=x" {
+		t.Errorf("the link did not reach the template: %v", got.Data["link"])
+	}
+}
+
+func TestAMessageWithNoLinkIsRefusedBeforeItIsSent(t *testing.T) {
+	// The worst of the three possible failures: an e-mail that looks right,
+	// arrives, and cannot be acted on. Nobody reports that as broken.
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	repo.now = now
+	mailer := &recordingMailer{}
+	svc := identity.NewService(repo, fixedClock{now}, identity.WithMailer(mailer))
+
+	err := svc.SendEmailVerification(context.Background(), "ana@example.com", "sub-1", "", "Ana")
+
+	if errs.KindOf(err) != errs.KindInvalid {
+		t.Fatalf("expected an invalid-argument refusal, got %v", err)
+	}
+	if len(mailer.sent) != 0 {
+		t.Fatal("a message went out with no link in it")
+	}
+}
+
+func TestTwoMessagesInARowAreRefusedUntilTheIntervalPasses(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	repo.now = now
+	mailer := &recordingMailer{}
+	send := func(at time.Time) error {
+		repo.now = at
+		svc := identity.NewService(repo, fixedClock{at}, identity.WithMailer(mailer))
+		return svc.SendEmailVerification(context.Background(),
+			"ana@example.com", "sub-1", "https://dop-t.com/verify", "Ana")
+	}
+
+	if err := send(now); err != nil {
+		t.Fatalf("the first message: %v", err)
+	}
+	if err := send(now.Add(30 * time.Second)); errs.KindOf(err) != errs.KindPrecondition {
+		t.Fatalf("a second message 30s later should have been refused, got %v", err)
+	}
+	if err := send(now.Add(identity.ResendInterval + time.Second)); err != nil {
+		t.Fatalf("after the interval it must be allowed again: %v", err)
+	}
+	if len(mailer.sent) != 2 {
+		t.Fatalf("expected 2 messages actually sent, got %d", len(mailer.sent))
+	}
+}
+
+func TestAChannelThatRefusedConsumesNobodysAllowance(t *testing.T) {
+	// The record is written AFTER the send for this reason: a provider that was
+	// down would otherwise lock the person out of retrying once it came back —
+	// the outage would cost them their allowance as well as their message.
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	repo.now = now
+	mailer := &recordingMailer{fail: errs.New(errs.KindUnavailable, "provider down")}
+	svc := identity.NewService(repo, fixedClock{now}, identity.WithMailer(mailer))
+
+	if err := svc.SendEmailVerification(context.Background(),
+		"ana@example.com", "sub-1", "https://dop-t.com/verify", "Ana"); err == nil {
+		t.Fatal("a refused send reported success")
+	}
+
+	count, last, _ := repo.VerificationRequestsSince(context.Background(),
+		"ana@example.com", now.Add(-time.Hour))
+	if count != 0 || !last.IsZero() {
+		t.Fatalf("the failed send consumed the allowance: count=%d last=%v", count, last)
 	}
 }
