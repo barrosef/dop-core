@@ -57,6 +57,9 @@ type SentMail struct {
 	Kind    string
 	Subject string
 	Body    string
+	// ReplyTo is recorded by the doubles that can see it. Not a port guarantee:
+	// a channel with no notion of reply-to (SMS) leaves it empty.
+	ReplyTo string
 }
 
 // Received records a message. Called by the runners' doubles.
