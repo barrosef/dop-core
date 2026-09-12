@@ -330,6 +330,7 @@ func NewOneSignalDouble(t *testing.T, f Failure, secret string) (string, *Inbox)
 			IncludeEmailTokens []string          `json:"include_email_tokens"`
 			EmailSubject       string            `json:"email_subject"`
 			EmailBody          string            `json:"email_body"`
+			EmailReplyTo       string            `json:"email_reply_to_address"`
 			Data               map[string]string `json:"data"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -351,6 +352,7 @@ func NewOneSignalDouble(t *testing.T, f Failure, secret string) (string, *Inbox)
 		inbox.Received(SentMail{
 			To: to, Kind: body.Data["dop_kind"],
 			Subject: body.EmailSubject, Body: body.EmailBody,
+			ReplyTo: body.EmailReplyTo,
 		})
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

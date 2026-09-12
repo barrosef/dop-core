@@ -168,6 +168,9 @@ type Config struct {
 	// MailBackend chooses the Mailer port's adapter. `smtp` is the self-hosted
 	// path; `sendgrid` the SaaS one. Both pass the same contract suite.
 	MailBackend string // onesignal | sendgrid | smtp
+	// MailReplyTo is where a person's answer lands when MailFrom is a noreply
+	// address. Empty leaves it to the provider's default.
+	MailReplyTo string
 	// MailFrom/MailFromName are the INSTALLATION's sender. Not domain
 	// vocabulary: the platform is who notifies, and its address changes per
 	// installation.
@@ -304,6 +307,7 @@ func Load(mode string) (*Config, error) {
 		MailBackend:    env("MAIL_BACKEND", "smtp"),
 		MailFrom:       env("MAIL_FROM", "noreply@dop.local"),
 		MailFromName:   env("MAIL_FROM_NAME", "DOP"),
+		MailReplyTo:    env("MAIL_REPLY_TO", ""),
 		SendGridAPI:    env("SENDGRID_API", "https://api.sendgrid.com"),
 		SMTPAddr:       env("SMTP_ADDR", ""),
 		SMTPUser:       env("SMTP_USER", ""),

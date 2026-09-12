@@ -170,6 +170,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 			BaseURL:    cfg.OneSignalAPI,
 			From:       cfg.MailFrom,
 			FromName:   cfg.MailFromName,
+			ReplyTo:    cfg.MailReplyTo,
 		})
 	case "sendgrid":
 		correio = mailer.NewSendGrid(mailer.SendGridConfig{

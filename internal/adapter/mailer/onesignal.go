@@ -87,8 +87,11 @@ type OneSignalConfig struct {
 	BaseURL  string
 	From     string
 	FromName string
-	Timeout  time.Duration
-	Client   httpDoer
+	// ReplyTo is where a person's answer lands when the sender is a noreply
+	// address. Empty sends no reply-to and the provider's default applies.
+	ReplyTo string
+	Timeout time.Duration
+	Client  httpDoer
 }
 
 type OneSignal struct {
@@ -100,6 +103,7 @@ type OneSignal struct {
 	appID      string
 	from       string
 	fromName   string
+	replyTo    string
 	bodies     *template.Template
 	subjects   *texttemplate.Template
 }
@@ -142,6 +146,7 @@ func NewOneSignal(cfg OneSignalConfig) *OneSignal {
 		appID:      cfg.AppID,
 		from:       orDefault(cfg.From, DefaultFrom),
 		fromName:   orDefault(cfg.FromName, DefaultFromName),
+		replyTo:    cfg.ReplyTo,
 		bodies:     bodies,
 		subjects:   subjects,
 	}
@@ -182,6 +187,7 @@ type osNotification struct {
 	EmailBody          string   `json:"email_body"`
 	EmailFromName      string   `json:"email_from_name,omitempty"`
 	EmailFromAddress   string   `json:"email_from_address,omitempty"`
+	EmailReplyTo       string   `json:"email_reply_to_address,omitempty"`
 	// Data carries the kind to the provider, the same way the SMTP adapter puts
 	// it in an X-DOP-Kind header. It is what makes a message findable in the
 	// provider's console by what it IS rather than by its subject line — and
@@ -230,6 +236,7 @@ func (o *OneSignal) Send(ctx context.Context, m ports.Mail) (*ports.MailReceipt,
 		EmailBody:          body,
 		EmailFromName:      o.fromName,
 		EmailFromAddress:   o.from,
+		EmailReplyTo:       o.replyTo,
 		Data:               map[string]string{"dop_kind": m.Kind},
 	})
 	if err != nil {

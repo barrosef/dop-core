@@ -86,3 +86,28 @@ func TestMailerOneSignalASuccessThatReachedNobodyIsNotASuccess(t *testing.T) {
 		t.Fatalf("expected a content refusal, got %s: %v", k, err)
 	}
 }
+
+// A noreply sender with nowhere to answer is a support ticket that never
+// arrives. The reply-to is installation configuration, like the sender, and it
+// has to reach the wire on every message.
+func TestMailerOneSignalTheReplyToReachesTheProvider(t *testing.T) {
+	url, inbox := contract.NewOneSignalDouble(t, "", oneSignalKey)
+	m := mailer.NewOneSignal(mailer.OneSignalConfig{
+		AppID: oneSignalAppID, APIKey: oneSignalKey, BaseURL: url,
+		From: "noreply@mail.dop.test", ReplyTo: "people@dop.test",
+	})
+
+	if _, err := m.Send(t.Context(), ports.Mail{
+		AccountID: "acct-1", Kind: string(notification.KindEmailVerification),
+		To: "someone@example.test", Data: map[string]any{"link": "https://dop.test/v"},
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	msgs := inbox.Messages()
+	if len(msgs) != 1 {
+		t.Fatalf("expected one message, got %d", len(msgs))
+	}
+	if msgs[0].ReplyTo != "people@dop.test" {
+		t.Fatalf("the reply-to did not reach the provider: %q", msgs[0].ReplyTo)
+	}
+}
