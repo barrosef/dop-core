@@ -88,6 +88,11 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// fan-out to the subscribers. A subscription PER CLIENT would create a
 	// durable consumer on the broker for every open cockpit tab — and the port
 	// has no way to remove them.
+	//
+	// "dop.>" is every event the platform raises, and only that: dead letters
+	// live on eventbus.DLQSubject, deliberately outside this wildcard (see its
+	// doc comment) — without that separation, a dead letter's raw Postgres or
+	// SMTP error text would stream straight into every account's live cockpit.
 	eventSvc := event.NewService(postgres.NewEventRepo(deps.Pool), deps.Bus, relogio)
 	if err := eventSvc.Start(ctx, "", []string{"dop.>"}); err != nil {
 		return err

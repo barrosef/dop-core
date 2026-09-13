@@ -324,6 +324,45 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			}
 		})
 
+		t.Run("7d_a_wildcard_dop_consumer_never_receives_a_dead_letter", func(t *testing.T) {
+			// Every case above subscribes a DEDICATED collector to a UNIQUE
+			// subject — a topology production does not have. Production has
+			// `timeline` (and, before this fix, the live-event service)
+			// subscribed to "dop.>", the wildcard that matches every subject
+			// the platform uses. If DLQSubject sat inside that wildcard, this
+			// consumer would receive every dead letter too: `timeline` would
+			// try to insert the dead letter's id into a uuid column, fail
+			// forever, exhaust, and publish its OWN dead letter — which it
+			// would receive again. Six earlier reviews missed exactly this
+			// because nothing exercised a wildcard consumer alongside a
+			// failing handler. This case does, and asserts the wildcard
+			// consumer gets NOTHING out of the exhaustion.
+			bus := newBus(t)
+			subject := uniqueSubject("wildcard-dlq")
+
+			wildcard := newCollector()
+			subscribe(t, bus, "dop.>", wildcard.handler)
+			subscribe(t, bus, subject, func(ctx context.Context, e ports.Event) error {
+				return errs.New(errs.KindUnavailable, "the provider is down")
+			})
+
+			dead := newCollector()
+			subscribe(t, bus, eventbus.DLQSubject, dead.handler)
+
+			id := uniqueEventID()
+			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
+
+			// The dead letter must arrive somewhere...
+			dead.await(t, 1)
+			// ...and the wildcard consumer, which received the ORIGINAL event
+			// (it is under dop.>), must never receive the dead letter itself.
+			for _, e := range wildcard.events() {
+				if e.Aggregate == "dead_letter" || e.Type == eventbus.DLQSubject {
+					t.Fatalf("a dop.> wildcard consumer received a dead letter: %+v", e)
+				}
+			}
+		})
+
 		t.Run("8_concurrent_publish", func(t *testing.T) {
 			bus := newBus(t)
 			ctx := context.Background()

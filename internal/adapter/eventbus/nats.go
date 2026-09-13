@@ -27,10 +27,18 @@ const (
 	// After this many attempts the message goes to the DLQ instead of blocking
 	// the queue forever.
 	MaxDeliver = 5
-	// DLQSubject is where an exhausted event goes. Inside `dop.>`, so the
-	// existing stream retains it for the same 30 days — no second stream and no
-	// second retention policy to forget about.
-	DLQSubject = "dop.dlq"
+	// DLQSubject is where an exhausted event goes. It lives OUTSIDE `dop.>` on
+	// purpose: `timeline` (and, until this fix, the live-event service too)
+	// subscribe to `dop.>` — EVERY subject the platform uses. A dead letter
+	// published inside that wildcard is redelivered to consumers that have no
+	// idea what a DeadLetter envelope is: `timeline` tried to INSERT the
+	// record's id into a `uuid` column, failed forever (22P02), exhausted its
+	// own budget, and published its OWN dead letter — which it received again.
+	// Seven generations were reproduced in five seconds on the memory bus.
+	// The stream still retains it for the same 30 days: `dlq.>` is added to
+	// the stream's subject list below, alongside `dop.>`, instead of nesting
+	// the DLQ inside the subject every ordinary consumer already wildcards.
+	DLQSubject = "dlq.event"
 )
 
 // Envelope is the event's WIRE FORMAT: what the relay publishes and what the
@@ -160,8 +168,11 @@ func NewNATS(ctx context.Context, url string) (*NATS, error) {
 		return nil, errs.Wrap(errs.KindUnavailable, err, "failed to open JetStream")
 	}
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:      StreamName,
-		Subjects:  []string{StreamSubject},
+		Name: StreamName,
+		// dlq.> is a SEPARATE branch from dop.>, not a subject under it — see
+		// the comment on DLQSubject for why that separation is load-bearing.
+		// Both live in the same stream, so they share the same retention.
+		Subjects:  []string{StreamSubject, "dlq.>"},
 		Storage:   jetstream.FileStorage,
 		Retention: jetstream.LimitsPolicy,
 		MaxAge:    30 * 24 * time.Hour,
@@ -268,8 +279,8 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 //
 // The dead letter is published through the SAME Publish an ordinary event
 // uses, on DLQSubject, so it gets the same MsgId-based dedup and lands in the
-// same stream (dop.>) with the same 30-day retention — no second code path to
-// keep honest.
+// same stream (the dlq.> branch alongside dop.>, see NewNATS) with the same
+// 30-day retention — no second code path to keep honest.
 func (n *NATS) publishDeadLetter(ctx context.Context, consumer string, e ports.Event, cause error, attempts int) error {
 	dl := buildDeadLetter(consumer, e, cause, attempts)
 	// The dead letter's identity is the PAIR (event, consumer), not the event
