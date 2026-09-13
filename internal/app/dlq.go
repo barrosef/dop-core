@@ -39,7 +39,8 @@ func NewDLQConsumer(handlers map[string]ports.Handler, sigs event.SignatureStore
 // It returns nil in every terminal case, INCLUDING the failures — a returned
 // error would put the record back on the queue, and the queue is not where an
 // unprocessable record belongs. What it returns an error for is its own
-// inability to record, which deserves a redelivery.
+// inability to read or record against the signature store, which deserves a
+// redelivery.
 func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 	log := logging.From(ctx).With("dlq_event_id", e.ID)
 
@@ -67,13 +68,22 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 	if n := len(dl.Attempts); n > 0 {
 		code = dl.Attempts[n-1].ErrorCode
 	}
+	// decisionCode is the identity of the row this delivery decided against —
+	// captured ONCE, here, and used for every write this Handle makes to the
+	// signature store. The loop below reassigns `code` as each retry fails
+	// with its own code, which is right for the record's attempt history but
+	// wrong as a store key: error_signatures is unique on (consumer, code), so
+	// crediting a success or an exhaustion to whatever code failed LAST would
+	// write it to a different row than the one `Get`/`Decide` just consulted —
+	// evidence landing on a signature that was never the one classified.
+	decisionCode := code
 
 	seed := event.Classification(dl.Classification)
 	if seed == "" {
 		seed = event.Unknown
 	}
 	var sig event.Signature
-	stored, err := c.sigs.Get(ctx, dl.Consumer, code)
+	stored, err := c.sigs.Get(ctx, dl.Consumer, decisionCode)
 	if err != nil {
 		// The store being down is not the event's fault: ask for a redelivery.
 		return err
@@ -102,8 +112,10 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 		err := handler(ctx, dl.Event)
 		if err == nil {
 			// Evidence against the mark, and it is recorded even when the mark
-			// was right until now.
-			if sErr := c.sigs.RecordSuccess(ctx, dl.Consumer, code); sErr != nil {
+			// was right until now — against decisionCode, the row that was
+			// actually decided against, not whatever code the last failure
+			// (if any) happened to carry.
+			if sErr := c.sigs.RecordSuccess(ctx, dl.Consumer, decisionCode); sErr != nil {
 				log.Warn("the retry worked and the success was not recorded", "error", sErr)
 			}
 			log.Info("dead letter recovered", "consumer", dl.Consumer, "attempt", attempt)
@@ -120,7 +132,10 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 		code = failedCode
 	}
 
-	if err := c.sigs.RecordExhausted(ctx, dl.Consumer, code, seed); err != nil {
+	// RecordExhausted also targets decisionCode, for the same reason RecordSuccess
+	// does above — `code` at this point is the LAST attempt's code, which may
+	// differ from what was decided against.
+	if err := c.sigs.RecordExhausted(ctx, dl.Consumer, decisionCode, seed); err != nil {
 		log.Warn("the exhaustion was not recorded against the signature", "error", err)
 	}
 	log.Error("dead letter exhausted the recovery budget", "consumer", dl.Consumer, "code", code)

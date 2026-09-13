@@ -9,6 +9,7 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 )
 
 // deadLetterEvent builds the ports.Event a real subscription would deliver for
@@ -85,6 +86,54 @@ func TestARecoverableFailureIsRetriedAndASuccessIsRecorded(t *testing.T) {
 	}
 }
 
+// TestASuccessAfterDifferingFailureCodesIsRecordedAgainstTheDecidedCode pins
+// the fix for a drift bug: the code used to DECIDE (read from the incoming
+// dead letter's last attempt, and the one Get/Decide consulted) must be the
+// same code the outcome is recorded against — even when the retries in
+// between fail with codes OF THEIR OWN. error_signatures is unique on
+// (consumer, code); crediting the eventual success to whatever code the last
+// retry happened to fail with, instead of the code that was decided against,
+// writes the evidence to a row nobody read and leaves the real one to keep
+// climbing toward promotion on stale history.
+func TestASuccessAfterDifferingFailureCodesIsRecordedAgainstTheDecidedCode(t *testing.T) {
+	var calls int
+	handler := func(context.Context, ports.Event) error {
+		calls++
+		switch calls {
+		case 1:
+			return errs.New(errs.KindUnavailable, "timeout").WithCode("mail.timeout", nil)
+		case 2:
+			return errs.New(errs.KindUnavailable, "rate limited").WithCode("mail.rate_limited", nil)
+		default:
+			return nil
+		}
+	}
+	sigs := &stubSignatures{}
+	errors := &stubErrors{}
+	c := NewDLQConsumer(map[string]ports.Handler{"notification": handler}, sigs, errors, stubClock{})
+
+	dl := event.DeadLetter{Event: ports.Event{ID: "ev-1"}, Consumer: "notification",
+		Classification: string(event.Recoverable),
+		Attempts:       []event.Attempt{{ErrorCode: "mail.timeout"}}}
+	if err := c.Handle(context.Background(), deadLetterEvent(t, dl)); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	if calls != 3 {
+		t.Fatalf("expected 2 failures then a success (3 calls), got %d", calls)
+	}
+	if sigs.getCode != "mail.timeout" {
+		t.Fatalf("Get was called with %q, want the decided code %q", sigs.getCode, "mail.timeout")
+	}
+	if sigs.successCode != "mail.timeout" {
+		t.Errorf("RecordSuccess was called with %q, want the decided code %q — not %q, which is what the LAST retry failed with",
+			sigs.successCode, "mail.timeout", "mail.rate_limited")
+	}
+	if errors.recorded != 0 {
+		t.Error("a successful retry still reached the terminal table")
+	}
+}
+
 func TestAnUnknownConsumerGoesStraightToTheTable(t *testing.T) {
 	// A consumer that no longer exists — renamed, removed — must not make the
 	// DLQ loop on something nothing can handle.
@@ -118,17 +167,28 @@ type stubSignatures struct {
 	sig       *event.Signature
 	exhausted int
 	successes int
+
+	// getCode, successCode and exhaustedCode record the LAST code each method
+	// was called with — enough to pin that every call against one dead letter
+	// targets the same (consumer, code) row, however many differing codes the
+	// retries in between failed with.
+	getCode       string
+	successCode   string
+	exhaustedCode string
 }
 
-func (s *stubSignatures) Get(context.Context, string, string) (*event.Signature, error) {
+func (s *stubSignatures) Get(_ context.Context, _ string, code string) (*event.Signature, error) {
+	s.getCode = code
 	return s.sig, nil
 }
-func (s *stubSignatures) RecordExhausted(context.Context, string, string, event.Classification) error {
+func (s *stubSignatures) RecordExhausted(_ context.Context, _ string, code string, _ event.Classification) error {
 	s.exhausted++
+	s.exhaustedCode = code
 	return nil
 }
-func (s *stubSignatures) RecordSuccess(context.Context, string, string) error {
+func (s *stubSignatures) RecordSuccess(_ context.Context, _ string, code string) error {
 	s.successes++
+	s.successCode = code
 	return nil
 }
 
