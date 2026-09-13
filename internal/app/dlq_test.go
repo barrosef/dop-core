@@ -134,6 +134,39 @@ func TestASuccessAfterDifferingFailureCodesIsRecordedAgainstTheDecidedCode(t *te
 	}
 }
 
+// TestADeadLetterWithNoCodeStillProducesANonEmptyKey pins the fix for a
+// signature key that used to collapse to (consumer, ""): a dead letter built
+// before eventbus.buildDeadLetter's fallback existed (or corrupted in
+// transit) may still carry an empty ErrorCode. Get/RecordExhausted/
+// RecordSuccess must never be called with "" — that key is shared by every
+// uncoded failure of the consumer.
+func TestADeadLetterWithNoCodeStillProducesANonEmptyKey(t *testing.T) {
+	sigs := &stubSignatures{}
+	errors := &stubErrors{}
+	c := NewDLQConsumer(map[string]ports.Handler{
+		"notification": func(context.Context, ports.Event) error {
+			return errs.New(errs.KindUnavailable, "still down")
+		},
+	}, sigs, errors, stubClock{})
+
+	dl := event.DeadLetter{Event: ports.Event{ID: "ev-1"}, Consumer: "notification",
+		Classification: string(event.Recoverable),
+		Attempts:       []event.Attempt{{ErrorKind: string(errs.KindUnavailable)}}}
+	if err := c.Handle(context.Background(), deadLetterEvent(t, dl)); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	if sigs.getCode == "" {
+		t.Fatal("Get was called with an empty code — the signature key collapsed to (consumer, \"\")")
+	}
+	if sigs.getCode != string(errs.KindUnavailable) {
+		t.Fatalf("expected the fallback to be the recorded Kind (%q), got %q", errs.KindUnavailable, sigs.getCode)
+	}
+	if sigs.exhaustedCode != sigs.getCode {
+		t.Fatalf("RecordExhausted used %q, want the same decided code %q", sigs.exhaustedCode, sigs.getCode)
+	}
+}
+
 func TestAnUnknownConsumerGoesStraightToTheTable(t *testing.T) {
 	// A consumer that no longer exists — renamed, removed — must not make the
 	// DLQ loop on something nothing can handle.

@@ -96,7 +96,14 @@ func eventFrom(env Envelope, raw []byte) ports.Event {
 // delivery witnessed.
 func buildDeadLetter(consumer string, e ports.Event, cause error, attempts int) event.DeadLetter {
 	now := time.Now().UTC()
-	code, _ := errs.CodeOf(cause)
+	// errs.CodeOrKind, not CodeOf: the notifier, projection and notification
+	// adapters this feature classifies have ZERO WithCode call sites, so a
+	// bare CodeOf would leave ErrorCode empty for every real failure. The
+	// signature key is (consumer, code) — an empty code collapses every
+	// failure of a consumer into ONE row, and one broken template promotes
+	// the whole consumer to irrecoverable, skipping the retry even for a
+	// transient timeout that arrives later.
+	code := errs.CodeOrKind(cause)
 	return event.DeadLetter{
 		Event:    e,
 		Consumer: consumer,

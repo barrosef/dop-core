@@ -67,6 +67,16 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 	code := ""
 	if n := len(dl.Attempts); n > 0 {
 		code = dl.Attempts[n-1].ErrorCode
+		if code == "" {
+			// The producer (eventbus.buildDeadLetter) now falls back to the
+			// error's Kind itself, so a fresh record never gets here empty.
+			// This is defense for a record built before that fix: an empty
+			// code would still collapse the signature key to (consumer, ""),
+			// so fall back to the recorded Kind rather than trust CodeOf on
+			// an error object we no longer have — only the two strings this
+			// record froze survive the wire.
+			code = dl.Attempts[n-1].ErrorKind
+		}
 	}
 	// decisionCode is the identity of the row this delivery decided against —
 	// captured ONCE, here, and used for every write this Handle makes to the
@@ -121,7 +131,9 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 			log.Info("dead letter recovered", "consumer", dl.Consumer, "attempt", attempt)
 			return nil
 		}
-		failedCode, _ := errs.CodeOf(err)
+		// Same fallback as the producer (eventbus.buildDeadLetter): a retry's
+		// own attempt record must not go back to an empty code either.
+		failedCode := errs.CodeOrKind(err)
 		dl.Attempts = append(dl.Attempts, event.Attempt{
 			At:           c.clock.Now(),
 			ErrorKind:    string(errs.KindOf(err)),
