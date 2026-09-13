@@ -217,9 +217,37 @@ type Event struct {
 	AccountID   string
 	Aggregate   string
 	AggregateID string
-	Type        string
-	Payload     []byte
-	OccurredAt  time.Time
+	// AggregateKey is the aggregate's readable handle — "acme" for an account,
+	// the workspace's slug. It exists so a human or an agent can talk about a
+	// fact without a uuid, in a log, in a panel or in a conversation.
+	//
+	// It is a SNAPSHOT, not the truth of now: renaming the workspace does not
+	// rewrite the events that already happened, and the old event keeps saying
+	// the old name. That is what a log of facts is for.
+	//
+	// Empty where the aggregate has no natural stable handle — a grant, a
+	// notification. An honest blank beats a uuid wearing a nickname.
+	AggregateKey string
+	Type         string
+	Payload      []byte
+	OccurredAt   time.Time
+
+	// ── Who caused this ────────────────────────────────────────────────────
+	// Recorded by the outbox from the call's context, and carried all the way
+	// to the consumer. Before this existed the envelope dropped them, so a
+	// consumer failed without being able to say who caused the work — the
+	// answer was one join away in Postgres, which is archaeology at the moment
+	// of an error rather than a payload.
+	//
+	// All optional: a message published before this change has none, and an
+	// event raised by the scheduler has no person behind it.
+	ActorKind string
+	ActorID   string
+	RequestID string
+	SessionID string
+	// Caller is the COMPONENT that signed the call — "bff", "collector"
+	// (ADR-0029). Empty when the call was proven only by a person's token.
+	Caller string
 }
 
 // Handler processes an event. It MUST be idempotent: delivery is at-least-once

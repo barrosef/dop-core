@@ -34,13 +34,40 @@ const (
 // base64; the envelope has the payload as an OBJECT. It silenced every
 // delivery.
 type Envelope struct {
-	ID          string          `json:"id"`
-	AccountID   string          `json:"account_id"`
-	Aggregate   string          `json:"aggregate"`
-	AggregateID string          `json:"aggregate_id"`
-	Type        string          `json:"type"`
-	Payload     json.RawMessage `json:"payload"`
-	OccurredAt  time.Time       `json:"occurred_at"`
+	ID           string          `json:"id"`
+	AccountID    string          `json:"account_id"`
+	Aggregate    string          `json:"aggregate"`
+	AggregateID  string          `json:"aggregate_id"`
+	AggregateKey string          `json:"aggregate_key,omitempty"`
+	Type         string          `json:"type"`
+	Payload      json.RawMessage `json:"payload"`
+	OccurredAt   time.Time       `json:"occurred_at"`
+	ActorKind    string          `json:"actor_kind,omitempty"`
+	ActorID      string          `json:"actor_id,omitempty"`
+	RequestID    string          `json:"request_id,omitempty"`
+	SessionID    string          `json:"session_id,omitempty"`
+	Caller       string          `json:"caller,omitempty"`
+}
+
+// eventFrom builds the port's Event from the wire envelope. One function, used
+// by both adapters' consumers, so they can never disagree about which fields
+// cross.
+func eventFrom(env Envelope, raw []byte) ports.Event {
+	return ports.Event{
+		ID:           env.ID,
+		AccountID:    env.AccountID,
+		Aggregate:    env.Aggregate,
+		AggregateID:  env.AggregateID,
+		AggregateKey: env.AggregateKey,
+		Type:         env.Type,
+		Payload:      raw,
+		OccurredAt:   env.OccurredAt,
+		ActorKind:    env.ActorKind,
+		ActorID:      env.ActorID,
+		RequestID:    env.RequestID,
+		SessionID:    env.SessionID,
+		Caller:       env.Caller,
+	}
 }
 
 type NATS struct {
@@ -131,15 +158,7 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		}
 		// The handler receives the fields already unwrapped; Payload carries the
 		// whole envelope, for whoever wants the raw data.
-		e := ports.Event{
-			ID:          env.ID,
-			AccountID:   env.AccountID,
-			Aggregate:   env.Aggregate,
-			AggregateID: env.AggregateID,
-			Type:        env.Type,
-			Payload:     msg.Data(),
-			OccurredAt:  env.OccurredAt,
-		}
+		e := eventFrom(env, msg.Data())
 		if err := h(ctx, e); err != nil {
 			md, _ := msg.Metadata()
 			if md != nil && md.NumDelivered >= MaxDeliver {

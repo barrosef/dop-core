@@ -65,6 +65,34 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			}
 		})
 
+		t.Run("1c_the_call_context_survives_the_round_trip", func(t *testing.T) {
+			// The consumer is where failures happen, and a failure that cannot say
+			// who caused it costs a join into Postgres at exactly the wrong moment.
+			bus := newBus(t)
+			subject := uniqueSubject("contexto")
+			c := newCollector()
+			subscribe(t, bus, subject, c.handler)
+
+			id := uniqueEventID()
+			data := []byte(`{"id":"` + id + `","account_id":"acct-1","aggregate":"account",` +
+				`"aggregate_id":"9a2c","aggregate_key":"acme","type":"dop.identity.account.created",` +
+				`"payload":{},"occurred_at":"2026-09-13T12:00:00Z",` +
+				`"actor_kind":"user","actor_id":"u-1","request_id":"req-1",` +
+				`"session_id":"s-1","caller":"bff"}`)
+			publish(t, bus, subject, data)
+
+			got := c.await(t, 1)[0]
+			if got.ActorID != "u-1" || got.ActorKind != "user" {
+				t.Fatalf("the actor did not survive: kind=%q id=%q", got.ActorKind, got.ActorID)
+			}
+			if got.RequestID != "req-1" || got.SessionID != "s-1" || got.Caller != "bff" {
+				t.Fatalf("the call's identity did not survive: %+v", got)
+			}
+			if got.AggregateKey != "acme" {
+				t.Fatalf("the readable key did not survive: %q", got.AggregateKey)
+			}
+		})
+
 		t.Run("2_publish_with_no_payload_preserves_the_identification", func(t *testing.T) {
 			bus := newBus(t)
 			ctx := context.Background()
@@ -321,6 +349,14 @@ func (c *collector) distinct() map[string]bool {
 func (c *collector) waitFor(t *testing.T, n int, msg string) {
 	t.Helper()
 	waitUntil(t, 30*time.Second, func() bool { return len(c.events()) >= n }, msg)
+}
+
+// await is waitFor plus the events it waited for — most callers immediately
+// want what arrived, not just the fact that it did.
+func (c *collector) await(t *testing.T, n int) []ports.Event {
+	t.Helper()
+	c.waitFor(t, n, "the event never arrived")
+	return c.events()
 }
 
 // waitUntil replaces a fixed sleep: the delivery is asynchronous in both

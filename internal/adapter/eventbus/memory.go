@@ -178,15 +178,7 @@ func (a *memSubscription) consume() {
 			a.log.Error("unreadable event, discarded", "error", err, "subject", msg.subject)
 			continue
 		}
-		e := ports.Event{
-			ID:          env.ID,
-			AccountID:   env.AccountID,
-			Aggregate:   env.Aggregate,
-			AggregateID: env.AggregateID,
-			Type:        env.Type,
-			Payload:     msg.data, // bytes IDENTICAL to the ones published
-			OccurredAt:  env.OccurredAt,
-		}
+		e := eventFrom(env, msg.data) // bytes IDENTICAL to the ones published
 		if err := a.handler(a.ctx, e); err != nil {
 			msg.attempt++
 			if msg.attempt >= MaxDeliver {
@@ -207,7 +199,11 @@ func (a *memSubscription) consume() {
 }
 
 // envelopeOf builds the wire format from the event — used only when the
-// publisher did not bring a ready envelope.
+// publisher did not bring a ready envelope. Shared by both adapters' Publish
+// (they live in the same package): whoever calls Publish directly, without
+// going through the outbox, still gets whatever context fields it already set
+// on the event — leaving them out here would silently drop them on exactly
+// this path.
 func envelopeOf(e ports.Event) []byte {
 	occurred := e.OccurredAt
 	if occurred.IsZero() {
@@ -215,7 +211,10 @@ func envelopeOf(e ports.Event) []byte {
 	}
 	b, _ := json.Marshal(Envelope{
 		ID: e.ID, AccountID: e.AccountID, Aggregate: e.Aggregate,
-		AggregateID: e.AggregateID, Type: e.Type, OccurredAt: occurred,
+		AggregateID: e.AggregateID, AggregateKey: e.AggregateKey,
+		Type: e.Type, OccurredAt: occurred,
+		ActorKind: e.ActorKind, ActorID: e.ActorID,
+		RequestID: e.RequestID, SessionID: e.SessionID, Caller: e.Caller,
 	})
 	return b
 }
