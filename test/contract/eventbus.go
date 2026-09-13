@@ -235,14 +235,15 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			// and Subscribe's handler always decodes that body into Envelope. A
 			// bare DeadLetter JSON would decode into an Envelope with every field
 			// empty and NO error at all — exactly the silent failure this task
-			// exists to remove. So unwrap the envelope first, then read the
-			// DeadLetter out of its `payload`.
-			var env eventbus.Envelope
-			if err := json.Unmarshal(got.Payload, &env); err != nil {
-				t.Fatalf("the dead letter did not arrive as an envelope: %v", err)
+			// exists to remove. Aggregate arriving as "dead_letter" (not empty)
+			// is the proof; eventbus.DeadLetterFrom does the SAME unwrap
+			// production uses to read the DeadLetter back out of it — one
+			// decoder, not a second hand-rolled copy of the shape.
+			if got.Aggregate != "dead_letter" {
+				t.Fatalf("the dead letter did not arrive as a proper envelope: aggregate=%q", got.Aggregate)
 			}
-			var dl event.DeadLetter
-			if err := json.Unmarshal(env.Payload, &dl); err != nil {
+			dl, err := eventbus.DeadLetterFrom(got)
+			if err != nil {
 				t.Fatalf("the dead letter is not readable: %v", err)
 			}
 			if dl.Event.ID != id {
@@ -306,12 +307,11 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			got := dead.await(t, 2)
 			consumers := map[string]bool{}
 			for _, e := range got {
-				var env eventbus.Envelope
-				if err := json.Unmarshal(e.Payload, &env); err != nil {
-					t.Fatalf("the dead letter did not arrive as an envelope: %v", err)
+				if e.Aggregate != "dead_letter" {
+					t.Fatalf("the dead letter did not arrive as a proper envelope: aggregate=%q", e.Aggregate)
 				}
-				var dl event.DeadLetter
-				if err := json.Unmarshal(env.Payload, &dl); err != nil {
+				dl, err := eventbus.DeadLetterFrom(e)
+				if err != nil {
 					t.Fatalf("the dead letter is not readable: %v", err)
 				}
 				if dl.Event.ID != id {

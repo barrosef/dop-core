@@ -157,6 +157,29 @@ func deadLetterEnvelope(id string, e ports.Event, dl event.DeadLetter) ([]byte, 
 	return body, nil
 }
 
+// DeadLetterFrom is deadLetterEnvelope's inverse: it decodes the ports.Event a
+// subscription delivers for a dead letter back into the domain type.
+//
+// Exported and called from every place that reads a dead letter back —
+// DLQConsumer.Handle, and the contract suite's own assertions — instead of
+// each one re-deriving the two-step unwrap by hand. Before this existed, the
+// shape lived independently in three places (this encoder, DLQConsumer's own
+// unmarshal, and the contract suite's), and changing the encoder here could
+// leave one of the others decoding a zero-valued record with no error at
+// all — the exact silent failure this whole feature exists to remove,
+// reachable by a second route.
+func DeadLetterFrom(e ports.Event) (event.DeadLetter, error) {
+	var env Envelope
+	if err := json.Unmarshal(e.Payload, &env); err != nil {
+		return event.DeadLetter{}, errs.Wrap(errs.KindInvalid, err, "unreadable dead-letter envelope")
+	}
+	var dl event.DeadLetter
+	if err := json.Unmarshal(env.Payload, &dl); err != nil {
+		return event.DeadLetter{}, errs.Wrap(errs.KindInvalid, err, "unreadable dead letter")
+	}
+	return dl, nil
+}
+
 type NATS struct {
 	conn   *nats.Conn
 	js     jetstream.JetStream

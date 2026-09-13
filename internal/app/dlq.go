@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
@@ -49,17 +48,14 @@ func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
 	// publishDeadLetter wraps the DeadLetter JSON inside that envelope's own
 	// `payload` field precisely so a bare, field-less object here does not
 	// decode into a zero-valued DeadLetter with no error at all — the exact
-	// silent failure this component exists to stop. So the envelope is
-	// unwrapped first, and the DeadLetter is read out of ITS payload.
-	var env eventbus.Envelope
-	if err := json.Unmarshal(e.Payload, &env); err != nil {
+	// silent failure this component exists to stop. eventbus.DeadLetterFrom is
+	// the ONE place that unwraps it: this used to be two json.Unmarshal calls
+	// written out by hand here, a second copy of the shape publishDeadLetter
+	// already encodes, and a copy that could silently drift from it.
+	dl, err := eventbus.DeadLetterFrom(e)
+	if err != nil {
 		// Terminal by nature: no retry improves broken JSON. Logged and
 		// dropped, never redelivered.
-		log.Error("unreadable dead-letter envelope, discarded", "error", err)
-		return nil
-	}
-	var dl event.DeadLetter
-	if err := json.Unmarshal(env.Payload, &dl); err != nil {
 		log.Error("unreadable dead letter, discarded", "error", err)
 		return nil
 	}
