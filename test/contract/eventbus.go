@@ -281,6 +281,49 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			dead.awaitNone(t, 2*time.Second)
 		})
 
+		t.Run("7c_the_same_event_failing_in_two_consumers_produces_two_dead_letters", func(t *testing.T) {
+			// timeline subscribes to dop.> — every subject — so it overlaps every
+			// other consumer on every subject those handle. If the dead letter's
+			// dedup key were the bare event id, the second consumer's record
+			// would collide with the first's and the broker would drop it
+			// silently: one consumer's failure would vanish with no error
+			// anywhere. The record's identity must be the PAIR (event, consumer).
+			bus := newBus(t)
+			subject := uniqueSubject("dois-consumidores")
+
+			dead := newCollector()
+			subscribe(t, bus, eventbus.DLQSubject, dead.handler)
+			subscribe(t, bus, subject, func(ctx context.Context, e ports.Event) error {
+				return errs.New(errs.KindUnavailable, "consumer A is down")
+			})
+			subscribe(t, bus, subject, func(ctx context.Context, e ports.Event) error {
+				return errs.New(errs.KindUnavailable, "consumer B is down")
+			})
+
+			id := uniqueEventID()
+			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
+
+			got := dead.await(t, 2)
+			consumers := map[string]bool{}
+			for _, e := range got {
+				var env eventbus.Envelope
+				if err := json.Unmarshal(e.Payload, &env); err != nil {
+					t.Fatalf("the dead letter did not arrive as an envelope: %v", err)
+				}
+				var dl event.DeadLetter
+				if err := json.Unmarshal(env.Payload, &dl); err != nil {
+					t.Fatalf("the dead letter is not readable: %v", err)
+				}
+				if dl.Event.ID != id {
+					t.Fatalf("the dead letter carries another event: %q", dl.Event.ID)
+				}
+				consumers[dl.Consumer] = true
+			}
+			if len(consumers) != 2 {
+				t.Fatalf("expected two distinct consumers' dead letters, got %d: %v", len(consumers), consumers)
+			}
+		})
+
 		t.Run("8_concurrent_publish", func(t *testing.T) {
 			bus := newBus(t)
 			ctx := context.Background()

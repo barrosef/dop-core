@@ -223,12 +223,19 @@ func (a *memSubscription) consume() {
 // everything else on this bus. No second delivery mechanism to keep honest.
 func (a *memSubscription) publishDeadLetter(e ports.Event, cause error, attempts int) error {
 	dl := buildDeadLetter(a.durable, e, cause, attempts)
-	body, err := deadLetterEnvelope(e, dl)
+	// Same composite key as the NATS adapter, for the same reason: the dead
+	// letter's identity is the pair (event, consumer), not the event alone —
+	// see the comment in nats.go's publishDeadLetter. The in-memory bus does
+	// not dedup by id today, but the record's identity must not depend on
+	// which adapter is under it, and a future dedup here should not have to
+	// rediscover this.
+	id := e.ID + ":" + a.durable
+	body, err := deadLetterEnvelope(id, e, dl)
 	if err != nil {
 		return err
 	}
 	return a.bus.Publish(a.ctx, ports.Event{
-		ID:        e.ID,
+		ID:        id,
 		AccountID: e.AccountID,
 		Aggregate: "dead_letter",
 		Type:      DLQSubject,

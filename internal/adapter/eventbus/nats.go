@@ -114,13 +114,18 @@ func buildDeadLetter(consumer string, e ports.Event, cause error, attempts int) 
 // is the entire reason this task exists; the DLQ record must not reintroduce
 // it. So the DeadLetter JSON becomes the envelope's inner `payload`, and the
 // identifying fields come from the event that failed.
-func deadLetterEnvelope(e ports.Event, dl event.DeadLetter) ([]byte, error) {
+//
+// id is the RECORD's identity, not the failed event's — see the comment on
+// its construction in publishDeadLetter. It is deliberately a separate
+// parameter from e.ID so nothing here can quietly go back to using the bare
+// event id.
+func deadLetterEnvelope(id string, e ports.Event, dl event.DeadLetter) ([]byte, error) {
 	dlBody, err := json.Marshal(dl)
 	if err != nil {
 		return nil, errs.Wrap(errs.KindInternal, err, "unreadable dead letter")
 	}
 	body, err := json.Marshal(Envelope{
-		ID:           e.ID,
+		ID:           id,
 		AccountID:    e.AccountID,
 		Aggregate:    "dead_letter",
 		AggregateID:  e.AggregateID,
@@ -267,12 +272,24 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 // keep honest.
 func (n *NATS) publishDeadLetter(ctx context.Context, consumer string, e ports.Event, cause error, attempts int) error {
 	dl := buildDeadLetter(consumer, e, cause, attempts)
-	body, err := deadLetterEnvelope(e, dl)
+	// The dead letter's identity is the PAIR (event, consumer), not the event
+	// alone: `timeline` subscribes to dop.> — every subject — so it overlaps
+	// every other consumer on every subject those handle, and the SAME event
+	// can fail in more than one of them. Publish's MsgId dedup is keyed by
+	// this id; a bare e.ID would make the second consumer's dead letter
+	// collide with the first's within JetStream's dedup window, and the
+	// broker would drop it — one consumer's failure vanishing with no error
+	// anywhere, the exact silent loss this task exists to remove, one layer
+	// up. Widening the key to "<event id>:<consumer>" keeps the property
+	// worth keeping (a retried publish of the SAME (event, consumer) failure
+	// still dedups) while telling the two consumers' records apart.
+	id := e.ID + ":" + consumer
+	body, err := deadLetterEnvelope(id, e, dl)
 	if err != nil {
 		return err
 	}
 	return n.Publish(ctx, ports.Event{
-		ID:        e.ID,
+		ID:        id,
 		AccountID: e.AccountID,
 		Aggregate: "dead_letter",
 		Type:      DLQSubject,
