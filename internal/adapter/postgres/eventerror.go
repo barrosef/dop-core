@@ -110,7 +110,8 @@ type EventErrorRow struct {
 	EventID, Consumer, AccountID      string
 	EventType, Aggregate, AggregateID string
 	AggregateKey, ActorKind, ActorID  string
-	RequestID, Classification         string
+	RequestID, SessionID, Caller      string
+	Classification                    string
 	LastCode, LastMessage             string
 	Attempts                          []byte
 	BrokerAttempts                    int
@@ -139,6 +140,8 @@ func EventErrorColumns(dl event.DeadLetter, final event.Classification) EventErr
 		ActorKind:      dl.Event.ActorKind,
 		ActorID:        dl.Event.ActorID,
 		RequestID:      dl.Event.RequestID,
+		SessionID:      dl.Event.SessionID,
+		Caller:         dl.Event.Caller,
 		Classification: string(final),
 		Attempts:       attempts,
 		BrokerAttempts: dl.BrokerAttempts,
@@ -153,6 +156,13 @@ func EventErrorColumns(dl event.DeadLetter, final event.Classification) EventErr
 // Record writes the terminal row. Called once, when a dead letter has burned
 // its retries and its DLQ rounds — nothing downstream of this reads the event
 // again, so everything a reader would need goes in now.
+//
+// ON CONFLICT DO NOTHING on (event_id, consumer) — the same key the dead
+// letter's own dedup uses — is what makes this safe to call twice: a
+// redelivery of DLQConsumer.Handle after this INSERT committed but something
+// later in the same call failed (RecordExhausted, for instance) must not
+// produce a second row, the same way `timeline`'s own idempotent INSERT
+// already guards against a duplicate projection.
 func (r *EventErrorRepo) Record(ctx context.Context, dl event.DeadLetter, final event.Classification) error {
 	c := EventErrorColumns(dl, final)
 	// An account is not guaranteed: `user.ensured` happens before the personal
@@ -165,12 +175,13 @@ func (r *EventErrorRepo) Record(ctx context.Context, dl event.DeadLetter, final 
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO event_errors (event_id, consumer, account_id, event_type,
 		    aggregate, aggregate_id, aggregate_key, actor_kind, actor_id,
-		    request_id, attempts, broker_attempts, classification, last_code,
-		    last_message)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		    request_id, session_id, caller, attempts, broker_attempts,
+		    classification, last_code, last_message)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		ON CONFLICT (event_id, consumer) DO NOTHING`,
 		c.EventID, c.Consumer, accountID, c.EventType, c.Aggregate, c.AggregateID,
-		c.AggregateKey, c.ActorKind, c.ActorID, c.RequestID, c.Attempts,
-		c.BrokerAttempts, c.Classification, c.LastCode, c.LastMessage)
+		c.AggregateKey, c.ActorKind, c.ActorID, c.RequestID, c.SessionID, c.Caller,
+		c.Attempts, c.BrokerAttempts, c.Classification, c.LastCode, c.LastMessage)
 	return Translate(err, "the event error")
 }
 

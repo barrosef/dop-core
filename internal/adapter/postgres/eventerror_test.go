@@ -16,6 +16,7 @@ func TestTheTerminalRowCarriesWhoAndWhat(t *testing.T) {
 			AggregateID: "9a2c", AggregateKey: "acme",
 			Type:      "dop.identity.account.created",
 			ActorKind: "user", ActorID: "u-1", RequestID: "req-1",
+			SessionID: "s-1", Caller: "bff",
 		},
 		Consumer: "notification",
 		Attempts: []event.Attempt{
@@ -28,6 +29,9 @@ func TestTheTerminalRowCarriesWhoAndWhat(t *testing.T) {
 
 	if cols.AggregateKey != "acme" || cols.ActorID != "u-1" || cols.RequestID != "req-1" {
 		t.Fatalf("the context did not reach the row: %+v", cols)
+	}
+	if cols.SessionID != "s-1" || cols.Caller != "bff" {
+		t.Fatalf("the caller's identity did not reach the row: %+v", cols)
 	}
 	if cols.LastCode != "mail.provider_down" || cols.LastMessage != "boom" {
 		t.Fatalf("the last failure did not reach the row: %+v", cols)

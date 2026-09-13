@@ -25,6 +25,12 @@ CREATE TABLE event_errors (
   actor_kind     text,
   actor_id       text,
   request_id     text,
+  session_id     text,
+  -- The COMPONENT that signed the call — "bff", "collector" (ADR-0029). The
+  -- whole point of carrying it through the envelope was for it to reach the
+  -- one place a human reads a failure; leaving it out here would stop it one
+  -- step short of that.
+  caller         text,
   attempts       jsonb NOT NULL DEFAULT '[]',
   -- How many times the BROKER delivered the event before giving up on it
   -- (JetStream's MaxDeliver, or the in-memory adapter's own counter) — not
@@ -42,7 +48,15 @@ CREATE TABLE event_errors (
   CONSTRAINT event_error_state_is_known
     CHECK (state IN ('open', 'retrying', 'resolved', 'given_up')),
   CONSTRAINT event_error_classification_is_known
-    CHECK (classification IN ('recoverable', 'irrecoverable', 'unknown'))
+    CHECK (classification IN ('recoverable', 'irrecoverable', 'unknown')),
+
+  -- The terminal row's identity is the SAME pair the dead letter's own dedup
+  -- key uses (event, consumer) — see eventbus.publishDeadLetter. Without it,
+  -- DLQConsumer.Handle is not idempotent: a redelivery after Record succeeds
+  -- but something later in the same Handle call fails would insert a SECOND
+  -- row for the same (event, consumer), the same shape `timeline` already
+  -- guards against with its own ON CONFLICT DO NOTHING.
+  CONSTRAINT event_errors_event_consumer_key UNIQUE (event_id, consumer)
 );
 
 -- The two questions a panel asks: what is open, and what happened to this
