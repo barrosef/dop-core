@@ -46,6 +46,20 @@ func (r *EventErrorRepo) RecordExhausted(ctx context.Context, consumer, code str
 	// left alone unless the promotion rule fires — overwriting it on every
 	// failure would erase a human's mark, and would also erase a classification
 	// the learning already settled on.
+	//
+	// The promotion also requires last_success_at IS NULL. Without it, this
+	// SQL and event.Decide disagree: RecordSuccess is evidence a success
+	// happened but leaves exhausted_count untouched (before this fix) or
+	// resets it to zero (after it) — either way, a signature can carry BOTH a
+	// recorded success and, from exhaustions that came after it, a count past
+	// the threshold. Decide already treats a recorded success as decisive over
+	// the exhaustion count (§ Decide, rule 2): "burned every retry more than
+	// once AND has never succeeded" is the actual spec rule, and the second
+	// half — AND never succeeded — was missing here. Checking it here makes
+	// the stored `classification` column agree with what Decide computes,
+	// instead of a reader of the raw row (a panel, a report, any caller that
+	// does not route through Decide) seeing a different answer than the
+	// domain gives.
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO error_signatures (consumer, code, classification, exhausted_count, classified_by)
 		VALUES ($1, $2, $3, 1, 'seed')
@@ -54,11 +68,13 @@ func (r *EventErrorRepo) RecordExhausted(ctx context.Context, consumer, code str
 		       last_seen = now(),
 		       classification = CASE
 		         WHEN error_signatures.classified_by = 'human' THEN error_signatures.classification
-		         WHEN error_signatures.exhausted_count + 1 >= $4 THEN 'irrecoverable'
+		         WHEN error_signatures.exhausted_count + 1 >= $4
+		              AND error_signatures.last_success_at IS NULL THEN 'irrecoverable'
 		         ELSE error_signatures.classification END,
 		       classified_by = CASE
 		         WHEN error_signatures.classified_by = 'human' THEN 'human'
-		         WHEN error_signatures.exhausted_count + 1 >= $4 THEN 'learned'
+		         WHEN error_signatures.exhausted_count + 1 >= $4
+		              AND error_signatures.last_success_at IS NULL THEN 'learned'
 		         ELSE error_signatures.classified_by END`,
 		consumer, code, string(seed), event.ExhaustionsBeforeLearning)
 	return Translate(err, "the error signature")
@@ -66,10 +82,16 @@ func (r *EventErrorRepo) RecordExhausted(ctx context.Context, consumer, code str
 
 func (r *EventErrorRepo) RecordSuccess(ctx context.Context, consumer, code string) error {
 	// A success is evidence against a machine's mark, and never against a
-	// human's.
+	// human's. exhausted_count resets to zero: after a success, the count
+	// means "exhaustions since the last success" — under any other reading
+	// the number does not mean what RecordExhausted's threshold check needs
+	// it to mean, and a later exhaustion would count budgets burned before
+	// the success towards a promotion that should only fire on budgets burned
+	// SINCE it.
 	_, err := r.pool.Exec(ctx, `
 		UPDATE error_signatures
 		   SET last_success_at = now(), last_seen = now(),
+		       exhausted_count = 0,
 		       classification = CASE WHEN classified_by = 'human'
 		                             THEN classification ELSE 'recoverable' END,
 		       classified_by  = CASE WHEN classified_by = 'human'
