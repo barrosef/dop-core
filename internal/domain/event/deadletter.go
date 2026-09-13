@@ -1,6 +1,7 @@
 package event
 
 import (
+	"context"
 	"time"
 
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
@@ -43,4 +44,10 @@ type DeadLetter struct {
 	Classification string    `json:"classification"`
 	FirstFailedAt  time.Time `json:"first_failed_at"`
 	LastFailedAt   time.Time `json:"last_failed_at"`
+}
+
+// ErrorStore holds what nobody could process. Terminal: whatever reaches it has
+// already burned the retries and the DLQ rounds.
+type ErrorStore interface {
+	Record(ctx context.Context, dl DeadLetter, final Classification) error
 }

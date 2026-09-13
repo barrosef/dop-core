@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -101,3 +102,73 @@ func (r *EventErrorRepo) RecordSuccess(ctx context.Context, consumer, code strin
 }
 
 var _ event.SignatureStore = (*EventErrorRepo)(nil)
+
+// EventErrorRow is the terminal row's column values, built from a dead letter.
+// Exported and separated from the INSERT so the mapping can be asserted without
+// a database — the mapping is where the context gets silently dropped.
+type EventErrorRow struct {
+	EventID, Consumer, AccountID      string
+	EventType, Aggregate, AggregateID string
+	AggregateKey, ActorKind, ActorID  string
+	RequestID, Classification         string
+	LastCode, LastMessage             string
+	Attempts                          []byte
+}
+
+// EventErrorColumns maps a DeadLetter, plus the classification decided at the
+// end of the road, to the terminal row's columns. Kept apart from the INSERT
+// on purpose: the mapping is exactly where a field from ports.Event's caller
+// context (AggregateKey, ActorID, RequestID, ...) can be silently dropped, and
+// a pure function is the part of this task a test can hold without a database.
+func EventErrorColumns(dl event.DeadLetter, final event.Classification) EventErrorRow {
+	// Attempts marshals the WHOLE history, DLQ rounds included — the question
+	// this table answers is "what happened, exactly", and an answer needing a
+	// second query is an answer nobody looks up. json.Marshal on a []Attempt
+	// slice of plain fields cannot fail; the error is discarded rather than
+	// threaded through a mapping the caller expects to be pure.
+	attempts, _ := json.Marshal(dl.Attempts)
+	row := EventErrorRow{
+		EventID:        dl.Event.ID,
+		Consumer:       dl.Consumer,
+		AccountID:      dl.Event.AccountID,
+		EventType:      dl.Event.Type,
+		Aggregate:      dl.Event.Aggregate,
+		AggregateID:    dl.Event.AggregateID,
+		AggregateKey:   dl.Event.AggregateKey,
+		ActorKind:      dl.Event.ActorKind,
+		ActorID:        dl.Event.ActorID,
+		RequestID:      dl.Event.RequestID,
+		Classification: string(final),
+		Attempts:       attempts,
+	}
+	if n := len(dl.Attempts); n > 0 {
+		row.LastCode = dl.Attempts[n-1].ErrorCode
+		row.LastMessage = dl.Attempts[n-1].ErrorMessage
+	}
+	return row
+}
+
+// Record writes the terminal row. Called once, when a dead letter has burned
+// its retries and its DLQ rounds — nothing downstream of this reads the event
+// again, so everything a reader would need goes in now.
+func (r *EventErrorRepo) Record(ctx context.Context, dl event.DeadLetter, final event.Classification) error {
+	c := EventErrorColumns(dl, final)
+	// An account is not guaranteed: `user.ensured` happens before the personal
+	// account exists. An empty string is not a uuid — it goes in as NULL rather
+	// than failing the insert on a type the column would reject.
+	var accountID any
+	if c.AccountID != "" {
+		accountID = c.AccountID
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO event_errors (event_id, consumer, account_id, event_type,
+		    aggregate, aggregate_id, aggregate_key, actor_kind, actor_id,
+		    request_id, attempts, classification, last_code, last_message)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		c.EventID, c.Consumer, accountID, c.EventType, c.Aggregate, c.AggregateID,
+		c.AggregateKey, c.ActorKind, c.ActorID, c.RequestID, c.Attempts,
+		c.Classification, c.LastCode, c.LastMessage)
+	return Translate(err, "the event error")
+}
+
+var _ event.ErrorStore = (*EventErrorRepo)(nil)
