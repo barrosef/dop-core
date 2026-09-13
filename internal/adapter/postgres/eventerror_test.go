@@ -21,6 +21,7 @@ func TestTheTerminalRowCarriesWhoAndWhat(t *testing.T) {
 		Attempts: []event.Attempt{
 			{ErrorKind: "unavailable", ErrorCode: "mail.provider_down", ErrorMessage: "boom"},
 		},
+		BrokerAttempts: 5,
 	}
 
 	cols := EventErrorColumns(dl, event.Irrecoverable)
@@ -33,5 +34,8 @@ func TestTheTerminalRowCarriesWhoAndWhat(t *testing.T) {
 	}
 	if cols.Classification != "irrecoverable" {
 		t.Fatalf("the final classification did not reach the row: %q", cols.Classification)
+	}
+	if cols.BrokerAttempts != 5 {
+		t.Fatalf("the broker's own attempt count did not reach the row: %d", cols.BrokerAttempts)
 	}
 }

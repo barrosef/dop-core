@@ -26,6 +26,12 @@ CREATE TABLE event_errors (
   actor_id       text,
   request_id     text,
   attempts       jsonb NOT NULL DEFAULT '[]',
+  -- How many times the BROKER delivered the event before giving up on it
+  -- (JetStream's MaxDeliver, or the in-memory adapter's own counter) — not
+  -- the DLQ rounds, which `attempts` already lists in full. Without this, a
+  -- reader sees up to a handful of entries in `attempts` for an event the
+  -- broker actually tried several times more, with nothing saying so.
+  broker_attempts integer NOT NULL DEFAULT 0,
   classification text NOT NULL,
   last_code      text,
   last_message   text,

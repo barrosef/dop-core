@@ -44,6 +44,14 @@ type DeadLetter struct {
 	Classification string    `json:"classification"`
 	FirstFailedAt  time.Time `json:"first_failed_at"`
 	LastFailedAt   time.Time `json:"last_failed_at"`
+	// BrokerAttempts is how many times the BROKER delivered the event before
+	// giving up on it — JetStream's MaxDeliver, or the in-memory adapter's
+	// equivalent counter. Attempts above only holds what THIS delivery
+	// witnessed (neither adapter keeps earlier failures around), so without
+	// this field a reader of event_errors sees up to dlqRetries entries for an
+	// event the broker actually tried MaxDeliver+dlqRetries times, with
+	// nothing saying the broker burned its budget first.
+	BrokerAttempts int `json:"broker_attempts"`
 }
 
 // ErrorStore holds what nobody could process. Terminal: whatever reaches it has

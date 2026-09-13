@@ -113,6 +113,7 @@ type EventErrorRow struct {
 	RequestID, Classification         string
 	LastCode, LastMessage             string
 	Attempts                          []byte
+	BrokerAttempts                    int
 }
 
 // EventErrorColumns maps a DeadLetter, plus the classification decided at the
@@ -140,6 +141,7 @@ func EventErrorColumns(dl event.DeadLetter, final event.Classification) EventErr
 		RequestID:      dl.Event.RequestID,
 		Classification: string(final),
 		Attempts:       attempts,
+		BrokerAttempts: dl.BrokerAttempts,
 	}
 	if n := len(dl.Attempts); n > 0 {
 		row.LastCode = dl.Attempts[n-1].ErrorCode
@@ -163,11 +165,12 @@ func (r *EventErrorRepo) Record(ctx context.Context, dl event.DeadLetter, final 
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO event_errors (event_id, consumer, account_id, event_type,
 		    aggregate, aggregate_id, aggregate_key, actor_kind, actor_id,
-		    request_id, attempts, classification, last_code, last_message)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		    request_id, attempts, broker_attempts, classification, last_code,
+		    last_message)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		c.EventID, c.Consumer, accountID, c.EventType, c.Aggregate, c.AggregateID,
 		c.AggregateKey, c.ActorKind, c.ActorID, c.RequestID, c.Attempts,
-		c.Classification, c.LastCode, c.LastMessage)
+		c.BrokerAttempts, c.Classification, c.LastCode, c.LastMessage)
 	return Translate(err, "the event error")
 }
 

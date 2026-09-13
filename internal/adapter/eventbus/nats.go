@@ -92,8 +92,9 @@ func eventFrom(env Envelope, raw []byte) ports.Event {
 // The attempt history has ONE entry here, and that is honest: neither adapter
 // keeps the earlier failures around — JetStream redelivers without telling the
 // process what they were, and the in-memory queue does not persist them either.
-// The count is real (the caller's `attempts`), the history is what this
-// delivery witnessed.
+// The count is real (the caller's `attempts`) and travels as BrokerAttempts —
+// the history is what this delivery witnessed, the count is how many the
+// broker actually made before handing it here.
 func buildDeadLetter(consumer string, e ports.Event, cause error, attempts int) event.DeadLetter {
 	now := time.Now().UTC()
 	// errs.CodeOrKind, not CodeOf: the notifier, projection and notification
@@ -116,6 +117,7 @@ func buildDeadLetter(consumer string, e ports.Event, cause error, attempts int) 
 		Classification: string(event.Classify(cause)),
 		FirstFailedAt:  now,
 		LastFailedAt:   now,
+		BrokerAttempts: attempts,
 	}
 }
 
