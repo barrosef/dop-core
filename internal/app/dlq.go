@@ -1,0 +1,128 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
+	"github.com/Digital-Business-One/dop-core/internal/domain/event"
+	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+)
+
+// dlqRetries is how many more times the dead-letter consumer tries, ON TOP of
+// the five JetStream already spent. Small on purpose: past this, a person or an
+// agent decides, and the table is where they see it.
+const dlqRetries = 3
+
+// DLQConsumer re-executes what failed, through the SAME registry the dispatcher
+// uses — it has no logic of its own about what an action means.
+//
+// That is not tidiness: rules are data and data changes, so a consumer that
+// decided again could execute something different from what failed. It calls
+// the handler the record names, with the event the record froze.
+type DLQConsumer struct {
+	handlers map[string]ports.Handler
+	sigs     event.SignatureStore
+	errors   event.ErrorStore
+	clock    ports.Clock
+}
+
+func NewDLQConsumer(handlers map[string]ports.Handler, sigs event.SignatureStore,
+	errors event.ErrorStore, clock ports.Clock) *DLQConsumer {
+	return &DLQConsumer{handlers: handlers, sigs: sigs, errors: errors, clock: clock}
+}
+
+// Handle processes one dead letter.
+//
+// It returns nil in every terminal case, INCLUDING the failures — a returned
+// error would put the record back on the queue, and the queue is not where an
+// unprocessable record belongs. What it returns an error for is its own
+// inability to record, which deserves a redelivery.
+func (c *DLQConsumer) Handle(ctx context.Context, e ports.Event) error {
+	log := logging.From(ctx).With("dlq_event_id", e.ID)
+
+	// e.Payload is the WIRE ENVELOPE, like every consumer receives — never the
+	// inner payload directly (see eventbus.Envelope and eventFrom). Task 3's
+	// publishDeadLetter wraps the DeadLetter JSON inside that envelope's own
+	// `payload` field precisely so a bare, field-less object here does not
+	// decode into a zero-valued DeadLetter with no error at all — the exact
+	// silent failure this component exists to stop. So the envelope is
+	// unwrapped first, and the DeadLetter is read out of ITS payload.
+	var env eventbus.Envelope
+	if err := json.Unmarshal(e.Payload, &env); err != nil {
+		// Terminal by nature: no retry improves broken JSON. Logged and
+		// dropped, never redelivered.
+		log.Error("unreadable dead-letter envelope, discarded", "error", err)
+		return nil
+	}
+	var dl event.DeadLetter
+	if err := json.Unmarshal(env.Payload, &dl); err != nil {
+		log.Error("unreadable dead letter, discarded", "error", err)
+		return nil
+	}
+
+	code := ""
+	if n := len(dl.Attempts); n > 0 {
+		code = dl.Attempts[n-1].ErrorCode
+	}
+
+	seed := event.Classification(dl.Classification)
+	if seed == "" {
+		seed = event.Unknown
+	}
+	var sig event.Signature
+	stored, err := c.sigs.Get(ctx, dl.Consumer, code)
+	if err != nil {
+		// The store being down is not the event's fault: ask for a redelivery.
+		return err
+	}
+	if stored != nil {
+		sig = *stored
+	}
+	final := event.Decide(sig, seed)
+
+	handler, known := c.handlers[dl.Consumer]
+	if !known {
+		// A consumer that no longer exists — renamed, removed. Looping on it
+		// would spend a budget on something nothing can handle.
+		log.Warn("dead letter names a consumer that does not exist", "consumer", dl.Consumer)
+		return c.errors.Record(ctx, dl, final)
+	}
+	if final == event.Irrecoverable {
+		// Retrying what cannot work spends the budget that belongs to what
+		// can, and pushes the real failure hours away from the table where
+		// somebody sees it.
+		log.Info("irrecoverable failure, not retried", "consumer", dl.Consumer, "code", code)
+		return c.errors.Record(ctx, dl, final)
+	}
+
+	for attempt := 1; attempt <= dlqRetries; attempt++ {
+		err := handler(ctx, dl.Event)
+		if err == nil {
+			// Evidence against the mark, and it is recorded even when the mark
+			// was right until now.
+			if sErr := c.sigs.RecordSuccess(ctx, dl.Consumer, code); sErr != nil {
+				log.Warn("the retry worked and the success was not recorded", "error", sErr)
+			}
+			log.Info("dead letter recovered", "consumer", dl.Consumer, "attempt", attempt)
+			return nil
+		}
+		failedCode, _ := errs.CodeOf(err)
+		dl.Attempts = append(dl.Attempts, event.Attempt{
+			At:           c.clock.Now(),
+			ErrorKind:    string(errs.KindOf(err)),
+			ErrorCode:    failedCode,
+			ErrorMessage: err.Error(),
+		})
+		dl.LastFailedAt = c.clock.Now()
+		code = failedCode
+	}
+
+	if err := c.sigs.RecordExhausted(ctx, dl.Consumer, code, seed); err != nil {
+		log.Warn("the exhaustion was not recorded against the signature", "error", err)
+	}
+	log.Error("dead letter exhausted the recovery budget", "consumer", dl.Consumer, "code", code)
+	return c.errors.Record(ctx, dl, final)
+}
