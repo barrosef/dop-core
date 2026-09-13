@@ -68,6 +68,10 @@ type memSubscription struct {
 	queue    *memQueue
 	log      *slog.Logger
 	ctx      context.Context
+	// bus lets an exhausted delivery publish its dead letter through the same
+	// path any other event takes — DLQSubject is a subject like any other, not
+	// a second queue with its own rules.
+	bus *Memory
 }
 
 func (m *Memory) Publish(_ context.Context, e ports.Event) error {
@@ -125,6 +129,7 @@ func (m *Memory) Subscribe(ctx context.Context, stream, durable string, subjects
 		queue:    newMemQueue(),
 		log:      logging.From(ctx).With("consumer", durable),
 		ctx:      ctx,
+		bus:      m,
 	}
 	// A snapshot of the history under the SAME lock as Publish: it is what stops
 	// a concurrent publication from being delivered twice or not at all.
@@ -182,8 +187,21 @@ func (a *memSubscription) consume() {
 		if err := a.handler(a.ctx, e); err != nil {
 			msg.attempt++
 			if msg.attempt >= MaxDeliver {
-				a.log.Error("event exhausted its attempts, going to the DLQ",
-					"error", err, "type", e.Type, "event_id", e.ID, "attempts", msg.attempt)
+				if dlqErr := a.publishDeadLetter(e, err, msg.attempt); dlqErr != nil {
+					// Reschedule, do not drop. Failing to record a loss must not
+					// cause the loss — this is the in-memory adapter's equivalent
+					// of NATS's NAK-instead-of-Term: the redelivery keeps the
+					// message alive until the dead letter is actually recorded.
+					a.log.Error("failed to publish the dead letter; the event will be redelivered",
+						"error", dlqErr, "event_id", e.ID)
+					wait := memoryBackoff[min(msg.attempt-1, len(memoryBackoff)-1)]
+					rescheduled := msg
+					time.AfterFunc(wait, func() { a.queue.push(rescheduled) })
+					continue
+				}
+				a.log.Error("event exhausted its attempts and went to the dead-letter queue",
+					"error", err, "type", e.Type, "event_id", e.ID,
+					"attempts", msg.attempt, "subject", DLQSubject)
 				continue
 			}
 			a.log.Warn("failed to process the event, it will be redelivered",
@@ -196,6 +214,26 @@ func (a *memSubscription) consume() {
 			continue
 		}
 	}
+}
+
+// publishDeadLetter records a loss on the queue that exists to hold it.
+//
+// Delivered through a.bus.Publish — the same path any other event takes — so
+// the record inherits the same envelope shape and history-retention rules as
+// everything else on this bus. No second delivery mechanism to keep honest.
+func (a *memSubscription) publishDeadLetter(e ports.Event, cause error, attempts int) error {
+	dl := buildDeadLetter(a.durable, e, cause, attempts)
+	body, err := deadLetterEnvelope(e, dl)
+	if err != nil {
+		return err
+	}
+	return a.bus.Publish(a.ctx, ports.Event{
+		ID:        e.ID,
+		AccountID: e.AccountID,
+		Aggregate: "dead_letter",
+		Type:      DLQSubject,
+		Payload:   body,
+	})
 }
 
 // envelopeOf builds the wire format from the event — used only when the

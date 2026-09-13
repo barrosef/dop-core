@@ -15,6 +15,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
 	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
 	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
@@ -26,6 +27,10 @@ const (
 	// After this many attempts the message goes to the DLQ instead of blocking
 	// the queue forever.
 	MaxDeliver = 5
+	// DLQSubject is where an exhausted event goes. Inside `dop.>`, so the
+	// existing stream retains it for the same 30 days — no second stream and no
+	// second retention policy to forget about.
+	DLQSubject = "dop.dlq"
 )
 
 // Envelope is the event's WIRE FORMAT: what the relay publishes and what the
@@ -68,6 +73,66 @@ func eventFrom(env Envelope, raw []byte) ports.Event {
 		SessionID:    env.SessionID,
 		Caller:       env.Caller,
 	}
+}
+
+// buildDeadLetter assembles the record for an event that exhausted its
+// attempts. Shared by both adapters so they can never disagree on shape: the
+// contract asserts NATS and the in-memory bus produce the same record for the
+// same failure, and a function called from both is how that stays true instead
+// of being hoped for.
+//
+// The attempt history has ONE entry here, and that is honest: neither adapter
+// keeps the earlier failures around — JetStream redelivers without telling the
+// process what they were, and the in-memory queue does not persist them either.
+// The count is real (the caller's `attempts`), the history is what this
+// delivery witnessed.
+func buildDeadLetter(consumer string, e ports.Event, cause error, attempts int) event.DeadLetter {
+	now := time.Now().UTC()
+	code, _ := errs.CodeOf(cause)
+	return event.DeadLetter{
+		Event:    e,
+		Consumer: consumer,
+		Attempts: []event.Attempt{{
+			At:           now,
+			ErrorKind:    string(errs.KindOf(cause)),
+			ErrorCode:    code,
+			ErrorMessage: cause.Error(),
+		}},
+		Classification: string(event.Classify(cause)),
+		FirstFailedAt:  now,
+		LastFailedAt:   now,
+	}
+}
+
+// deadLetterEnvelope wraps a DeadLetter in the wire envelope every consumer
+// already expects.
+//
+// A bare DeadLetter JSON as the message body would decode into an Envelope
+// with every field empty and NO error at all — Subscribe's handler always
+// unmarshals the body into Envelope, and an object with none of Envelope's
+// keys is a syntactically valid, semantically empty one. That silent failure
+// is the entire reason this task exists; the DLQ record must not reintroduce
+// it. So the DeadLetter JSON becomes the envelope's inner `payload`, and the
+// identifying fields come from the event that failed.
+func deadLetterEnvelope(e ports.Event, dl event.DeadLetter) ([]byte, error) {
+	dlBody, err := json.Marshal(dl)
+	if err != nil {
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable dead letter")
+	}
+	body, err := json.Marshal(Envelope{
+		ID:           e.ID,
+		AccountID:    e.AccountID,
+		Aggregate:    "dead_letter",
+		AggregateID:  e.AggregateID,
+		AggregateKey: e.AggregateKey,
+		Type:         DLQSubject,
+		Payload:      dlBody,
+		OccurredAt:   dl.LastFailedAt,
+	})
+	if err != nil {
+		return nil, errs.Wrap(errs.KindInternal, err, "unreadable dead-letter envelope")
+	}
+	return body, nil
 }
 
 type NATS struct {
@@ -161,15 +226,28 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		e := eventFrom(env, msg.Data())
 		if err := h(ctx, e); err != nil {
 			md, _ := msg.Metadata()
-			if md != nil && md.NumDelivered >= MaxDeliver {
-				log.Error("event exhausted its attempts, going to the DLQ",
+			attempts := 1
+			if md != nil {
+				attempts = int(md.NumDelivered)
+			}
+			if attempts >= MaxDeliver {
+				if dlqErr := n.publishDeadLetter(ctx, durable, e, err, attempts); dlqErr != nil {
+					// NAK, not Term. Failing to record a loss must not cause the
+					// loss: JetStream keeps the message and tries again. Losing a
+					// redelivery is cheaper than losing the record of a loss.
+					log.Error("failed to publish the dead letter; the event stays in the queue",
+						"error", dlqErr, "event_id", e.ID)
+					_ = msg.Nak()
+					return
+				}
+				log.Error("event exhausted its attempts and went to the dead-letter queue",
 					"error", err, "type", e.Type, "event_id", e.ID,
-					"attempts", md.NumDelivered)
+					"attempts", attempts, "subject", DLQSubject)
 				_ = msg.Term()
 				return
 			}
 			log.Warn("failed to process the event, it will be redelivered",
-				"error", err, "type", e.Type, "event_id", e.ID)
+				"error", err, "type", e.Type, "event_id", e.ID, "attempt", attempts)
 			_ = msg.Nak()
 			return
 		}
@@ -179,6 +257,27 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		return errs.Wrap(errs.KindUnavailable, err, "failed to consume %q", durable)
 	}
 	return nil
+}
+
+// publishDeadLetter records a loss on the queue that exists to hold it.
+//
+// The dead letter is published through the SAME Publish an ordinary event
+// uses, on DLQSubject, so it gets the same MsgId-based dedup and lands in the
+// same stream (dop.>) with the same 30-day retention — no second code path to
+// keep honest.
+func (n *NATS) publishDeadLetter(ctx context.Context, consumer string, e ports.Event, cause error, attempts int) error {
+	dl := buildDeadLetter(consumer, e, cause, attempts)
+	body, err := deadLetterEnvelope(e, dl)
+	if err != nil {
+		return err
+	}
+	return n.Publish(ctx, ports.Event{
+		ID:        e.ID,
+		AccountID: e.AccountID,
+		Aggregate: "dead_letter",
+		Type:      DLQSubject,
+		Payload:   body,
+	})
 }
 
 func (n *NATS) Close() error {
