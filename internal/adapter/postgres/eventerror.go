@@ -10,8 +10,9 @@ import (
 	"github.com/Digital-Business-One/dop-core/internal/domain/event"
 )
 
-// EventErrorRepo implements event.SignatureStore. It is the ONLY place with
-// error_signatures SQL — the domain never sees a query.
+// EventErrorRepo implements event.SignatureStore AND event.ErrorStore. It is
+// the ONLY place with error_signatures SQL or event_errors SQL — the domain
+// never sees a query.
 type EventErrorRepo struct{ pool *pgxpool.Pool }
 
 func NewEventErrorRepo(pool *pgxpool.Pool) *EventErrorRepo { return &EventErrorRepo{pool: pool} }
@@ -61,23 +62,29 @@ func (r *EventErrorRepo) RecordExhausted(ctx context.Context, consumer, code str
 	// instead of a reader of the raw row (a panel, a report, any caller that
 	// does not route through Decide) seeing a different answer than the
 	// domain gives.
+	// 'seed', 'human' and 'learned' travel as PARAMETERS, not literals: they
+	// are event.Origin's own values (event.BySeed, event.ByHuman,
+	// event.ByLearned), and a name duplicated between Go and this SQL is the
+	// same trap ExhaustionsBeforeLearning was pulled out of a literal to
+	// avoid, in this very statement.
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO error_signatures (consumer, code, classification, exhausted_count, classified_by)
-		VALUES ($1, $2, $3, 1, 'seed')
+		VALUES ($1, $2, $3, 1, $5)
 		ON CONFLICT (consumer, code) DO UPDATE
 		   SET exhausted_count = error_signatures.exhausted_count + 1,
 		       last_seen = now(),
 		       classification = CASE
-		         WHEN error_signatures.classified_by = 'human' THEN error_signatures.classification
+		         WHEN error_signatures.classified_by = $6 THEN error_signatures.classification
 		         WHEN error_signatures.exhausted_count + 1 >= $4
-		              AND error_signatures.last_success_at IS NULL THEN 'irrecoverable'
+		              AND error_signatures.last_success_at IS NULL THEN $8
 		         ELSE error_signatures.classification END,
 		       classified_by = CASE
-		         WHEN error_signatures.classified_by = 'human' THEN 'human'
+		         WHEN error_signatures.classified_by = $6 THEN $6
 		         WHEN error_signatures.exhausted_count + 1 >= $4
-		              AND error_signatures.last_success_at IS NULL THEN 'learned'
+		              AND error_signatures.last_success_at IS NULL THEN $7
 		         ELSE error_signatures.classified_by END`,
-		consumer, code, string(seed), event.ExhaustionsBeforeLearning)
+		consumer, code, string(seed), event.ExhaustionsBeforeLearning,
+		string(event.BySeed), string(event.ByHuman), string(event.ByLearned), string(event.Irrecoverable))
 	return Translate(err, "the error signature")
 }
 
