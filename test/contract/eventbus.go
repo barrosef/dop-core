@@ -229,7 +229,7 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			id := uniqueEventID()
 			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
 
-			got := dead.await(t, 1)[0]
+			got := dead.awaitAggregate(t, "dead_letter", id)
 			// The dead letter travels as a proper ENVELOPE, not as a bare
 			// DeadLetter body: Publish sends e.Payload verbatim as the wire body,
 			// and Subscribe's handler always decodes that body into Envelope. A
@@ -277,9 +277,15 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 				return nil
 			})
 
-			publish(t, bus, subject, envelopeJSON(uniqueEventID(), subject, `{}`))
+			id := uniqueEventID()
+			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
 
-			dead.awaitNone(t, 2*time.Second)
+			// Not awaitNone: the DLQ is ONE queue for the whole platform, so this
+			// collector also receives what the other cases in this run put there.
+			// The claim is about THIS event.
+			if dls := dead.deadLettersFor(t, id, 1, 2*time.Second); len(dls) != 0 {
+				t.Fatalf("a handler that recovered still produced %d dead letter(s)", len(dls))
+			}
 		})
 
 		t.Run("7c_the_same_event_failing_in_two_consumers_produces_two_dead_letters", func(t *testing.T) {
@@ -304,19 +310,14 @@ func EventBusSuite(t *testing.T, name string, newBus func(t *testing.T) ports.Ev
 			id := uniqueEventID()
 			publish(t, bus, subject, envelopeJSON(id, subject, `{}`))
 
-			got := dead.await(t, 2)
+			// Scoped to this event: the queue also holds the other cases'
+			// records, and on a persistent broker the previous runs' too.
+			dls := dead.deadLettersFor(t, id, 2, 3*time.Second)
+			if len(dls) != 2 {
+				t.Fatalf("expected two dead letters for %s, got %d", id, len(dls))
+			}
 			consumers := map[string]bool{}
-			for _, e := range got {
-				if e.Aggregate != "dead_letter" {
-					t.Fatalf("the dead letter did not arrive as a proper envelope: aggregate=%q", e.Aggregate)
-				}
-				dl, err := eventbus.DeadLetterFrom(e)
-				if err != nil {
-					t.Fatalf("the dead letter is not readable: %v", err)
-				}
-				if dl.Event.ID != id {
-					t.Fatalf("the dead letter carries another event: %q", dl.Event.ID)
-				}
+			for _, dl := range dls {
 				consumers[dl.Consumer] = true
 			}
 			if len(consumers) != 2 {
@@ -512,6 +513,65 @@ func (c *collector) await(t *testing.T, n int) []ports.Event {
 
 // awaitNone fails if anything arrives within the window. Proving an absence
 // needs a deadline; without one the test passes by being fast.
+// deadLettersFor returns the dead letters this collector received FOR ONE
+// EVENT, waiting up to `window` for `want` of them.
+//
+// It exists because the DLQ is deliberately ONE queue for the whole platform.
+// A collector subscribed to it with DeliverAll sees every record in the stream,
+// including the ones other cases in this same run produced — and, on a
+// persistent broker, the ones previous runs left behind. Asserting on "the
+// first dead letter" or "no dead letter at all" therefore passes on the memory
+// bus, where every case starts empty, and fails against real NATS for reasons
+// that have nothing to do with the code under test.
+//
+// Filtering by the event id each case published is what makes the assertion
+// about this case rather than about the state of the broker.
+// awaitAggregate waits for ONE event of the given aggregate carrying the given
+// dead-letter event id, and returns it. Same reason as deadLettersFor: the
+// queue is shared, so "the first one" is not this case's.
+func (c *collector) awaitAggregate(t *testing.T, aggregate, eventID string) ports.Event {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		for _, e := range c.events() {
+			if e.Aggregate != aggregate {
+				continue
+			}
+			if dl, err := eventbus.DeadLetterFrom(e); err == nil && dl.Event.ID == eventID {
+				return e
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s record for event %s arrived within the window", aggregate, eventID)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func (c *collector) deadLettersFor(t *testing.T, eventID string, want int, window time.Duration) []event.DeadLetter {
+	t.Helper()
+	deadline := time.Now().Add(window)
+	for {
+		var found []event.DeadLetter
+		for _, e := range c.events() {
+			if e.Aggregate != "dead_letter" {
+				continue
+			}
+			dl, err := eventbus.DeadLetterFrom(e)
+			if err != nil {
+				t.Fatalf("a record on the dead-letter queue is unreadable: %v", err)
+			}
+			if dl.Event.ID == eventID {
+				found = append(found, dl)
+			}
+		}
+		if len(found) >= want || time.Now().After(deadline) {
+			return found
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func (c *collector) awaitNone(t *testing.T, window time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(window)
