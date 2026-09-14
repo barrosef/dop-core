@@ -8,6 +8,7 @@ import (
 
 	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
+	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/notifier"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
 	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
@@ -87,6 +88,11 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// fan-out to the subscribers. A subscription PER CLIENT would create a
 	// durable consumer on the broker for every open cockpit tab — and the port
 	// has no way to remove them.
+	//
+	// "dop.>" is every event the platform raises, and only that: dead letters
+	// live on eventbus.DLQSubject, deliberately outside this wildcard (see its
+	// doc comment) — without that separation, a dead letter's raw Postgres or
+	// SMTP error text would stream straight into every account's live cockpit.
 	eventSvc := event.NewService(postgres.NewEventRepo(deps.Pool), deps.Bus, relogio)
 	if err := eventSvc.Start(ctx, "", []string{"dop.>"}); err != nil {
 		return err
@@ -280,13 +286,28 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 	// No use case calls the Mailer directly: if one did, it would become the
 	// trigger, diffused across as many use cases as sent email.
 	notificacao := buildNotification(deps)
+	notificationConsumer := notifier.NewConsumer(notificacao)
 	if err := deps.Bus.Subscribe(ctx, "", "notification",
-		notification.Subjects(), notifier.NewConsumer(notificacao).Handle); err != nil {
+		notification.Subjects(), notificationConsumer.Handle); err != nil {
 		return err
 	}
 
-	log.Info("projections registered", "total", 3,
-		"consumidores", []string{"timeline", "attention", "notification"})
+	// The dead-letter consumer. It subscribes to ONE subject and knows every
+	// handler by name — the same handlers registered above, so a retry runs
+	// exactly what failed.
+	dlqHandlers := map[string]ports.Handler{
+		"timeline":     timeline.Handle,
+		"attention":    attentionProj.Handle,
+		"notification": notificationConsumer.Handle,
+	}
+	errorRepo := postgres.NewEventErrorRepo(deps.Pool)
+	dlq := NewDLQConsumer(dlqHandlers, errorRepo, errorRepo, clock.NewSystem())
+	if err := deps.Bus.Subscribe(ctx, "", "dlq", []string{eventbus.DLQSubject}, dlq.Handle); err != nil {
+		return err
+	}
+
+	log.Info("projections registered", "total", 4,
+		"consumidores", []string{"timeline", "attention", "notification", "dlq"})
 	return nil
 }
 

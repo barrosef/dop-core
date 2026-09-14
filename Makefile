@@ -1,6 +1,12 @@
 export PATH := $(PATH):$(HOME)/go/bin
 
-.PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker migrate
+# CONTEXT guards `migrate` (see the `guard` target below). It names the ONLY
+# kube-context `make migrate` is allowed to run against — kept in step with
+# dop-infra/Makefile's own CONTEXT by hand, since the two repositories are not
+# wired to share one value.
+CONTEXT := k3d-dop-local
+
+.PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker guard migrate
 
 proto:            ## generate Go from the .proto files (the source of truth — ADR-0017)
 	cd api/proto && buf lint && buf generate
@@ -47,7 +53,22 @@ run-serve: build
 run-worker: build
 	./bin/dop-core worker
 
-migrate:          ## apply the migrations to the local Postgres
+# guard, copied from dop-infra/Makefile's own: a machine that holds clients'
+# production kube contexts cannot run an unguarded `kubectl exec`. `migrate`
+# used to run `kubectl cp` and `kubectl exec` against WHATEVER context happened
+# to be active — fine on a laptop with only the local cluster configured, and a
+# live incident the day this same machine also holds a client's production
+# context and somebody runs `make migrate` without checking `kubectl config
+# current-context` first. The guard makes that check unskippable.
+guard:
+	@ctx=$$(kubectl config current-context 2>/dev/null); \
+	if [ "$$ctx" != "$(CONTEXT)" ]; then \
+		echo "ABORTED — the active context is '$$ctx', expected '$(CONTEXT)'."; \
+		echo "Use: kubectl config use-context $(CONTEXT)"; \
+		exit 1; \
+	fi
+
+migrate: guard    ## apply the migrations to the local Postgres
 	@for f in migrations/*.sql; do \
 	  echo "applying $$f"; \
 	  kubectl cp $$f dop-local/postgres-0:/tmp/m.sql; \

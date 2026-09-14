@@ -212,14 +212,51 @@ type IdentityProvider interface {
 
 // ───────────────────────── EventBus ─────────────────────────
 
+// json tags below exist for ONE reason: event.DeadLetter embeds this struct
+// as-is and it rides inside the dead-letter envelope, which JetStream holds
+// for 30 days (see eventbus.deadLetterEnvelope). Without them, the field
+// serializes under its Go NAME — renaming ActorID would silently change the
+// wire format of every dead letter already sitting in the queue, and a
+// consumer built against the old field name would decode a zero-valued
+// struct with no error at all. This struct itself is never the wire format
+// for an ORDINARY event — that is eventbus.Envelope — so these tags matter
+// only for the one path that marshals the struct whole.
 type Event struct {
-	ID          string
-	AccountID   string
-	Aggregate   string
-	AggregateID string
-	Type        string
-	Payload     []byte
-	OccurredAt  time.Time
+	ID          string `json:"id"`
+	AccountID   string `json:"account_id"`
+	Aggregate   string `json:"aggregate"`
+	AggregateID string `json:"aggregate_id"`
+	// AggregateKey is the aggregate's readable handle — "acme" for an account,
+	// the workspace's slug. It exists so a human or an agent can talk about a
+	// fact without a uuid, in a log, in a panel or in a conversation.
+	//
+	// It is a SNAPSHOT, not the truth of now: renaming the workspace does not
+	// rewrite the events that already happened, and the old event keeps saying
+	// the old name. That is what a log of facts is for.
+	//
+	// Empty where the aggregate has no natural stable handle — a grant, a
+	// notification. An honest blank beats a uuid wearing a nickname.
+	AggregateKey string    `json:"aggregate_key,omitempty"`
+	Type         string    `json:"type"`
+	Payload      []byte    `json:"payload,omitempty"`
+	OccurredAt   time.Time `json:"occurred_at"`
+
+	// ── Who caused this ────────────────────────────────────────────────────
+	// Recorded by the outbox from the call's context, and carried all the way
+	// to the consumer. Before this existed the envelope dropped them, so a
+	// consumer failed without being able to say who caused the work — the
+	// answer was one join away in Postgres, which is archaeology at the moment
+	// of an error rather than a payload.
+	//
+	// All optional: a message published before this change has none, and an
+	// event raised by the scheduler has no person behind it.
+	ActorKind string `json:"actor_kind,omitempty"`
+	ActorID   string `json:"actor_id,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// Caller is the COMPONENT that signed the call — "bff", "collector"
+	// (ADR-0029). Empty when the call was proven only by a person's token.
+	Caller string `json:"caller,omitempty"`
 }
 
 // Handler processes an event. It MUST be idempotent: delivery is at-least-once

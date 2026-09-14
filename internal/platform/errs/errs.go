@@ -110,3 +110,20 @@ func CodeOf(err error) (string, map[string]any) {
 	}
 	return "", nil
 }
+
+// CodeOrKind returns the error's Code, falling back to its Kind when no Code
+// was attached.
+//
+// A Code is opt-in — only errors meant to reach a person as prose carry one —
+// so most internal failures have none. Whoever derives an identity FROM an
+// error (a signature key keyed on (consumer, code), for instance) cannot use
+// CodeOf alone: every uncoded failure would collapse to the same empty
+// string, and one broken template would promote the whole consumer instead
+// of just that one failure mode. The Kind is coarser than a Code but still
+// tells failure modes apart, and every error has one.
+func CodeOrKind(err error) string {
+	if code, _ := CodeOf(err); code != "" {
+		return code
+	}
+	return string(KindOf(err))
+}
