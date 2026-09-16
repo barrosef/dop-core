@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/identity"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 func TestEnsureUserWithoutAVerifiedTokenIsRefused(t *testing.T) {

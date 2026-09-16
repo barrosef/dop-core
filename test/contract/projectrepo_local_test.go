@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/projectrepo"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/secretstore"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/projectrepo"
+	"github.com/barrosef/dop-core/internal/adapter/secretstore"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // The Local adapter hosts the repositories in-process; the suite reaches the

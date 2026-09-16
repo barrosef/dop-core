@@ -151,7 +151,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // ── domain vocabulary ────────────────────────────────────────────────────────

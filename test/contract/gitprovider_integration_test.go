@@ -52,9 +52,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/gitprovider"
-	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/gitprovider"
+	"github.com/barrosef/dop-core/internal/domain/delivery"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // pairsFrom turns "a:main,b:main" into a factory that hands each pair out once

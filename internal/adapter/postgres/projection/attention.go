@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // Attention builds the attention box from the log.

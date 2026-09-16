@@ -1095,9 +1095,9 @@ const file_dop_v1_hierarchy_proto_rawDesc = "" +
 	"GetProject\x12\x19.dop.v1.GetProjectRequest\x1a\x0f.dop.v1.Project\x12>\n" +
 	"\rCreateProject\x12\x1c.dop.v1.CreateProjectRequest\x1a\x0f.dop.v1.Project\x12>\n" +
 	"\rUpdateProject\x12\x1c.dop.v1.UpdateProjectRequest\x1a\x0f.dop.v1.Project\x12:\n" +
-	"\aGetTree\x12\x16.dop.v1.GetTreeRequest\x1a\x17.dop.v1.GetTreeResponseB\x94\x01\n" +
+	"\aGetTree\x12\x16.dop.v1.GetTreeRequest\x1a\x17.dop.v1.GetTreeResponseB\x88\x01\n" +
 	"\n" +
-	"com.dop.v1B\x0eHierarchyProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x0eHierarchyProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_hierarchy_proto_rawDescOnce sync.Once

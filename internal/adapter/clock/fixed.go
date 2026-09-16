@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // reference is the instant used when nobody picks one.

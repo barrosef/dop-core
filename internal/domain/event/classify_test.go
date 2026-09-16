@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 func TestTheSeedComesFromTheKindAndNotFromAList(t *testing.T) {

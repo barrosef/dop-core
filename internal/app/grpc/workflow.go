@@ -6,8 +6,8 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/workflow"
 )
 
 // WorkflowServer is the flow domain's EDGE: it translates proto into domain and

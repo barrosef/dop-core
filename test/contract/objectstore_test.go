@@ -3,9 +3,9 @@ package contract_test
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/objectstore"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // The filesystem adapter always runs — it is what makes self-hosted exist with

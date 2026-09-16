@@ -3,7 +3,7 @@ package secretstore
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // The port's guarantee 5: account A's reference never resolves account B's

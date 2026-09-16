@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
-	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
-	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
-	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
-	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
-	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
-	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
+	"github.com/barrosef/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/delivery"
+	"github.com/barrosef/dop-core/internal/domain/demand"
+	"github.com/barrosef/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/domain/hierarchy"
+	"github.com/barrosef/dop-core/internal/domain/identity"
+	"github.com/barrosef/dop-core/internal/domain/knowledge"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/secondfactor"
+	"github.com/barrosef/dop-core/internal/domain/workflow"
 )
 
 // The glue between domains.

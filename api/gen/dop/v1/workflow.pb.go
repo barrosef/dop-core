@@ -2232,9 +2232,9 @@ const file_dop_v1_workflow_proto_rawDesc = "" +
 	"DeriveFlow\x12\x19.dop.v1.DeriveFlowRequest\x1a\f.dop.v1.Flow\x12A\n" +
 	"\vBumpFlowPin\x12\x1a.dop.v1.BumpFlowPinRequest\x1a\x16.google.protobuf.Empty\x12O\n" +
 	"\x0eListFlowShares\x12\x1d.dop.v1.ListFlowSharesRequest\x1a\x1e.dop.v1.ListFlowSharesResponse\x12X\n" +
-	"\x11ListFlowAdoptions\x12 .dop.v1.ListFlowAdoptionsRequest\x1a!.dop.v1.ListFlowAdoptionsResponseB\x93\x01\n" +
+	"\x11ListFlowAdoptions\x12 .dop.v1.ListFlowAdoptionsRequest\x1a!.dop.v1.ListFlowAdoptionsResponseB\x87\x01\n" +
 	"\n" +
-	"com.dop.v1B\rWorkflowProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\rWorkflowProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_workflow_proto_rawDescOnce sync.Once

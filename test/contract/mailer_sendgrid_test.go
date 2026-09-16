@@ -16,10 +16,10 @@ package contract_test
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
-	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/mailer"
+	"github.com/barrosef/dop-core/internal/domain/notification"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // sendGridKey is the secret the doubles echo back. A value that looks like a

@@ -6,8 +6,8 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/knowledge"
 )
 
 // KnowledgeServer exposes the knowledge domain on the gRPC contract.

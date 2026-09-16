@@ -22,7 +22,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
+	"github.com/barrosef/dop-core/internal/adapter/mailer"
 )
 
 func main() {

@@ -54,7 +54,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
+	"github.com/barrosef/dop-core/internal/domain/agent"
 )
 
 // DefaultTimeout is ONE generation's deadline. See the header: generous on

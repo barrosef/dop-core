@@ -12,9 +12,9 @@ import (
 
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // TestTheEventErrorTableIsIdempotent pins the fix for a DLQConsumer.Handle

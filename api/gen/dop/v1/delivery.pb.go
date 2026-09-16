@@ -952,9 +952,9 @@ const file_dop_v1_delivery_proto_rawDesc = "" +
 	"\rGetMergeQueue\x12\x1c.dop.v1.GetMergeQueueRequest\x1a\x1d.dop.v1.GetMergeQueueResponse\x12D\n" +
 	"\fEnqueueMerge\x12\x1b.dop.v1.EnqueueMergeRequest\x1a\x17.dop.v1.MergeQueueEntry\x12O\n" +
 	"\x0eListDirectives\x12\x1d.dop.v1.ListDirectivesRequest\x1a\x1e.dop.v1.ListDirectivesResponse\x12D\n" +
-	"\x0fDecideDirective\x12\x1e.dop.v1.DecideDirectiveRequest\x1a\x11.dop.v1.DirectiveB\x93\x01\n" +
+	"\x0fDecideDirective\x12\x1e.dop.v1.DecideDirectiveRequest\x1a\x11.dop.v1.DirectiveB\x87\x01\n" +
 	"\n" +
-	"com.dop.v1B\rDeliveryProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\rDeliveryProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_delivery_proto_rawDescOnce sync.Once

@@ -14,9 +14,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/smser"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/smser"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 const zenviaToken = "zv-api-token-DO-NOT-USE-4Xr9"

@@ -34,8 +34,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // defaultClockSkew is the clock tolerance applied to exp, nbf and iat.

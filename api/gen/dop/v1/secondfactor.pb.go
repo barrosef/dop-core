@@ -1203,9 +1203,9 @@ const file_dop_v1_secondfactor_proto_rawDesc = "" +
 	"\x12VerifySecondFactor\x12!.dop.v1.VerifySecondFactorRequest\x1a\x0e.dop.v1.StepUp\x12G\n" +
 	"\x12VerifyRecoveryCode\x12!.dop.v1.VerifyRecoveryCodeRequest\x1a\x0e.dop.v1.StepUp\x12a\n" +
 	"\x14GetSecondFactorState\x12#.dop.v1.GetSecondFactorStateRequest\x1a$.dop.v1.GetSecondFactorStateResponse\x12j\n" +
-	"\x17RegenerateRecoveryCodes\x12&.dop.v1.RegenerateRecoveryCodesRequest\x1a'.dop.v1.RegenerateRecoveryCodesResponseB\x97\x01\n" +
+	"\x17RegenerateRecoveryCodes\x12&.dop.v1.RegenerateRecoveryCodesRequest\x1a'.dop.v1.RegenerateRecoveryCodesResponseB\x8b\x01\n" +
 	"\n" +
-	"com.dop.v1B\x11SecondfactorProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x11SecondfactorProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_secondfactor_proto_rawDescOnce sync.Once

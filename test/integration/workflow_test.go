@@ -18,9 +18,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/domain/reaction"
-	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/domain/reaction"
+	"github.com/barrosef/dop-core/internal/domain/workflow"
 )
 
 // seedFlowAccount creates the one account a flow needs an owner for. It does

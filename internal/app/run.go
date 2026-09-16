@@ -12,10 +12,10 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/platform/config"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/adapter/eventbus"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/platform/config"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // RunServe brings up the domain's gRPC server.

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/callauth"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/callauth"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 var key = []byte("a-key-long-enough-for-a-test-0123")

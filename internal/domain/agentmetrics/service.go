@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // Service is the ingestion and the reading of the metrics.

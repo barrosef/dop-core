@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // WorkDir is where the commit is cloned, inside the runner. Every step runs

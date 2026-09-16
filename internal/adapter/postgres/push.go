@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // PushRecorder turns a push to a project's root repository into an event

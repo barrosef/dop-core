@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/attention"
 )
 
 // AttentionRepo is READ-ONLY. The write lives in the projection

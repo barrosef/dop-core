@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
+	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
 )
 
 // A session file, in the shape the tool really writes it — the fields checked

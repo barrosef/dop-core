@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // Service concentrates the hierarchy rules. It takes only PORTS.

@@ -16,9 +16,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/eventbus"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 func TestEventBusContractNATS(t *testing.T) {

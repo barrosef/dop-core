@@ -16,8 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
 )
 
 func TestCollectingTheSameStretchTwiceDoesNotDuplicate(t *testing.T) {

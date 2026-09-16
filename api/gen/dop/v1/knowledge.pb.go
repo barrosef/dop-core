@@ -685,9 +685,9 @@ const file_dop_v1_knowledge_proto_rawDesc = "" +
 	"\fSearchMemory\x12\x1b.dop.v1.SearchMemoryRequest\x1a\x1c.dop.v1.SearchMemoryResponse\x12@\n" +
 	"\tReadIndex\x12\x18.dop.v1.ReadIndexRequest\x1a\x19.dop.v1.KnowledgeArtifact\x12D\n" +
 	"\vPutArtifact\x12\x1a.dop.v1.PutArtifactRequest\x1a\x19.dop.v1.KnowledgeArtifact\x12@\n" +
-	"\tListRules\x12\x18.dop.v1.ListRulesRequest\x1a\x19.dop.v1.ListRulesResponseB\x94\x01\n" +
+	"\tListRules\x12\x18.dop.v1.ListRulesRequest\x1a\x19.dop.v1.ListRulesResponseB\x88\x01\n" +
 	"\n" +
-	"com.dop.v1B\x0eKnowledgeProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x0eKnowledgeProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_knowledge_proto_rawDescOnce sync.Once

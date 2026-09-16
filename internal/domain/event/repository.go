@@ -3,7 +3,7 @@ package event
 import (
 	"context"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Repository is the event log's read PORT.

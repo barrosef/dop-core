@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/projectrepo"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/projectrepo"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // The Remote adapter speaks to a server in another process over the

@@ -3,7 +3,7 @@ package demand
 import (
 	"context"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Emission is the EVENT the operation produces, the way the domain sees it: type

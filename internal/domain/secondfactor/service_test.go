@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/internal/platform/totp"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/secondfactor"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/totp"
 )
 
 // ── doubles ─────────────────────────────────────────────────────────────────

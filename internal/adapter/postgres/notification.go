@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/notification"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // NotificationRepo writes the SEND RECORD and answers the trigger's two read

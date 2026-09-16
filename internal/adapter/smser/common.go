@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/secondfactor"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // validate is the port's guarantee 1, shared: a broken number costs nothing

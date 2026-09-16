@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/agent"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // The frontier that holds the clean architecture up: internal/domain must not

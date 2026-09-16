@@ -37,9 +37,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/identity"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 func emuladorHost() string {

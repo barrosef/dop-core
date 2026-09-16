@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/domain/event"
 )
 
 // EventErrorRepo implements event.SignatureStore AND event.ErrorStore. It is

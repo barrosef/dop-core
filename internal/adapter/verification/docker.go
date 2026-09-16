@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // Docker runs a verification as containers on the host's daemon: one for the

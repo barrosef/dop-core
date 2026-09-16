@@ -213,10 +213,10 @@ const file_dop_v1_event_proto_rawDesc = "" +
 	"\x05types\x18\x03 \x03(\tR\x05types\x12$\n" +
 	"\x0esince_event_id\x18\x04 \x01(\tR\fsinceEventIdJ\x04\b\x01\x10\x022R\n" +
 	"\fEventService\x12B\n" +
-	"\vWatchEvents\x12\x1a.dop.v1.WatchEventsRequest\x1a\x15.dop.v1.EventEnvelope0\x01B\x90\x01\n" +
+	"\vWatchEvents\x12\x1a.dop.v1.WatchEventsRequest\x1a\x15.dop.v1.EventEnvelope0\x01B\x84\x01\n" +
 	"\n" +
 	"com.dop.v1B\n" +
-	"EventProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"EventProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_event_proto_rawDescOnce sync.Once

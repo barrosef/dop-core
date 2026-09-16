@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Local is the in-process adapter: the server runs inside this process and the

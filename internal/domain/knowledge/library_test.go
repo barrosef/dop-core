@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/knowledge"
+	"github.com/barrosef/dop-core/internal/domain/knowledge"
 )
 
 func TestTheManifestComesFirstAndIsReadable(t *testing.T) {

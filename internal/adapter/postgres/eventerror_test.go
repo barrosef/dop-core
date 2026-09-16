@@ -3,8 +3,8 @@ package postgres
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 func TestTheTerminalRowCarriesWhoAndWhat(t *testing.T) {

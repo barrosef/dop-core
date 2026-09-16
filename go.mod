@@ -1,4 +1,4 @@
-module github.com/Digital-Business-One/dop-core
+module github.com/barrosef/dop-core
 
 go 1.27
 

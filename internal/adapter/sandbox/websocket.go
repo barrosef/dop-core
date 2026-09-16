@@ -45,7 +45,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // wsGUID is RFC 6455's constant used in the handshake's confirmation.

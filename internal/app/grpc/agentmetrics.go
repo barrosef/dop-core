@@ -7,8 +7,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
 )
 
 // AgentMetricsServer is the surface the COLLECTOR pushes to — a container beside

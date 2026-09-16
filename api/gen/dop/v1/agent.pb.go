@@ -611,10 +611,10 @@ const file_dop_v1_agent_proto_rawDesc = "" +
 	"\x11max_output_tokens\x18\b \x01(\x05R\x0fmaxOutputTokens\x12'\n" +
 	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKeyJ\x04\b\x01\x10\x022F\n" +
 	"\fAgentService\x126\n" +
-	"\aRunTurn\x12\x16.dop.v1.RunTurnRequest\x1a\x13.dop.v1.TurnOutcomeB\x90\x01\n" +
+	"\aRunTurn\x12\x16.dop.v1.RunTurnRequest\x1a\x13.dop.v1.TurnOutcomeB\x84\x01\n" +
 	"\n" +
 	"com.dop.v1B\n" +
-	"AgentProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"AgentProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_agent_proto_rawDescOnce sync.Once

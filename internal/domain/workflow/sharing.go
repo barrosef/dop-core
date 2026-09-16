@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // RevocationPolicy is what a revocation DOES to derivations that already exist.

@@ -20,13 +20,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/eventbus"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/domain/event"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/adapter/clock"
+	"github.com/barrosef/dop-core/internal/adapter/eventbus"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/domain/event"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // A subject of the test's own: the consumer does not have to sieve the local

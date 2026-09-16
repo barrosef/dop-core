@@ -23,9 +23,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/agentprovider"
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/agentprovider"
+	"github.com/barrosef/dop-core/internal/domain/agent"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // fakeKey is guarantee 10's SENTINEL. It has to be an unlikely, recognizable

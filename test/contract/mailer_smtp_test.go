@@ -13,10 +13,10 @@ package contract_test
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
-	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/mailer"
+	"github.com/barrosef/dop-core/internal/domain/notification"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // smtpPassword is the secret the double echoes in the AUTH refusal.

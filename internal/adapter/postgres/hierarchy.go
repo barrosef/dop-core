@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/hierarchy"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // HierarchyRepo implements hierarchy.Repository. It is the ONLY place with

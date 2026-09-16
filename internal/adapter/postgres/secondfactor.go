@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/secondfactor"
+	"github.com/barrosef/dop-core/internal/domain/secondfactor"
 )
 
 // SecondFactorRepo implements secondfactor.Repository. It is the ONLY place

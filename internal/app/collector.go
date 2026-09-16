@@ -16,12 +16,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
-	"github.com/Digital-Business-One/dop-core/internal/platform/callauth"
-	"github.com/Digital-Business-One/dop-core/internal/platform/config"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
+	"github.com/barrosef/dop-core/internal/platform/callauth"
+	"github.com/barrosef/dop-core/internal/platform/config"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // The COLLECTOR: the fifth mode of the binary, and the only one that does not

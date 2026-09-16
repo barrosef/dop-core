@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agentmetrics"
+	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
 )
 
 // The agent's metrics (P-23 phase 1). Analytical, next to `cost` and not inside

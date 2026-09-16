@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 //go:embed templates/sendgrid/*.html

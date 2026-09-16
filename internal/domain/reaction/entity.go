@@ -15,7 +15,7 @@ package reaction
 import (
 	"strings"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // ActionName is what a rule asks for. The vocabulary is CLOSED because an

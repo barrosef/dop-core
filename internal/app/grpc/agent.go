@@ -3,8 +3,8 @@ package grpc
 import (
 	"context"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/agent"
 )
 
 // AgentServer exposes the agent runtime on the gRPC contract.

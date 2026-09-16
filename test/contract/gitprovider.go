@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/delivery"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // GitProviderEnv is what THIS provider offers for the suite to work with.

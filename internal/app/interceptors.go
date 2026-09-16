@@ -10,9 +10,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 // UnaryLogging records the entry, the exit, the duration and the error of every

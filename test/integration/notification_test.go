@@ -26,13 +26,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/clock"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/notifier"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
-	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
-	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/adapter/clock"
+	"github.com/barrosef/dop-core/internal/adapter/notifier"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/adapter/postgres/projection"
+	"github.com/barrosef/dop-core/internal/domain/identity"
+	"github.com/barrosef/dop-core/internal/domain/notification"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // spyMailer is this file's only double: everything else is real. The channel

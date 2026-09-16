@@ -6,9 +6,9 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/demand"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/demand"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // DemandServer exposes the demand domain on the gRPC contract.

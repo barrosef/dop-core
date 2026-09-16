@@ -7,9 +7,9 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/delivery"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
 )
 
 // DeliveryServer exposes the delivery domain on the gRPC contract.

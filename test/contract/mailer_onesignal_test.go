@@ -14,11 +14,11 @@ package contract_test
 import (
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/mailer"
-	"github.com/Digital-Business-One/dop-core/internal/domain/notification"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/mailer"
+	"github.com/barrosef/dop-core/internal/domain/notification"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // A value shaped like a real credential: a secret of "abc" would match text by

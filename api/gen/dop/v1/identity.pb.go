@@ -1881,9 +1881,9 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x10UpdateMembership\x12\x1f.dop.v1.UpdateMembershipRequest\x1a\x12.dop.v1.Membership\x12U\n" +
 	"\x10RemoveMembership\x12\x1f.dop.v1.RemoveMembershipRequest\x1a .dop.v1.RemoveMembershipResponse\x12F\n" +
 	"\vListInvites\x12\x1a.dop.v1.ListInvitesRequest\x1a\x1b.dop.v1.ListInvitesResponse\x12<\n" +
-	"\tGetInvite\x12\x18.dop.v1.GetInviteRequest\x1a\x15.dop.v1.InvitePreviewB\x93\x01\n" +
+	"\tGetInvite\x12\x18.dop.v1.GetInviteRequest\x1a\x15.dop.v1.InvitePreviewB\x87\x01\n" +
 	"\n" +
-	"com.dop.v1B\rIdentityProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\rIdentityProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_identity_proto_rawDescOnce sync.Once

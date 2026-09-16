@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // ClockSuite verifies the four guarantees documented on the Clock port.

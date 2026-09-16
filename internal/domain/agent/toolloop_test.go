@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/agent"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // ════════════════════════════════════════════════════════════════════════════

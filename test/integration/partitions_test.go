@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
 )
 
 // The migrations create FIXED partitions and stop at November 2026. With no

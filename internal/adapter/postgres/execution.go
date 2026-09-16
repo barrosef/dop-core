@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/execution"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/execution"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // ExecutionRepo implements execution.Repository. It is the ONLY place with

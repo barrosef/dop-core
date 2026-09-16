@@ -15,8 +15,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // Outbox is what the double received. It is the suite's only way of seeing what

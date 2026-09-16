@@ -574,9 +574,9 @@ const file_dop_v1_attention_proto_rawDesc = "" +
 	"\x0fCHANGE_RESOLVED\x10\x022\xac\x01\n" +
 	"\x10AttentionService\x12L\n" +
 	"\rListAttention\x12\x1c.dop.v1.ListAttentionRequest\x1a\x1d.dop.v1.ListAttentionResponse\x12J\n" +
-	"\x0eWatchAttention\x12\x1d.dop.v1.WatchAttentionRequest\x1a\x17.dop.v1.AttentionUpdate0\x01B\x94\x01\n" +
+	"\x0eWatchAttention\x12\x1d.dop.v1.WatchAttentionRequest\x1a\x17.dop.v1.AttentionUpdate0\x01B\x88\x01\n" +
 	"\n" +
-	"com.dop.v1B\x0eAttentionProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x0eAttentionProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_attention_proto_rawDescOnce sync.Once

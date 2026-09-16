@@ -666,9 +666,9 @@ const file_dop_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12/\n" +
 	"\n" +
-	"created_by\x18\x03 \x01(\v2\x10.dop.v1.ActorRefR\tcreatedByB\x91\x01\n" +
+	"created_by\x18\x03 \x01(\v2\x10.dop.v1.ActorRefR\tcreatedByB\x85\x01\n" +
 	"\n" +
-	"com.dop.v1B\vCommonProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\vCommonProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_common_proto_rawDescOnce sync.Once

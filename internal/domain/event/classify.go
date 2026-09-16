@@ -1,6 +1,6 @@
 package event
 
-import "github.com/Digital-Business-One/dop-core/internal/platform/errs"
+import "github.com/barrosef/dop-core/internal/platform/errs"
 
 // Classification says whether repeating a failed call is worth anything.
 //

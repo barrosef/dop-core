@@ -20,10 +20,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres"
-	"github.com/Digital-Business-One/dop-core/internal/adapter/postgres/projection"
-	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/adapter/postgres"
+	"github.com/barrosef/dop-core/internal/adapter/postgres/projection"
+	"github.com/barrosef/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 func TestAStageOnAHumanGateBECOMESAnAttentionItem(t *testing.T) {

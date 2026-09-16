@@ -692,9 +692,9 @@ const file_dop_v1_agentmetrics_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x012\xb5\x01\n" +
 	"\x13AgentMetricsService\x12F\n" +
 	"\vRecordTurns\x12\x1a.dop.v1.RecordTurnsRequest\x1a\x1b.dop.v1.RecordTurnsResponse\x12V\n" +
-	"\x14GetDemandConsumption\x12#.dop.v1.GetDemandConsumptionRequest\x1a\x19.dop.v1.DemandConsumptionB\x97\x01\n" +
+	"\x14GetDemandConsumption\x12#.dop.v1.GetDemandConsumptionRequest\x1a\x19.dop.v1.DemandConsumptionB\x8b\x01\n" +
 	"\n" +
-	"com.dop.v1B\x11AgentmetricsProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x11AgentmetricsProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_agentmetrics_proto_rawDescOnce sync.Once

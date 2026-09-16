@@ -1282,9 +1282,9 @@ const file_dop_v1_resource_proto_rawDesc = "" +
 	"\rGrantResource\x12\x1c.dop.v1.GrantResourceRequest\x1a\x15.dop.v1.ResourceGrant\x12F\n" +
 	"\vRevokeGrant\x12\x1a.dop.v1.RevokeGrantRequest\x1a\x1b.dop.v1.RevokeGrantResponse\x12U\n" +
 	"\x10ListMemberGrants\x12\x1f.dop.v1.ListMemberGrantsRequest\x1a .dop.v1.ListMemberGrantsResponse\x12L\n" +
-	"\rSetCredential\x12\x1c.dop.v1.SetCredentialRequest\x1a\x1d.dop.v1.SetCredentialResponseB\x93\x01\n" +
+	"\rSetCredential\x12\x1c.dop.v1.SetCredentialRequest\x1a\x1d.dop.v1.SetCredentialResponseB\x87\x01\n" +
 	"\n" +
-	"com.dop.v1B\rResourceProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\rResourceProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_resource_proto_rawDescOnce sync.Once

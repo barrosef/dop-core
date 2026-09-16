@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/reaction"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/reaction"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // ReactionRepo implements reaction.Repository. It is the ONLY place with rule

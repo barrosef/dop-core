@@ -5,9 +5,9 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/execution"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/execution"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // ExecutionServer exposes the executor on the gRPC contract.

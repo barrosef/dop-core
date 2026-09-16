@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/agent"
+	"github.com/barrosef/dop-core/internal/domain/agent"
 )
 
 func fullPackage() agent.ContextPackage {

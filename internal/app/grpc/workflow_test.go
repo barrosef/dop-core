@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	dopv1 "github.com/Digital-Business-One/dop-core/api/gen/dop/v1"
-	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
+	dopv1 "github.com/barrosef/dop-core/api/gen/dop/v1"
+	"github.com/barrosef/dop-core/internal/domain/workflow"
 )
 
 // TestPublicationToProtoRendersTheReferenceServerSide is the one thing task

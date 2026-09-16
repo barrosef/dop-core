@@ -776,9 +776,9 @@ const file_dop_v1_execution_proto_rawDesc = "" +
 	"\x0eDestroySandbox\x12\x1d.dop.v1.DestroySandboxRequest\x1a\x1e.dop.v1.DestroySandboxResponse\x12B\n" +
 	"\x0fDescribeSandbox\x12\x1e.dop.v1.DescribeSandboxRequest\x1a\x0f.dop.v1.Sandbox\x12:\n" +
 	"\n" +
-	"StreamLogs\x12\x19.dop.v1.StreamLogsRequest\x1a\x0f.dop.v1.LogLine0\x01B\x94\x01\n" +
+	"StreamLogs\x12\x19.dop.v1.StreamLogsRequest\x1a\x0f.dop.v1.LogLine0\x01B\x88\x01\n" +
 	"\n" +
-	"com.dop.v1B\x0eExecutionProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\x0eExecutionProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_execution_proto_rawDescOnce sync.Once

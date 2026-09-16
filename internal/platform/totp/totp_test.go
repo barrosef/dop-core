@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/platform/totp"
+	"github.com/barrosef/dop-core/internal/platform/totp"
 )
 
 // The RFC 6238 vector: the ASCII seed "12345678901234567890", which in base32

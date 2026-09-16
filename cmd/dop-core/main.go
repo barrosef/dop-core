@@ -16,9 +16,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Digital-Business-One/dop-core/internal/app"
-	"github.com/Digital-Business-One/dop-core/internal/platform/config"
-	"github.com/Digital-Business-One/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/app"
+	"github.com/barrosef/dop-core/internal/platform/config"
+	"github.com/barrosef/dop-core/internal/platform/logging"
 )
 
 func main() {

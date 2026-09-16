@@ -11,7 +11,7 @@ package event
 import (
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // The event itself gets NO new type: ports.Event is already the house

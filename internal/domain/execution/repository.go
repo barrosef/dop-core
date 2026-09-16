@@ -3,8 +3,8 @@ package execution
 import (
 	"context"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/identity"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Repository is the executor's persistence PORT.

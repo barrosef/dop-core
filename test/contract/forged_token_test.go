@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/identity"
+	"github.com/barrosef/dop-core/internal/adapter/identity"
 )
 
 // The CORE's Firebase adapter used to decode the payload from base64 and trust

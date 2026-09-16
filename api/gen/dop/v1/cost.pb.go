@@ -708,9 +708,9 @@ const file_dop_v1_cost_proto_rawDesc = "" +
 	"\tSetBudget\x12\x18.dop.v1.SetBudgetRequest\x1a\x0e.dop.v1.Budget\x12@\n" +
 	"\n" +
 	"RouteModel\x12\x19.dop.v1.RouteModelRequest\x1a\x17.dop.v1.RoutingDecision\x12L\n" +
-	"\rSummarizeCost\x12\x1c.dop.v1.SummarizeCostRequest\x1a\x1d.dop.v1.SummarizeCostResponseB\x8f\x01\n" +
+	"\rSummarizeCost\x12\x1c.dop.v1.SummarizeCostRequest\x1a\x1d.dop.v1.SummarizeCostResponseB\x83\x01\n" +
 	"\n" +
-	"com.dop.v1B\tCostProtoP\x01Z=github.com/Digital-Business-One/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
+	"com.dop.v1B\tCostProtoP\x01Z1github.com/barrosef/dop-core/api/gen/dop/v1;dopv1\xa2\x02\x03DXX\xaa\x02\x06Dop.V1\xca\x02\x06Dop\\V1\xe2\x02\x12Dop\\V1\\GPBMetadata\xea\x02\aDop::V1b\x06proto3"
 
 var (
 	file_dop_v1_cost_proto_rawDescOnce sync.Once

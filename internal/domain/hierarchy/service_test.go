@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/hierarchy"
-	"github.com/Digital-Business-One/dop-core/internal/platform/ctxutil"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/hierarchy"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // The domain is testable WITHOUT a database: the repository is a port, and an

@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/gitprovider"
-	"github.com/Digital-Business-One/dop-core/internal/domain/delivery"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/gitprovider"
+	"github.com/barrosef/dop-core/internal/domain/delivery"
+	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // fakeToken is guarantee 12's SENTINEL. It has to be an improbable and

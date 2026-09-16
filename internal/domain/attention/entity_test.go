@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/attention"
 )
 
 var now = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)

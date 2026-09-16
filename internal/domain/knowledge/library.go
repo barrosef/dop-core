@@ -27,7 +27,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // The library's directories. They are a CONTRACT: the agent's brief names these

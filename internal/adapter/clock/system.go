@@ -10,7 +10,7 @@ package clock
 import (
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // System is the process's wall clock.

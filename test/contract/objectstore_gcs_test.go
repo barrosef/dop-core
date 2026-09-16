@@ -13,9 +13,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Digital-Business-One/dop-core/internal/adapter/objectstore"
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/test/contract"
+	"github.com/barrosef/dop-core/internal/adapter/objectstore"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/test/contract"
 )
 
 // TWO KNOWN EMULATOR DEFECTS — subtests 8 and 13.

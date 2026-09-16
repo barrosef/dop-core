@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Memory is the in-memory adapter — used in the domain tests and as a living

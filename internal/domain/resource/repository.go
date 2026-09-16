@@ -3,7 +3,7 @@ package resource
 import (
 	"context"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/identity"
+	"github.com/barrosef/dop-core/internal/domain/identity"
 )
 
 // Repository is the resource domain's persistence PORT.

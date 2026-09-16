@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/ports"
 )
 
 // Attempt is one failure, as it happened.
