@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Digital-Business-One/dop-core/internal/domain/ports"
-	"github.com/Digital-Business-One/dop-core/internal/domain/workflow"
-	"github.com/Digital-Business-One/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/domain/ports"
+	"github.com/barrosef/dop-core/internal/domain/workflow"
+	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
 // WorkflowRepo implements workflow.Repository and workflow.Ancestry. It is the
@@ -117,7 +117,7 @@ func (r *WorkflowRepo) ByID(ctx context.Context, accountID, id string) (*workflo
 // platform catalogue is the ONLY flow a pin can ever apply to (ByOwners
 // returns nothing else outside the caller's own account), and a platform
 // flow's account_id is the empty string, not a UUID. Sent as a bare
-// parameter against a `uuid` column, `''` is not a value the type accepts —
+// parameter against a `uuid` column, an empty string is not a value the type accepts —
 // Postgres raises `invalid input syntax for type uuid: ""` before the OR
 // even gets a chance to match on owner_scope. Casting to text is the same
 // fix flowCols already applies for the identical reason (see its comment).
