@@ -11,7 +11,7 @@ import (
 )
 
 // ManifestPath is where a project declares how it is built and verified
-// (ADR-0030). It is a constant of the DOMAIN and not configuration: a path each
+// (ADR-0023). It is a constant of the DOMAIN and not configuration: a path each
 // installation could change is a path no error message can name.
 const ManifestPath = ".dop/verification.yml"
 
@@ -35,7 +35,7 @@ type Manifest struct {
 // broker.
 //
 // It is ALWAYS a published image, pulled and never built. What is built from
-// source is the application, and only it (ADR-0030 §1): a dependency built per
+// source is the application, and only it (ADR-0023 §1): a dependency built per
 // run puts the slow path back exactly where the decision took it out.
 type Dependency struct {
 	Name  string            `yaml:"name"`
@@ -79,7 +79,7 @@ type Check struct {
 
 // checkKinds maps the manifest's vocabulary to the domain's.
 //
-// The manifest speaks the WORKFLOW's words (ADR-0014 §1: a `test` stage has the
+// The manifest speaks the WORKFLOW's words (ADR-0010 §1: a `test` stage has the
 // subtypes `aaa`, `e2e`, `integration`), because that is what the person writing
 // the file has already read. `aaa` and `unit` are the same thing under two
 // names, and only one of them reaches the evidence: keeping both in the enum is
@@ -107,7 +107,7 @@ func ParseManifest(content []byte, found bool) (*Manifest, error) {
 	if !found {
 		return nil, errs.Precondition(
 			"this project does not declare %s: the platform does not guess how an application builds, "+
-				"because a wrong guess produces a green that proves nothing (ADR-0030)", ManifestPath)
+				"because a wrong guess produces a green that proves nothing (ADR-0023)", ManifestPath)
 	}
 	var m Manifest
 	dec := yaml.NewDecoder(strings.NewReader(string(content)))
@@ -132,7 +132,7 @@ func (m Manifest) Validate() error {
 		if strings.TrimSpace(d.Build) != "" {
 			return errs.Invalid(
 				"dependency %q declares `build`: a dependency is a published image, pulled and never built — "+
-					"what is built from source is the application, and only it (ADR-0030)", where)
+					"what is built from source is the application, and only it (ADR-0023)", where)
 		}
 		if !dnsLabel.MatchString(d.Name) {
 			return errs.Invalid(

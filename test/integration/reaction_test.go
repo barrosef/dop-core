@@ -317,7 +317,7 @@ func TestTheSameIdempotencyKeyInTwoAccountsMakesTwoRules(t *testing.T) {
 	}
 
 	// And the repeat is still a repeat WITHIN one account: the same key twice
-	// returns the same rule instead of a twin (ADR-0017).
+	// returns the same rule instead of a twin (ADR-0013).
 	again, err := repo.Create(ctx, &reaction.Rule{
 		AccountID: mine, OwnerScope: "project", OwnerID: myProject,
 		Trigger: reaction.TriggerEvent, EventType: event,

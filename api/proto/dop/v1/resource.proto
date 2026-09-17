@@ -4,7 +4,7 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/struct.proto";
 
-// A resource is the account's unit of ownership and sharing (ADR-0013).
+// A resource is the account's unit of ownership and sharing (ADR-0009).
 message Resource {
   enum Kind {
     KIND_UNSPECIFIED = 0;

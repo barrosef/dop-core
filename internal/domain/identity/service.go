@@ -23,7 +23,7 @@ type Service struct {
 }
 
 // StepUpGate is the second factor's gate, in the narrowest possible shape: one
-// question, one answer (ADR-0027 §5).
+// question, one answer (ADR-0020 §5).
 //
 // It is declared here, in the language of what is being asked, instead of this
 // domain importing `secondfactor` — the same rule as the rest of the glue.
@@ -246,7 +246,7 @@ func (s *Service) createPersonalAccount(ctx context.Context, u *User) (*Account,
 
 // CreateOrganization creates the organization account; its creator becomes
 // owner. No waiting and no paperwork: legitimacy comes from domain
-// verification, done later (ADR-0004).
+// verification, done later (ADR-0002).
 func (s *Service) CreateOrganization(ctx context.Context, handle, displayName, legalID string) (*Account, error) {
 	call, ok := ctxutil.From(ctx)
 	if !ok || call.ActorID == "" {
@@ -359,7 +359,7 @@ func (s *Service) CreateInvite(ctx context.Context, email string, role Role, gra
 		return nil, errs.Permission("only an owner or admin may invite").
 			WithCode(KeyOnlyAdminsInvite, nil)
 	}
-	// The second factor's gate (ADR-0027 §5): whoever invites is handing out a
+	// The second factor's gate (ADR-0020 §5): whoever invites is handing out a
 	// key to the account. It comes AFTER the role check, so somebody with no
 	// business inviting learns that first — the second factor is not a way to
 	// hide what the permission already refuses.
@@ -468,7 +468,7 @@ func (s *Service) ListInvites(ctx context.Context) ([]Invite, error) {
 //
 // It does NOT carry the invitee's email. Whoever finds the link must not learn
 // an address from it — that would turn it back into the oracle that taking the
-// token out was meant to end (ADR-0026).
+// token out was meant to end (ADR-0019).
 type InvitePreview struct {
 	ID          string
 	AccountName string
@@ -842,7 +842,7 @@ const VerificationWindow = time.Hour
 //
 // Read it also as what it would be if it were open: an endpoint that sends
 // arbitrary text to an arbitrary address is a mail relay. It is not open —
-// ADR-0029 means only a signed caller reaches it — and the ceiling is the second
+// ADR-0022 means only a signed caller reaches it — and the ceiling is the second
 // line, for the day the first one has a hole.
 func (s *Service) SendEmailVerification(ctx context.Context, email, subject, link, name string) error {
 	email = strings.ToLower(strings.TrimSpace(email))

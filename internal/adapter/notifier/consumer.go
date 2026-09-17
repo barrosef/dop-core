@@ -22,7 +22,7 @@ import (
 
 // Consumer is the subscriber. Idempotent by construction — the real
 // idempotency lives in the service's claim, and JetStream delivery is
-// at-least-once (ADR-0019).
+// at-least-once (ADR-0014).
 type Consumer struct{ svc *notification.Service }
 
 func NewConsumer(svc *notification.Service) *Consumer {

@@ -11,7 +11,7 @@
 //
 // That matters far more than it looks: using `update-branch` to fulfil `Rebase`
 // would be performing a DIFFERENT operation from the one requested, with
-// apparent success. ADR-0008's queue reapplies each PR on top of the updated
+// apparent success. ADR-0005's queue reapplies each PR on top of the updated
 // `main` and RE-VERIFIES; a main→branch merge also "updates", but it produces a
 // history and a head commit different from what the domain asked for, and
 // nothing in the return would give the swap away. The honest alternative is
@@ -65,10 +65,10 @@ type GitHubConfig struct {
 	// — exactly the kind of difference that only shows up at the client's.
 	GraphQLURL string
 	// Token is the ALREADY RESOLVED value of the resource credential
-	// (ADR-0013). This package does not know ports.SecretStore.
+	// (ADR-0009). This package does not know ports.SecretStore.
 	Token   string
 	ActorID string
-	// MergeMethod is the git flow's policy (ADR-0013), not the domain's.
+	// MergeMethod is the git flow's policy (ADR-0009), not the domain's.
 	MergeMethod   string // merge | squash | rebase
 	Timeout       time.Duration
 	RebaseTimeout time.Duration
@@ -269,7 +269,7 @@ func (g *GitHub) OpenPullRequest(ctx context.Context, spec delivery.OpenPRSpec) 
 		}
 		if existing != nil {
 			// Guarantee 4: return what exists, with the ORIGINAL title and
-			// body. There is no PATCH here, on purpose — ADR-0007 §4's evidence
+			// body. There is no PATCH here, on purpose — ADR-0005 §4's evidence
 			// package must not be replaced by a retry.
 			return g.prToPort(*existing), nil
 		}
@@ -342,7 +342,7 @@ func (g *GitHub) prByNumber(ctx context.Context, owner, name string, n int) (*gh
 //
 //  2. GitHub answers the mutation with HTTP 200 even when it FAILS — the failure
 //     comes in the body's `errors` array. An adapter that looked only at the
-//     status code would report "rebase done" for every conflict, and ADR-0008's
+//     status code would report "rebase done" for every conflict, and ADR-0005's
 //     queue would merge on top of a branch that was not reapplied.
 func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery.RebaseResult, error) {
 	owner, name, err := repoParts(spec.RepoExternalID)
@@ -420,7 +420,7 @@ func (g *GitHub) Rebase(ctx context.Context, spec delivery.RebaseSpec) (delivery
 	// An honest caveat: GitHub does NOT document whether the mutation finishes
 	// before answering. If it is asynchronous, this SHA may be the one from
 	// BEFORE. What the adapter does NOT do is pretend: it returns what it read,
-	// and the queue re-verifies on top of that commit — which is ADR-0008 §1's
+	// and the queue re-verifies on top of that commit — which is ADR-0005 §1's
 	// protection against exactly "I thought the code was in another state".
 	current, err := g.prByNumber(ctx, owner, name, pr.Number)
 	if err != nil {
@@ -485,7 +485,7 @@ func (g *GitHub) Merge(ctx context.Context, spec delivery.MergeSpec) (delivery.M
 			return delivery.MergeResult{}, err
 		}
 		// One extra read: the merge's response does not carry the INSTANT, and
-		// guarantee 7 asks for the commit AND the when. ADR-0008's queue records
+		// guarantee 7 asks for the commit AND the when. ADR-0005's queue records
 		// both in the event that feeds the cockpit.
 		pr, err := g.prByNumber(ctx, owner, name, n)
 		if err != nil {
@@ -568,12 +568,12 @@ func (g *GitHub) classifyRefusal(ctx context.Context, owner, name string, n int,
 // ── HasNativeQueue ───────────────────────────────────────────────────────────
 
 // HasNativeQueue says whether this repository has a native merge queue
-// (ADR-0008 §4).
+// (ADR-0005 §4).
 //
 // A divergence the normalization had to absorb: GitHub's merge queue is PER
 // BRANCH — it is a ruleset rule matching a ref pattern — and GitLab's merge
 // trains are PER PROJECT. The port asks per REPOSITORY, and the honest answer
-// for GitHub is about the branch ADR-0008's queue actually contends for: the
+// for GitHub is about the branch ADR-0005's queue actually contends for: the
 // DEFAULT branch. Hence the two calls — find the default and ask for its rules.
 //
 // Guarantee 14 in two lines: a 403 becomes an ERROR. With no permission to read

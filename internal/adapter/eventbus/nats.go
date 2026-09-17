@@ -1,4 +1,4 @@
-// An EventBus adapter over NATS JetStream (ADR-0019).
+// An EventBus adapter over NATS JetStream (ADR-0014).
 //
 // The choice: lightweight (one container), runs identically on k3s and GKE,
 // persistent, with consumer groups, a DLQ and replay. Kafka would be a truck for

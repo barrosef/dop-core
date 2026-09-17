@@ -62,7 +62,7 @@ func (r Registry) Run(ctx context.Context, p PlannedAction) error {
 // action is allowed to execute.
 //
 // It is two methods and not one "already ran?" check, because at-least-once
-// delivery (ADR-0019) means two deliveries of the SAME event can be in flight
+// delivery (ADR-0014) means two deliveries of the SAME event can be in flight
 // at the same time. If the check ran before the handler and the mark was
 // written after, both deliveries could see "not yet applied", both would run
 // the handler, and the row written afterwards would only ever prove the second

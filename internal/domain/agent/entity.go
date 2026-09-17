@@ -1,7 +1,7 @@
 // Package agent is the agent RUNTIME: the conversation turn with the model, from
-// context to published finding (ADR-0023).
+// context to published finding (ADR-0016).
 //
-// It lived in the BFF (ADR-0016) and came back here for one security reason and
+// It lived in the BFF (ADR-0012) and came back here for one security reason and
 // one design reason. The security one: the runtime needs the provider's
 // credential, which lives in the vault, in the core, and the core NEVER returns a
 // secret — giving the BFF the vault was vetoed, because it is the layer exposed to
@@ -17,7 +17,7 @@
 // not know `knowledge`, `cost` or `demand` — it talks to all three through narrow
 // ports declared here, in ITS vocabulary.
 //
-// Two modules of the Python implementation did NOT cross over, and ADR-0023
+// Two modules of the Python implementation did NOT cross over, and ADR-0016
 // explains why: `credentials.py` existed to work around an inaccessible vault
 // (here the credential comes from `ports.SecretStore` at the composition root, as
 // with git — see internal/app/agentproviders.go), and `catalog.py` existed
@@ -26,13 +26,13 @@
 // `Decision.Class` arrives whole and the way back ceases to exist.
 //
 // ════════════════════════════════════════════════════════════════════════════
-// WHERE THE PROVIDERS DIVERGE  (the real work — ADR-0022)
+// WHERE THE PROVIDERS DIVERGE  (the real work — ADR-0016)
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Every divergence below has its own subtest in test/contract/agentprovider.go,
 // running against ALL adapters. They changed language, not design.
 //
-// D1 — PREFIX CACHE SEMANTICS. The most expensive one, because ADR-0012 depends on
+// D1 — PREFIX CACHE SEMANTICS. The most expensive one, because ADR-0008 depends on
 // it. Anthropic has EXPLICIT caching: a `cache_control` marks the end of the
 // prefix, a 5-minute TTL, reads at ~0.1× the input and writes at 1.25×, and the
 // response separates `cache_read_input_tokens` from `cache_creation_input_tokens`.
@@ -40,7 +40,7 @@
 // response reports only `cached_tokens` (reads) — cache CREATION is not reported.
 // So `Usage.CacheCreationTokens` is always 0 in the OpenAI adapter, and that does
 // NOT mean "nothing was written to the cache": it means "it cannot be known". The
-// silent-invalidator alert of ADR-0012 §1 (zero cache reads on a stable prefix —
+// silent-invalidator alert of ADR-0008 §1 (zero cache reads on a stable prefix —
 // see `cost.UsageEvent.SuspectCacheMiss`) is only FAITHFUL under a provider with
 // explicit accounting. `CapCacheCreationAccounting` says who has it, and the
 // capability travels in the `Reply` so whoever reads the telemetry knows what the
@@ -50,12 +50,12 @@
 // EXCLUDES what came from cache — the three input parts are disjoint and sum to
 // the total. At OpenAI, `prompt_tokens` INCLUDES the cached ones and
 // `cached_tokens` is a SUBSET of it. Summing OpenAI's fields as if they were
-// disjoint inflates ADR-0011's measurement without anything failing. The port
+// disjoint inflates ADR-0008's measurement without anything failing. The port
 // NORMALIZES to the disjoint semantics, which is what `cost.UsageEvent` assumes:
 // the OpenAI adapter subtracts, and that is the most important line in that file.
 //
 // D3 — THE OPERATOR CHANNEL. The operator's intervention has to enter the middle
-// of the conversation without rewriting the top of the prompt (ADR-0012 §1).
+// of the conversation without rewriting the top of the prompt (ADR-0008 §1).
 // Anthropic has a `role:"system"` message inside `messages` — on the Opus 5/4.8
 // and Fable/Mythos models, and NOT on Sonnet 5, which answers 400. OpenAI has
 // `role:"developer"`, accepted in any position. The port exposes `RoleOperator`
@@ -65,10 +65,10 @@
 // the user: it is what authorizes, and flattening the two opens the door to prompt
 // injection.
 //
-// D4 — EFFORT. The core's vocabulary is `low|medium|high|xhigh|max` (ADR-0011 §3,
+// D4 — EFFORT. The core's vocabulary is `low|medium|high|xhigh|max` (ADR-0008 §3,
 // mirrored in `cost.Effort`). Anthropic accepts all five; OpenAI accepts three.
 // The adapter MAPS and declares what it applied in `Reply.EffortApplied` — it never
-// pretends it applied `max`. On a critical task (ADR-0007: you do not save on the
+// pretends it applied `max`. On a critical task (ADR-0005: you do not save on the
 // critic) that difference is a product decision, not a detail, and that is why it
 // also comes out as a readable warning in `Reply.Warnings`.
 //
@@ -171,7 +171,7 @@ const (
 	ClassStrong ModelClass = "strong"
 )
 
-// Effort is the reasoning effort, in the core's vocabulary (ADR-0011 §3). The
+// Effort is the reasoning effort, in the core's vocabulary (ADR-0008 §3). The
 // five values are the same as `cost.Effort` — string for string, on purpose: the
 // glue between the two domains is a named-type swap, not a translation, and on
 // the day they diverge it is better that it breaks at the glue.
@@ -196,7 +196,7 @@ func ValidEffort(e Effort) bool {
 }
 
 // NormalizeEffort falls back to HIGH when it does not recognize the value, not
-// to low: ADR-0011 §3 already decided that, in doubt, you do not save — erring
+// to low: ADR-0008 §3 already decided that, in doubt, you do not save — erring
 // towards expensive shows up in the measurement, erring towards cheap shows up
 // in rework, which shows up nowhere.
 func NormalizeEffort(e Effort) Effort {
@@ -252,16 +252,16 @@ const (
 	// (breakpoint), not guessed by the provider.
 	CapExplicitPrefixCache Capability = "explicit_prefix_cache"
 	// CapCacheCreationAccounting: the response separates cache CREATION from
-	// cache READS (ADR-0012 §1). Without it, a zero in CacheCreationTokens
+	// cache READS (ADR-0008 §1). Without it, a zero in CacheCreationTokens
 	// means "it cannot be known", never "nothing was written".
 	CapCacheCreationAccounting Capability = "cache_creation_accounting"
 	// CapOperatorChannel: an operator instruction has a channel of its own in
 	// the provider's protocol (D3).
 	CapOperatorChannel Capability = "operator_channel"
-	// CapFullEffortRange: the five levels of ADR-0011 §3, with no downgrade.
+	// CapFullEffortRange: the five levels of ADR-0008 §3, with no downgrade.
 	CapFullEffortRange Capability = "full_effort_range"
 	// CapStructuredOutput: structured output validated by the provider —
-	// ADR-0012 §2's terse finding, with no re-parse on our side.
+	// ADR-0008 §2's terse finding, with no re-parse on our side.
 	CapStructuredOutput Capability = "structured_output"
 	// CapToolUse: the adapter declares tools, reads the call and returns the
 	// result (D7–D11). BOTH providers have it — and it exists anyway, because
@@ -373,7 +373,7 @@ type Micros int64
 //
 // Disjoint is the CONTRACT: InputTokens does not include what came from cache.
 // `cost.UsageEvent` assumes that — `PromptTokens()` there sums the three input
-// parts — and an adapter returning the inclusive count would inflate ADR-0011's
+// parts — and an adapter returning the inclusive count would inflate ADR-0008's
 // budget silently.
 type Usage struct {
 	InputTokens         int64
@@ -414,7 +414,7 @@ func (p Price) CostMicros(u Usage) Micros {
 
 // Turn is the conversation to send: stable prefix first, volatile after.
 //
-// The separation is ADR-0012 §1 turned into a TYPE. As long as StablePrefix is a
+// The separation is ADR-0008 §1 turned into a TYPE. As long as StablePrefix is a
 // field of its own, nobody interpolates the turn's text in there out of
 // distraction — which is the worst way to lose the cache saving, because it does
 // not fail, it just gets expensive.
@@ -422,7 +422,7 @@ type Turn struct {
 	StablePrefix string
 	Messages     []Message
 	// OutputSchema is the response's JSON schema: a terse finding, validated
-	// by the provider (ADR-0012 §2). Nil = free text.
+	// by the provider (ADR-0008 §2). Nil = free text.
 	OutputSchema map[string]any
 	// Tools are the tools DECLARED on this turn (D7). Empty = the agent only
 	// converses, and the adapter does NOT send the field — an empty array in
@@ -501,7 +501,7 @@ func (p ProviderInfo) Supports(c Capability) bool { return p.Capabilities.Has(c)
 // PriceFor returns this model's price and whether it is KNOWN.
 //
 // The boolean, and not a zeroed price: zero would assert the call was free, and
-// a budget fed with zeros is exactly the fiction ADR-0011 §2 exists to prevent.
+// a budget fed with zeros is exactly the fiction ADR-0008 §2 exists to prevent.
 // Whoever gets `false` has to SAY it does not know — which is what the turn's
 // cycle does, with a readable warning in the output.
 func (p ProviderInfo) PriceFor(model string) (Price, bool) {
@@ -518,7 +518,7 @@ type UnavailableReason string
 
 const (
 	// ReasonMissingCredential: there is no credential configured for this
-	// `agent`-category resource (ADR-0013).
+	// `agent`-category resource (ADR-0009).
 	ReasonMissingCredential UnavailableReason = "missing_credential"
 	// ReasonRejectedCredential: the credential exists and was REFUSED
 	// (401/403).
@@ -541,12 +541,12 @@ const (
 // consumers drafting the same guidance is how two of them get it wrong.
 var guidance = map[UnavailableReason]string{
 	ReasonMissingCredential: "configure the credential of the 'agent'-category resource " +
-		"(ADR-0013) — it is read from the vault, in the core, and never travels",
+		"(ADR-0009) — it is read from the vault, in the core, and never travels",
 	ReasonRejectedCredential: "the provider credential was refused; renew it",
 	ReasonUnreachable:        "the agent provider did not answer; check the network and the egress allowlist",
 	ReasonProviderError:      "the agent provider failed; try again later",
 	ReasonUnknownModel: "the routed model does not exist in this provider's catalog; " +
-		"adjust the adapter's catalog or the routing policy (ADR-0011 §3)",
+		"adjust the adapter's catalog or the routing policy (ADR-0008 §3)",
 	ReasonUnknownProvider: "there is no adapter for this agent provider in this installation",
 }
 

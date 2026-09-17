@@ -2,7 +2,7 @@
 //
 // It serves production (GCS/Firebase Storage) AND the local environment (the
 // Firebase emulator) — the same protocol, a different endpoint. That is why
-// MinIO left the design (ADR-0020): local and production share the semantics,
+// MinIO left the design (ADR-0015): local and production share the semantics,
 // signed URLs included.
 //
 // The variable bridge, the trap that costs dearly: the Cloud Storage SDK reads

@@ -14,7 +14,7 @@ import (
 // required parameter of the port, not something the adapter could forget.
 type Repository interface {
 	// RecordUsage writes the consumption and accumulates the affected budgets in a
-	// SINGLE transaction, together with the events (ADR-0019). The contract the
+	// SINGLE transaction, together with the events (ADR-0014). The contract the
 	// adapter has to honour:
 	//
 	//  1. REAL IDEMPOTENCY by (accountID, idempotencyKey): a repeat writes no new
@@ -51,7 +51,7 @@ type Repository interface {
 //
 // Budgets carries the before/after of each scope touched; Duplicate says whether
 // it was a repeat. Note there is no error field for an overrun: exceeding a
-// budget NEVER fails the write (ADR-0011 §2) — the demand is stopped with a
+// budget NEVER fails the write (ADR-0008 §2) — the demand is stopped with a
 // pause, not with a lost measurement.
 type RecordResult struct {
 	Usage     *UsageEvent

@@ -1,4 +1,4 @@
-// Package verification implements the VerificationRunner port (ADR-0030): the
+// Package verification implements the VerificationRunner port (ADR-0023): the
 // ephemeral environment that pulls a COMMIT, builds the application from source
 // and runs the declared checks against it.
 //

@@ -1,5 +1,5 @@
 // Package knowledge is the project's knowledge base — rules, index and memory —
-// and the assembly of the per-demand context package (ADR-0009).
+// and the assembly of the per-demand context package (ADR-0006).
 //
 // House rule: this package knows nothing of Postgres, gRPC or any SDK. It
 // declares what it needs as a PORT (repository.go) and the composition root
@@ -23,7 +23,7 @@ import (
 	"github.com/barrosef/dop-core/internal/platform/errs"
 )
 
-// ── the three layers (ADR-0009 §1) ───────────────────────────────────────────
+// ── the three layers (ADR-0006 §1) ───────────────────────────────────────────
 
 type Kind string
 
@@ -137,7 +137,7 @@ func (s Scope) Validate() error {
 //     trip;
 //   - ObjectRef, in the ObjectStore, when it is large — because a 4 MB
 //     repository map inside a row turns every read of the table into a 4 MB
-//     read, and Postgres is not an object store (ADR-0009 §2).
+//     read, and Postgres is not an object store (ADR-0006 §2).
 type Artifact struct {
 	ID        string
 	Scope     Scope
@@ -224,7 +224,7 @@ func ValidateName(name string) error {
 // EstimateTokens estimates the text's cost in tokens.
 //
 // The package's REAL measurement is token counting at the edge (a free endpoint,
-// ADR-0012) — but the CUT has to happen here, offline and deterministic: a
+// ADR-0008) — but the CUT has to happen here, offline and deterministic: a
 // selection that depended on a network call would be non-deterministic, and a
 // non-deterministic package invalidates the prompt's cached prefix, which is
 // where 90% of the discount comes from. Four bytes per token is the usual
@@ -264,7 +264,7 @@ type ScoredArtifact struct {
 	Score    float32
 }
 
-// Finding is the conclusion a subagent published on the demand (ADR-0010). It
+// Finding is the conclusion a subagent published on the demand (ADR-0007). It
 // lives in the demand domain; here it comes in through the Demands port, with
 // the minimal surface the package assembly consumes.
 type Finding struct {
@@ -334,7 +334,7 @@ func ResolveRuleArtifacts(rules []Artifact) []Artifact {
 	return out
 }
 
-// ── budget and package selection (ADR-0012) ──────────────────────────────────
+// ── budget and package selection (ADR-0008) ──────────────────────────────────
 
 // Budget is the package's budget, in tokens.
 //
@@ -405,11 +405,11 @@ type Candidates struct {
 	Memories []ScoredArtifact
 }
 
-// Package is the agent's carry-on luggage (ADR-0009 §3).
+// Package is the agent's carry-on luggage (ADR-0006 §3).
 //
 // No timestamp and no volatile id, on purpose: the package enters the prompt's
 // CACHED PREFIX, and a byte that changes on every assembly burns the cache
-// discount in silence (ADR-0012 §1).
+// discount in silence (ADR-0008 §1).
 type Package struct {
 	DemandID        string
 	Rules           []string
@@ -437,7 +437,7 @@ func (p Package) Truncated() bool { return p.Dropped.Any() }
 //     cycle.
 //  2. FINDINGS already published on the demand. On a resume, it is what keeps
 //     the agent from redoing an investigation a sibling already finished
-//     (ADR-0010/0012 §3).
+//     (ADR-0007/0012 §3).
 //  3. THE INDEX OF THE DEMAND'S REPOSITORIES — not the whole project's. This is
 //     where the discipline "it grows with the DEMAND" lives: the project may
 //     have 40 repos, the demand touches two. The query is what selected the two;

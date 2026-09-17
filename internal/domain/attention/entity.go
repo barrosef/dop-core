@@ -1,7 +1,7 @@
 // Package attention is the attention box: the single queue that answers "where
 // am I needed, and in what order".
 //
-// It is a PROJECTION (ADR-0006): every item is born of an event and dies of
+// It is a PROJECTION (ADR-0004): every item is born of an event and dies of
 // another. This package does not create items — it translates events into items
 // and ORDERS them. The translation lives here, and not in the adapter, because
 // deciding what deserves human attention is a business rule, not a storage
@@ -89,7 +89,7 @@ var impact = map[Kind]int{
 	KindPRReview: 50,
 	// Coordination: important and never urgent. Demand 1 goes as far as it can;
 	// it does NOT stop because a cross-cutting concern was identified
-	// (ADR-0015).
+	// (ADR-0011).
 	KindDirective: 60,
 	// A conversation waiting on an answer.
 	KindThreadBlocked: 70,

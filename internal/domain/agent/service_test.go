@@ -180,7 +180,7 @@ func setup(t *testing.T, pkg agent.ContextPackage, reply *agent.Reply,
 	prov := &fakeProvider{info: providerSheet(), reply: reply}
 	cost := &fakeCost{
 		decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
-			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0011 §3: because so"},
+			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0008 §3: because so"},
 		accounting: accounting,
 	}
 	conv := &fakeConversation{thread: agent.Thread{ID: "thr-1", Key: "main", Card: card}}
@@ -201,7 +201,7 @@ func request() agent.TurnRequest {
 
 // Authorship is the reason the platform exists: telling what the human did from
 // what the agent did. If this test falls, the event log — which is the demand's
-// truth (ADR-0006) — starts lying about who did what.
+// truth (ADR-0004) — starts lying about who did what.
 func TestReplyAuthorshipBelongsToTheAgent(t *testing.T) {
 	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 
@@ -304,7 +304,7 @@ func TestBlownBudgetPausesWithoutLosingTheTurn(t *testing.T) {
 
 	out, err := c.svc.RunTurn(callCtx(), request(), "turn-1")
 	if err != nil {
-		t.Fatal("a blown budget became an ERROR: ADR-0011 §2 refused the hard cut")
+		t.Fatal("a blown budget became an ERROR: ADR-0008 §2 refused the hard cut")
 	}
 	if !out.Paused {
 		t.Fatal("the overrun did not pause")
@@ -341,7 +341,7 @@ func TestTruncationBecomesAMessageOnTheThread(t *testing.T) {
 
 // The CLASS arrives whole and becomes a name through the ACTIVE provider's
 // catalog — it is the translation that retired the BFF's `catalog.py`
-// (ADR-0023).
+// (ADR-0016).
 func TestClassBecomesANameThroughTheProviderCatalog(t *testing.T) {
 	c := setup(t, agent.ContextPackage{}, concludingReply(), agent.AgentCard{}, agent.Accounting{})
 

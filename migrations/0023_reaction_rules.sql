@@ -34,7 +34,7 @@ CREATE TABLE reaction_rules (
   -- with "invite.created sends an email"; anybody can disagree with the reason.
   -- Without it the policy is not auditable.
   why         text NOT NULL,
-  -- Every write carries an idempotency key (ADR-0017): repeating the creation
+  -- Every write carries an idempotency key (ADR-0013): repeating the creation
   -- collides on reaction_rules_idempotency below and returns the rule already
   -- created, instead of a twin. Same column as `flows`; the uniqueness is
   -- scoped differently, and the index says why.

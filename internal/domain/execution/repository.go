@@ -16,7 +16,7 @@ import (
 // multi-tenant isolation is a required parameter of the port, not something the
 // adapter could forget.
 //
-// Every write method stores state and event in the SAME transaction (ADR-0019) —
+// Every write method stores state and event in the SAME transaction (ADR-0014) —
 // and that is why there is no generic "SaveSandbox" here: a generic write does
 // not know which event to emit, and the event would end up published outside the
 // transaction by the caller.
@@ -96,6 +96,6 @@ type Demands interface {
 	// existence of other accounts' ids to whoever kept trying.
 	DemandAccount(ctx context.Context, demandID string) (string, error)
 	// DemandProject returns the project the demand belongs to — the key of its
-	// root repository (ADR-0028). Same rule as DemandAccount for absence.
+	// root repository (ADR-0021). Same rule as DemandAccount for absence.
 	DemandProject(ctx context.Context, demandID string) (string, error)
 }

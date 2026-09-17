@@ -725,7 +725,7 @@ func TestAcceptanceToleratesCaseAndSpaceInTheUserRow(t *testing.T) {
 	}
 }
 
-// ── the second factor's gate (ADR-0027 §5) ──────────────────────────────────
+// ── the second factor's gate (ADR-0020 §5) ──────────────────────────────────
 
 type refusingGate struct{ calls int }
 
@@ -799,7 +799,7 @@ func TestWithNoGateWiredTheDomainWorksOnItsOwn(t *testing.T) {
 
 func TestTheInvitePreviewDoesNotRevealTheInvitee(t *testing.T) {
 	// Whoever finds the link must not learn an address from it — that would turn
-	// it back into the oracle taking the token out was meant to end (ADR-0026).
+	// it back into the oracle taking the token out was meant to end (ADR-0019).
 	repo := newFakeRepo()
 	svc := identity.NewService(repo, fixedClock{now})
 	owner, acct, _ := svc.EnsureUser(context.Background(), ports.Principal{

@@ -117,7 +117,7 @@ func (a knowledgeDemands) ContextOf(ctx context.Context, _ string, demandID stri
 	// The findings ALREADY published are the resumption layer: without them, an
 	// agent that picks the demand up midway redoes an investigation another has
 	// concluded — the exact waste the board of findings exists to avoid
-	// (ADR-0009).
+	// (ADR-0006).
 	findings, err := a.demands.Findings(ctx, demandID)
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func findingSummary(f demand.Finding) string {
 
 // ── demand → delivery ───────────────────────────────────────────────────────
 
-// deliveryDemands is READ-ONLY, and that is ADR-0015 §5's rule turned into a
+// deliveryDemands is READ-ONLY, and that is ADR-0011 §5's rule turned into a
 // type: delivery has no way to stop any demand, because the port offers none.
 // `Active` exists so the event tells the truth — "the directive was decided and
 // demand 1 keeps running" — never to decide whether it stops.

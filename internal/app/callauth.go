@@ -21,7 +21,7 @@ var (
 	errUnknownSubject = errs.New(errs.KindNotFound, "subject with no user")
 )
 
-// The core's authentication of ITS OWN callers (ADR-0029, P-18 solution F).
+// The core's authentication of ITS OWN callers (ADR-0022, P-18 solution F).
 //
 // Until this existed, the core read `x-actor-id` and believed it. The metadata
 // is text: whoever could open a connection to the gRPC port declared themselves

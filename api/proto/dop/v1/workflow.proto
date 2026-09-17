@@ -6,7 +6,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // The stage's semantic type: it decides the renderer on the screen and the
-// agent's behaviour. The platform's vocabulary; composition is free (ADR-0014).
+// agent's behaviour. The platform's vocabulary; composition is free (ADR-0010).
 enum StageType {
   STAGE_TYPE_UNSPECIFIED     = 0;
   STAGE_TYPE_CONTEXT         = 1;
@@ -47,7 +47,7 @@ enum StageMoment {
 
 // What a stage asks the platform to do when it is entered or left: a
 // DECLARATION, never a branch. No condition, no expression — the same stance
-// ADR-0014 §2 takes on the flow's structure, for the same reason: the moment
+// ADR-0010 §2 takes on the flow's structure, for the same reason: the moment
 // this message can hold an expression, swapping the policy stops being a load
 // and becomes a rewrite.
 //
@@ -72,7 +72,7 @@ message StageSpec {
   Gate         gate      = 5;
   repeated string subtypes = 6;  // e.g.: test → aaa, e2e, integration
   // What fires when the demand ENTERS or LEAVES this stage. It travels with
-  // the frozen version (ADR-0014 §4), so a demand in flight keeps causing what
+  // the frozen version (ADR-0010 §4), so a demand in flight keeps causing what
   // was declared when it started.
   repeated StageAction actions = 7;
 }
@@ -157,7 +157,7 @@ service WorkflowService {
   // ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
   //
   // Nothing here is live — every RPC below is request/response, never a
-  // stream, matching ADR-0017 convention 1: server-side streaming is reserved
+  // stream, matching ADR-0013 convention 1: server-side streaming is reserved
   // for what actually changes while the client is looking at it.
   rpc PublishFlow       (PublishFlowRequest)       returns (FlowPublication);
   rpc WithdrawFlow      (WithdrawFlowRequest)      returns (google.protobuf.Empty);
@@ -186,7 +186,7 @@ message PromoteFlowRequest { reserved 1; string flow_id = 2; string target_scope
 // ── sharing (flow sharing spec) ─────────────────────────────────────────────
 //
 // These messages are new — there was never a `CallContext ctx = 1` on any of
-// them, so none reserves field 1 (ADR-0017 convention 5).
+// them, so none reserves field 1 (ADR-0013 convention 5).
 //
 // WithdrawFlowRequest, RevokeFlowGrantRequest and BumpFlowPinRequest carry no
 // idempotency_key: the Service methods behind them (Withdraw, Revoke, BumpPin)
@@ -194,7 +194,7 @@ message PromoteFlowRequest { reserved 1; string flow_id = 2; string target_scope
 // finds the row already withdrawn, a revocation that finds the share already
 // revoked, a pin write that is itself an upsert), so there is nowhere for the
 // key to go. Declaring one here anyway is exactly the field-with-no-effect
-// ADR-0017 §5 already paid down once for CallContext.
+// ADR-0013 §5 already paid down once for CallContext.
 
 message PublishFlowRequest {
   string flow_id = 1;
@@ -219,7 +219,7 @@ message FlowPublication {
 
 message WithdrawFlowRequest { string publication_id = 1; }
 
-// `to_account` is an AccountRef, not a bare string (ADR-0017 convention 2: a
+// `to_account` is an AccountRef, not a bare string (ADR-0013 convention 2: a
 // tenant is never an anonymous string) — the same shape `resource.proto`,
 // `identity.proto`, `event.proto`, `attention.proto` and `hierarchy.proto`
 // already use for every account reference in the contract. `workflow.proto`

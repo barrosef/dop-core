@@ -27,13 +27,13 @@ type Call struct {
 	ActorName string
 	// SessionID identifies the CALLER'S SESSION, and it exists for the second
 	// factor: the step-up is per (user, session), because two open sessions are
-	// two doors and one of them answering must not open the other (ADR-0027 §5).
+	// two doors and one of them answering must not open the other (ADR-0020 §5).
 	//
-	// It comes from the edge, verified: since ADR-0029 what reaches this struct
+	// It comes from the edge, verified: since ADR-0022 what reaches this struct
 	// is what a signature proved, not what a header claimed.
 	SessionID string
 	// Caller is the COMPONENT that signed the call — "bff", "collector"
-	// (ADR-0029). It is empty on a call proven only by the person's token,
+	// (ADR-0022). It is empty on a call proven only by the person's token,
 	// because a token says who the person is and nothing about who relayed it.
 	//
 	// It exists for the authorizations that are about the component and not

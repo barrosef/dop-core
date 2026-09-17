@@ -348,7 +348,7 @@ func TestConfirmingWithTheAppsCodeActivatesAndReturnsTheRecoveryCodes(t *testing
 
 func TestAnEmailFactorRequiresTheSessionsVerifiedAddress(t *testing.T) {
 	// Unverified: an unproven address as a second factor is the same unproven
-	// address the first factor already trusted (ADR-0026's guarantee 5).
+	// address the first factor already trusted (ADR-0019's guarantee 5).
 	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: false})
 	if _, _, err := f.svc.EnrollCode(ctxOf("s"), secondfactor.KindEmail, "work", "dev@dop.local"); err == nil {
 		t.Fatal("an unverified address was accepted as a second factor")

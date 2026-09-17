@@ -2,7 +2,7 @@
 //
 // The pattern EVERY use case follows: open a transaction, change state, emit the
 // event in the SAME transaction, commit. It is what gives atomicity without 2PC
-// (ADR-0019) — and it is why Emit takes a pgx.Tx, not the pool.
+// (ADR-0014) — and it is why Emit takes a pgx.Tx, not the pool.
 package postgres
 
 import (

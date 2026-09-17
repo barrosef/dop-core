@@ -25,7 +25,7 @@ type Repository interface {
 
 	// VersionOf returns a specific version — frozen, exactly as it was written.
 	// This is how a demand in progress reads the flow it froze on start
-	// (ADR-0014 §4).
+	// (ADR-0010 §4).
 	VersionOf(ctx context.Context, accountID, id string, version int32) (*Flow, error)
 
 	// ByOwners returns the current version of EACH requested level's flow, in a
@@ -87,7 +87,7 @@ type Access interface {
 	RoleOf(ctx context.Context, userID, accountID string) (string, error)
 }
 
-// Roles with implicit `manage` over the account's content (ADR-0013): owner and
+// Roles with implicit `manage` over the account's content (ADR-0009): owner and
 // admin. Without it, nobody can fix a flow published by somebody who has already
 // left the company.
 const (

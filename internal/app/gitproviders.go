@@ -21,7 +21,7 @@ import (
 // root. The git adapter does not know the vault; the delivery domain does not
 // know GitHub or GitLab; the resource domain does not know PRs exist.
 //
-// The choice is PER REPOSITORY, not at boot (ADR-0013): that is what
+// The choice is PER REPOSITORY, not at boot (ADR-0009): that is what
 // `ProjectRepo.IntegrationID` exists for. A project with one repo on GitHub and
 // another on GitLab has to work, and a single provider chosen by configuration
 // would make that impossible — silently, which is the worst way.

@@ -1,6 +1,6 @@
 // Package projection builds the READS derived from the event log.
 //
-// ADR-0006's rule: the truth is the log; the dossier, the timeline, the
+// ADR-0004's rule: the truth is the log; the dossier, the timeline, the
 // attention box, the metrics and the cost are PROJECTIONS — computed in code, at
 // zero token cost. No projection writes new truth; all of them can be rebuilt.
 package projection
@@ -18,7 +18,7 @@ import (
 // Timeline keeps the timeline queryable by aggregate.
 //
 // The handler is IDEMPOTENT — mandatory, because JetStream's delivery is
-// at-least-once (ADR-0019). The ON CONFLICT DO NOTHING is what makes the
+// at-least-once (ADR-0014). The ON CONFLICT DO NOTHING is what makes the
 // redelivery harmless instead of duplicating a row.
 type Timeline struct{ pool *pgxpool.Pool }
 

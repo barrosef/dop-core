@@ -9,7 +9,7 @@ import (
 // Emission is the EVENT the operation produces, the way the domain sees it: type
 // and content. Aggregate and aggregate_id are not fields because they are always
 // the same — `demand` and the demand's id — and that is not saved typing: it is
-// ADR-0006's rule ("an append-only log PER DEMAND") written in a shape that
+// ADR-0004's rule ("an append-only log PER DEMAND") written in a shape that
 // cannot be violated by carelessness. A thread message, a finding and a gate
 // decision all belong to the demand's log; whoever needs to slice by thread reads
 // `thread_id` from the payload.
@@ -39,7 +39,7 @@ const Aggregate = "demand"
 // Note the shape of EVERY write: it takes the new state, the Emission and the
 // idempotency key, and returns the result. That is deliberate — the signature
 // forces the adapter to write state and event in the SAME transaction
-// (ADR-0019). A port with `Save` on one side and `Emit` on the other would leave
+// (ADR-0014). A port with `Save` on one side and `Emit` on the other would leave
 // atomicity to the caller's discipline, which is exactly what the ADR exists so
 // as not to depend on.
 //
@@ -63,14 +63,14 @@ type Repository interface {
 	SaveThreadState(ctx context.Context, accountID, threadID string, state ThreadState, ev Emission, idemKey string) (*Thread, error)
 
 	// AppendMessage appends to the log. There is no `UpdateMessage` and no
-	// `DeleteMessage`: the log is append-only (ADR-0006).
+	// `DeleteMessage`: the log is append-only (ADR-0004).
 	AppendMessage(ctx context.Context, m *Message, ev Emission, idemKey string) (*Message, error)
 
 	// ── findings ──
 	CreateFinding(ctx context.Context, f *Finding, ev Emission, idemKey string) (*Finding, error)
 	// ListFindings returns the findings ALREADY PUBLISHED on the demand.
 	//
-	// It exists for the context package (ADR-0009): without the findings, an agent
+	// It exists for the context package (ADR-0006): without the findings, an agent
 	// resuming the demand redoes an investigation another already finished — which
 	// is exactly the waste the findings board exists to prevent.
 	ListFindings(ctx context.Context, accountID, demandID string) ([]Finding, error)
@@ -84,7 +84,7 @@ type Repository interface {
 //
 // The demand needs ONE thing from it, once in its life: the effective flow at
 // the instant it starts, resolved by the chain platform ◁ account ◁ workspace ◁
-// project ◁ demand (ADR-0014). After that the live flow stops mattering — what
+// project ◁ demand (ADR-0010). After that the live flow stops mattering — what
 // drives the demand is the frozen snapshot. That is why the port has one method
 // and no notion of editing, versioning or promoting a flow: those belong to the
 // workflow domain, and this package does not know them.

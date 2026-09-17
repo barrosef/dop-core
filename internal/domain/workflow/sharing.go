@@ -25,7 +25,7 @@ const (
 	// and every existing one goes on working, untouched.
 	PolicyProspective RevocationPolicy = "prospective"
 	// PolicyDrain revokes the derivations, but a demand already running finishes
-	// under the version it froze on start (ADR-0014 §4).
+	// under the version it froze on start (ADR-0010 §4).
 	PolicyDrain RevocationPolicy = "drain"
 	// PolicyTerminate revokes at once: a running demand stops at its current gate
 	// and raises an attention item.

@@ -24,7 +24,7 @@ const (
 )
 
 // The stage's semantic type: it decides the renderer on the screen and the
-// agent's behaviour. The platform's vocabulary; composition is free (ADR-0014).
+// agent's behaviour. The platform's vocabulary; composition is free (ADR-0010).
 type StageType int32
 
 const (
@@ -257,7 +257,7 @@ func (StageMoment) EnumDescriptor() ([]byte, []int) {
 
 // What a stage asks the platform to do when it is entered or left: a
 // DECLARATION, never a branch. No condition, no expression — the same stance
-// ADR-0014 §2 takes on the flow's structure, for the same reason: the moment
+// ADR-0010 §2 takes on the flow's structure, for the same reason: the moment
 // this message can hold an expression, swapping the policy stops being a load
 // and becomes a rewrite.
 //
@@ -337,7 +337,7 @@ type StageSpec struct {
 	Gate      Gate                   `protobuf:"varint,5,opt,name=gate,proto3,enum=dop.v1.Gate" json:"gate,omitempty"`
 	Subtypes  []string               `protobuf:"bytes,6,rep,name=subtypes,proto3" json:"subtypes,omitempty"` // e.g.: test → aaa, e2e, integration
 	// What fires when the demand ENTERS or LEAVES this stage. It travels with
-	// the frozen version (ADR-0014 §4), so a demand in flight keeps causing what
+	// the frozen version (ADR-0010 §4), so a demand in flight keeps causing what
 	// was declared when it started.
 	Actions       []*StageAction `protobuf:"bytes,7,rep,name=actions,proto3" json:"actions,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1470,7 +1470,7 @@ func (x *WithdrawFlowRequest) GetPublicationId() string {
 	return ""
 }
 
-// `to_account` is an AccountRef, not a bare string (ADR-0017 convention 2: a
+// `to_account` is an AccountRef, not a bare string (ADR-0013 convention 2: a
 // tenant is never an anonymous string) — the same shape `resource.proto`,
 // `identity.proto`, `event.proto`, `attention.proto` and `hierarchy.proto`
 // already use for every account reference in the contract. `workflow.proto`

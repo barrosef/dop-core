@@ -1,8 +1,8 @@
 // Package event is the domain of the LIVE READ of the event log.
 //
-// The truth is the log (ADR-0006); this package does not produce it, it only
+// The truth is the log (ADR-0004); this package does not produce it, it only
 // delivers it as it happens. Writing an event is the use case's job, in the same
-// transaction as the state (ADR-0019) — here we only read.
+// transaction as the state (ADR-0014) — here we only read.
 //
 // House rule: no Postgres, no NATS, no gRPC. What is needed from outside comes
 // as a PORT — Repository (repository.go) and ports.EventBus.

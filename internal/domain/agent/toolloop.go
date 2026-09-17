@@ -28,7 +28,7 @@ import (
 // ── THE LOOP'S FIVE RULES ───────────────────────────────────────────────────
 //
 // 1. AN EXPLICIT ROUND CAP. A tool loop with no cap is a token bill with no cap,
-//    and ADR-0011 exists to prevent that. A round's cost is not constant: each
+//    and ADR-0008 exists to prevent that. A round's cost is not constant: each
 //    round RESENDS the whole conversation plus the accumulated results, so round
 //    N costs more than N-1. An agent in a cycle — run the test, read the error,
 //    "fix" it, run again, same error — spends a lot and converges on nothing,
@@ -46,7 +46,7 @@ import (
 //    measuring every round, the ceiling would only be consulted once the money
 //    had already been spent.
 //
-// 4. A BLOWN BUDGET STOPS THE LOOP, IT DOES NOT KILL THE TURN (ADR-0011 §2).
+// 4. A BLOWN BUDGET STOPS THE LOOP, IT DOES NOT KILL THE TURN (ADR-0008 §2).
 //    What already ran is delivered whole: the reply goes to the thread, the
 //    finding is published, the consumption is recorded. What does not happen is
 //    the NEXT round.
@@ -70,7 +70,7 @@ const (
 	LoopFinished LoopStop = "finished"
 	// LoopMaxRounds: it hit the round cap. The work stopped midway.
 	LoopMaxRounds LoopStop = "max_rounds"
-	// LoopBudget: the budget blew between one round and the next (ADR-0011 §2).
+	// LoopBudget: the budget blew between one round and the next (ADR-0008 §2).
 	LoopBudget LoopStop = "budget_exceeded"
 	// LoopNoSandbox: the model asked for a tool and there is no executor
 	// wired.
@@ -118,7 +118,7 @@ type loopResult struct {
 	// priceKnown is false when SOME round ran on a model with no price table.
 	// False brings the whole total down on purpose: a cost summed with a part
 	// missing is more dangerous than an absent cost, because it looks complete
-	// (ADR-0011 §2).
+	// (ADR-0008 §2).
 	priceKnown bool
 	currency   string
 	rounds     int
@@ -197,7 +197,7 @@ func (l loop) run(ctx context.Context, turn Turn) (*loopResult, error) {
 			res.stop = LoopBudget
 			res.warnings = append(res.warnings,
 				"the budget blew and the tool loop STOPPED before the next round: "+
-					"the calls requested in the last response were not executed (ADR-0011 §2)")
+					"the calls requested in the last response were not executed (ADR-0008 §2)")
 			return res, nil
 		}
 
@@ -207,7 +207,7 @@ func (l loop) run(ctx context.Context, turn Turn) (*loopResult, error) {
 			res.warnings = append(res.warnings, fmt.Sprintf(
 				"the tool loop hit the cap of %d round(s) and STOPPED: the work did not "+
 					"finish, and the %d call(s) from the last response were not executed. "+
-					"This is a decision for a human — continuing costs more tokens (ADR-0011)",
+					"This is a decision for a human — continuing costs more tokens (ADR-0008)",
 				l.maxRounds, len(calls)))
 			return res, nil
 		}
@@ -363,7 +363,7 @@ func LoopNotice(stop LoopStop, rounds, roundCap int) string {
 	switch stop {
 	case LoopMaxRounds:
 		return "⚠️ The agent stopped at the cap of " + strconv.Itoa(roundCap) + " tool round(s) " +
-			"(ADR-0011). The work did NOT finish: the reply above is the state it " +
+			"(ADR-0008). The work did NOT finish: the reply above is the state it " +
 			"stopped in. Decide whether it is worth continuing — each round costs a model call."
 	case LoopBudget:
 		return "⚠️ The budget blew in the middle of the tool loop and it stopped on round " +

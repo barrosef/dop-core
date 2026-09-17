@@ -16,7 +16,7 @@ import (
 //
 // And, above all: the CREDENTIAL does not pass through here in any direction. It
 // is read from the vault by the composition root and used in the same process
-// (ADR-0023) — which is why `RunTurnRequest` has a `resource_id` and no key.
+// (ADR-0016) — which is why `RunTurnRequest` has a `resource_id` and no key.
 type AgentServer struct {
 	dopv1.UnimplementedAgentServiceServer
 	svc *agent.Service

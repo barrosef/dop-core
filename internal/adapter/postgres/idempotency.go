@@ -14,7 +14,7 @@ import (
 // Idempotency stores each write's result by key.
 //
 // With events and retries, repeating a call must not duplicate an effect
-// (ADR-0017). The SAME key with a different body is a conflict, not a repetition
+// (ADR-0013). The SAME key with a different body is a conflict, not a repetition
 // — otherwise a client bug would become silent data corruption.
 type Idempotency struct{ pool *pgxpool.Pool }
 

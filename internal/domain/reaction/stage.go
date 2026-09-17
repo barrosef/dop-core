@@ -22,7 +22,7 @@ type StageActionSpec struct {
 
 // DecideStage answers what a stage transition should cause.
 //
-// The demand froze (flow_id, version) when it started (ADR-0014 §4), so the
+// The demand froze (flow_id, version) when it started (ADR-0010 §4), so the
 // actions read here are the ones that were in force when the work began — not
 // what somebody edited into the flow this morning.
 //

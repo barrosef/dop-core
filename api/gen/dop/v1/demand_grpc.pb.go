@@ -49,12 +49,12 @@ type DemandServiceClient interface {
 	//
 	// The read existed only in the Go domain, and the edge had no way to show the
 	// board of findings — which is what stops an agent (or a human) from redoing
-	// an investigation another has already concluded (ADR-0009). Reading through
+	// an investigation another has already concluded (ADR-0006). Reading through
 	// the context package does not do: that one is truncated by token budget and
 	// its assembly records a measurement event, so opening a screen would become a
 	// cost line.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
-	// Streaming: the BFF converts it into SSE (ADR-0017).
+	// Streaming: the BFF converts it into SSE (ADR-0013).
 	WatchDemand(ctx context.Context, in *WatchDemandRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DemandEvent], error)
 }
 
@@ -202,12 +202,12 @@ type DemandServiceServer interface {
 	//
 	// The read existed only in the Go domain, and the edge had no way to show the
 	// board of findings — which is what stops an agent (or a human) from redoing
-	// an investigation another has already concluded (ADR-0009). Reading through
+	// an investigation another has already concluded (ADR-0006). Reading through
 	// the context package does not do: that one is truncated by token budget and
 	// its assembly records a measurement event, so opening a screen would become a
 	// cost line.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
-	// Streaming: the BFF converts it into SSE (ADR-0017).
+	// Streaming: the BFF converts it into SSE (ADR-0013).
 	WatchDemand(*WatchDemandRequest, grpc.ServerStreamingServer[DemandEvent]) error
 	mustEmbedUnimplementedDemandServiceServer()
 }

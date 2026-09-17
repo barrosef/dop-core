@@ -23,7 +23,7 @@ const (
 )
 
 // Measurement from day one; with BYO what changes is who pays, not how it is
-// measured (ADR-0011).
+// measured (ADR-0008).
 type UsageEvent struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

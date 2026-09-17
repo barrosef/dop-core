@@ -1,5 +1,5 @@
 // Package idem implements the idempotency required of every write RPC
-// (ADR-0017): with events and retries, repeating a call must not duplicate its
+// (ADR-0013): with events and retries, repeating a call must not duplicate its
 // effect.
 package idem
 

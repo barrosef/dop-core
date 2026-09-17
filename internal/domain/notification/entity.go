@@ -1,4 +1,4 @@
-// Package notification is communication's TRIGGER (ADR-0025).
+// Package notification is communication's TRIGGER (ADR-0018).
 //
 // In the product owner's words: *"a Mailer living without a Notifier would be
 // like a bullet that could be fired without a trigger."* The point is not that
@@ -50,9 +50,9 @@ const (
 	// KindInvite — transactional: fires immediately, always, one per event.
 	KindInvite Kind = "invite"
 	// KindAttentionDigest — the attention notice, delayed and grouped. It hangs
-	// off the BOX (ADR-0006), not off raw events. See DefaultDigestDelay.
+	// off the BOX (ADR-0004), not off raw events. See DefaultDigestDelay.
 	KindAttentionDigest Kind = "attention_digest"
-	// KindSecondFactorCode — the second factor's code (ADR-0027).
+	// KindSecondFactorCode — the second factor's code (ADR-0020).
 	//
 	// It has NO ROW in the table, and that is the point: it uses the channel and
 	// not the Notifier. Nobody is being interrupted — the person is staring at
@@ -80,7 +80,7 @@ const (
 // It is a hand-written list, and it is not a second copy of the table: it is
 // precisely the set of kinds that CANNOT be derived from it, because they have
 // no row. Leaving them out of Kinds() would let the Mailer's guarantee 1 pass
-// green while an adapter had no template — which is the silence ADR-0025 orders
+// green while an adapter had no template — which is the silence ADR-0018 orders
 // us to test.
 var directKinds = []Kind{KindSecondFactorCode, KindEmailVerification}
 
@@ -97,11 +97,11 @@ const (
 )
 
 // Trigger is WHERE the rule fires from, and the distinction comes from
-// ADR-0025: transactional and attention notice are different things.
+// ADR-0018: transactional and attention notice are different things.
 type Trigger string
 
 const (
-	// TriggerEvent — the trigger is an event from the spine (ADR-0019). An
+	// TriggerEvent — the trigger is an event from the spine (ADR-0014). An
 	// invite, an account verification: fires immediately, always, one per event.
 	TriggerEvent Trigger = "event"
 	// TriggerAttentionBox — the trigger is the attention BOX, not the raw event.
@@ -157,7 +157,7 @@ type Event struct {
 type Command struct {
 	AccountID string
 	// EventID, Rule and Action are the IDEMPOTENCY KEY, composite from day one
-	// (ADR-0025). See Key.
+	// (ADR-0018). See Key.
 	EventID string
 	Rule    string
 	Action  Action
@@ -243,7 +243,7 @@ type AttentionNotice struct {
 // suite requires every adapter to resolve everything it returns. If it were its
 // own list, somebody would add a rule without adding the kind here, and the
 // suite would stay green while the new email reached nobody — exactly the
-// silence ADR-0025 orders us to test.
+// silence ADR-0018 orders us to test.
 func Kinds() []Kind {
 	seen := map[Kind]bool{}
 	out := make([]Kind, 0, len(Rules())+len(directKinds))

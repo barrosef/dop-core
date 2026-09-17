@@ -59,7 +59,7 @@ func newAuth(t *testing.T, mode string, tokens ports.IdentityProvider, users sub
 func mdWith(pairs ...string) metadata.MD { return metadata.Pairs(pairs...) }
 
 func TestStrictRefusesWhatIsOnlyClaimed(t *testing.T) {
-	// The whole point of ADR-0029: the metadata is text. In strict mode a call
+	// The whole point of ADR-0022: the metadata is text. In strict mode a call
 	// carrying only headers arrives with NO actor, and the use case fails at the
 	// authorization — where the message means something — instead of here.
 	a, _ := newAuth(t, "strict", fakeTokens{}, &fakeUsers{})
@@ -169,7 +169,7 @@ func TestAVerifiedTokenProvesThePersonEvenWhenNoUserExistsYet(t *testing.T) {
 	// The bootstrap: EnsureUser is the call that runs BEFORE the user exists, so
 	// userOf finds nothing and strict mode proves no actor. The token still
 	// proved WHO, and that is what EnsureUser needs — without it the handler
-	// falls back to believing the request body, which ADR-0029 exists to stop.
+	// falls back to believing the request body, which ADR-0022 exists to stop.
 	users := &fakeUsers{bySubject: map[string]string{}}
 	a, _ := newAuth(t, "strict", fakeTokens{principal: &ports.Principal{
 		Subject: "sub-new", Email: "ana@example.com", EmailVerified: true,

@@ -8,7 +8,7 @@
 //
 // It is also the only one of the three verifiers with NO external service: the
 // same code runs identically in the local environment and in production, which
-// is why ADR-0027 puts it first in the implementation order.
+// is why ADR-0020 puts it first in the implementation order.
 package totp
 
 import (

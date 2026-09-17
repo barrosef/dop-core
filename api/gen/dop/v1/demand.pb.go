@@ -142,7 +142,7 @@ type Demand struct {
 	CardType       string                 `protobuf:"bytes,5,opt,name=card_type,json=cardType,proto3" json:"card_type,omitempty"` // dynamic, from the provider
 	ProviderStatus string                 `protobuf:"bytes,6,opt,name=provider_status,json=providerStatus,proto3" json:"provider_status,omitempty"`
 	DopStatus      DopStatus              `protobuf:"varint,7,opt,name=dop_status,json=dopStatus,proto3,enum=dop.v1.DopStatus" json:"dop_status,omitempty"`
-	// The flow's version FROZEN when it starts (ADR-0014).
+	// The flow's version FROZEN when it starts (ADR-0010).
 	FlowId        string         `protobuf:"bytes,8,opt,name=flow_id,json=flowId,proto3" json:"flow_id,omitempty"`
 	FlowVersion   int32          `protobuf:"varint,9,opt,name=flow_version,json=flowVersion,proto3" json:"flow_version,omitempty"`
 	Stages        []*DemandStage `protobuf:"bytes,10,rep,name=stages,proto3" json:"stages,omitempty"`
@@ -443,7 +443,7 @@ func (x *Artifact) GetAudit() *AuditStamp {
 }
 
 // One thread per agent — the developer talks without mixing timelines
-// (ADR-0010).
+// (ADR-0007).
 type Thread struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

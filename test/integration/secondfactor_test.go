@@ -8,7 +8,7 @@
 // in this repository are atomic by CONSTRUCTION — RegisterAttempt counts and
 // consumes in one statement, UseRecoveryCode reads and consumes in another — and
 // an in-memory double would pass either way, including the version with the race
-// (ADR-0027 §5; the cool-off is what turns 10^6 guesses into 5).
+// (ADR-0020 §5; the cool-off is what turns 10^6 guesses into 5).
 package integration
 
 import (

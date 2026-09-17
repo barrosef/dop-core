@@ -1,8 +1,8 @@
 -- +goose Up
--- ADR-0030 — the verification runs in a runner, and a project declares which
+-- ADR-0023 — the verification runs in a runner, and a project declares which
 -- suites it has in `.dop/verification.yml`.
 --
--- The manifest's vocabulary is the workflow's (ADR-0014 §1: the `test` stage has
+-- The manifest's vocabulary is the workflow's (ADR-0010 §1: the `test` stage has
 -- the subtypes `aaa`, `e2e`, `integration`), and `integration` had no place to
 -- land here: `verification_kind` was born with four values and none of them
 -- means "it ran against the real dependencies". Recording an integration run as

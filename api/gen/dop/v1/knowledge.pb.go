@@ -74,7 +74,7 @@ func (KnowledgeArtifact_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_knowledge_proto_rawDescGZIP(), []int{0, 0}
 }
 
-// The project's knowledge base in three layers (ADR-0009).
+// The project's knowledge base in three layers (ADR-0006).
 type KnowledgeArtifact struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -185,7 +185,7 @@ type ContextPackage struct {
 	Findings        []*Finding             `protobuf:"bytes,5,rep,name=findings,proto3" json:"findings,omitempty"`
 	EstimatedTokens int32                  `protobuf:"varint,6,opt,name=estimated_tokens,json=estimatedTokens,proto3" json:"estimated_tokens,omitempty"` // measured by token counting at assembly time
 	// How much was left OUT for budget, per layer. It is first-class information
-	// (ADR-0012): without it the screen has no way to say "the context was
+	// (ADR-0008): without it the screen has no way to say "the context was
 	// truncated", and pretends everything fitted — which is the most expensive way
 	// of lying to whoever is deciding whether the agent has what it needs.
 	Dropped       map[string]int32 `protobuf:"bytes,7,rep,name=dropped,proto3" json:"dropped,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`

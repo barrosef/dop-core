@@ -10,7 +10,7 @@
 //
 // ── Where the token lives ────────────────────────────────────────────────────
 //
-// The provider's token is a RESOURCE CREDENTIAL (ADR-0013): it lives in the
+// The provider's token is a RESOURCE CREDENTIAL (ADR-0009): it lives in the
 // vault, behind ports.SecretStore, and the composition root resolves it. This
 // package does NOT import ports.SecretStore, does not receive a vault as a
 // parameter and does not know a vault exists — it receives the value ready-made

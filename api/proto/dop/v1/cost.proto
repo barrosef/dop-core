@@ -5,7 +5,7 @@ import "dop/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
 // Measurement from day one; with BYO what changes is who pays, not how it is
-// measured (ADR-0011).
+// measured (ADR-0008).
 message UsageEvent {
   string    id        = 1;
   DemandRef demand    = 2;

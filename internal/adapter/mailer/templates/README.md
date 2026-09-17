@@ -1,7 +1,7 @@
 # E-mail templates
 
 Two directories, and the duplication is DELIBERATE — it is the negative
-consequence ADR-0025 accepts in writing ("two places for the same notice's
+consequence ADR-0018 accepts in writing ("two places for the same notice's
 template for as long as both adapters exist"). It is neither an accident nor
 laziness: it is the price of the `Mailer` port not leaking a provider's
 vocabulary.
@@ -18,7 +18,7 @@ suite, which requires EVERY adapter to resolve EVERY kind
 
 The template CONTENT is still in Portuguese. That is notification content, not
 code: localizing it means one template per locale at the provider (and one per
-locale under `smtp/`), and it is a pending item — see ADR-0025.
+locale under `smtp/`), and it is a pending item — see ADR-0018.
 
 ## Publishing to SendGrid
 

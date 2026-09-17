@@ -108,7 +108,7 @@ type OpenSpec struct {
 	Body  string
 }
 
-// OpenPullRequest is ADR-0007 at the exact point where it bites: there is no PR
+// OpenPullRequest is ADR-0005 at the exact point where it bites: there is no PR
 // without evidence of green for the commit it carries.
 //
 // The refusal says what is missing, item by item. "Precondition failed" without
@@ -138,7 +138,7 @@ func (s *Service) OpenPullRequest(ctx context.Context, spec OpenSpec, idemKey st
 	}
 	if missing := ev.Missing(); len(missing) > 0 {
 		return nil, errs.Precondition(
-			"no green, no PR (ADR-0007): %s", strings.Join(missing, "; "))
+			"no green, no PR (ADR-0005): %s", strings.Join(missing, "; "))
 	}
 
 	target := spec.TargetBranch
@@ -200,7 +200,7 @@ func (s *Service) ListPullRequests(ctx context.Context, f PRFilter) ([]PullReque
 // ─────────────────────────── merge queue ────────────────────────────
 
 // GetMergeQueue returns ONE repository's queue, in a deterministic order and
-// with numbered positions (ADR-0008 §1).
+// with numbered positions (ADR-0005 §1).
 //
 // The queue is per repository because the repository is what serializes: two
 // PRs in different repositories do not invalidate each other.
@@ -210,7 +210,7 @@ func (s *Service) GetMergeQueue(ctx context.Context, repoID string) ([]MergeQueu
 		return nil, err
 	}
 	if strings.TrimSpace(repoID) == "" {
-		return nil, errs.Invalid("a merge queue is always about one repository (ADR-0008)")
+		return nil, errs.Invalid("a merge queue is always about one repository (ADR-0005)")
 	}
 	entries, err := s.repo.QueueOfRepo(ctx, accountID, repoID, false)
 	if err != nil {
@@ -219,13 +219,13 @@ func (s *Service) GetMergeQueue(ctx context.Context, repoID string) ([]MergeQueu
 	return SortQueue(entries), nil
 }
 
-// EnqueueMerge is the queue's door — and it is where ADR-0007 is enforced a
+// EnqueueMerge is the queue's door — and it is where ADR-0005 is enforced a
 // vez, agora contra o commit ATUAL do PR.
 //
 // Enforcing it again is not redundancy: between opening the PR and entering the
 // queue the branch may have moved, and the old commit's green is not the new
 // commit's green. It is the same reasoning that makes the queue re-verify at
-// each position (ADR-0008 §1) — green is always about a state of the code, never
+// each position (ADR-0005 §1) — green is always about a state of the code, never
 // about an intention.
 func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey string) (*MergeQueueEntry, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -245,7 +245,7 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 	}
 	if pr == nil {
 		return nil, errs.Precondition(
-			"demand %s has no open PR on repository %s yet — and there is no PR without evidence of green (ADR-0007)",
+			"demand %s has no open PR on repository %s yet — and there is no PR without evidence of green (ADR-0005)",
 			demandID, repoID)
 	}
 	if pr.Merged {
@@ -261,7 +261,7 @@ func (s *Service) EnqueueMerge(ctx context.Context, repoID, demandID, idemKey st
 		// is missing is a state of the world the caller can provide (run the
 		// acceptance, call the critic) and try again.
 		return nil, errs.Precondition(
-			"the merge queue refuses an entry with no evidence of green for commit %s (ADR-0007): %s",
+			"the merge queue refuses an entry with no evidence of green for commit %s (ADR-0005): %s",
 			short(pr.HeadCommit), strings.Join(missing, "; "))
 	}
 
@@ -302,7 +302,7 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 	}
 	if !entry.State.CanTransitionTo(to) {
 		return nil, errs.Precondition(
-			"the queue does not go from %s to %s (ADR-0008: queued → rebase → re-verification → merge)",
+			"the queue does not go from %s to %s (ADR-0005: queued → rebase → re-verification → merge)",
 			entry.State, to)
 	}
 	return s.repo.SetQueueState(ctx, accountID, entryID, to, nil, idemKey)
@@ -310,7 +310,7 @@ func (s *Service) AdvanceQueue(ctx context.Context, entryID string, to QueueStat
 
 // ReportConflict turns the conflict into an ITEM FOR A HUMAN DECISION.
 //
-// ADR-0008 §2 is explicit: rebasing and resolving are the demand agent's task;
+// ADR-0005 §2 is explicit: rebasing and resolving are the demand agent's task;
 // a failure ESCALATES to the human through the attention box, with the
 // conflict's context. Escalating means writing state and emitting the event in
 // the same transaction — the event is what feeds the box. Returning an error
@@ -353,7 +353,7 @@ func (s *Service) queueEntry(ctx context.Context, accountID, entryID string) (*M
 // ─────────────────────────── diretrizes ───────────────────────────
 
 // ProposeDirective is the techlead invoking the attention box with a request
-// for a decision (ADR-0015 §3): ready-made options and a recommendation.
+// for a decision (ADR-0011 §3): ready-made options and a recommendation.
 //
 // There is no path to propose "pause demand X": Validate walks each option's
 // instructions and only lets the coordination vocabulary through.
@@ -391,7 +391,7 @@ func (s *Service) ListDirectives(ctx context.Context, projectID string) ([]Direc
 		return nil, err
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return nil, errs.Invalid("directives always belong to a project (ADR-0015)")
+		return nil, errs.Invalid("directives always belong to a project (ADR-0011)")
 	}
 	return s.repo.ListDirectives(ctx, accountID, projectID)
 }
@@ -420,11 +420,11 @@ func (s *Service) DecideDirective(ctx context.Context, directiveID string, decis
 	if call.ActorID == "" {
 		return nil, errs.New(errs.KindUnauthorized, "deciding a directive requires an identified actor")
 	}
-	// The dev decides (ADR-0015 §4): the techlead detects, plans and proposes;
+	// The dev decides (ADR-0011 §4): the techlead detects, plans and proposes;
 	// the choice is human. Letting an agent decide its own proposal would close
 	// the loop without the one participant the directive exists to consult.
 	if call.ActorKind == ctxutil.ActorAgent || call.ActorKind == ctxutil.ActorSubagent {
-		return nil, errs.Permission("agents propose directives; the dev decides (ADR-0015 §4)")
+		return nil, errs.Permission("agents propose directives; the dev decides (ADR-0011 §4)")
 	}
 	if strings.TrimSpace(directiveID) == "" {
 		return nil, errs.Invalid("directive not provided")

@@ -14,7 +14,7 @@ import (
 )
 
 // Workspace groups projects and belongs to ONE account. The account is the
-// isolation boundary: nothing crosses from one account to another (ADR-0017).
+// isolation boundary: nothing crosses from one account to another (ADR-0013).
 type Workspace struct {
 	ID          string
 	AccountID   string
@@ -45,7 +45,7 @@ type Project struct {
 
 // ProjectRepo is a repository attached to the project.
 //
-// The provider belongs to the REPOSITORY, not to the project (ADR-0013): that
+// The provider belongs to the REPOSITORY, not to the project (ADR-0009): that
 // is why IntegrationID lives here and not on Project. Without that choice, a
 // project with one repo on GitHub and another on GitLab would be impossible to
 // represent.

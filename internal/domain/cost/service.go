@@ -23,7 +23,7 @@ type Service struct {
 // service fall back to time.Now() internally, no period test stays
 // deterministic, and nobody notices the abstraction is unproven — the panic here
 // is a wiring error, caught at boot. The router is this package's POLICY, with a
-// default written in ADR-0011; nil merely selects that default, switching
+// default written in ADR-0008; nil merely selects that default, switching
 // nothing off.
 func NewService(repo Repository, clock ports.Clock, router *Router) *Service {
 	if clock == nil {
@@ -57,11 +57,11 @@ type RecordOutcome struct {
 //
 //   - it does not refuse the write because the budget is exceeded. Measurement
 //     that fails when the budget runs out is measurement that disappears exactly
-//     when it matters most, and ADR-0011 §2's cut-off is SOFT: the demand pauses
+//     when it matters most, and ADR-0008 §2's cut-off is SOFT: the demand pauses
 //     and asks, it never dies mid-way and is never cut in silence. Whoever
 //     pauses is the consumer of `dop.cost.budget.exceeded`; cost only warns;
 //   - it does not deduce or invent the idempotency key. It is required here — in
-//     other writes the interceptor (ADR-0017) protects and the database's UNIQUE
+//     other writes the interceptor (ADR-0013) protects and the database's UNIQUE
 //     is the last barrier, but in this case the duplicate collides with nothing:
 //     it would enter as legitimate consumption and the budget would become
 //     fiction.
@@ -158,11 +158,11 @@ func (s *Service) SetBudget(ctx context.Context, b Budget) (*Budget, error) {
 // demandID is in the contract (and is accepted here) because P-7's calibration
 // will want to correlate decision and spend per demand — but it does NOT take
 // part in the decision today, and pretending it does would hide that the policy
-// is still ADR-0011's raw table.
+// is still ADR-0008's raw table.
 //
 // In particular, a tight budget does not downgrade the model: downgrading under
 // cost pressure would run over the fixed rule that you do not save on the
-// critic, and ADR-0011 §2's cut-off mechanism is to pause and ask, not to
+// critic, and ADR-0008 §2's cut-off mechanism is to pause and ask, not to
 // degrade in silence.
 func (s *Service) RouteModel(ctx context.Context, taskKind TaskKind, demandID string) (*Decision, error) {
 	if _, err := ctxutil.MustAccount(ctx); err != nil {

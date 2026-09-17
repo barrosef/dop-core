@@ -83,7 +83,7 @@ func setupWithTools(t *testing.T, sb agent.Sandbox, accounting agent.Accounting,
 	prov := &fakeProvider{info: providerSheet(), replies: replies, reply: replies[0]}
 	cost := &fakeCost{
 		decision: agent.Decision{TaskKind: "implementation", Class: agent.ClassStrong,
-			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0011 §3"},
+			Model: "claude-opus", Effort: agent.EffortHigh, Reason: "ADR-0008 §3"},
 		accounting: accounting,
 	}
 	conv := &fakeConversation{thread: agent.Thread{
@@ -152,7 +152,7 @@ func TestLoopExecutesTheToolAndContinues(t *testing.T) {
 
 // Every round consumes, and the turn's total is the SUM. Recording only the last
 // would underestimate the spend by a factor equal to the number of rounds
-// (ADR-0011 §2).
+// (ADR-0008 §2).
 func TestConsumptionSumsEveryRound(t *testing.T) {
 	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
 	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
@@ -251,7 +251,7 @@ func TestCallerCapOnlyLowers(t *testing.T) {
 	}
 	if high.MaxToolRounds != 4 {
 		t.Fatalf("the caller RAISED the cap to %d: a cap the client raises is not a "+
-			"cap (ADR-0011 §2)", high.MaxToolRounds)
+			"cap (ADR-0008 §2)", high.MaxToolRounds)
 	}
 
 	c2 := setupWithTools(t, &fakeSandbox{}, agent.Accounting{},
@@ -269,7 +269,7 @@ func TestCallerCapOnlyLowers(t *testing.T) {
 // ── budget ──────────────────────────────────────────────────────────────────
 
 // A budget blown mid-loop STOPS the loop; it does not kill the turn. What
-// already ran is delivered (ADR-0011 §2).
+// already ran is delivered (ADR-0008 §2).
 func TestBlownBudgetStopsTheLoopWithoutKillingTheTurn(t *testing.T) {
 	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0, Stdout: "ok"}}
 	blown := agent.Accounting{
@@ -285,7 +285,7 @@ func TestBlownBudgetStopsTheLoopWithoutKillingTheTurn(t *testing.T) {
 
 	out, err := c.svc.RunTurn(callCtx(), request(), "turn-budget")
 	if err != nil {
-		t.Fatalf("a blown budget KILLED the turn: %v — ADR-0011 §2 refused the hard cut", err)
+		t.Fatalf("a blown budget KILLED the turn: %v — ADR-0008 §2 refused the hard cut", err)
 	}
 	if out.LoopStop != agent.LoopBudget {
 		t.Fatalf("stop %q, expected %q", out.LoopStop, agent.LoopBudget)
@@ -463,7 +463,7 @@ func TestMissingCommandBecomesAnErrorResult(t *testing.T) {
 
 // The sandbox runs agent code, which reads untrusted content (execution spec
 // §6). The model provider's credential lives in the vault and is used in the
-// same process (ADR-0023) — and it must not leak into the sandbox through any
+// same process (ADR-0016) — and it must not leak into the sandbox through any
 // crack in the loop.
 //
 // The structural proof is the port: `SandboxCommand` has no environment field
@@ -581,7 +581,7 @@ func TestToolCatalog(t *testing.T) {
 	t.Run("alphabetical_order_and_no_repetition", func(t *testing.T) {
 		// The order is the catalog's, not the card's: the order in which
 		// somebody typed two tools is nobody's choice, but it would change the
-		// prefix's bytes and the cache entry with it (ADR-0012 §1).
+		// prefix's bytes and the cache entry with it (ADR-0008 §1).
 		a, _ := agent.ToolCatalog([]string{agent.ToolRunCommand, agent.ToolRunCommand})
 		if len(a) != 1 {
 			t.Fatalf("a repeated name became two declarations: %+v", a)
@@ -698,7 +698,7 @@ func TestOnlyTheLoopsEndAdmitsAConclusion(t *testing.T) {
 // The break that passed clean: adding one byte to the prefix on every round.
 // Nothing goes wrong. The loop keeps working, the agent keeps answering, the
 // tests stay green — and every round starts paying for the WHOLE prefix as new
-// input, at 10× the price of a cache read (ADR-0012 §1). In an eight-round turn
+// input, at 10× the price of a cache read (ADR-0008 §1). In an eight-round turn
 // with a large context package, it is the difference between cents and dollars
 // per turn, multiplied by every thread of every account.
 func TestStablePrefixDoesNotChangeBetweenRounds(t *testing.T) {
@@ -720,7 +720,7 @@ func TestStablePrefixDoesNotChangeBetweenRounds(t *testing.T) {
 		if turn.StablePrefix != base.StablePrefix {
 			t.Fatalf("THE STABLE PREFIX CHANGED ON ROUND %d: nothing fails because of it, "+
 				"and every round starts paying for the whole prefix as new input (~10× a "+
-				"cache read, ADR-0012 §1). It is the defect only the invoice reports.\n"+
+				"cache read, ADR-0008 §1). It is the defect only the invoice reports.\n"+
 				"round 1: %q\nround %d: %q",
 				i+2, base.StablePrefix, i+2, turn.StablePrefix)
 		}
@@ -747,7 +747,7 @@ func TestStablePrefixDoesNotChangeBetweenRounds(t *testing.T) {
 // back to the model. The command keeps running, the result keeps arriving, the
 // cap keeps being respected — and the agent concludes from half a log thinking
 // it read the whole log. It is the same class as the context truncation
-// (ADR-0012), which the runtime already announces in two places: the conclusion
+// (ADR-0008), which the runtime already announces in two places: the conclusion
 // comes out wrong and nobody can explain why afterwards.
 func TestCutOutputIsAnnouncedToTheModel(t *testing.T) {
 	sb := &fakeSandbox{output: agent.SandboxOutput{
@@ -860,7 +860,7 @@ func TestResultsComeBackInTheCallsOrder(t *testing.T) {
 // zero as "use my default", so nothing fails and nothing blows up — what changes
 // is that the cap becomes the PORT's (64 KiB) instead of the domain's (32 KiB),
 // and every tool result enters the next turn's context at twice the size. It is
-// cost policy (ADR-0011) decided by omission, in the wrong layer.
+// cost policy (ADR-0008) decided by omission, in the wrong layer.
 func TestDomainOutputCapReachesTheExecutor(t *testing.T) {
 	sb := &fakeSandbox{output: agent.SandboxOutput{ExitCode: 0}}
 	c := setupWithTools(t, sb, agent.Accounting{}, []*agent.Reply{
@@ -872,6 +872,6 @@ func TestDomainOutputCapReachesTheExecutor(t *testing.T) {
 	if got := sb.commands[0].MaxOutputBytes; got != agent.DefaultToolOutputBytes {
 		t.Fatalf("the output cap reached the executor as %d, expected %d: zero makes the "+
 			"port use ITS default, and the cost policy starts being decided by omission in "+
-			"the wrong layer (ADR-0011)", got, agent.DefaultToolOutputBytes)
+			"the wrong layer (ADR-0008)", got, agent.DefaultToolOutputBytes)
 	}
 }

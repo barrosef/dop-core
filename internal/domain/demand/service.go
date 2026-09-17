@@ -98,7 +98,7 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Demand, erro
 
 // Start resolves the project's effective flow and freezes it inside the demand.
 //
-// The freezing is this operation's whole point (ADR-0014 §4). A flow is
+// The freezing is this operation's whole point (ADR-0010 §4). A flow is
 // editable, promotable and deletable; a demand in progress must not discover,
 // halfway through, that the stage it was running stopped existing.
 // After this, the stage machine obeys the SNAPSHOT — the live flow has no
@@ -220,7 +220,7 @@ func stageKeys(snap Snapshot) []string {
 
 // ── the stage machine ────────────────────────────────────────────────────────
 
-// AdvanceStage moves a stage inside the machine driven by its TYPE (ADR-0014).
+// AdvanceStage moves a stage inside the machine driven by its TYPE (ADR-0010).
 func (s *Service) AdvanceStage(ctx context.Context, demandID, stageKey string, to StageStatus, idemKey string) (*Stage, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -309,7 +309,7 @@ func (s *Service) DecideGate(ctx context.Context, demandID, stageKey string, app
 	}, idemKey)
 }
 
-// ── threads (ADR-0010) ───────────────────────────────────────────────────────
+// ── threads (ADR-0007) ───────────────────────────────────────────────────────
 
 func (s *Service) ListThreads(ctx context.Context, demandID string) ([]Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -323,7 +323,7 @@ func (s *Service) ListThreads(ctx context.Context, demandID string) ([]Thread, e
 }
 
 // CreateThread launches a subagent: the thread is born together with its BRIEF
-// (ADR-0010 §2) and shows up at once for the dev to follow or step in.
+// (ADR-0007 §2) and shows up at once for the dev to follow or step in.
 func (s *Service) CreateThread(ctx context.Context, demandID, key string, card AgentCard, idemKey string) (*Thread, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -358,7 +358,7 @@ func (s *Service) CreateThread(ctx context.Context, demandID, key string, card A
 }
 
 // validateCard: a subagent with no brief is a black box, which is exactly what
-// ADR-0010 refuses. Purpose and model are the minimum for the dev to know who
+// ADR-0007 refuses. Purpose and model are the minimum for the dev to know who
 // they are talking to and for the router to know what it costs.
 func validateCard(c AgentCard) error {
 	if strings.TrimSpace(c.Purpose) == "" {
@@ -389,7 +389,7 @@ func (s *Service) loadThread(ctx context.Context, accountID, id string) (*Thread
 	return t, nil
 }
 
-// PostMessage appends the message to the demand's log (ADR-0006): every message
+// PostMessage appends the message to the demand's log (ADR-0004): every message
 // is an event. The thread leaves `open` and becomes `active` in the same transaction.
 func (s *Service) PostMessage(ctx context.Context, threadID, text, idemKey string) (*Message, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -457,7 +457,7 @@ func (s *Service) SetThreadBlocked(ctx context.Context, threadID string, blocked
 // PublishFinding publishes the investigation's structured conclusion.
 //
 // It is what enters the siblings' context, the dossier and the project's memory
-// (ADR-0010 §4) — and it is what UNLOCKS concluding the thread: with no finding
+// (ADR-0007 §4) — and it is what UNLOCKS concluding the thread: with no finding
 // publicado, ConcludeThread recusa.
 func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title string, payload map[string]any, idemKey string) (*Finding, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -478,7 +478,7 @@ func (s *Service) PublishFinding(ctx context.Context, demandID, threadID, title 
 	}
 	// A thread of another demand posting on this one's board would be a leak of
 	// context between demands — and the demand is the security boundary
-	// (ADR-0010 §6).
+	// (ADR-0007 §6).
 	if t.DemandID != d.ID {
 		return nil, errs.Invalid("thread %q does not belong to this demand", t.Key)
 	}
@@ -563,7 +563,7 @@ func (s *Service) Watch(ctx context.Context, demandID string, emit func(ports.Ev
 // Findings returns the findings published on the demand.
 //
 // No RPC of its own in the contract yet; it exists because the context package
-// assembler needs them (ADR-0009) and the findings board is precisely what
+// assembler needs them (ADR-0006) and the findings board is precisely what
 // keeps an agent from redoing an investigation another already finished.
 func (s *Service) Findings(ctx context.Context, demandID string) ([]Finding, error) {
 	accountID, err := ctxutil.MustAccount(ctx)

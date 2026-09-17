@@ -429,7 +429,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 			})
 			if len(big.Stdout) > 1024 {
 				t.Fatalf("OUTPUT WITH NO CAP: %d bytes came back against a cap of 1024. A "+
-					"tool's output becomes model context, and context is an invoice (ADR-0011)",
+					"tool's output becomes model context, and context is an invoice (ADR-0008)",
 					len(big.Stdout))
 			}
 			if !big.Truncated {
@@ -499,7 +499,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 
 			// The core is the process that HAS the credentials — the model
 			// provider's key comes out of the vault and lives in its memory
-			// (ADR-0023). The sandbox runs agent code, which reads untrusted
+			// (ADR-0016). The sandbox runs agent code, which reads untrusted
 			// content (execution spec §6). An adapter that passed `os.Environ()`
 			// to the exec — which is the shortest path and what an SDK would do
 			// for convenience — would hand the two to each other, and nothing
@@ -582,7 +582,7 @@ func SandboxSuite(t *testing.T, name string, newLauncher func(t *testing.T) (por
 		t.Run("19_and_20_a_push_is_shared_and_persists", func(t *testing.T) {
 			// What one sandbox pushes, the next sandbox of the same project
 			// finds — and it is still there after the first one is destroyed.
-			// This is what "collaborated between agents" means (ADR-0028).
+			// This is what "collaborated between agents" means (ADR-0021).
 			l, env := newLauncher(t)
 			git := newGitServer(t, env)
 			project := "proj-" + randomID()

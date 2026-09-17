@@ -167,7 +167,7 @@ func (r *WorkflowRepo) ByOwners(ctx context.Context, accountID string, refs []wo
 // ── writes ───────────────────────────────────────────────────────────────────
 
 // Create writes the flow and version 1 in the event's SAME transaction
-// (ADR-0019).
+// (ADR-0014).
 //
 // The repetition is resolved by the idempotency key and not by "query before
 // inserting": another request fits between the query and the insert, and the
@@ -460,7 +460,7 @@ func loadFlow(ctx context.Context, tx pgx.Tx, accountID, id string) (*workflow.F
 
 // flowByKey and flowVersionByKey are the repetition's return: the already
 // written key points at what the caller wanted to create, and returning that is
-// what makes the write genuinely idempotent (ADR-0017).
+// what makes the write genuinely idempotent (ADR-0013).
 //
 // The account filter is load-bearing, not decoration: flows.idempotency_key is
 // globally unique across every account, and Service.Create passes the

@@ -54,7 +54,7 @@ func TestRuleInheritance(t *testing.T) {
 }
 
 // TestSelectionRespectsTheBudget is this domain's central test: the package is
-// SELECTED, not dumped (ADR-0012).
+// SELECTED, not dumped (ADR-0008).
 func TestSelectionRespectsTheBudget(t *testing.T) {
 	bud := knowledge.Budget{Total: 400, FindingShare: 0.2, IndexShare: 0.3, MemoryShare: 0.3}
 
@@ -114,7 +114,7 @@ func TestSelectionRespectsTheBudget(t *testing.T) {
 }
 
 // TestSelectionIsDeterministic protege o prefixo cacheado do prompt: mesma
-// same input, same output, byte for byte (ADR-0012 §1).
+// same input, same output, byte for byte (ADR-0008 §1).
 func TestSelectionIsDeterministic(t *testing.T) {
 	cand := knowledge.Candidates{
 		Memories: []knowledge.ScoredArtifact{
@@ -194,7 +194,7 @@ func TestBuildContextPackageCutsByBudgetAndMeasures(t *testing.T) {
 	if !pkg.Truncated() || pkg.Dropped.Memories == 0 {
 		t.Error("the cut happened and was not accounted for")
 	}
-	// The assembly's measurement is an EVENT, not an impression (ADR-0009 §3).
+	// The assembly's measurement is an EVENT, not an impression (ADR-0006 §3).
 	if len(repo.measurements) != 1 {
 		t.Fatalf("the assembly should emit exactly one measurement, got %d", len(repo.measurements))
 	}

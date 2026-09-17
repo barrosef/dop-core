@@ -33,7 +33,7 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 		"the operator says stop", 0)
 
 	if first.StablePrefix != second.StablePrefix {
-		t.Fatalf("THE PREFIX CHANGED BETWEEN TURNS OF THE SAME THREAD — it is ADR-0012 §1's saving "+
+		t.Fatalf("THE PREFIX CHANGED BETWEEN TURNS OF THE SAME THREAD — it is ADR-0008 §1's saving "+
 			"going away in silence.\nfirst:\n%s\nsecond:\n%s",
 			first.StablePrefix, second.StablePrefix)
 	}
@@ -47,7 +47,7 @@ func TestPrefixoEstavelEntreTurnos(t *testing.T) {
 	}
 	if strings.Contains(second.StablePrefix, "the operator says stop") {
 		t.Fatal("the operator's intervention entered the stable prefix: it is VOLATILE, and " +
-			"rewriting the top of the prompt on every intervention is what ADR-0012 §1 avoids")
+			"rewriting the top of the prompt on every intervention is what ADR-0008 §1 avoids")
 	}
 }
 
@@ -110,7 +110,7 @@ func TestToolsEnterTheThreadBrief(t *testing.T) {
 }
 
 // The core's order is PRIORITY, not a suggestion: sorting here would buy
-// stability at the price of undoing the curation (ADR-0009 §3).
+// stability at the price of undoing the curation (ADR-0006 §3).
 func TestTheCurationOrderIsPreserved(t *testing.T) {
 	p := buildTurn(fullPackage(), "main", agent.AgentCard{}, "hi", "", 0)
 	iSpecific := strings.Index(p.StablePrefix, "uphold the project standard")

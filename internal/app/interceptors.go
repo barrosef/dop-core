@@ -59,7 +59,7 @@ func StreamLogging() grpc.StreamServerInterceptor {
 
 // UnaryCallContext resolves WHO is calling and puts it into the context.
 //
-// The edge fills the metadata in (ADR-0016), and since ADR-0029 the core no
+// The edge fills the metadata in (ADR-0012), and since ADR-0022 the core no
 // longer takes it on faith: `auth` verifies a signature — the person's token or
 // the platform's assertion — and what reaches the domain is what was PROVEN.
 // A nil auth keeps the old behaviour, which is what the tests that are about
@@ -75,7 +75,7 @@ func UnaryCallContext(auth *callAuth) grpc.UnaryServerInterceptor {
 //
 // Without it, a streaming RPC sees no x-account-id at all, and the stream's
 // multi-tenant isolation would come to depend on the CallContext declared in the
-// request's body — a field the server does NOT read (ADR-0017, conv. 5). That
+// request's body — a field the server does NOT read (ADR-0013, conv. 5). That
 // is: the hole would not be "a stream with no context", it would be "a stream
 // with the context the client chooses". Context is a cross-cutting concern in
 // both kinds of RPC.
@@ -112,7 +112,7 @@ func callFromMD(ctx context.Context, auth *callAuth) context.Context {
 		claimed.ActorKind = ctxutil.ActorUser
 	}
 	// What the metadata CLAIMS goes no further than here: from this line on, the
-	// context carries what was proven (ADR-0029).
+	// context carries what was proven (ADR-0022).
 	return ctxutil.Into(ctx, auth.authenticate(ctx, md, claimed))
 }
 

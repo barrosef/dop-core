@@ -1,6 +1,6 @@
 // Package resource is the domain of an account's resources: integrations,
 // skills, workflows and git flows — the unit of ownership and sharing
-// (ADR-0013).
+// (ADR-0009).
 //
 // House rule: this package knows nothing of Postgres, gRPC or any SDK. It
 // declares what it needs as a PORT (repository.go) and the composition root
@@ -8,7 +8,7 @@
 //
 // The distinction that organizes everything here is the resource's NATURE: a
 // resource with a credential carries risk; a content resource carries
-// knowledge. The two cannot share an access default (ADR-0014 §6).
+// knowledge. The two cannot share an access default (ADR-0010 §6).
 package resource
 
 import (
@@ -163,7 +163,7 @@ func CredentialRef(accountID, resourceID string) string {
 //     person who connected it has left the company, and nobody — not even the
 //     account's owner — can fix it.
 //  2. an explicit grant comes next, for any nature of resource.
-//  3. with no grant, the NATURE decides (ADR-0014 §6): a credential is risk,
+//  3. with no grant, the NATURE decides (ADR-0010 §6): a credential is risk,
 //     knowledge is knowledge.
 func EffectiveLevel(r Resource, role identity.Role, accountKind identity.AccountKind, explicit *Grant) Level {
 	if role.HasImplicitManage() {

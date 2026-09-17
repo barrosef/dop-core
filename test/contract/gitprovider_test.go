@@ -145,7 +145,7 @@ func TestGitProviderGitHubNeitherRewritesNorChanges(t *testing.T) {
 	}
 
 	// Guarantee 4, the half the port does not show: NO update request went out.
-	// If the idempotency were "it overwrites", ADR-0007 §4's evidence package
+	// If the idempotency were "it overwrites", ADR-0005 §4's evidence package
 	// would have been traded for a retry's body.
 	for _, c := range f.Calls() {
 		if strings.HasPrefix(c, "PATCH ") || strings.HasPrefix(c, "PUT ") {

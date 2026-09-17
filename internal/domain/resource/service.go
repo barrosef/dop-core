@@ -24,7 +24,7 @@ type Service struct {
 }
 
 // StepUpGate is the second factor's gate, in the narrowest possible shape: one
-// question, one answer (ADR-0027 §5).
+// question, one answer (ADR-0020 §5).
 //
 // It is declared here, in the language of what is being asked, instead of this
 // domain importing `secondfactor` — the same rule as the rest of the glue.
@@ -276,7 +276,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // The granter has to hold manage over the RESOURCE — being a member is not
 // enough, and holding use is not enough. And a grant only goes to someone who is
 // already a member of the account: resource access is not a way into the
-// account, it is composition over a membership that already exists (ADR-0013).
+// account, it is composition over a membership that already exists (ADR-0009).
 //
 // A consequence worth recording: a personal account has no second member, so no
 // grant is possible — a personal account's resource is never shareable, and that
@@ -400,7 +400,7 @@ func (s *Service) SetCredential(ctx context.Context, resourceID string, secret [
 		return "", errs.Invalid("empty credential").WithCode(KeyCredentialEmpty, nil)
 	}
 	// The second factor's gate: this is the operation that puts a third party's
-	// key into the vault (ADR-0027 §5). It comes AFTER the cheap validation and
+	// key into the vault (ADR-0020 §5). It comes AFTER the cheap validation and
 	// BEFORE the authorization, so that a caller with no session does not learn
 	// which resources exist.
 	if err := s.requireStepUp(ctx); err != nil {

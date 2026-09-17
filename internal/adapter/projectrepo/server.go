@@ -1,4 +1,4 @@
-// Package projectrepo hosts the projects' root repositories (ADR-0028).
+// Package projectrepo hosts the projects' root repositories (ADR-0021).
 //
 // ── What this is ────────────────────────────────────────────────────────────
 //
@@ -150,7 +150,7 @@ func (s *Server) ensure(ctx context.Context, projectID string) error {
 			Path:    "README.md",
 			Content: []byte(initialManifest),
 		}},
-		Message:    "The project's root repository is born (ADR-0028)",
+		Message:    "The project's root repository is born (ADR-0021)",
 		AuthorName: "DOP", AuthorEmail: "platform@dop",
 		CommitterName: "DOP", CommitterEmail: "platform@dop",
 	})

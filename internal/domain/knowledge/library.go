@@ -1,4 +1,4 @@
-// The LIBRARY: the layout of the project's root repository (ADR-0028), and the
+// The LIBRARY: the layout of the project's root repository (ADR-0021), and the
 // manifest at its root.
 //
 // It is the contract between the platform and the agent about WHERE things are.
@@ -17,7 +17,7 @@
 // what the task asks for.
 //
 // That is also why the manifest carries SIZES: choosing what to open is a
-// decision about budget (ADR-0011/0012), and a decision made without the numbers
+// decision about budget (ADR-0008/0012), and a decision made without the numbers
 // is a guess.
 package knowledge
 

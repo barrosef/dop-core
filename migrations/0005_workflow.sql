@@ -1,6 +1,6 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- A dynamic, typed and inheritable workflow (ADR-0014).
+-- A dynamic, typed and inheritable workflow (ADR-0010).
 --
 -- Two decisions shape this schema, and both are invariants — not conventions:
 --
@@ -33,7 +33,7 @@ CREATE TABLE flows (
   -- tree, before writing (see workflow.Service.resolveOwner).
   owner_id        uuid,
   current_version int NOT NULL DEFAULT 1,
-  -- Every write carries an idempotency key (ADR-0017): repeating the creation
+  -- Every write carries an idempotency key (ADR-0013): repeating the creation
   -- collides here and returns the flow already created, instead of a twin.
   idempotency_key text NOT NULL UNIQUE,
   created_by      uuid REFERENCES users(id),
@@ -111,14 +111,14 @@ BEGIN
     END IF;
     RETURN OLD;
   END IF;
-  RAISE EXCEPTION 'a flow version is immutable: changing a flow GENERATES a new version (ADR-0014 §4)';
+  RAISE EXCEPTION 'a flow version is immutable: changing a flow GENERATES a new version (ADR-0010 §4)';
 END $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER flow_versions_imutaveis
   BEFORE UPDATE OR DELETE ON flow_versions
   FOR EACH ROW EXECUTE FUNCTION assert_flow_version_congelada();
 
--- ── the platform catalogue (ADR-0014 §8) ────────────────────────────────────
+-- ── the platform catalogue (ADR-0010 §8) ────────────────────────────────────
 -- The chain's level 0, seeded here and not over RPC: it holds for EVERY
 -- account, and no account should be able to write it. It is what guarantees
 -- ResolveFlow always has a base — a freshly created account can work at once.

@@ -108,7 +108,7 @@ func (s *Service) load(ctx context.Context, accountID, id string) (*Sandbox, err
 //     refusing none.
 //
 // Only after that is the state written. Two transactions, each atomic with its
-// own event (ADR-0019): the first records the INTENT (provisioning), the second
+// own event (ADR-0014): the first records the INTENT (provisioning), the second
 // records what the executor DELIVERED. A crash between them leaves the
 // row in provisioning — visible, reconcilable and with no invisible orphan
 // sandbox, which is exactly what a single transaction could not give: writing
@@ -245,7 +245,7 @@ func (s *Service) requireTierSupported(ctx context.Context, tier ports.Isolation
 		tier, strings.Join(names, ", "))
 }
 
-// WithRepositories wires the project's root repository (ADR-0028). Without it
+// WithRepositories wires the project's root repository (ADR-0021). Without it
 // the sandbox comes up with no shelf — what the contract suite's lifecycle
 // tests want, and not what a demand wants.
 func (s *Service) WithRepositories(r ports.ProjectRepository) *Service {
@@ -507,7 +507,7 @@ func (s *Service) Describe(ctx context.Context, id string) (*Sandbox, error) {
 
 // RunCommand runs a command in the demand's LIVE sandbox.
 //
-// This is how the agent acts (ADR-0023 + execution spec §4): the agent runtime
+// This is how the agent acts (ADR-0016 + execution spec §4): the agent runtime
 // asks by DEMAND, which is its vocabulary, and this domain resolves demand →
 // sandbox → executor. The runtime never sees a sandbox id, never sees
 // `ports.SandboxLauncher` and never chooses where the command runs.

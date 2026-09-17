@@ -1,6 +1,6 @@
 package contract
 
-// The ports.SMSer contract suite (ADR-0027 §4).
+// The ports.SMSer contract suite (ADR-0020 §4).
 //
 // It is what makes the port real: two adapters, and everything the domain may
 // assume proven in BOTH. What is not here — a delivery status, the sender, the

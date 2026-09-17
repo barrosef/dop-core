@@ -1,11 +1,11 @@
 // Package demand is the demand domain — the platform's heart.
 //
-// The premise that organizes everything here comes from ADR-0006: a demand is
+// The premise that organizes everything here comes from ADR-0004: a demand is
 // NOT a row that changes status. It is an append-only log of events, and what is
 // called "the demand's state" (current stage, open threads, published findings)
 // is a PROJECTION of that log. That is why no operation in this package changes
 // state without producing the corresponding event: the two travel together to
-// the repository, which writes them in the SAME transaction (ADR-0019). An
+// the repository, which writes them in the SAME transaction (ADR-0014). An
 // action with no event is a bug, not a detail.
 //
 // House rule: this package knows nothing of Postgres, gRPC or any SDK. What it
@@ -42,7 +42,7 @@ const (
 	StageDone    StageStatus = "done"
 )
 
-// StageType is the platform's CLOSED vocabulary of types (ADR-0014): the type
+// StageType is the platform's CLOSED vocabulary of types (ADR-0010): the type
 // decides the renderer on screen and the agent's behaviour. A new composition is
 // data; a new type is platform evolution — which is why the list lives in
 // code.
@@ -107,7 +107,7 @@ type StageSpec struct {
 }
 
 // Flow is the effective flow returned by the resolution chain
-// platform ◁ account ◁ workspace ◁ project ◁ demand (ADR-0014).
+// platform ◁ account ◁ workspace ◁ project ◁ demand (ADR-0010).
 type Flow struct {
 	ID           string
 	Name         string
@@ -186,7 +186,7 @@ type Demand struct {
 }
 
 // AgentCard is the subagent's brief: purpose, granted tools, model and its slice
-// of the demand's budget (ADR-0010).
+// of the demand's budget (ADR-0007).
 type AgentCard struct {
 	Purpose      string
 	Tools        []string
@@ -223,7 +223,7 @@ type Message struct {
 }
 
 // Finding is the conclusion an agent published. It becomes context for its
-// siblings, for the dossier and for the project's memory (ADR-0010 §4).
+// siblings, for the dossier and for the project's memory (ADR-0007 §4).
 type Finding struct {
 	ID        string
 	AccountID string
@@ -235,7 +235,7 @@ type Finding struct {
 	CreatedAt time.Time
 }
 
-// ── stage machine rules (ADR-0014) ───────────────────────────────────────────
+// ── stage machine rules (ADR-0010) ───────────────────────────────────────────
 
 // stageTransitions is the machine, written as data.
 //
@@ -271,7 +271,7 @@ func (d *Demand) StageByKey(key string) (*Stage, error) {
 // ticket later.
 //
 // It returns noop=true when the stage is already in the requested status: event
-// delivery is at-least-once (ADR-0019), so repeating an advance is routine and
+// delivery is at-least-once (ADR-0014), so repeating an advance is routine and
 // must not become an error.
 func (d *Demand) CheckAdvance(key string, to StageStatus) (st *Stage, noop bool, err error) {
 	if !ValidStageStatus(to) {

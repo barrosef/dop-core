@@ -58,7 +58,7 @@ func (s *DeliveryServer) GetMergeQueue(ctx context.Context, req *dopv1.GetMergeQ
 	return &dopv1.GetMergeQueueResponse{Entries: out}, nil
 }
 
-// EnqueueMerge is the RPC ADR-0007 protects: with no green evidence for the PR's
+// EnqueueMerge is the RPC ADR-0005 protects: with no green evidence for the PR's
 // current commit, the answer is FailedPrecondition saying exactly what is
 // missing. The request's idempotency key goes all the way down to the repository
 // — repeating the call returns the SAME entry, not a second position in the
@@ -156,7 +156,7 @@ func queueStateToProto(s delivery.QueueState) dopv1.MergeQueueEntry_State {
 // field of its own to carry: the statement, the options, the recommendation, the
 // status and the decision taken.
 //
-// The contract is the source of truth (ADR-0017) — no field is invented here.
+// The contract is the source of truth (ADR-0013) — no field is invented here.
 // And it is precisely what the message has a google.protobuf.Struct for: the
 // attention box needs the options and the recommendation in order to render a
 // decision item instead of a raw alarm, and they arrive through here.

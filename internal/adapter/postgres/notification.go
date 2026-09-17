@@ -28,7 +28,7 @@ var _ notification.Repository = (*NotificationRepo)(nil)
 // The difference is not stylistic: with two statements, two workers processing
 // the same event's redelivery read "it does not exist" at the same time and send
 // two emails. The `ON CONFLICT` turns the race into a decision of the unique
-// index, and the index is `(event_id, rule_name, action_name)` — ADR-0025's
+// index, and the index is `(event_id, rule_name, action_name)` — ADR-0018's
 // composite key.
 //
 // The DO UPDATE's `WHERE` is the other half: only a row in `error` is resumed. A
@@ -71,7 +71,7 @@ func (r *NotificationRepo) Claim(ctx context.Context, c notification.Claim, maxA
 
 // Settle writes the outcome and emits the event in the SAME transaction.
 //
-// The same rule as every state change in this house (ADR-0019): a commit ⇒
+// The same rule as every state change in this house (ADR-0014): a commit ⇒
 // atomic by construction, never "I recorded it but did not publish it". Here
 // that counts double, because the `dop.notification.*` event is what P-29 will
 // consume when the reaction becomes data — a record with no event would be a

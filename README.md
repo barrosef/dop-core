@@ -2,7 +2,7 @@
 
 The DOP platform's core: domain, state, transactions and events.
 
-**One binary, four modes** (ADR-0016) — one artifact, one pipeline:
+**One binary, four modes** (ADR-0012) — one artifact, one pipeline:
 
 | mode | role |
 |---|---|
@@ -41,7 +41,7 @@ event**.
 ## Structure
 
 ```
-api/proto/          .proto — the contract's SOURCE OF TRUTH (ADR-0017)
+api/proto/          .proto — the contract's SOURCE OF TRUTH (ADR-0013)
 api/gen/            generated code (buf)
 cmd/dop-core/       main: dispatches the four modes
 internal/

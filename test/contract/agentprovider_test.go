@@ -132,7 +132,7 @@ func TestAgentProviderContractOpenAI(t *testing.T) {
 			// accepted in any position at this provider.
 			ModelWithoutOperatorChannel: "",
 			// No price table, and on purpose: an invented price would feed
-			// ADR-0011's budget with convincing fiction. Subtest 11 INVERTS
+			// ADR-0008's budget with convincing fiction. Subtest 11 INVERTS
 			// here and requires `PriceFor` to say it does not know.
 			ModelWithPrice: "",
 			// AUTOMATIC cache: there is no breakpoint to mark (D1). Empty here

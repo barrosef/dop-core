@@ -24,7 +24,7 @@
 // OneSignal answers **200 with an `errors` array** for a message that reached
 // nobody — an unsubscribed address, an app with no e-mail channel configured.
 // Reading only the status code would report a send that never happened, which
-// is the exact silence ADR-0025 orders us to test for. `recipients` and
+// is the exact silence ADR-0018 orders us to test for. `recipients` and
 // `errors` are therefore read on the success path, not only on the failure one.
 package mailer
 

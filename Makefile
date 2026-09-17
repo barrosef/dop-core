@@ -8,7 +8,7 @@ CONTEXT := k3d-dop-local
 
 .PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker guard migrate
 
-proto:            ## generate Go from the .proto files (the source of truth — ADR-0017)
+proto:            ## generate Go from the .proto files (the source of truth — ADR-0013)
 	cd api/proto && buf lint && buf generate
 
 proto-breaking:   ## refuse an incompatible contract change

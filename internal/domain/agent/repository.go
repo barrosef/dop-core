@@ -40,7 +40,7 @@ import "context"
 //     classes, and is PURE: same class, same name, no I/O and no clock;
 //
 //  3. Render puts the stable prefix BEFORE the messages in the SERIALIZED
-//     request. That is ADR-0012 §1's saving, and it breaks without a sound: a
+//     request. That is ADR-0008 §1's saving, and it breaks without a sound: a
 //     prefix that went to the end of the body is not wrong, it just costs 10×
 //     and nobody sees it;
 //
@@ -82,7 +82,7 @@ import "context"
 //  12. whoever announces CapStructuredOutput sends `Turn.OutputSchema` ON THE
 //     WIRE. Decoding happens on our side and keeps working as long as the model
 //     cooperates — which makes the schema's absence invisible until the day it
-//     does not cooperate (ADR-0012 §2);
+//     does not cooperate (ADR-0008 §2);
 //
 //  13. `Turn.MaxOutputTokens` reaches the provider. A ceiling the adapter picks
 //     on its own cuts the response at a limit nobody asked for, and the cut
@@ -146,18 +146,18 @@ import "context"
 //     sandbox — the opposite of this delivery's entire point, which is the
 //     agent acting inside the demand's isolated sandbox (execution spec §1);
 //
-//   - STREAMING. The platform's live follow-along is the event log (ADR-0006):
+//   - STREAMING. The platform's live follow-along is the event log (ADR-0004):
 //     the published message BECOMES an event and reaches the cockpit through
 //     the WatchDemand that already exists. A second streaming path here would
 //     be a second source of truth for the same timeline;
 //
-//   - CONTEXT WINDOW and compaction. Each provider has its own, and ADR-0012 §3
+//   - CONTEXT WINDOW and compaction. Each provider has its own, and ADR-0008 §3
 //     already decided that resumption is by RECONSTRUCTION (package +
 //     findings), not by replaying the transcript. Compaction is a safety net
 //     for a continuous session — the adapter's business, not the port's;
 //
 //   - RETRY. Whoever decides to try again is whoever knows if it is still worth
-//     spending: ADR-0011 §2's budget and the human in the attention box. A
+//     spending: ADR-0008 §2's budget and the human in the attention box. A
 //     retry hidden in the adapter would spend twice and report once.
 type AgentProvider interface {
 	// Info is the data sheet: name, catalog, capabilities and prices. No I/O.
@@ -186,11 +186,11 @@ type AgentProvider interface {
 // Providers resolves WHICH adapter serves this call, credential included.
 //
 // The choice is PER REQUEST, not at boot: an agent provider is an
-// `agent`-category resource (ADR-0013), chosen per account and per project, and
+// `agent`-category resource (ADR-0009), chosen per account and per project, and
 // several accounts coexist in the same process. There is no "the adapter"
 // assembled at boot, as happens with the SecretStore.
 //
-// What this port hides is ADR-0023's entire point: whoever implements it
+// What this port hides is ADR-0016's entire point: whoever implements it
 // (internal/app/agentproviders.go) reads the credential from the vault — in the
 // core, in the same process — and hands over a ready adapter. This domain does
 // not know `ports.SecretStore`, does not receive a vault as a parameter and does
@@ -216,7 +216,7 @@ type Providers interface {
 // absent field** — there is no way for a secret to enter the sandbox through
 // this path. The sandbox runs agent code, which reads untrusted content
 // (execution spec §6): the model provider's key lives in the vault, is read by
-// the composition root and used in the SAME process (ADR-0023), and this struct
+// the composition root and used in the SAME process (ADR-0016), and this struct
 // is the boundary that guarantees it goes no further than that.
 type SandboxCommand struct {
 	Command        []string
@@ -275,7 +275,7 @@ type Sandbox interface {
 //
 // Note what is NOT here: `id` and `version`. They change when the core rewrites
 // the artifact without the content changing, and they would enter the cached
-// prefix and invalidate it for nothing (ADR-0012 §1). Leaving them out of the
+// prefix and invalidate it for nothing (ADR-0008 §1). Leaving them out of the
 // port is stronger than remembering not to use them.
 type ContextArtifact struct {
 	Name      string
@@ -292,7 +292,7 @@ type ContextFinding struct {
 
 // ContextDropped is what was left OUT of the package for want of token budget.
 //
-// It is first-class information (ADR-0012), not a detail: without it the agent
+// It is first-class information (ADR-0008), not a detail: without it the agent
 // asserts things about what it did not read, and the human reads a wrong
 // conclusion nobody can explain afterwards. That is why it appears in TWO
 // places — in the prefix, speaking to the agent, and in the thread, speaking to
@@ -306,7 +306,7 @@ type ContextDropped struct {
 
 func (d ContextDropped) Any() bool { return d.Rules+d.Findings+d.Index+d.Memories > 0 }
 
-// ContextPackage is the agent's carry-on luggage (ADR-0009 §3), in the
+// ContextPackage is the agent's carry-on luggage (ADR-0006 §3), in the
 // runtime's vocabulary. The lists' ORDER is the core's curation and is
 // PRIORITY — reordering here would undo the selection that cost the whole
 // budget.
@@ -336,7 +336,7 @@ type Knowledge interface {
 // core chose — went with it.
 //
 // Reason travels WHOLE: it is what allows auditing "why did this demand run on
-// the expensive model?" without opening the code (ADR-0011 §3).
+// the expensive model?" without opening the code (ADR-0008 §3).
 type Decision struct {
 	TaskKind string
 	Class    ModelClass
@@ -392,13 +392,13 @@ type Routing interface {
 	RecordUsage(ctx context.Context, c Consumption, idemKey string) (Accounting, error)
 }
 
-// AgentCard is the thread's card (ADR-0010 §2), in the runtime's vocabulary.
+// AgentCard is the thread's card (ADR-0007 §2), in the runtime's vocabulary.
 //
 // It enters the PREFIX because it is stable per thread: purpose and granted
 // tools do not change every turn. And when it declares a model, it BEATS the
 // router — the card is that thread's frozen contract, and changing its model
 // midway would invalidate the cached prefix of every previous turn, because
-// cache is per model (ADR-0012 §1).
+// cache is per model (ADR-0008 §1).
 type AgentCard struct {
 	Purpose      string
 	Tools        []string

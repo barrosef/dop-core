@@ -6,7 +6,7 @@
 //
 // It is the adapter that lets a verification be developed with no cluster — and
 // running it and the Kubernetes one through the SAME suite is what keeps the
-// evidence from depending on where it was produced (ADR-0030).
+// evidence from depending on where it was produced (ADR-0023).
 package contract_test
 
 import (
@@ -60,7 +60,7 @@ func TestRunnerContractDocker(t *testing.T) {
 
 // runnerTestImage needs git, nc and a POSIX shell — the three the run script
 // checks for by name. `alpine/git` is small and has all three; the platform's
-// real runner image is a different animal entirely (ADR-0030 §2).
+// real runner image is a different animal entirely (ADR-0023 §2).
 func runnerTestImage() string {
 	return envOr("DOP_RUNNER_TEST_IMAGE", "alpine/git:latest")
 }

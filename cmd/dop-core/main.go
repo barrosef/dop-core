@@ -1,6 +1,6 @@
 // dop-core — the platform's core: domain, state, transactions and events.
 //
-// ONE image, FOUR modes (ADR-0016). One artifact, one pipeline:
+// ONE image, FOUR modes (ADR-0012). One artifact, one pipeline:
 //
 //	serve     gRPC server — the domain's surface
 //	worker    consumes NATS events and builds projections

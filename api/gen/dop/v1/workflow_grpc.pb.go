@@ -51,7 +51,7 @@ type WorkflowServiceClient interface {
 	// ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
 	//
 	// Nothing here is live — every RPC below is request/response, never a
-	// stream, matching ADR-0017 convention 1: server-side streaming is reserved
+	// stream, matching ADR-0013 convention 1: server-side streaming is reserved
 	// for what actually changes while the client is looking at it.
 	PublishFlow(ctx context.Context, in *PublishFlowRequest, opts ...grpc.CallOption) (*FlowPublication, error)
 	WithdrawFlow(ctx context.Context, in *WithdrawFlowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -235,7 +235,7 @@ type WorkflowServiceServer interface {
 	// ── sharing: publish, grant, derive, pin (flow sharing spec) ──────────────
 	//
 	// Nothing here is live — every RPC below is request/response, never a
-	// stream, matching ADR-0017 convention 1: server-side streaming is reserved
+	// stream, matching ADR-0013 convention 1: server-side streaming is reserved
 	// for what actually changes while the client is looking at it.
 	PublishFlow(context.Context, *PublishFlowRequest) (*FlowPublication, error)
 	WithdrawFlow(context.Context, *WithdrawFlowRequest) (*emptypb.Empty, error)

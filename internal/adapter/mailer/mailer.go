@@ -7,7 +7,7 @@
 //
 // ── What lives HERE and not in the domain ────────────────────────────────────
 //
-// The template INDEX, the RESOLUTION and the SENDING (ADR-0025). The port speaks
+// The template INDEX, the RESOLUTION and the SENDING (ADR-0018). The port speaks
 // INTENT — "invite created, to this address, with this data" — and each adapter
 // decides what that becomes:
 //
@@ -125,7 +125,7 @@ func unknownKind(who, kind string, known []string) error {
 	return errs.NotFound(
 		"channel %s has no template for the %q notice (it knows: %s) — a kind that exists "+
 			"in the policy and has no template in the provider fails in SILENCE: the event "+
-			"happens, the consumer runs and nobody receives anything (ADR-0025)",
+			"happens, the consumer runs and nobody receives anything (ADR-0018)",
 		who, kind, strings.Join(known, ", "))
 }
 

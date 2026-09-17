@@ -13,7 +13,7 @@ import "google/protobuf/timestamp.proto";
 // goes up (conversation-and-attention spec, R-2).
 //
 // **IT IS A PROJECTION, not a system.** Every item is born from an event in the
-// log (ADR-0006) and dies from another. That is why there is no RPC to create,
+// log (ADR-0004) and dies from another. That is why there is no RPC to create,
 // mark as read or dismiss an item: an item that disappears without the problem
 // having been solved is a comfortable lie, and a box that lies becomes a box
 // that is ignored — which is the spec's risk R-1. What closes the item is the
@@ -28,19 +28,19 @@ message AttentionItem {
   // ordering.
   enum Kind {
     KIND_UNSPECIFIED = 0;
-    // A thread blocked waiting for the human's answer (ADR-0010).
+    // A thread blocked waiting for the human's answer (ADR-0007).
     KIND_THREAD_BLOCKED = 1;
     // A stage stopped at a human gate — a spec awaiting approval.
     KIND_GATE_PENDING = 2;
-    // A PR awaiting review, with the evidence alongside (ADR-0007).
+    // A PR awaiting review, with the evidence alongside (ADR-0005).
     KIND_PR_REVIEW = 3;
-    // A conflict the merge queue escalated to a human decision (ADR-0008).
+    // A conflict the merge queue escalated to a human decision (ADR-0005).
     KIND_MERGE_CONFLICT = 4;
     // A cross-cutting concern detected by the tech lead, with options and a
-    // recommendation ready (ADR-0015). It does NOT pause the demand already in
+    // recommendation ready (ADR-0011). It does NOT pause the demand already in
     // motion.
     KIND_DIRECTIVE = 5;
-    // A demand paused by a blown budget (ADR-0011).
+    // A demand paused by a blown budget (ADR-0008).
     KIND_BUDGET_EXCEEDED = 6;
     // A broken account integration — the work stops until somebody reconnects
     // it.

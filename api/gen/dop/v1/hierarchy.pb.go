@@ -222,7 +222,7 @@ func (x *Project) GetAudit() *AuditStamp {
 	return nil
 }
 
-// The provider belongs to the REPOSITORY, not to the project (ADR-0013).
+// The provider belongs to the REPOSITORY, not to the project (ADR-0009).
 type ProjectRepo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

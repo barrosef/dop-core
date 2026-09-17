@@ -1,5 +1,5 @@
 -- +goose Up
--- Projections — reads derived from the event log (ADR-0006).
+-- Projections — reads derived from the event log (ADR-0004).
 --
 -- They can be DELETED and rebuilt from `events` with no loss: they hold no
 -- truth, they only present it in a convenient shape.

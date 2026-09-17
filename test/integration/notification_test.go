@@ -202,7 +202,7 @@ func TestAnInviteCreatedBECOMESAnEmail(t *testing.T) {
 	}
 	if events != 1 {
 		t.Fatalf("%d dop.notification.sent event(s) — state and event go out in the SAME "+
-			"transaction (ADR-0019)", events)
+			"transaction (ADR-0014)", events)
 	}
 }
 

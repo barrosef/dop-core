@@ -75,10 +75,10 @@ func NewService(repo Repository, mailer ports.Mailer, clock ports.Clock, cfg Con
 // ── the transactional trigger: consumer of the event spine ──────────────────
 
 // HandleEvent is the CONSUMER. It runs in the worker, next to the timeline and
-// the attention box (ADR-0025: "it runs in the core").
+// the attention box (ADR-0018: "it runs in the core").
 //
 // It is idempotent because it has to be: JetStream delivery is at-least-once
-// (ADR-0019) and a duplicate email has no undo. The idempotency is not a check
+// (ADR-0014) and a duplicate email has no undo. The idempotency is not a check
 // at the top — it is the CLAIM, which is atomic in the database.
 func (s *Service) HandleEvent(ctx context.Context, e Event) error {
 	cmds := Apply(e, func(spec recipientSpec, ev Event) []Recipient {

@@ -1,11 +1,11 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- THE DEMAND (ADR-0006, ADR-0010, ADR-0014)
+-- THE DEMAND (ADR-0004, ADR-0007, ADR-0010)
 --
 -- Where the demand's events live: in `events`, the table that already exists.
 --
 -- A demand is an append-only log and its state is a projection of it
--- (ADR-0006). The whole platform's log is already `events` — partitioned by
+-- (ADR-0004). The whole platform's log is already `events` — partitioned by
 -- month, with an outbox, a relay and replay ready. Giving the demand a log of
 -- its own would duplicate the machinery (a second outbox, a second relay, a
 -- second cursor), would break WatchDemand — which reuses the `event` domain's
@@ -17,7 +17,7 @@
 --
 -- What the tables below keep is the PROJECTED STATE — the read the screen and
 -- the stage machine need in O(1), without rereading the log. They are written
--- in the SAME transaction as the event (ADR-0019), and not by an asynchronous
+-- in the SAME transaction as the event (ADR-0014), and not by an asynchronous
 -- consumer: the next transition's decision depends on the current state, and
 -- deciding on a stale projection is deciding on the past. That is why there is
 -- no asynchronous demand projection — there would be two writers for the same
@@ -43,13 +43,13 @@ CREATE TABLE demands (
   -- the card's key at the provider: SUOPT-1315
   external_key    text NOT NULL,
   title           text NOT NULL,
-  -- the card kind and the provider's status are dynamic, the provider's (ADR-0013)
+  -- the card kind and the provider's status are dynamic, the provider's (ADR-0009)
   card_type       text NOT NULL DEFAULT '',
   provider_status text NOT NULL DEFAULT '',
   dop_status      text NOT NULL DEFAULT 'new'
                   CHECK (dop_status IN ('new','doing','done','delivered')),
 
-  -- ── the FROZEN flow (ADR-0014 §4) ──
+  -- ── the FROZEN flow (ADR-0010 §4) ──
   -- flow_id is text and has NO FK on purpose: the snapshot has to survive the
   -- flow being edited, promoted or deleted. An FK with CASCADE would delete the
   -- demand along with it; an FK with RESTRICT would stop the account from
@@ -101,13 +101,13 @@ CREATE TABLE demand_stages (
 CREATE UNIQUE INDEX demand_stages_position_uniq ON demand_stages (demand_id, position);
 CREATE INDEX demand_stages_account_idx ON demand_stages (account_id, status);
 
--- One thread per agent — the dev talks without mixing timelines (ADR-0010).
+-- One thread per agent — the dev talks without mixing timelines (ADR-0007).
 CREATE TABLE demand_threads (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id    uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   demand_id     uuid NOT NULL REFERENCES demands(id) ON DELETE CASCADE,
   key           text NOT NULL,          -- main, db-forensics, logs
-  -- the subagent's brief (ADR-0010 §2): without it, a subagent is a black box
+  -- the subagent's brief (ADR-0007 §2): without it, a subagent is a black box
   purpose       text NOT NULL DEFAULT '',
   tools         text[] NOT NULL DEFAULT '{}',
   model         text NOT NULL DEFAULT '',
@@ -130,7 +130,7 @@ CREATE INDEX demand_threads_blocked_idx ON demand_threads (account_id, updated_a
   WHERE state = 'bloqueada';
 CREATE INDEX demand_threads_demand_idx ON demand_threads (demand_id);
 
--- The demand's board of findings (ADR-0010 §4).
+-- The demand's board of findings (ADR-0007 §4).
 --
 -- A finding is STATE, not only narrative: it is what unlocks the thread's
 -- conclusion, and that decision cannot depend on the asynchronous projection,
@@ -146,7 +146,7 @@ CREATE TABLE demand_findings (
   created_at timestamptz NOT NULL DEFAULT now(),
   -- A COMPOSITE FK: it guarantees in the database that the finding's thread
   -- belongs to the SAME demand. The demand is the security boundary
-  -- (ADR-0010 §6); a finding crossing demands would be a context leak, and that
+  -- (ADR-0007 §6); a finding crossing demands would be a context leak, and that
   -- is an invariant, not a validation.
   FOREIGN KEY (thread_id, demand_id)
     REFERENCES demand_threads (id, demand_id) ON DELETE CASCADE

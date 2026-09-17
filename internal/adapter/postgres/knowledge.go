@@ -24,7 +24,7 @@ import (
 //     this platform, and the isolation is a constraint of the query, not trust
 //     in the caller;
 //   - the write stores state and event in the SAME transaction, through InTx +
-//     Emit, with the idempotency mark closed inside it (ADR-0017/0019).
+//     Emit, with the idempotency mark closed inside it (ADR-0013/0019).
 type KnowledgeRepo struct{ pool *pgxpool.Pool }
 
 func NewKnowledgeRepo(pool *pgxpool.Pool) *KnowledgeRepo { return &KnowledgeRepo{pool: pool} }
@@ -254,8 +254,8 @@ func (r *KnowledgeRepo) Put(ctx context.Context, a *knowledge.Artifact, id knowl
 	return saved, err
 }
 
-// RecordContextBuild publishes the assembly's MEASUREMENT (ADR-0009 §3,
-// ADR-0012 §1).
+// RecordContextBuild publishes the assembly's MEASUREMENT (ADR-0006 §3,
+// ADR-0008 §1).
 //
 // It changes no state: it emits. It still goes through InTx, because Emit writes
 // the event and the outbox and the two have to go in together — it is the same

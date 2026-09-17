@@ -1,5 +1,5 @@
 // The transactional outbox — the mechanism that gives atomicity WITHOUT 2PC
-// (ADR-0019).
+// (ADR-0014).
 //
 // The rule, in one sentence: every state change writes, in the SAME transaction,
 // the new state and the event. A commit ⇒ atomic by construction. Never "I

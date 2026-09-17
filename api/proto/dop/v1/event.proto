@@ -5,7 +5,7 @@ import "dop/v1/common.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// The event log is the TRUTH (ADR-0006). The dossier, the timeline and the
+// The event log is the TRUTH (ADR-0004). The dossier, the timeline and the
 // attention box are projections of it. This contract exists so the cockpit does
 // not have to keep asking "did anything change?" second by second: the core
 // pushes the event as soon as it happens, and the projection on the BFF's side
@@ -18,7 +18,7 @@ import "google/protobuf/timestamp.proto";
 message EventEnvelope {
   string     id           = 1;
   // A typed reference instead of a bare id: a tenant is never an anonymous
-  // string (ADR-0017). An event with no account (`identity.user.ensured`,
+  // string (ADR-0013). An event with no account (`identity.user.ensured`,
   // migration 0003) is NOT transmitted to anyone, so this field is always filled
   // in on the wire.
   AccountRef account      = 2;

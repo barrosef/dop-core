@@ -77,7 +77,7 @@ func (ActorRef_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_common_proto_rawDescGZIP(), []int{6, 0}
 }
 
-// Typed references — a tenant is never an anonymous string (ADR-0017).
+// Typed references — a tenant is never an anonymous string (ADR-0013).
 type AccountRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

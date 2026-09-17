@@ -1,11 +1,11 @@
 // Package cost is the domain of LLM spend governance: how much was spent, how
-// much may be spent, and which model serves each kind of work (ADR-0011).
+// much may be spent, and which model serves each kind of work (ADR-0008).
 //
 // House rule: this package knows nothing of Postgres, gRPC or any SDK. It
 // declares what it needs as a PORT (repository.go) and the composition root
 // wires it.
 //
-// ADR-0011 has two firm parts and one still in draft, and the code separates the
+// ADR-0008 has two firm parts and one still in draft, and the code separates the
 // three on purpose: measurement and budget are rules (entity.go, service.go);
 // the task→model policy is an informed guess and lives alone in router.go, so it
 // can be recalibrated in one place when telemetry arrives (P-7).
@@ -36,7 +36,7 @@ type Micros int64
 const DefaultCurrency = "USD"
 
 // Scope is the budget's unit. There are two, on purpose: the per-thread slice
-// comes from the subagent's brief (ADR-0010), it is not a budget of its own.
+// comes from the subagent's brief (ADR-0007), it is not a budget of its own.
 type Scope string
 
 const (
@@ -49,7 +49,7 @@ func ValidScope(s Scope) bool { return s == ScopeAccount || s == ScopeDemand }
 // UsageEvent is ONE model consumption: a turn, a subagent, a call.
 //
 // The four token counters are separate because their prices differ by orders of
-// magnitude (ADR-0012): reading a cached prefix costs ~0.1× the input and
+// magnitude (ADR-0008): reading a cached prefix costs ~0.1× the input and
 // writing to cache 1.25×. Keeping only a "token total" would throw away exactly
 // the information that calibrates the router (P-7) and that exposes a silent
 // cache invalidator.
@@ -77,7 +77,7 @@ func (u UsageEvent) PromptTokens() int64 {
 	return u.InputTokens + u.CacheReadTokens + u.CacheCreationTokens
 }
 
-// SuspectCacheMiss raises the ADR-0012 §1 alert: a large prefix going in with NO
+// SuspectCacheMiss raises the ADR-0008 §1 alert: a large prefix going in with NO
 // cache read at all. Either the prefix changed (a volatile byte in the context
 // package) or the 5-minute TTL expired — in both cases somebody is paying 10×
 // for the same prefix and nobody noticed.
@@ -128,7 +128,7 @@ type Budget struct {
 func (b Budget) Unlimited() bool { return b.LimitMicros <= 0 }
 
 // Exceeded is the current state. Exceeded does NOT mean blocked: what happens on
-// an overrun is the service's decision (a pause, ADR-0011 §2), and never a
+// an overrun is the service's decision (a pause, ADR-0008 §2), and never a
 // refusal to record.
 func (b Budget) Exceeded() bool { return !b.Unlimited() && b.SpentMicros >= b.LimitMicros }
 
@@ -191,7 +191,7 @@ type Summary struct {
 // The denominator is the WHOLE prompt (input + cache read + cache write) and not
 // the input alone: it is the only way for the number to answer "how much of what
 // I sent went out cheap". Near zero in an agent flow means an unstable prefix
-// (ADR-0012 §1), which is the most expensive invoice there is.
+// (ADR-0008 §1), which is the most expensive invoice there is.
 func (s Summary) CacheHitRatio() float64 {
 	total := s.InputTokens + s.CacheReadTokens + s.CacheCreationTokens
 	if total <= 0 {

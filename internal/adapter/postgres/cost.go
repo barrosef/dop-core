@@ -19,7 +19,7 @@ import (
 //   - account_id goes into EVERY WHERE clause, with no exception. Multi-tenant
 //     isolation is a constraint, not trust in the caller;
 //   - every state change writes the event in the SAME transaction, through InTx
-//   - Emit: a commit ⇒ state and event, or neither (ADR-0019);
+//   - Emit: a commit ⇒ state and event, or neither (ADR-0014);
 //   - deciding WHEN to emit an overrun belongs to the domain
 //     (cost.BudgetState.JustExceeded), not to this file. A business rule in SQL
 //     is a rule nobody finds later.
@@ -233,7 +233,7 @@ func accumulate(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent) ([]cost.Budg
 //
 // There are two kinds and they have different readers: `dop.cost.recorded` feeds
 // measurement and calibration (P-7); `dop.cost.budget.exceeded` is what makes
-// the demand PAUSE and become an attention-box item (ADR-0011 §2). That is why
+// the demand PAUSE and become an attention-box item (ADR-0008 §2). That is why
 // the second only comes out on the TRANSITION — one event per overrun, not one
 // per turn after it.
 func emitUsageEvents(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent, states []cost.BudgetState) error {
@@ -251,7 +251,7 @@ func emitUsageEvents(ctx context.Context, tx pgx.Tx, u *cost.UsageEvent, states 
 			"input_tokens": u.InputTokens, "output_tokens": u.OutputTokens,
 			"cache_read_tokens": u.CacheReadTokens, "cache_creation_tokens": u.CacheCreationTokens,
 			"cost_micros": int64(u.CostMicros), "currency": u.Currency,
-			// Zero cache on a large prompt is ADR-0012 §1's silent invalidator
+			// Zero cache on a large prompt is ADR-0008 §1's silent invalidator
 			// — it goes in the event so it can become an alert without anyone
 			// having to reprocess the whole table to find out.
 			"suspect_cache_miss": u.SuspectCacheMiss(),

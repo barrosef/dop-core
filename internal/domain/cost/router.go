@@ -6,7 +6,7 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// ModelRouter — the task → (model, effort) decision of ADR-0011 §3.
+// ModelRouter — the task → (model, effort) decision of ADR-0008 §3.
 //
 // THIS IS THE ADR'S DRAFT PART. The table below is an informed guess, not the
 // result of measurement, and the code says so in three places on purpose: in the
@@ -30,7 +30,7 @@ import (
 // nobody can explain why an agent ran on the expensive model.
 // ════════════════════════════════════════════════════════════════════════════
 
-// TaskKind is the nature of the work. It is the decision's ONLY axis — ADR-0011
+// TaskKind is the nature of the work. It is the decision's ONLY axis — ADR-0008
 // explicitly discarded routing by prompt size: what matters is the task's
 // nature, not its length.
 type TaskKind string
@@ -39,11 +39,11 @@ const (
 	// TaskMechanical: a commit, a log summary, a dossier, i18n. Work of form, not
 	// of reasoning.
 	TaskMechanical TaskKind = "mechanical"
-	// TaskInvestigation: a subagent reading logs and doing forensics (ADR-0010).
+	// TaskInvestigation: a subagent reading logs and doing forensics (ADR-0007).
 	TaskInvestigation TaskKind = "investigation"
 	// TaskImplementation: planning and writing the code.
 	TaskImplementation TaskKind = "implementation"
-	// TaskCritic: the ADR-0007 opinion. It is the flow's brake.
+	// TaskCritic: the ADR-0005 opinion. It is the flow's brake.
 	TaskCritic TaskKind = "critic"
 )
 
@@ -75,7 +75,7 @@ const (
 // reads a decision in the audit log knows where it came from without opening the
 // code — and so that the sentence "this has not been measured yet" is impossible
 // to forget.
-const RoutingProvenance = "ADR-0011 §3 (draft — calibrate with telemetry, P-7)"
+const RoutingProvenance = "ADR-0008 §3 (draft — calibrate with telemetry, P-7)"
 
 // routingRule is a ROW of the decision table.
 type routingRule struct {
@@ -88,7 +88,7 @@ type routingRule struct {
 	Why string
 }
 
-// routingTable — THE TABLE. It mirrors ADR-0011 §3 row by row.
+// routingTable — THE TABLE. It mirrors ADR-0008 §3 row by row.
 //
 // A slice and not a map: the order is the ADR's, and reading the code side by
 // side with the document has to be effortless. There are four rows; if one day
@@ -103,7 +103,7 @@ var routingTable = []routingRule{
 		Kind: TaskInvestigation, Class: ClassMedium, Effort: EffortMedium,
 		Why: "subagent forensics reads a lot and concludes little; the medium class " +
 			"carries the volume without the strong class's price, and the finding is " +
-			"what goes back to the main agent (ADR-0010)",
+			"what goes back to the main agent (ADR-0007)",
 	},
 	{
 		Kind: TaskImplementation, Class: ClassStrong, Effort: EffortHigh,
@@ -112,9 +112,9 @@ var routingTable = []routingRule{
 	},
 	{
 		Kind: TaskCritic, Class: ClassStrong, Effort: EffortMax,
-		// This row is the FIXED RULE of ADR-0011/0012, not a calibration point:
+		// This row is the FIXED RULE of ADR-0008/0012, not a calibration point:
 		// recalibrating the other three is expected, lowering this one is not.
-		Why: "you do not save on the critic — it is the brake (ADR-0007); saving on " +
+		Why: "you do not save on the critic — it is the brake (ADR-0005); saving on " +
 			"the brake gives the cost back as a rejected PR, the flow's most " +
 			"expensive rework",
 	},

@@ -20,7 +20,7 @@ import (
 //   - account_id goes into EVERY WHERE clause. Multi-tenant isolation is a
 //     constraint, not trust in the caller;
 //   - every state change writes the event in the SAME transaction, through InTx
-//   - Emit. A commit ⇒ state and event, or neither (ADR-0019);
+//   - Emit. A commit ⇒ state and event, or neither (ADR-0014);
 //   - the destruction's irreversibility is NOT this file's responsibility: it is
 //     a trigger in the database (migration 0010). Here we only translate the
 //     trigger's exception into a domain error, which Translate already does

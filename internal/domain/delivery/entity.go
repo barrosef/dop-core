@@ -8,12 +8,12 @@
 //
 // Two decisions organize everything here:
 //
-//   - **Evidence is data, not trust** (ADR-0007). There is no
+//   - **Evidence is data, not trust** (ADR-0005). There is no
 //     `verified bool` field coming from the caller. What exists is a list of runs
 //     — which suite, over which commit, with which outcome, with what trace — and
 //     green is a FUNCTION of that list. A "no green, no PR" that accepts a
 //     boolean from the caller proves nothing.
-//   - **A directive coordinates, it never pauses** (ADR-0015 §5). The vocabulary
+//   - **A directive coordinates, it never pauses** (ADR-0011 §5). The vocabulary
 //     of a directive's actions is closed and contains no "pause", "block" or
 //     "suspend" — and the port into the demand domain is read-only. There is no
 //     path, not even by mistake, through which a coordination decision stops a
@@ -33,7 +33,7 @@ import (
 
 // CheckKind is the nature of one verification run.
 //
-// `critic` is a run like any other on purpose: the critic's opinion (ADR-0007
+// `critic` is a run like any other on purpose: the critic's opinion (ADR-0005
 // §3) is evidence with an outcome, a trace and a commit — not an adjective
 // pendurado no PR.
 type CheckKind string
@@ -44,7 +44,7 @@ const (
 	CheckE2E        CheckKind = "e2e"
 	// CheckIntegration is a run against the REAL dependencies the project
 	// declared — the database that came up beside the application, not a double
-	// (ADR-0030). Recording it as `unit` would make the evidence say less than
+	// (ADR-0023). Recording it as `unit` would make the evidence say less than
 	// what was proved.
 	CheckIntegration CheckKind = "integration"
 	CheckCritic      CheckKind = "critic" // the independent instance's opinion
@@ -153,7 +153,7 @@ func (e Evidence) Missing() []string {
 	var acceptance, critic int
 	for _, r := range e.Runs {
 		// A run from another commit does not count — neither for nor against. It
-		// is what caught the semantic break ADR-0008 describes: yesterday's green
+		// is what caught the semantic break ADR-0005 describes: yesterday's green
 		// is not today's green.
 		if r.Commit != e.Commit {
 			missing = append(missing, fmt.Sprintf(
@@ -175,16 +175,16 @@ func (e Evidence) Missing() []string {
 	}
 	if acceptance == 0 {
 		missing = append(missing, fmt.Sprintf(
-			"no passed acceptance run for commit %s (ADR-0007 §1)", short(e.Commit)))
+			"no passed acceptance run for commit %s (ADR-0005 §1)", short(e.Commit)))
 	}
 	if critic == 0 {
 		missing = append(missing, fmt.Sprintf(
-			"the critic's opinion for commit %s is missing (ADR-0007 §3)", short(e.Commit)))
+			"the critic's opinion for commit %s is missing (ADR-0005 §3)", short(e.Commit)))
 	}
 	return missing
 }
 
-// Green is the question ADR-0007 asks. The answer comes from the list of runs,
+// Green is the question ADR-0005 asks. The answer comes from the list of runs,
 // never from a field somebody filled in.
 func (e Evidence) Green() bool { return len(e.Missing()) == 0 }
 
@@ -207,7 +207,7 @@ type Reviewer struct {
 }
 
 // PullRequest is the PR once opened — and, by construction, a PR only exists if
-// its commit was green at the moment of opening (ADR-0007). The rule is checked
+// its commit was green at the moment of opening (ADR-0005). The rule is checked
 // here, in the service, and again by a database TRIGGER: an invariant that
 // cannot be violated by any path does not live only in application code.
 type PullRequest struct {
@@ -230,7 +230,7 @@ type PullRequest struct {
 
 // ─────────────────────────── merge queue ────────────────────────────
 
-// QueueState are ADR-0008's states: queued → rebase → re-verification → merge,
+// QueueState are ADR-0005's states: queued → rebase → re-verification → merge,
 // one at a time, per repository.
 type QueueState string
 
@@ -257,7 +257,7 @@ func (s QueueState) IsTerminal() bool { return s == StateMerged }
 // NeedsHuman marks the state that feeds the attention box.
 func (s QueueState) NeedsHuman() bool { return s == StateConflict }
 
-// CanTransitionTo writes ADR-0008's flow as a state machine. Without it,
+// CanTransitionTo writes ADR-0005's flow as a state machine. Without it,
 // "verifying → queued" happens by accident of code and nobody notices.
 func (s QueueState) CanTransitionTo(n QueueState) bool {
 	switch s {
@@ -282,7 +282,7 @@ func (s QueueState) CanTransitionTo(n QueueState) bool {
 const DefaultPriority = 100
 
 // ConflictReport is the conflict turned into DATA — what the attention box needs
-// for the human to decide without archaeology (ADR-0008 §2).
+// for the human to decide without archaeology (ADR-0005 §2).
 type ConflictReport struct {
 	Files      []string
 	BaseCommit string // which `main` the rebase was attempted against
@@ -298,7 +298,7 @@ func (c ConflictReport) Validate() error {
 	return nil
 }
 
-// MergeQueueEntry is a PR's position in ONE repository's queue (ADR-0008).
+// MergeQueueEntry is a PR's position in ONE repository's queue (ADR-0005).
 type MergeQueueEntry struct {
 	ID            string
 	AccountID     string
@@ -309,13 +309,13 @@ type MergeQueueEntry struct {
 	// (a database constraint). It is the tie-break that keeps two entries from
 	// entradas de ficarem ambiguamente lado a lado.
 	Seq int64
-	// Priority is where the preferred-ordering directive (ADR-0015) acts. Lower
+	// Priority is where the preferred-ordering directive (ADR-0011) acts. Lower
 	// goes first. Note that reordering pauses nobody: the demand that lost its
 	// turn keeps running, it just merges later.
 	Priority         int
 	Position         int32 // DERIVED from the order; it is not persisted state
 	State            QueueState
-	OverlappingFiles []string // the techlead's detection (ADR-0008 §3)
+	OverlappingFiles []string // the techlead's detection (ADR-0005 §3)
 	Conflict         *ConflictReport
 	EnqueuedAt       time.Time
 	UpdatedAt        time.Time
@@ -353,11 +353,11 @@ func SortQueue(entries []MergeQueueEntry) []MergeQueueEntry {
 
 // ─────────────────────────── diretrizes ───────────────────────────
 
-// DirectiveKind is ADR-0015 §6's INITIAL vocabulary — and also the vocabulary of
+// DirectiveKind is ADR-0011 §6's INITIAL vocabulary — and also the vocabulary of
 // the actions a directive instructs.
 //
 // Note what is not here and will not be: pause, block, suspend,
-// esperar. A regra de ouro da ADR-0015 ("transversal identificada NUNCA pausa
+// esperar. A regra de ouro da ADR-0011 ("transversal identificada NUNCA pausa
 // demand") is not a care taken by whoever implements: it is the absence of a
 // value in the type. Demand 1 goes as far as it can; when the directive's
 // condition is met, it applies the coordination and carries on.
@@ -407,7 +407,7 @@ func (i Instruction) Validate() error {
 	// "instruction" simply cannot be expressed.
 	if !ValidDirectiveKind(i.Action) {
 		return errs.Invalid(
-			"coordination action outside the vocabulary: %q — a directive coordinates, it never pauses a demand (ADR-0015 §5)",
+			"coordination action outside the vocabulary: %q — a directive coordinates, it never pauses a demand (ADR-0011 §5)",
 			i.Action)
 	}
 	return nil
@@ -423,7 +423,7 @@ type DirectiveOption struct {
 
 // Decision records WHO decided and WHY. Both are required: coordination between
 // parallel demands is an engineering decision, and a decision with no recorded
-// reason becomes invisible magic three weeks later (ADR-0015).
+// reason becomes invisible magic three weeks later (ADR-0011).
 type Decision struct {
 	Option    string
 	Rationale string
@@ -462,7 +462,7 @@ func (d Directive) Option(key string) (DirectiveOption, bool) {
 	return DirectiveOption{}, false
 }
 
-// Validate demands what ADR-0015 §3 demands of a request for a decision:
+// Validate demands what ADR-0011 §3 demands of a request for a decision:
 // ready-made options (at least two — with only one there is nothing to decide,
 // it is an alarm with an OK button) and a recommendation among them.
 func (d Directive) Validate() error {
@@ -476,7 +476,7 @@ func (d Directive) Validate() error {
 		return errs.Invalid("a directive with no statement of the cross-cutting situation found")
 	}
 	if len(d.Options) < 2 {
-		return errs.Invalid("a directive needs at least two options: one option is an alarm, not a decision (ADR-0015 §3)")
+		return errs.Invalid("a directive needs at least two options: one option is an alarm, not a decision (ADR-0011 §3)")
 	}
 	vistas := make(map[string]bool, len(d.Options))
 	for _, o := range d.Options {

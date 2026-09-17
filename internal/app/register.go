@@ -113,7 +113,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	dopv1.RegisterWorkflowServiceServer(srv, appgrpc.NewWorkflowServer(workflowSvc))
 
 	// The router is this package's POLICY, not a port: nil chooses the default
-	// written in ADR-0011, which is a draft to be calibrated with telemetry
+	// written in ADR-0008, which is a draft to be calibrated with telemetry
 	// (P-7).
 	costSvc := cost.NewService(postgres.NewCostRepo(deps.Pool), relogio, cost.NewRouter(nil))
 	dopv1.RegisterCostServiceServer(srv, appgrpc.NewCostServer(costSvc))
@@ -142,7 +142,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterKnowledgeServiceServer(srv, appgrpc.NewKnowledgeServer(knowledgeSvc))
 
-	// The git provider is resolved PER REPOSITORY (ADR-0013), not chosen at
+	// The git provider is resolved PER REPOSITORY (ADR-0009), not chosen at
 	// boot — see internal/app/gitproviders.go.
 	deliverySvc := delivery.NewService(
 		postgres.NewDeliveryRepo(deps.Pool),
@@ -156,12 +156,12 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// provisions a sandbox without knowing whether the executor is Docker or
 	// Kubernetes.
 	// The agent's metrics (P-23 phase 1). The writer here is the COLLECTOR, not
-	// a person: the authorization is by caller (ADR-0029), inside the service.
+	// a person: the authorization is by caller (ADR-0022), inside the service.
 	metricsSvc := agentmetrics.NewService(postgres.NewAgentMetricsRepo(deps.Pool))
 	dopv1.RegisterAgentMetricsServiceServer(srv, appgrpc.NewAgentMetricsServer(metricsSvc))
 
 	executionSvc := buildExecution(deps, identitySvc, demandSvc, relogio)
-	// The projects' root repositories (ADR-0028): execution mints the sandbox's
+	// The projects' root repositories (ADR-0021): execution mints the sandbox's
 	// clone URL and token from it; knowledge commits the text of every
 	// artifact into it; and a push regenerates the manifest and becomes an
 	// event.
@@ -192,7 +192,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	)
 	dopv1.RegisterAttentionServiceServer(srv, appgrpc.NewAttentionServer(attentionSvc))
 
-	// The agent runtime lives HERE, and not in the BFF (ADR-0023): the
+	// The agent runtime lives HERE, and not in the BFF (ADR-0016): the
 	// provider's credential comes out of the vault and is used in the same
 	// process, crossing no network at all. The BFF is the layer exposed to the
 	// internet — and compromising it must not hand over every account's agent
@@ -258,12 +258,12 @@ func buildExecution(deps *Deps, id *identity.Service, dm *demand.Service, relogi
 
 // RegisterProjections subscribes the consumers that build the projections: the
 // dossier, the timeline, the attention box, the metrics and the cost
-// (ADR-0006).
+// (ADR-0004).
 func RegisterProjections(ctx context.Context, deps *Deps) error {
 	log := logging.From(ctx)
 
 	// Timeline: the timeline per aggregate. An idempotent consumer —
-	// JetStream's delivery is at-least-once (ADR-0019).
+	// JetStream's delivery is at-least-once (ADR-0014).
 	timeline := projection.NewTimeline(deps.Pool)
 	if err := deps.Bus.Subscribe(ctx, "", "timeline", []string{"dop.>"}, timeline.Handle); err != nil {
 		return err
@@ -279,7 +279,7 @@ func RegisterProjections(ctx context.Context, deps *Deps) error {
 		return err
 	}
 
-	// Communication: the TRIGGER (ADR-0025). It subscribes only to the subjects
+	// Communication: the TRIGGER (ADR-0018). It subscribes only to the subjects
 	// the rule knows how to translate, and the decider is a table — when the
 	// reaction becomes data (P-29), you swap the loader, not the caller.
 	//
@@ -370,7 +370,7 @@ func RunScheduledTasks(ctx context.Context, deps *Deps) {
 		}
 	}
 
-	// The attention box's delayed digest (ADR-0025): an item open for longer
+	// The attention box's delayed digest (ADR-0018): an item open for longer
 	// than the delay, and still open, becomes an email. What was resolved before
 	// the cut-off does not — whoever was in the cockpit has already resolved it.
 	//

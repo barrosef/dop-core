@@ -76,7 +76,7 @@ func Decide(e ports.Event, rules []Rule) ([]PlannedAction, error) {
 }
 
 // matches is equality and nothing else. A comparison, a range or a composite
-// boolean would make this a DSL — which ADR-0014 §2 already refused for flows,
+// boolean would make this a DSL — which ADR-0010 §2 already refused for flows,
 // for the same reason: the moment the row holds an expression, swapping the
 // policy stops being a loader and becomes a rewrite.
 func matches(when map[string]string, payload map[string]any) bool {

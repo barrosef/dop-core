@@ -55,13 +55,13 @@ func (a agentKnowledge) ContextPackage(ctx context.Context, demandID string) (ag
 }
 
 // packageArtifacts converts while preserving the curation's ORDER: it is
-// `SelectPackage`'s priority (ADR-0009 §3), and reordering here would undo the
+// `SelectPackage`'s priority (ADR-0006 §3), and reordering here would undo the
 // selection that consumed the whole budget.
 //
 // `ID` and `Version` are left behind because the runtime's port does not even
 // have them: they change when the core rewrites the artifact without the content
 // changing, and they would enter the cached prefix and invalidate it for nothing
-// (ADR-0012 §1).
+// (ADR-0008 §1).
 func packageArtifacts(itens []knowledge.Artifact) []agent.ContextArtifact {
 	out := make([]agent.ContextArtifact, 0, len(itens))
 	for _, a := range itens {
@@ -86,7 +86,7 @@ func achadosDoPacote(itens []knowledge.Finding) []agent.ContextFinding {
 //
 // The CLASS crosses here — it is the field the network boundary used to eat when
 // the runtime lived in the BFF, and it is what retires the reverse translation
-// table that existed there (ADR-0023).
+// table that existed there (ADR-0016).
 type agentRouting struct{ c *cost.Service }
 
 var _ agent.Routing = agentRouting{}

@@ -132,7 +132,7 @@ func (s *DemandServer) ListFindings(ctx context.Context, req *dopv1.ListFindings
 }
 
 // WatchDemand is pure server-side streaming: the BFF converts it into SSE
-// (ADR-0017).
+// (ADR-0013).
 //
 // The replay, per-account isolation and slow-consumer policies belong to the
 // event service, behind the port — here we only send. Send returns an error when

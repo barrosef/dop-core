@@ -25,7 +25,7 @@ func NewCostServer(svc *cost.Service) *CostServer { return &CostServer{svc: svc}
 
 // RecordUsage propagates the idempotency key from the request's BODY, and not
 // from the interceptor: here it is not merely retry protection, it is the
-// guarantee that a budget does not count twice (ADR-0011). The domain requires
+// guarantee that a budget does not count twice (ADR-0008). The domain requires
 // it.
 func (s *CostServer) RecordUsage(ctx context.Context, req *dopv1.RecordUsageRequest) (*dopv1.RecordUsageResponse, error) {
 	out, err := s.svc.RecordUsage(ctx, usageFromProto(req.GetUsage()), req.GetIdempotencyKey())
@@ -77,7 +77,7 @@ func (s *CostServer) RouteModel(ctx context.Context, req *dopv1.RouteModelReques
 		// The justification goes to the client WHOLE. It is what allows auditing
 		// ("why did this demand run on the expensive model?") and recalibrating
 		// without reading the code — and it says, in every decision, that the
-		// policy is still ADR-0011's draft (P-7).
+		// policy is still ADR-0008's draft (P-7).
 		Reason: d.Reason,
 	}, nil
 }

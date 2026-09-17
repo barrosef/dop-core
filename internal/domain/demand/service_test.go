@@ -20,7 +20,7 @@ import (
 // ── o congelamento do fluxo ──────────────────────────────────────────────────
 
 // It is the most expensive guarantee to lose: a flow changed later must NOT
-// past of a demand already under way (ADR-0014 §4).
+// past of a demand already under way (ADR-0010 §4).
 func TestStartFreezesTheFlow(t *testing.T) {
 	repo, flows, _, svc := setup(t)
 	ctx := comConta("acc-1")
@@ -241,7 +241,7 @@ func TestAThreadDoesNotConcludeWithoutAPublishedFinding(t *testing.T) {
 		t.Errorf("a concluded thread takes no message, got %v", err)
 	}
 
-	// Every action became an event (ADR-0006) — an action with no event is a bug.
+	// Every action became an event (ADR-0004) — an action with no event is a bug.
 	want := []string{
 		demand.EventStarted, demand.EventThreadCreated, demand.EventMessagePosted,
 		demand.EventFindingPublished, demand.EventThreadConcluded,
@@ -261,7 +261,7 @@ func TestAFindingFromAnotherDemandIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	// The demand is the security boundary (ADR-0010 §6).
+	// The demand is the security boundary (ADR-0007 §6).
 	if _, err := svc.PublishFinding(ctx, b.ID, th.ID, "finding", nil, ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("a finding crossing demands should have been refused, got %v", err)
 	}
@@ -272,7 +272,7 @@ func TestTheSubagentBriefIsRequired(t *testing.T) {
 	ctx := comConta("acc-1")
 	d := iniciar(t, svc, ctx, "SUOPT-1315")
 
-	// A subagent with no purpose is a black box — what ADR-0010 refuses.
+	// A subagent with no purpose is a black box — what ADR-0007 refuses.
 	if _, err := svc.CreateThread(ctx, d.ID, "logs", demand.AgentCard{}, ""); errs.KindOf(err) != errs.KindInvalid {
 		t.Errorf("a brief with no purpose should be refused, got %v", err)
 	}
@@ -409,7 +409,7 @@ type fakeRepo struct {
 	demands  map[string]*demand.Demand
 	threads  map[string]*demand.Thread
 	findings []demand.Finding
-	// events is what proves ADR-0006's rule: no write passes through here without
+	// events is what proves ADR-0004's rule: no write passes through here without
 	// bringing the event along.
 	events []demand.Emission
 	seq    int
@@ -567,7 +567,7 @@ func (f *fakeRepo) HasFinding(_ context.Context, accountID, threadID string) (bo
 
 // ── andaimes ─────────────────────────────────────────────────────────────────
 
-// fluxoPadrao imita o fluxo default da plataforma (ADR-0014 §8), encurtado:
+// fluxoPadrao imita o fluxo default da plataforma (ADR-0010 §8), encurtado:
 // context → spec → human validation.
 func fluxoPadrao() demand.Flow {
 	return demand.Flow{

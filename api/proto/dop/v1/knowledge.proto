@@ -5,7 +5,7 @@ import "dop/v1/common.proto";
 import "dop/v1/demand.proto";
 import "google/protobuf/struct.proto";
 
-// The project's knowledge base in three layers (ADR-0009).
+// The project's knowledge base in three layers (ADR-0006).
 message KnowledgeArtifact {
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -33,7 +33,7 @@ message ContextPackage {
   int32  estimated_tokens = 6;   // measured by token counting at assembly time
 
   // How much was left OUT for budget, per layer. It is first-class information
-  // (ADR-0012): without it the screen has no way to say "the context was
+  // (ADR-0008): without it the screen has no way to say "the context was
   // truncated", and pretends everything fitted — which is the most expensive way
   // of lying to whoever is deciding whether the agent has what it needs.
   map<string, int32> dropped = 7;

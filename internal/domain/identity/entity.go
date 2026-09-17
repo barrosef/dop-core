@@ -77,7 +77,7 @@ type Account struct {
 }
 
 // IsVerified unlocks domain-based joining, the badge and handle disputes
-// (ADR-0004). Everything else works without verification.
+// (ADR-0002). Everything else works without verification.
 func (a Account) IsVerified() bool { return a.VerifiedDomain != "" }
 
 type Membership struct {
@@ -99,7 +99,7 @@ const (
 )
 
 // GrantSpec is the grant composed INTO THE INVITE — there is no default
-// (ADR-0013).
+// (ADR-0009).
 type GrantSpec struct {
 	ResourceID string
 	Level      string // use | manage

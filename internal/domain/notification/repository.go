@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// DeliveryKey is the composite idempotency key (ADR-0025). It exists as a type
+// DeliveryKey is the composite idempotency key (ADR-0018). It exists as a type
 // so that no caller can assemble half a key.
 type DeliveryKey struct {
 	EventID string

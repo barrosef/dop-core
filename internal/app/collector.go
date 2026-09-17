@@ -45,7 +45,7 @@ import (
 //
 // It talks to the CORE, never to the database. Whoever reaches Postgres does not
 // even need to forge an actor: they read everything. The collector's key opens
-// exactly one service (ADR-0029), so a leak here is worth polluting telemetry.
+// exactly one service (ADR-0022), so a leak here is worth polluting telemetry.
 func RunCollector(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
 	if strings.TrimSpace(cfg.CollectorSessionDir) == "" {
@@ -221,7 +221,7 @@ func (c *collector) authState() agentmetrics.SessionAuth {
 // catches up over the next ticks instead.
 const maxChunkBytes = 2 << 20
 
-// signed puts the assertion on the call (ADR-0029). The collector has no person
+// signed puts the assertion on the call (ADR-0022). The collector has no person
 // behind it — the assertion is the only proof it can offer, and its caller name
 // is what the core authorizes on.
 func (c *collector) signed(ctx context.Context) context.Context {

@@ -1,5 +1,5 @@
 -- +goose Up
--- The record of communication SENT (ADR-0025).
+-- The record of communication SENT (ADR-0018).
 --
 -- This table is not a queue and it is not a projection: it is the RECORD of
 -- what was fired, with a state, in the shape the sibling project already proved
@@ -66,7 +66,7 @@ CREATE TABLE notification_deliveries (
   settled_at   timestamptz
 );
 
--- THE GUARANTEE. JetStream's redelivery is at-least-once (ADR-0019); without
+-- THE GUARANTEE. JetStream's redelivery is at-least-once (ADR-0014); without
 -- this index, the same invite lands three times in the invitee's inbox.
 CREATE UNIQUE INDEX notification_deliveries_idem_idx
   ON notification_deliveries (event_id, rule_name, action_name);

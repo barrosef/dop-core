@@ -1,7 +1,7 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
 -- Delivery: evidence of green, pull requests, a per-repository merge queue and
--- coordination directives (ADR-0007, ADR-0008, ADR-0015).
+-- coordination directives (ADR-0005, ADR-0005, ADR-0011).
 --
 -- Three of this domain's invariants are too expensive to live only in the
 -- application code, and so they sit here as a constraint or a trigger:
@@ -12,7 +12,7 @@
 --      repository; two entries never tie ambiguously;
 --   3. A DIRECTIVE COORDINATES, IT NEVER PAUSES — the vocabulary of actions is
 --      a closed enum and the trigger refuses any instruction outside it
---      (ADR-0015 §5).
+--      (ADR-0011 §5).
 --
 -- About demand_id: references to the demand are by UUID, with no FK. The
 -- `demands` table belongs to another migration, written in parallel; tying an
@@ -21,7 +21,7 @@
 -- is a constraint.
 -- ════════════════════════════════════════════════════════════════════════════
 
--- ── evidence of green (ADR-0007) ────────────────────────────────────────────
+-- ── evidence of green (ADR-0005) ────────────────────────────────────────────
 
 -- The critic's verdict is a kind of run like the others, on purpose: it has a
 -- commit, an outcome and a trace. An adjective hanging off the PR cannot be
@@ -100,7 +100,7 @@ CREATE INDEX pull_requests_demanda_idx ON pull_requests (demand_id);
 CREATE UNIQUE INDEX pull_requests_idem_idx
   ON pull_requests (account_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- ADR-0007 as a TRIGGER. The service already refuses earlier, with a message
+-- ADR-0005 as a TRIGGER. The service already refuses earlier, with a message
 -- that says what is missing; here is the backstop that holds for the paths
 -- nobody foresaw — a backfill, an operations script, a call-ordering bug. A
 -- business rule NO operation may violate does not live in the application
@@ -136,7 +136,7 @@ CREATE TRIGGER pull_requests_verde_guard
   BEFORE INSERT OR UPDATE OF head_commit ON pull_requests
   FOR EACH ROW EXECUTE FUNCTION assert_pr_tem_verde();
 
--- ── per-repository merge queue (ADR-0008) ───────────────────────────────────
+-- ── per-repository merge queue (ADR-0005) ───────────────────────────────────
 
 CREATE TYPE merge_queue_state AS ENUM
   ('queued', 'rebasing', 'verifying', 'merged', 'conflict');
@@ -150,7 +150,7 @@ CREATE TABLE merge_queue_entries (
   -- The arrival sequence WITHIN the repository. Assigned under a lock on the
   -- repository's row, it is the tie-break that guarantees a total order.
   seq             bigint NOT NULL CHECK (seq > 0),
-  -- Where the preferred-order directive acts (ADR-0015 §6). Lower goes first.
+  -- Where the preferred-order directive acts (ADR-0011 §6). Lower goes first.
   -- Reordering pauses nobody: whoever lost their turn keeps running.
   priority        int NOT NULL DEFAULT 100,
   state           merge_queue_state NOT NULL DEFAULT 'queued',
@@ -168,7 +168,7 @@ CREATE TABLE merge_queue_entries (
   -- SELECT.
   UNIQUE (repo_id, seq),
   -- A conflict escalated with no report is a raw alarm: the attention box needs
-  -- the context for the human to decide without archaeology (ADR-0008 §2).
+  -- the context for the human to decide without archaeology (ADR-0005 §2).
   CONSTRAINT conflito_tem_relato CHECK (state <> 'conflict' OR conflict IS NOT NULL)
 );
 CREATE INDEX merge_queue_ordem_idx
@@ -176,7 +176,7 @@ CREATE INDEX merge_queue_ordem_idx
 CREATE UNIQUE INDEX merge_queue_idem_idx
   ON merge_queue_entries (account_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- ── coordination directives (ADR-0015) ──────────────────────────────────────
+-- ── coordination directives (ADR-0011) ──────────────────────────────────────
 
 -- The vocabulary is CLOSED and has no 'pause', 'block' or 'suspend'. The golden
 -- rule ("an identified cross-cutting concern NEVER pauses a demand") is not the
@@ -219,7 +219,7 @@ CREATE INDEX directives_projeto_idx ON directives (account_id, project_id, statu
 CREATE UNIQUE INDEX directives_idem_idx
   ON directives (account_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- ADR-0015 §5's golden rule as a trigger, because a CHECK cannot do a
+-- ADR-0011 §5's golden rule as a trigger, because a CHECK cannot do a
 -- subquery. Two things checked together: the recommendation is one of the
 -- options (recommending what is not in the list is the silent version of
 -- recommending nothing), and every instruction of every option belongs to the
@@ -242,7 +242,7 @@ BEGIN
     IF acao IS NULL OR acao NOT IN
        ('cherry_pick', 'merge_order', 'file_partition', 'cross_verify') THEN
       RAISE EXCEPTION
-        'a directive instruction outside the coordination vocabulary: % — a directive coordinates, it never pauses a demand (ADR-0015)',
+        'a directive instruction outside the coordination vocabulary: % — a directive coordinates, it never pauses a demand (ADR-0011)',
         COALESCE(acao, '(vazia)');
     END IF;
   END LOOP;

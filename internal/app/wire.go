@@ -42,21 +42,21 @@ type Deps struct {
 	Identity ports.IdentityProvider
 	Launcher ports.SandboxLauncher
 	// Runner is where a verification runs and where an application runs at all
-	// (ADR-0030). It is a DIFFERENT port from Launcher on purpose: the bench and
+	// (ADR-0023). It is a DIFFERENT port from Launcher on purpose: the bench and
 	// the runner have opposite promises — one preserves the work, the other
 	// starts from nothing.
 	Runner ports.VerificationRunner
 	Mailer ports.Mailer
 	SMS    ports.SMSer
 	Cfg    *config.Config
-	// Repos is the projects' root repositories (ADR-0028). GitHTTP and GitAPI
+	// Repos is the projects' root repositories (ADR-0021). GitHTTP and GitAPI
 	// are non-nil only when this process HOSTS them (GitBackend=local): the
 	// smart-HTTP handler the sandboxes clone from, and the platform-side API a
 	// remote core would use.
 	Repos   ports.ProjectRepository
 	GitHTTP http.Handler
 	GitAPI  http.Handler
-	// CallAuth authenticates the core's OWN callers (ADR-0029). Nil means the
+	// CallAuth authenticates the core's OWN callers (ADR-0022). Nil means the
 	// old behaviour — the metadata taken on faith — which only the tests that
 	// are about something else should want.
 	CallAuth *callAuth
@@ -90,7 +90,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		secrets = secretstore.NewMemory()
 	case "gcp":
 		// The port's guarantee 1 (read-after-write) is NOT deliverable on real
-		// GCP with this design — see ADR-0021. The adapter confirms by version
+		// GCP with this design — see ADR-0001. The adapter confirms by version
 		// number, which is strong, and then waits for the `latest` alias to
 		// catch up; if it does not converge, it refuses with KindUnavailable
 		// instead of returning "it does not exist" for a credential that was
@@ -191,7 +191,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// The SMS channel, the port ADR-0025 foresaw and the second factor brought
+	// The SMS channel, the port ADR-0018 foresaw and the second factor brought
 	// into being. Two real adapters for ADR-0001's same reason — and with no
 	// credential either of them REHEARSES: locally there is no gateway, so the
 	// path is exercised and the delivery is not (P-35).
@@ -212,7 +212,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		})
 	}
 
-	// The STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST bridge (ADR-0020).
+	// The STORAGE_EMULATOR_HOST ↔ FIREBASE_STORAGE_EMULATOR_HOST bridge (ADR-0015).
 	// Without it, a local upload goes to the REAL bucket.
 	if ep := objectstore.ResolveEmulatorHost(); ep != "" {
 		log.Info("storage pointed at the emulator", "endpoint", ep)
@@ -274,7 +274,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 		gitAPI = projectrepo.NewAPI(srv, cfg.ProjectRepoAdminKey, cfg.ProjectRepoBaseURL)
 	}
 
-	// Who may assert who the actor is (ADR-0029). One key per caller: a
+	// Who may assert who the actor is (ADR-0022). One key per caller: a
 	// compromised component forges only its own calls.
 	keys := map[string][]byte{}
 	if k := strings.TrimSpace(cfg.CallAuthKeyBFF); k != "" {

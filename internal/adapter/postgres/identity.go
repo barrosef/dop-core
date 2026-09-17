@@ -134,7 +134,7 @@ func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*ident
 // SetDefaultRevocationPolicy: Task 5 stamps a grant's own policy from this
 // value at share time, and a read path that kept returning "" after a
 // successful write would make an account that chose `terminate` hand out
-// `prospective` grants — wrong, and silent (ADR-0021: an emulator/read path
+// `prospective` grants — wrong, and silent (ADR-0001: an emulator/read path
 // that lies about a write is exactly the shape that has bitten this codebase
 // before).
 const accountCols = `id, kind, handle, display_name,
@@ -309,7 +309,7 @@ func (r *IdentityRepo) MembershipByID(ctx context.Context, membershipID string) 
 }
 
 // RemoveMembership deletes the row and emits the event in the SAME transaction
-// (ADR-0019). The event carries the user_id because the row will not be there
+// (ADR-0014). The event carries the user_id because the row will not be there
 // to be consulted afterwards — a projection reading this later has no way back.
 func (r *IdentityRepo) RemoveMembership(ctx context.Context, membershipID string) error {
 	return InTx(ctx, r.pool, func(tx pgx.Tx) error {

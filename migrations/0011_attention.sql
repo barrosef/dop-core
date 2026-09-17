@@ -1,5 +1,5 @@
 -- +goose Up
--- The attention box is a PROJECTION of the event log (ADR-0006), not a system.
+-- The attention box is a PROJECTION of the event log (ADR-0004), not a system.
 --
 -- The consequence in the schema: there is no column only a human can change. An
 -- item opens through an event and closes through an event; there is no "mark as
@@ -18,7 +18,7 @@ CREATE TABLE attention_items (
   opened_at    timestamptz NOT NULL,
   resolved_at  timestamptz,
   -- The event that OPENED the item. It is what makes a redelivery harmless:
-  -- JetStream's delivery is at-least-once (ADR-0019), and without this key the
+  -- JetStream's delivery is at-least-once (ADR-0014), and without this key the
   -- same block would become three identical items in the dev's face.
   opened_by_event uuid NOT NULL,
   created_at   timestamptz NOT NULL DEFAULT now()

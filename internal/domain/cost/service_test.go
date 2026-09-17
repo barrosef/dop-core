@@ -426,7 +426,7 @@ func TestTheRouterTableProducesADecisionWithAJustification(t *testing.T) {
 			t.Fatalf("%s: routing failed: %v", c.kind, err)
 		}
 		if d.Class != c.classe || d.Effort != c.effort {
-			t.Errorf("%s → (%s, %s), want (%s, %s) — ADR-0011 §3",
+			t.Errorf("%s → (%s, %s), want (%s, %s) — ADR-0008 §3",
 				c.kind, d.Class, d.Effort, c.classe, c.effort)
 		}
 		if d.Model == "" {
@@ -437,7 +437,7 @@ func TestTheRouterTableProducesADecisionWithAJustification(t *testing.T) {
 			t.Errorf("%s: decision with no justification", c.kind)
 		}
 		// And the justification says where it came from — including that it is still a draft.
-		if !strings.Contains(d.Reason, "ADR-0011") || !strings.Contains(d.Reason, "P-7") {
+		if !strings.Contains(d.Reason, "ADR-0008") || !strings.Contains(d.Reason, "P-7") {
 			t.Errorf("%s: justification %q declares neither provenance nor the calibration item",
 				c.kind, d.Reason)
 		}
@@ -450,7 +450,7 @@ func TestYouDoNotSaveOnTheCritic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("routing failed: %v", err)
 	}
-	// The FIXED rule of ADR-0011/0012: the critic is the brake, and the brake is the last
+	// The FIXED rule of ADR-0008/0012: the critic is the brake, and the brake is the last
 	// the place where the saving happens.
 	if critic.Class != cost.ClassStrong || critic.Effort != cost.EffortMax {
 		t.Errorf("critic = (%s, %s), expected (strong, max)", critic.Class, critic.Effort)
@@ -483,7 +483,7 @@ func TestTheRouterIsATableInOnePlace(t *testing.T) {
 	// table, this test is the first to notice.
 	tabela := cost.NewRouter(nil).Table()
 	if len(tabela) != 4 {
-		t.Fatalf("the table has %d rows, want 4 (ADR-0011 §3)", len(tabela))
+		t.Fatalf("the table has %d rows, want 4 (ADR-0008 §3)", len(tabela))
 	}
 	vistos := map[cost.TaskKind]bool{}
 	for _, d := range tabela {
@@ -515,7 +515,7 @@ func TestTheCatalogueIsReplaceableWithoutTouchingThePolicy(t *testing.T) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Cache telemetry — the calibration material (ADR-0012, P-7).
+// Cache telemetry — the calibration material (ADR-0008, P-7).
 // ════════════════════════════════════════════════════════════════════════════
 
 func TestCacheHitRatioUsesTheWholePrompt(t *testing.T) {
@@ -530,7 +530,7 @@ func TestCacheHitRatioUsesTheWholePrompt(t *testing.T) {
 
 func TestTheSilentCacheInvalidatorAlert(t *testing.T) {
 	// A large prefix with NO cache read at all: somebody is paying 10× the
-	// the same prefix (ADR-0012 §1).
+	// the same prefix (ADR-0008 §1).
 	suspeito := cost.UsageEvent{InputTokens: 50_000, CacheReadTokens: 0}
 	if !suspeito.SuspectCacheMiss() {
 		t.Error("a large prompt with no cache read should be suspicious")

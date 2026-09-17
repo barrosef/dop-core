@@ -10,7 +10,7 @@ import (
 )
 
 // PushRecorder turns a push to a project's root repository into an event
-// (ADR-0028 §5, ADR-0006). It resolves the project's account first, because an
+// (ADR-0021 §5, ADR-0004). It resolves the project's account first, because an
 // event without an account is an event nobody can read back with the account
 // filter every projection applies.
 type PushRecorder struct{ pool *pgxpool.Pool }

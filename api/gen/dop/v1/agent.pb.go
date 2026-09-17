@@ -23,7 +23,7 @@ const (
 
 // The routing decision that applied on this turn, with the WHOLE justification.
 // Without it nobody audits "why did this demand run on the expensive model?"
-// (ADR-0011 §3).
+// (ADR-0008 §3).
 type TurnRouting struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	TaskKind string                 `protobuf:"bytes,1,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"` // mechanical | investigation | implementation | critic
@@ -34,11 +34,11 @@ type TurnRouting struct {
 	Model      string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	Effort     string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"` // requested: low | medium | high | xhigh | max
 	// The effort ACTUALLY applied. It may be LOWER than the one requested when
-	// the provider does not have the five levels (ADR-0022 D4) — and on critical
-	// work (ADR-0007) that difference is a product decision, not a detail.
+	// the provider does not have the five levels (ADR-0016 D4) — and on critical
+	// work (ADR-0005) that difference is a product decision, not a detail.
 	EffortApplied string `protobuf:"bytes,5,opt,name=effort_applied,json=effortApplied,proto3" json:"effort_applied,omitempty"`
 	Reason        string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	// The thread's card (ADR-0010 §2) beat the router.
+	// The thread's card (ADR-0007 §2) beat the router.
 	FromAgentCard bool `protobuf:"varint,7,opt,name=from_agent_card,json=fromAgentCard,proto3" json:"from_agent_card,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -123,11 +123,11 @@ func (x *TurnRouting) GetFromAgentCard() bool {
 	return false
 }
 
-// The turn's consumption, with the four parts DISJOINT (ADR-0022 D2).
+// The turn's consumption, with the four parts DISJOINT (ADR-0016 D2).
 //
 // Disjoint is the contract: input_tokens does NOT include what came from cache.
 // A provider that reports inclusively is normalized by the adapter — summing
-// inclusive fields would inflate ADR-0011's measurement with nothing failing.
+// inclusive fields would inflate ADR-0008's measurement with nothing failing.
 type TurnUsage struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	InputTokens         int64                  `protobuf:"varint,1,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
@@ -136,13 +136,13 @@ type TurnUsage struct {
 	CacheCreationTokens int64                  `protobuf:"varint,4,opt,name=cache_creation_tokens,json=cacheCreationTokens,proto3" json:"cache_creation_tokens,omitempty"`
 	Cost                *Money                 `protobuf:"bytes,5,opt,name=cost,proto3" json:"cost,omitempty"`
 	// False = the provider does NOT report cache creation. The zero above then
-	// means "it cannot be known", never "nothing was written" (ADR-0022 D1).
+	// means "it cannot be known", never "nothing was written" (ADR-0016 D1).
 	// Without this field, whoever reads the telemetry has no way to tell the two
 	// apart.
 	CacheCreationKnown bool `protobuf:"varint,6,opt,name=cache_creation_known,json=cacheCreationKnown,proto3" json:"cache_creation_known,omitempty"`
 	// False = there is no price table for this model. The cost stays at zero for
 	// LACK of a table, not because it was free — a budget fed with zeros is the
-	// fiction ADR-0011 §2 exists to prevent.
+	// fiction ADR-0008 §2 exists to prevent.
 	CostKnown     bool `protobuf:"varint,7,opt,name=cost_known,json=costKnown,proto3" json:"cost_known,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -296,13 +296,13 @@ type TurnOutcome struct {
 	// and an empty published finding would be the durable record of nothing.
 	Finding *TurnFinding `protobuf:"bytes,8,opt,name=finding,proto3" json:"finding,omitempty"`
 	Usage   *TurnUsage   `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`
-	// The context package came TRUNCATED by token budget (ADR-0012). The warning
+	// The context package came TRUNCATED by token budget (ADR-0008). The warning
 	// also enters the thread — a truncation that does not show up in the
 	// conversation is the origin of a wrong conclusion nobody explains
 	// afterwards.
 	ContextTruncated bool `protobuf:"varint,10,opt,name=context_truncated,json=contextTruncated,proto3" json:"context_truncated,omitempty"`
 	// A blown budget: the demand PAUSES and becomes a decision item
-	// (ADR-0011 §2). The turn that already ran is delivered whole; it is the next
+	// (ADR-0008 §2). The turn that already ran is delivered whole; it is the next
 	// one that does not go out.
 	Paused  bool      `protobuf:"varint,11,opt,name=paused,proto3" json:"paused,omitempty"`
 	Notice  string    `protobuf:"bytes,12,opt,name=notice,proto3" json:"notice,omitempty"`
@@ -451,13 +451,13 @@ type RunTurnRequest struct {
 	// expensive option and SAYING that it did. Empty is what does not pass — with
 	// no kind of work there is no decision to audit.
 	TaskKind string `protobuf:"bytes,5,opt,name=task_kind,json=taskKind,proto3" json:"task_kind,omitempty"`
-	// The `agent`-category resource (ADR-0013) that serves this turn. Empty = the
+	// The `agent`-category resource (ADR-0009) that serves this turn. Empty = the
 	// account's provider, and only when there is a SINGLE one: with two, choosing
 	// on our own would swap provider, price and cache in the middle of the
 	// demand.
 	ResourceId string `protobuf:"bytes,6,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
 	// The OPERATOR's intervention, coming from the attention box. It enters
-	// through the provider's authority channel, NEVER as user text (ADR-0022 D3):
+	// through the provider's authority channel, NEVER as user text (ADR-0016 D3):
 	// flattening the two roles is the classic prompt-injection path.
 	OperatorNote    string `protobuf:"bytes,7,opt,name=operator_note,json=operatorNote,proto3" json:"operator_note,omitempty"`
 	MaxOutputTokens int32  `protobuf:"varint,8,opt,name=max_output_tokens,json=maxOutputTokens,proto3" json:"max_output_tokens,omitempty"`
@@ -465,7 +465,7 @@ type RunTurnRequest struct {
 	// reply, finding) derive from it, so that repeating the request repeats ZERO
 	// effects. Generating one here would turn a network retry into double
 	// consumption — and a duplicate consumption collides with nothing, it would
-	// enter as legitimate spend (ADR-0011).
+	// enter as legitimate spend (ADR-0008).
 	IdempotencyKey string `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

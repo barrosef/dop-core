@@ -58,7 +58,7 @@ message Invite {
   AccountRef account    = 2;
   string     email      = 3;
   Role       role       = 4;
-  // Grants composed IN THE INVITE — with no defaults (ADR-0013)
+  // Grants composed IN THE INVITE — with no defaults (ADR-0009)
   repeated ResourceGrantSpec grants = 5;
   Status     status     = 6;
   google.protobuf.Timestamp expires_at = 7;
@@ -84,7 +84,7 @@ service IdentityService {
   //
   // Read it as what it would be if it were open — an endpoint that mails
   // arbitrary text to an arbitrary address is a relay. It is not open: only a
-  // caller the core verified reaches it (ADR-0029), and the per-address ceiling
+  // caller the core verified reaches it (ADR-0022), and the per-address ceiling
   // is the second line for the day the first one has a hole.
   rpc SendEmailVerification(SendEmailVerificationRequest) returns (SendEmailVerificationResponse);
   rpc CreateInvite   (CreateInviteRequest)   returns (Invite);
@@ -107,7 +107,7 @@ message ListInvitesResponse { repeated Invite invites = 1; }
 message GetInviteRequest { reserved 1; string id = 2; }
 
 // What whoever OPENS the link sees. It does NOT carry the invitee's e-mail:
-// whoever finds the link must not learn an address from it (ADR-0026).
+// whoever finds the link must not learn an address from it (ADR-0019).
 message InvitePreview {
   string id           = 1;
   string account_name = 2;

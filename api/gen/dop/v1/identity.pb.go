@@ -448,7 +448,7 @@ type Invite struct {
 	Account *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	Email   string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
 	Role    Role                   `protobuf:"varint,4,opt,name=role,proto3,enum=dop.v1.Role" json:"role,omitempty"`
-	// Grants composed IN THE INVITE — with no defaults (ADR-0013)
+	// Grants composed IN THE INVITE — with no defaults (ADR-0009)
 	Grants        []*ResourceGrantSpec   `protobuf:"bytes,5,rep,name=grants,proto3" json:"grants,omitempty"`
 	Status        Invite_Status          `protobuf:"varint,6,opt,name=status,proto3,enum=dop.v1.Invite_Status" json:"status,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
@@ -720,7 +720,7 @@ func (x *GetInviteRequest) GetId() string {
 }
 
 // What whoever OPENS the link sees. It does NOT carry the invitee's e-mail:
-// whoever finds the link must not learn an address from it (ADR-0026).
+// whoever finds the link must not learn an address from it (ADR-0019).
 type InvitePreview struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

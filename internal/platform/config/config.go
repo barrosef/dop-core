@@ -48,7 +48,7 @@ type Config struct {
 	WorkspaceSize  string
 	StorageClass   string
 
-	// RunnerImage is the PLATFORM's image for a verification (ADR-0030): fat on
+	// RunnerImage is the PLATFORM's image for a verification (ADR-0023): fat on
 	// purpose, with the toolchains, cached on the nodes. It is never an image of
 	// the customer's project — that one is built from source inside this one and
 	// pushed nowhere.
@@ -69,7 +69,7 @@ type Config struct {
 	K8sNamespace string
 	K8sToken     string
 
-	// The projects' root repositories (ADR-0028). ProjectRepoBackend picks the adapter:
+	// The projects' root repositories (ADR-0021). ProjectRepoBackend picks the adapter:
 	// `local` hosts the repositories in THIS process, under ProjectRepoRoot, and serves
 	// them on the health/HTTP port; `remote` talks to a server in another
 	// process at ProjectRepoServerURL. ProjectRepoBaseURL is the address a SANDBOX reaches the
@@ -101,18 +101,18 @@ type Config struct {
 	OIDCClockSkew      time.Duration
 	OIDCKeysMinRefresh time.Duration
 
-	// ── code provider (ADR-0008, the delivery.GitProvider port) ──
+	// ── code provider (ADR-0005, the delivery.GitProvider port) ──
 	//
 	// Note what is NOT here: the TOKEN. A provider token is a RESOURCE
-	// credential (ADR-0013) — it lives in the vault, behind ports.SecretStore,
+	// credential (ADR-0009) — it lives in the vault, behind ports.SecretStore,
 	// it differs per account and per resource, and so it cannot be a process
 	// environment variable. What is here is the adapter's TUNING: address,
 	// deadlines and merge policy, which are the same for the whole installation.
 	//
 	// GitBackend chooses the installation's default adapter. It is only a
 	// default: the real connection is assembled per resource, because it is the
-	// resource that says which provider and which credential (ADR-0013).
-	// CallAuthMode is how the core treats its own callers (ADR-0029):
+	// resource that says which provider and which credential (ADR-0009).
+	// CallAuthMode is how the core treats its own callers (ADR-0022):
 	// `strict` refuses to fill in an actor without a verified signature,
 	// `permissive` warns and lets it through, `off` is the old behaviour.
 	// The default is permissive and the DEPLOYMENT is strict — see the
@@ -159,12 +159,12 @@ type Config struct {
 	// different magnitudes: a call taking 30s is broken; a rebase taking 30s is
 	// normal.
 	GitRebaseTimeout time.Duration
-	// GitMergeMethod is git-flow policy (ADR-0013, the `git_flow` resource), not
-	// domain vocabulary — the ADR-0008 queue needs the merge to happen, not to
+	// GitMergeMethod is git-flow policy (ADR-0009, the `git_flow` resource), not
+	// domain vocabulary — the ADR-0005 queue needs the merge to happen, not to
 	// happen in a particular way. It stays in the adapter.
 	GitMergeMethod string // merge | squash | rebase
 
-	// ── communication (ADR-0025) ──
+	// ── communication (ADR-0018) ──
 	// MailBackend chooses the Mailer port's adapter. `smtp` is the self-hosted
 	// path; `sendgrid` the SaaS one. Both pass the same contract suite.
 	MailBackend string // onesignal | sendgrid | smtp
@@ -179,7 +179,7 @@ type Config struct {
 	// SendGridAPI exists to point the adapter at another host — the service has
 	// a regional endpoint in the EU, and the contract suite points at a double.
 	// The KEY is deliberately not here: it is a credential, it lives in the
-	// vault (ADR-0023), and it reaches the adapter already resolved by the
+	// vault (ADR-0016), and it reaches the adapter already resolved by the
 	// composition root.
 	SendGridAPI string
 	// SendGridTemplates is kind → `template_id`, read from
@@ -197,7 +197,7 @@ type Config struct {
 	// the Kubernetes Secret the Deployment mounts.
 	//
 	// They do NOT go to the vault, and the distinction matters: the vault exists
-	// for CUSTOMER credentials (an account's integration, ADR-0013), with
+	// for CUSTOMER credentials (an account's integration, ADR-0009), with
 	// per-account isolation in the secret's name. An installation credential
 	// belongs to no account — keeping it there would invent a fictitious account
 	// to own it, and would loosen the port's guarantee 5 to accommodate the
@@ -217,7 +217,7 @@ type Config struct {
 	OneSignalAPIKey     string
 	SMTPPassword        string
 	SMTPStartTLS        bool
-	// SMSBackend chooses the SMSer port's adapter (ADR-0027 §4). An empty
+	// SMSBackend chooses the SMSer port's adapter (ADR-0020 §4). An empty
 	// credential turns on the LOCAL REHEARSAL, the same gesture as SMTP's: the
 	// adapter prints the message instead of sending it, which is the local
 	// environment's only mode — there is no SMS emulator (P-35).
@@ -236,7 +236,7 @@ type Config struct {
 	// go out with no link — a declared degradation: a broken link costs more
 	// trust than a missing one.
 	CockpitBaseURL string
-	// DigestDelay is the attention notice's delay (ADR-0025). Configurable
+	// DigestDelay is the attention notice's delay (ADR-0018). Configurable
 	// because 15 minutes is an informed guess, not a measurement: the right
 	// value for an on-call team is not the one for somebody who checks the box
 	// in the morning.
@@ -380,7 +380,7 @@ func Load(mode string) (*Config, error) {
 		return nil, fmt.Errorf("unknown GIT_BACKEND: %q (use github or gitlab)", c.GitBackend)
 	}
 	// A merge method outside the vocabulary would become a provider refusal at
-	// the exact moment the ADR-0008 queue tries to integrate — the worst
+	// the exact moment the ADR-0005 queue tries to integrate — the worst
 	// possible time to discover a typo in an environment variable.
 	switch c.GitMergeMethod {
 	case "merge", "squash", "rebase":

@@ -8,7 +8,7 @@
 // the adapter renders from the files versioned in templates/smtp/ — and the port
 // is obliged to speak in KINDS.
 //
-// The price, accepted by ADR-0025: the vendor's visual editor is lost.
+// The price, accepted by ADR-0018: the vendor's visual editor is lost.
 //
 // The Subject strings in the index below stay in Portuguese for the same reason
 // as SendGrid's: they are the notification's CONTENT. Email localization is a
@@ -383,7 +383,7 @@ func baseName(p string) string {
 //
 // Exported for tests only, and it is worth it: it is what allows comparing which
 // fields each of the two templates of the same notice consumes. Without it, the
-// duplication ADR-0025 accepts as a cost ("two places for the same notice's
+// duplication ADR-0018 accepts as a cost ("two places for the same notice's
 // template") would have nobody watching it — and the divergence between the two
 // is silent: the email goes out in both providers, only one of them without the
 // information that matters.

@@ -118,7 +118,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			r, err := p.Rebase(ctx, delivery.RebaseSpec{
 				RepoExternalID: e.Repo, Branch: source, Onto: target})
 			if err != nil {
-				t.Fatalf("A CONFLICT BECAME AN ERROR: ADR-0008 §2's flow depends on the "+
+				t.Fatalf("A CONFLICT BECAME AN ERROR: ADR-0005 §2's flow depends on the "+
 					"conflict arriving as data so it can become the agent's task and an "+
 					"attention-box item; an error becomes an infra retry and disappears: %v", err)
 			}
@@ -158,7 +158,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				t.Fatalf("a pair that integrates cleanly came back as a conflict: %+v", r)
 			}
 			// HeadCommit is what the queue re-verifies in the next position
-			// (ADR-0008 §1). Without it, "green is always about a state of the
+			// (ADR-0005 §1). Without it, "green is always about a state of the
 			// code" loses the state.
 			if strings.TrimSpace(r.HeadCommit) == "" {
 				t.Error("a clean rebase with no HeadCommit: the queue would have no commit to re-verify on")
@@ -187,7 +187,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 			}
 
 			// Guarantee 4: a DIFFERENT title and body on the second call. If the
-			// idempotency were "it overwrites", ADR-0007 §4's evidence package
+			// idempotency were "it overwrites", ADR-0005 §4's evidence package
 			// would be traded for a network retry.
 			spec.Title = "demand 1: a retry after a timeout"
 			spec.Body = "a different body, which must NOT replace the evidence package"
@@ -540,7 +540,7 @@ func GitProviderSuite(t *testing.T, name string, env func(t *testing.T) GitProvi
 				} else if !ok {
 					t.Error("a repository WITH a native queue answered false: DOP's queue " +
 						"would orchestrate on top of the provider's and the two would merge " +
-						"the same repository (ADR-0008 §4)")
+						"the same repository (ADR-0005 §4)")
 				}
 				verified++
 			}

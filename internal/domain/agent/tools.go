@@ -15,7 +15,7 @@ import (
 //  1. a tool declaration IS PROMPT. It goes into the body before the
 //     conversation (guarantee 15) and is part of what the provider caches. If the
 //     text came from the execution domain, a description change there would
-//     invalidate the prefix of every thread of every account here — ADR-0012 §1's
+//     invalidate the prefix of every thread of every account here — ADR-0008 §1's
 //     silent invalidator, now with its trigger in a package that does not even
 //     know it exists;
 //
@@ -36,7 +36,7 @@ import (
 // demand's audit trail shows the COMMAND that ran — `sh -c 'npm test'` — instead
 // of `run_tests{}`, which hides what was executed behind a name of ours. On a
 // platform whose premise is telling apart what the agent did from what the human
-// did (ADR-0006), hiding the command would be working against the premise.
+// did (ADR-0004), hiding the command would be working against the premise.
 //
 // ── NO IMPLICIT SHELL ───────────────────────────────────────────────────────
 //
@@ -54,7 +54,7 @@ const ToolRunCommand = "run_command"
 //
 // They belong to the DOMAIN and not to the adapter because they are cost policy,
 // not a executor detail: a tool's output becomes the next turn's context,
-// context becomes tokens and tokens become an invoice (ADR-0011). The model's
+// context becomes tokens and tokens become an invoice (ADR-0008). The model's
 // ceiling may even become configurable one day; what it cannot do is not
 // exist.
 const (
@@ -132,7 +132,7 @@ func catalogue() map[string]ToolSpec {
 //   - the ORDER is alphabetical and not the brief's. The brief is account data,
 //     written by a person, and the order in which somebody typed two tools is
 //     nobody's choice — but it would change the prefix's bytes and the cache
-//     entry with them (ADR-0012 §1, prompt.go's layer 3);
+//     entry with them (ADR-0008 §1, prompt.go's layer 3);
 //
 //   - a name GRANTED AND NONEXISTENT is neither silence nor an error: it comes
 //     back in the second list, and the turn's cycle turns it into a readable

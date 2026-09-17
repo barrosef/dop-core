@@ -26,7 +26,7 @@ CREATE TABLE event_errors (
   actor_id       text,
   request_id     text,
   session_id     text,
-  -- The COMPONENT that signed the call — "bff", "collector" (ADR-0029). The
+  -- The COMPONENT that signed the call — "bff", "collector" (ADR-0022). The
   -- whole point of carrying it through the envelope was for it to reach the
   -- one place a human reads a failure; leaving it out here would stop it one
   -- step short of that.

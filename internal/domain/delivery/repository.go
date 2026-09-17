@@ -15,9 +15,9 @@ import (
 //   - every read and every write filters by accountID — multi-tenant isolation
 //     is a constraint, not trust in the caller;
 //   - every write stores the new state and the event in the SAME transaction
-//     (ADR-0019). A commit means both, or neither.
+//     (ADR-0014). A commit means both, or neither.
 type Repository interface {
-	// ── evidence of green (ADR-0007) ──
+	// ── evidence of green (ADR-0005) ──
 
 	// RecordVerification stores ONE run. Repeating the same suite on the same
 	// commit UPDATES the row and increments the attempt counter — the history of
@@ -42,7 +42,7 @@ type Repository interface {
 	// on the paths nobody anticipated.
 	OpenPullRequest(ctx context.Context, pr *PullRequest, idemKey string) (*PullRequest, error)
 
-	// ── merge queue (ADR-0008) ──
+	// ── merge queue (ADR-0005) ──
 
 	// QueueOfRepo returns the repository's queue. The final ORDER belongs to the
 	// domain (SortQueue); the adapter returns what is stored, including Seq.
@@ -56,7 +56,7 @@ type Repository interface {
 	// transition except the one going to `conflict`.
 	SetQueueState(ctx context.Context, accountID, entryID string, to QueueState, c *ConflictReport, idemKey string) (*MergeQueueEntry, error)
 
-	// ── directives (ADR-0015) ──
+	// ── directives (ADR-0011) ──
 
 	ListDirectives(ctx context.Context, accountID, projectID string) ([]Directive, error)
 	DirectiveByID(ctx context.Context, accountID, id string) (*Directive, error)
@@ -81,7 +81,7 @@ type PRFilter struct {
 //
 // The surface is the entire argument: delivery needs to know that the demand
 // exists in the active account and which project it lives in. That is all. There
-// is no Pause, Block, Suspend or Advance here, and the absence is ADR-0015 §5's
+// is no Pause, Block, Suspend or Advance here, and the absence is ADR-0011 §5's
 // golden rule written as a type — this domain has no way to stop any demand, not
 // by mistake, not through a path somebody adds absent-mindedly six months from now.
 //
@@ -107,13 +107,13 @@ type DemandInfo struct {
 
 // GitProvider is the code provider's port (GitHub, GitLab).
 //
-// The surface is the minimum of ADR-0008's flow: open the PR with the evidence
+// The surface is the minimum of ADR-0005's flow: open the PR with the evidence
 // package, reapply over the current base, merge one at a time, and ask whether
 // the provider already has a queue of its own. Talking to GitHub/GitLab is
 // adapter work, not domain work.
 //
 // One instance speaks for ONE credential and ONE actor. The token arrives READY
-// in the adapter's constructor (ADR-0013: a provider token is a resource
+// in the adapter's constructor (ADR-0009: a provider token is a resource
 // credential, kept behind ports.SecretStore). The git adapter does not know the
 // vault, does not query it and does not know it exists — whoever assembles the
 // adapter hands it the value.
@@ -126,7 +126,7 @@ type DemandInfo struct {
 //     provider that is down, a credential that is
 //     invalid, permission, nonexistent repository, unreadable response. The
 //     distinction is operational, not aesthetic — a conflict becomes the agent's
-//     task and, if it does not resolve it, an attention box item (ADR-0008 §2),
+//     task and, if it does not resolve it, an attention box item (ADR-0005 §2),
 //     while an error becomes a retry and an infrastructure alert. Swapping one
 //     for the other either hides
 //     the human's conflict or fills the attention box with a network outage;
@@ -151,7 +151,7 @@ type DemandInfo struct {
 //  4. reopening with a different title or body does NOT rewrite the existing PR:
 //     the port returns what is there, and updating a PR stays OUT (see below).
 //     Idempotency that overwrites is not idempotency — it is the last call
-//     winning, and ADR-0007 §4's evidence package is precisely what a retry must
+//     winning, and ADR-0005 §4's evidence package is precisely what a retry must
 //     not be allowed to replace;
 //
 //  5. with a nil error, ProviderPR has a NON-EMPTY ExternalID and URL.
@@ -167,7 +167,7 @@ type DemandInfo struct {
 //  7. Merged=true only when the provider CONFIRMS the merge, never on the
 //     acceptance of a request, and in that case MergeCommit is not empty. "I
 //     accepted your request" and "it is on main" are different facts, and
-//     ADR-0008's queue releases the next position based on the second;
+//     ADR-0005's queue releases the next position based on the second;
 //
 //  8. Merged=false WITH Conflicted=false is a LEGITIMATE answer: the merge did
 //     not happen and the reason is not a conflict — the provider's pipeline is
@@ -191,7 +191,7 @@ type DemandInfo struct {
 //     into the branch. GitLab reapplies an MR's branch. Both always reapply over
 //     the target of THAT PR/MR. Hence: with no PR open for the pair
 //     (Branch → Onto), the answer is KindPrecondition with the explanation —
-//     never a silent reapplication over another base, which is what ADR-0008's
+//     never a silent reapplication over another base, which is what ADR-0005's
 //     queue would re-verify believing it to be another state of the code;
 //
 //  11. THE PROVIDER'S NAMES DO NOT CROSS THE PORT. `mergeable_state`, `merge_status`,
@@ -230,7 +230,7 @@ type DemandInfo struct {
 //     two queues merging the same repository. Note what the question HIDES:
 //     GitHub's merge queue is per BRANCH (it is a ruleset rule) and GitLab's
 //     merge train is per PROJECT. The port asks per repository, and the answer
-//     is about the branch ADR-0008's queue contends for — the default one;
+//     is about the branch ADR-0005's queue contends for — the default one;
 //
 //  16. HasNativeQueue is a READ: it creates nothing, changes nothing and
 //     configures no queue. The port answers whether one exists; joining it is
@@ -244,7 +244,7 @@ type DemandInfo struct {
 //     queue is configured by a branch ruleset and the PR joins through
 //     auto-merge; on GitLab
 //     the merge train is a pipeline queue, on a paid plan, joined through
-//     auto merge. ADR-0008 §4 asks that the platform know when NOT to duplicate
+//     auto merge. ADR-0005 §4 asks that the platform know when NOT to duplicate
 //     the queue — not that it drives somebody else's;
 //
 //   - REVIEW: requesting a reviewer, approving, commenting, resolving a thread.
@@ -253,24 +253,24 @@ type DemandInfo struct {
 //     and a plan-dependent scope. There is no common denominator that is not one
 //     of the two's vocabulary disguised as a port;
 //
-//   - the provider's STATUS AND CHECKS. DOP's green is ADR-0007's evidence,
+//   - the provider's STATUS AND CHECKS. DOP's green is ADR-0005's evidence,
 //     produced in the sandbox and recorded as a VerificationRun. Bringing the
 //     provider in here would make the platform accept as proof a green it did not
-//     produce — which is exactly the trust ADR-0007 refuses;
+//     produce — which is exactly the trust ADR-0005 refuses;
 //
 //   - CREATING, DELETING AND PUSHING BRANCHES, and any git operation. This port
 //     is about the INTEGRATION REQUEST, not about the repository;
 //
 //   - UPDATING the PR (title, body, target), draft status, label, milestone,
 //     assignee, and CLOSING without merging. None of that is required by
-//     ADR-0008's flow, and each brings a vocabulary that diverges between the two;
+//     ADR-0005's flow, and each brings a vocabulary that diverges between the two;
 //
 //   - THE MERGE METHOD (merge commit, squash, rebase) and the commit message. It
-//     is git-flow policy, which ADR-0013 treats as a governed resource
+//     is git-flow policy, which ADR-0009 treats as a governed resource
 //     (`git_flow`) and the composition root injects into the adapter. And it is
 //     only partly translatable: on GitHub the method goes in the merge call; on
 //     GitLab it is PROJECT configuration, and the call only accepts `squash`.
-//     ADR-0008's queue needs the merge to happen, not to happen a particular way;
+//     ADR-0005's queue needs the merge to happen, not to happen a particular way;
 //
 //   - WEBHOOKS and event subscription. That is the provider calling the platform,
 //     not the platform calling the provider — another direction, another port.
@@ -288,12 +288,12 @@ type GitProvider interface {
 // GitProviders resolves WHICH provider serves a repository.
 //
 // It is not a boot-time choice, like SecretStore or EventBus: the provider
-// belongs to the REPOSITORY (ADR-0013), and that is precisely why `ProjectRepo`
+// belongs to the REPOSITORY (ADR-0009), and that is precisely why `ProjectRepo`
 // carries an `IntegrationID` — a project with one repo on GitHub and another on
 // GitLab has to be representable. A single provider chosen by configuration would make that
 // impossible, silently.
 //
-// It is the same nature as the agent provider port (ADR-0022): chosen per
+// It is the same nature as the agent provider port (ADR-0016): chosen per
 // request, several adapters active at once.
 //
 // Whoever implements it also resolves the CREDENTIAL, in the vault — which is
@@ -307,7 +307,7 @@ type OpenPRSpec struct {
 	SourceBranch   string
 	TargetBranch   string
 	Title          string
-	// Body is the evidence package already rendered (ADR-0007 §4): the
+	// Body is the evidence package already rendered (ADR-0005 §4): the
 	// acceptance outcome, the critic's opinion, trace links, who asked.
 	Body string
 	// Actor is the AUTHORSHIP credential: whoever conducted signs the commits

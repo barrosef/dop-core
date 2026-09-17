@@ -19,18 +19,18 @@ import (
 // root. The provider adapter does not know the vault; the agent domain does not
 // know Anthropic or OpenAI; the resource domain does not know turns exist.
 //
-// ── AND IT IS HERE THAT ADR-0023 HAPPENS ────────────────────────────────────
+// ── AND IT IS HERE THAT ADR-0016 HAPPENS ────────────────────────────────────
 //
 // The credential is read from the vault and handed to the adapter WITHIN THE
 // SAME PROCESS. It does not become an RPC response, does not enter an event
 // envelope, does not go through the BFF. While the runtime lived on the other
-// side (ADR-0016), there was no honest path: either the BFF got a vault of its
+// side (ADR-0012), there was no honest path: either the BFF got a vault of its
 // own — and compromising the layer exposed to the internet would start handing
 // over the agent credentials of ALL the accounts — or the core got an RPC that
 // returns a secret, undoing the isolation the whole platform had built. Both were
 // refused; this function is the third way out.
 //
-// The choice is PER REQUEST, not at boot (ADR-0013): an agent provider is an
+// The choice is PER REQUEST, not at boot (ADR-0009): an agent provider is an
 // account resource, and several accounts coexist in the same process. A single
 // provider chosen by configuration would make multi-tenancy impossible —
 // silently, which is the worst way.
@@ -137,7 +137,7 @@ func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource,
 	switch len(candidatos) {
 	case 0:
 		return nil, errs.Precondition(
-			"this account has no 'agent'-category integration (ADR-0013): " +
+			"this account has no 'agent'-category integration (ADR-0009): " +
 				"connect an agent provider before running a turn")
 	case 1:
 		return &candidatos[0], nil
@@ -154,7 +154,7 @@ func (g agentProviders) accountDefault(ctx context.Context) (*resource.Resource,
 
 // resourceCatalog reads the menu declared in the integration's configuration.
 //
-// It is what ADR-0013 promises: the model menu belongs to the RESOURCE, not to
+// It is what ADR-0009 promises: the model menu belongs to the RESOURCE, not to
 // the code. An absent or malformed configuration falls back to the adapter's
 // starting catalog — never to an empty catalog, which would make `ResolveModel`
 // return an empty name and the provider refuse the call for a reason that is not

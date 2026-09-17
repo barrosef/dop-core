@@ -12,7 +12,7 @@ import (
 )
 
 // AgentMetricsServer is the surface the COLLECTOR pushes to — a container beside
-// the agent in the sandbox's pod, with no person behind it (ADR-0029).
+// the agent in the sandbox's pod, with no person behind it (ADR-0022).
 type AgentMetricsServer struct {
 	dopv1.UnimplementedAgentMetricsServiceServer
 	svc *agentmetrics.Service

@@ -23,10 +23,10 @@ import (
 //     it comes through a join with projects. Multi-tenant isolation is a
 //     constraint, not trust in the caller;
 //   - every state change writes the event in the SAME transaction, through InTx
-//   - Emit: a commit ⇒ state and event, or neither (ADR-0019);
+//   - Emit: a commit ⇒ state and event, or neither (ADR-0014);
 //   - the idempotency key is looked up BEFORE writing and stored on the row,
 //     with a partial unique index per account. Repeating the call returns the
-//     same row instead of duplicating the effect (ADR-0017).
+//     same row instead of duplicating the effect (ADR-0013).
 type DeliveryRepo struct{ pool *pgxpool.Pool }
 
 func NewDeliveryRepo(pool *pgxpool.Pool) *DeliveryRepo { return &DeliveryRepo{pool: pool} }
@@ -93,7 +93,7 @@ func (d *DeliveryRepo) RecordVerification(ctx context.Context, run *delivery.Ver
 		if err != nil {
 			return Translate(err, "a verification run")
 		}
-		// Each run's result is an event (ADR-0007 §1): it is what the timeline
+		// Each run's result is an event (ADR-0005 §1): it is what the timeline
 		// and the spec's quality metrics feed on.
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "delivery", AggregateID: saved.DemandID,
@@ -226,7 +226,7 @@ func (d *DeliveryRepo) PullRequestOf(ctx context.Context, accountID, demandID, r
 
 // OpenPullRequest relies on the `assert_pr_tem_verde` trigger as the last
 // backstop: the service has already refused earlier, with the message that says
-// what is missing, but ADR-0007's rule must not depend on any specific code
+// what is missing, but ADR-0005's rule must not depend on any specific code
 // path. The trigger's exception comes back as failed_precondition through
 // Translate.
 func (d *DeliveryRepo) OpenPullRequest(ctx context.Context, pr *delivery.PullRequest, idemKey string) (*delivery.PullRequest, error) {
@@ -416,7 +416,7 @@ func (d *DeliveryRepo) Enqueue(ctx context.Context, e *delivery.MergeQueueEntry,
 // SetQueueState moves the entry and emits the corresponding event.
 //
 // A conflict has an event type of its OWN — it is what feeds the attention box
-// (ADR-0008 §2). A generic `state_changed` would force every consumer to inspect
+// (ADR-0005 §2). A generic `state_changed` would force every consumer to inspect
 // the payload to discover that there was somebody to be called.
 func (d *DeliveryRepo) SetQueueState(ctx context.Context, accountID, entryID string, to delivery.QueueState, c *delivery.ConflictReport, idemKey string) (*delivery.MergeQueueEntry, error) {
 	var saved *delivery.MergeQueueEntry
@@ -559,7 +559,7 @@ func (d *DeliveryRepo) DirectiveByID(ctx context.Context, accountID, id string) 
 }
 
 // CreateDirective is the tech lead triggering the attention box with a
-// ready-made decision item (ADR-0015 §3) — hence the event of its own.
+// ready-made decision item (ADR-0011 §3) — hence the event of its own.
 func (d *DeliveryRepo) CreateDirective(ctx context.Context, dir *delivery.Directive, idemKey string) (*delivery.Directive, error) {
 	if existing, err := d.directiveByIdemKey(ctx, dir.AccountID, idemKey); err != nil {
 		return nil, err
@@ -598,7 +598,7 @@ func (d *DeliveryRepo) CreateDirective(ctx context.Context, dir *delivery.Direct
 
 // DecideDirective records the decision AND applies, in the SAME transaction, the
 // only coordination delivery knows how to carry out on its own: the preferred
-// order in the queue (ADR-0015 §6).
+// order in the queue (ADR-0011 §6).
 //
 // Note what the queue's UPDATE does and what it does NOT: it touches `priority`.
 // There is no demand column to touch, no demand state to change — the

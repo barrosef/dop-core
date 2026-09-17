@@ -1,6 +1,6 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- The second factor (ADR-0027).
+-- The second factor (ADR-0020).
 --
 -- It is the PLATFORM's, not the identity provider's: the seed of a TOTP is a
 -- credential and lives in the vault, the code goes out through a channel we

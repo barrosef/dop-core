@@ -9,7 +9,7 @@
 // copy.
 //
 // It is a script, and not a MODE of the binary, on purpose: the dop-core image
-// has four modes (ADR-0016) and all of them are long-running services.
+// has four modes (ADR-0012) and all of them are long-running services.
 // Publishing a template is a maintenance operation, runs with a DIFFERENT key —
 // an administration one, not a sending one — and must not exist inside the
 // process that sends email: giving the worker administration scope is giving it

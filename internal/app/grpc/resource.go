@@ -51,7 +51,7 @@ func (s *ResourceServer) GetResource(ctx context.Context, req *dopv1.GetResource
 }
 
 // CreateResource ignores idempotency_key on purpose: the protection against
-// repetition belongs to the idempotency interceptor (ADR-0017), and the last
+// repetition belongs to the idempotency interceptor (ADR-0013), and the last
 // backstop is the database's UNIQUE (account_id, kind, name), which returns a
 // conflict instead of creating a duplicate resource.
 func (s *ResourceServer) CreateResource(ctx context.Context, req *dopv1.CreateResourceRequest) (*dopv1.Resource, error) {

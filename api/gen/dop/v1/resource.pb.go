@@ -239,7 +239,7 @@ func (IntegrationSpec_Status) EnumDescriptor() ([]byte, []int) {
 	return file_dop_v1_resource_proto_rawDescGZIP(), []int{1, 2}
 }
 
-// A resource is the account's unit of ownership and sharing (ADR-0013).
+// A resource is the account's unit of ownership and sharing (ADR-0009).
 type Resource struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

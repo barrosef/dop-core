@@ -454,7 +454,7 @@ func (f *GitHubFake) json(repo string, pr *ghFakePR) map[string]any {
 // This stretch's ENTIRE point: GitHub's GraphQL answers HTTP 200 even when the
 // mutation FAILS — the failure comes in the body's `errors` array. An adapter
 // that looked only at the status would report "rebase done" for every conflict,
-// and ADR-0008's queue would merge onto a branch that was not reapplied. The
+// and ADR-0005's queue would merge onto a branch that was not reapplied. The
 // double reproduces that trap on purpose.
 func (f *GitHubFake) graphql(w http.ResponseWriter, r *http.Request) {
 	var req struct {

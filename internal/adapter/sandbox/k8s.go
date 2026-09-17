@@ -342,9 +342,9 @@ func (k *K8s) ensureNamespace(ctx context.Context, spec ports.SandboxSpec) error
 //
 //   - DNS. Without it nothing resolves and every other rule is theatre;
 //   - the PLATFORM's namespace: the BFF the agent reports to and the git server
-//     that holds the project's library (ADR-0028). It is the only in-cluster
+//     that holds the project's library (ADR-0021). It is the only in-cluster
 //     destination — one demand's sandbox cannot reach another's, which is
-//     ADR-0024's boundary expressed in the network;
+//     ADR-0017's boundary expressed in the network;
 //   - the public internet, MINUS the private ranges. The model endpoints and
 //     the customer's git provider live out there and have no fixed address a
 //     NetworkPolicy could name; the exclusions are what keep "outside" from

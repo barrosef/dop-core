@@ -16,7 +16,7 @@ import (
 // one. Here the writer is the COLLECTOR: a container beside the agent in the
 // sandbox's pod, which has no person behind it and never will.
 //
-// So the authorization is by CALLER, not by role (ADR-0029): only a call signed
+// So the authorization is by CALLER, not by role (ADR-0022): only a call signed
 // as `collector` writes, and that caller reaches this service and nothing else.
 // A stolen collector key is worth polluting telemetry — never reading an
 // account. The reading side is the ordinary rule: whoever is in the account.

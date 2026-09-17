@@ -933,7 +933,7 @@ func TestWhatARevocationReachesDependsOnTheStampedPolicy(t *testing.T) {
 				t.Fatalf("the copy's content changed on revocation: got %d stages, wanted %d", len(still.Stages), len(copied.Stages))
 			}
 			// The events are written by the adapter, in the same transaction
-			// (ADR-0019), so what the DOMAIN owes is the decision: which
+			// (ADR-0014), so what the DOMAIN owes is the decision: which
 			// adoptions the policy reaches. Task 9 proves the events exist.
 			rev := env.LastRevocation()
 			if rev.Policy != tc.policy {

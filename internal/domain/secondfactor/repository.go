@@ -60,7 +60,7 @@ type Repository interface {
 	PolicyOf(ctx context.Context, accountID string) (Policy, error)
 }
 
-// Policy is the account's requirement (ADR-0027 §7).
+// Policy is the account's requirement (ADR-0020 §7).
 type Policy struct {
 	Required bool
 	// Allowed is which kinds this account accepts. Empty means "the platform's

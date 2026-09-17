@@ -12,7 +12,7 @@ CREATE TABLE project_task_managers (
   integration_id      uuid NOT NULL REFERENCES resources(id),
   external_space_id   text NOT NULL,
   external_project_id text NOT NULL,
-  -- card types come from the provider and are dynamic (ADR-0013)
+  -- card types come from the provider and are dynamic (ADR-0009)
   card_types          text[] NOT NULL DEFAULT '{}',
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()

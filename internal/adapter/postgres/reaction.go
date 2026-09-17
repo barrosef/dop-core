@@ -191,7 +191,7 @@ func (r *ReactionRepo) RulesFor(ctx context.Context, accountID, eventType string
 
 // ── writes ───────────────────────────────────────────────────────────────────
 
-// Create writes one rule, idempotently by key (ADR-0017).
+// Create writes one rule, idempotently by key (ADR-0013).
 //
 // The repetition is resolved by the key and not by "query before inserting":
 // another request fits between the query and the insert, and the result would
@@ -290,7 +290,7 @@ func loadRule(ctx context.Context, tx pgx.Tx, accountID, id string) (*reaction.R
 
 // ruleByKey is the repetition's return: the key already written points at what
 // the caller wanted to create, and returning that is what makes the write
-// genuinely idempotent (ADR-0017).
+// genuinely idempotent (ADR-0013).
 //
 // The account filter is load-bearing, not decoration. It is the second of the
 // two guards described on reaction_rules_idempotency: the index already scopes

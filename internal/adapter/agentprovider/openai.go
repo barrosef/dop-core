@@ -14,7 +14,7 @@
 // response reports only `prompt_tokens_details.cached_tokens` (reads). That is
 // why `Usage.CacheCreationTokens` is always 0 here, and the adapter does NOT
 // announce `CapCacheCreationAccounting`. The consequence is a product one:
-// ADR-0012 §1's silent-invalidator alert ("zero cache reads on a prefix that
+// ADR-0008 §1's silent-invalidator alert ("zero cache reads on a prefix that
 // should be stable", which is `cost.UsageEvent.SuspectCacheMiss`) keeps working,
 // but the other half — "it wrote cache and never read it" — is INVISIBLE under
 // this provider. Whoever reads the telemetry needs to see the capability next to
@@ -24,7 +24,7 @@
 // `prompt_tokens` INCLUDES the tokens served from cache; `cached_tokens` is a
 // SUBSET of it. Summing the two fields as if they were disjoint parts — which is
 // what `cost.UsageEvent` assumes, because it is Anthropic's semantics — would
-// inflate ADR-0011's measurement with no error showing up at all. This adapter
+// inflate ADR-0008's measurement with no error showing up at all. This adapter
 // SUBTRACTS, and the subtraction is the most important line in the file.
 //
 // D3 (operator) — `role:"developer"` is this provider's authority channel, and it
@@ -35,7 +35,7 @@
 //
 // D4 (effort) — Here only `low|medium|high` exist. `xhigh` and `max` are
 // DOWNGRADED to `high`, with a readable warning in the `Reply`. On critical work
-// (ADR-0007: you do not save on the critical path) that is a product decision,
+// (ADR-0005: you do not save on the critical path) that is a product decision,
 // not an adapter detail: whoever routes to `max` and gets `high` needs to know
 // that they got it.
 //
@@ -88,7 +88,7 @@ const (
 // CatalogOpenAI is this provider's STARTING catalog — the same nature as
 // `cost.DefaultCatalog()`: replaceable names, not an assertion about OpenAI's
 // current catalog. When the provider comes configured on the account's resource
-// (ADR-0013), the catalog comes from there and this remains only a default.
+// (ADR-0009), the catalog comes from there and this remains only a default.
 func CatalogOpenAI() map[agent.ModelClass]string {
 	return map[agent.ModelClass]string{
 		agent.ClassCheap:  "gpt-5-mini",
@@ -100,13 +100,13 @@ func CatalogOpenAI() map[agent.ModelClass]string {
 // PricesOpenAI is EMPTY on purpose.
 //
 // Filling this table with numbers nobody checked would be worse than leaving it
-// empty: an invented price feeds ADR-0011's budget with convincing fiction, and
+// empty: an invented price feeds ADR-0008's budget with convincing fiction, and
 // nobody double-checks a plausible number. Empty, `PriceFor` returns "unknown"
 // and the turn's cycle SAYS it cannot compute this provider's cost — instead of
 // recording a zero, which would assert it was free.
 //
 // Filling it is the job of whoever holds the contract's table, and the right
-// place is the configuration of the `agent`-category resource (ADR-0013).
+// place is the configuration of the `agent`-category resource (ADR-0009).
 func PricesOpenAI() map[string]agent.Price { return map[string]agent.Price{} }
 
 // effortOpenAI: the core's five levels → the three here (D4). `xhigh` and `max`
@@ -130,7 +130,7 @@ var stopOpenAI = map[string]agent.StopReason{
 
 type OpenAIConfig struct {
 	APIBase string
-	// APIKey is the ALREADY RESOLVED value of the resource credential (ADR-0013).
+	// APIKey is the ALREADY RESOLVED value of the resource credential (ADR-0009).
 	APIKey  string
 	Catalog map[agent.ModelClass]string
 	Timeout time.Duration
@@ -311,7 +311,7 @@ func (o *OpenAI) Render(t agent.Turn, model string, effort agent.Effort) ([]byte
 	applied, known := effortOpenAI[effort]
 	if !known {
 		// An effort outside the core's vocabulary falls to this provider's real
-		// ceiling, not its floor: in doubt you do not save (ADR-0011 §3).
+		// ceiling, not its floor: in doubt you do not save (ADR-0008 §3).
 		applied = agent.EffortHigh
 	}
 	if applied != effort {

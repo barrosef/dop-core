@@ -7,7 +7,7 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════════════════
-// PROMPT ASSEMBLY — ADR-0012 §1 turned into code.
+// PROMPT ASSEMBLY — ADR-0008 §1 turned into code.
 //
 // The layout is fixed and the order IS the rule:
 //
@@ -44,7 +44,7 @@ import (
 //     order (the brief's tools), it is SORTED over a copy before going in.
 //
 //  4. THE CORE'S ORDER IS PRESERVED, NOT REORDERED. Rules, index, memories and
-//     findings arrive in the order `BuildContextPackage` curated them (ADR-0009
+//     findings arrive in the order `BuildContextPackage` curated them (ADR-0006
 //     §3) and that order is its PRIORITY. Sorting alphabetically here would buy
 //     stability at the price of undoing the curation — and the core's order is
 //     already stable, because the selection is a pure function.
@@ -66,7 +66,7 @@ import (
 // ════════════════════════════════════════════════════════════════════════════
 
 // OutputSchema is the OUTPUT contract: a terse finding, validated by the
-// provider, with no re-parse on our side (ADR-0012 §2).
+// provider, with no re-parse on our side (ADR-0008 §2).
 //
 // `finding_evidence` is a list of strings and not a free-form object on purpose:
 // a strict schema accepts no arbitrary object in either provider, and a field
@@ -209,13 +209,13 @@ func truncationWarning(p ContextPackage) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"This context package was TRUNCATED by a token budget (ADR-0012). "+
+		"This context package was TRUNCATED by a token budget (ADR-0008). "+
 			"Left out: %d rule(s), %d index item(s), %d memory(ies) and "+
 			"%d finding(s). Do not conclude about what is not here — say what is missing.",
 		d.Rules, d.Index, d.Memories, d.Findings)
 }
 
-// brief is the thread's brief (ADR-0010 §2): purpose, tools, budget.
+// brief is the thread's brief (ADR-0007 §2): purpose, tools, budget.
 //
 // The tools listed are the ones ACTUALLY declared, not the ones granted in the
 // brief. The difference shows up when somebody grants a name that does not exist
@@ -265,7 +265,7 @@ func brief(threadKey string, card AgentCard, tools []ToolSpec) string {
 // What is VOLATILE, and therefore sits after the breakpoint: the turn's message
 // and the operator's intervention. The intervention goes as `RoleOperator` and
 // not as loose text: it is the unforgeable channel, and it is what preserves the
-// cached prefix instead of rewriting the top of the prompt (ADR-0012 §1).
+// cached prefix instead of rewriting the top of the prompt (ADR-0008 §1).
 func BuildTurn(pkg ContextPackage, threadKey string, card AgentCard,
 	text, operatorNote string, maxOutputTokens int, tools []ToolSpec) Turn {
 
@@ -318,7 +318,7 @@ func TruncationNotice(p ContextPackage) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"⚠️ Context truncated by a token budget (ADR-0012): left out "+
+		"⚠️ Context truncated by a token budget (ADR-0008): left out "+
 			"%d rule(s), %d index item(s), %d memory(ies) and %d finding(s). "+
 			"The reply below was produced without that material.",
 		d.Rules, d.Index, d.Memories, d.Findings)

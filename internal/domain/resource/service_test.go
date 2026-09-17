@@ -66,7 +66,7 @@ func TestManageIncludesUse(t *testing.T) {
 }
 
 // TestAccessDefaultByNature is this domain's central test: a credential is
-// risk, knowledge is knowledge (ADR-0014 §6).
+// risk, knowledge is knowledge (ADR-0010 §6).
 func TestAccessDefaultByNature(t *testing.T) {
 	integracao := resource.Resource{ID: "r1", Kind: resource.KindIntegration}
 	skill := resource.Resource{ID: "r2", Kind: resource.KindSkill}

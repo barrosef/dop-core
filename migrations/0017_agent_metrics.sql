@@ -5,7 +5,7 @@
 -- ── Why a schema of its own, next to `cost` ─────────────────────────────────
 --
 -- `cost` is OPERATIONAL: consumption per demand, so a budget can be exceeded
--- and somebody warned (ADR-0011). What is here is ANALYTICAL: one row per TURN,
+-- and somebody warned (ADR-0008). What is here is ANALYTICAL: one row per TURN,
 -- wide, raw, to be studied — which turn burned what, which tool, how much of it
 -- was cache. Two different questions, two shapes; putting the analysis into the
 -- operational table would make every budget read carry the weight of a study.

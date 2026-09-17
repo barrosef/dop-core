@@ -312,7 +312,7 @@ func (x *Reviewer) GetStatus() string {
 }
 
 // A queue per repository: rebase → re-verification → merge, one at a time
-// (ADR-0008).
+// (ADR-0005).
 type MergeQueueEntry struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -398,7 +398,7 @@ func (x *MergeQueueEntry) GetOverlappingFiles() []string {
 }
 
 // The developer's decision about a cross-cutting concern, applied by the agents
-// (ADR-0015).
+// (ADR-0011).
 type Directive struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

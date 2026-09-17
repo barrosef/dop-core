@@ -103,7 +103,7 @@ func findingFrom(data map[string]any) *Finding {
 // It does not retry and it is DELIBERATELY a single round: the loop in
 // toolloop.go is what chains rounds, and it has the ports to measure and to act.
 // Keeping this function loop-free is what lets the budget interrupt BETWEEN one
-// round and the next (ADR-0011 §2) rather than in the middle of one, and it is
+// round and the next (ADR-0008 §2) rather than in the middle of one, and it is
 // what keeps the response interpretation testable without a executor and
 // without the cost domain.
 func executeTurn(ctx context.Context, p AgentProvider, t Turn,
@@ -159,7 +159,7 @@ func executeTurn(ctx context.Context, p AgentProvider, t Turn,
 	}
 
 	if !response.Capabilities.Has(CapCacheCreationAccounting) {
-		// ADR-0012 §1: without this capability, CacheCreationTokens comes back
+		// ADR-0008 §1: without this capability, CacheCreationTokens comes back
 		// zero, and that means "cannot be known", not "nothing was written to the
 		// cache".
 		warnings = append(warnings,

@@ -3,7 +3,7 @@ package dop.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// Typed references — a tenant is never an anonymous string (ADR-0017).
+// Typed references — a tenant is never an anonymous string (ADR-0013).
 message AccountRef   { string id = 1; }
 message WorkspaceRef { string id = 1; }
 message ProjectRef   { string id = 1; }
@@ -29,7 +29,7 @@ message ActorRef {
 //
 // Every request used to declare `CallContext ctx = 1`, and the server ignored
 // it: authorization reads the metadata (`x-actor-id`, `x-account-id`,
-// `x-session-id`), never the body (ADR-0017, convention 5). A contract that
+// `x-session-id`), never the body (ADR-0013, convention 5). A contract that
 // declares a field with no effect teaches the wrong thing to whoever reads it —
 // and the field was already being copied into every new proto.
 //

@@ -21,7 +21,7 @@ import (
 // ActionName is what a rule asks for. The vocabulary is CLOSED because an
 // action is code: there is a Go handler behind each name, and a name nobody
 // implemented is a contract error rather than something a user typed. It is the
-// same stance ADR-0014 §1 takes on stage types.
+// same stance ADR-0010 §1 takes on stage types.
 type ActionName string
 
 const (

@@ -310,7 +310,7 @@ func validFlow() workflow.Flow {
 
 // The domain's central test: the whole chain, with overlay and PROVENANCE.
 // Without the provenance, nobody can debug why a demand followed a flow nobody
-// remembers writing (ADR-0014, consequences).
+// remembers writing (ADR-0010, consequences).
 func TestTheInheritanceChainOverlaysAndSaysWhereEachStageCameFrom(t *testing.T) {
 	repo, svc, ctx := scenario(t)
 
@@ -815,7 +815,7 @@ func TestPromotingToALevelBelowOrEqualIsRefused(t *testing.T) {
 }
 
 // Inside an organization account a lower-level flow is public WITHIN the account —
-// nunca fora dela (ADR-0014 §6 e §7).
+// nunca fora dela (ADR-0010 §6 e §7).
 func TestPromotingToThePlatformCatalogueIsRefused(t *testing.T) {
 	_, svc, ctx := scenario(t)
 	created, _ := svc.Create(ctx, validFlow(), "k1")

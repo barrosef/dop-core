@@ -8,7 +8,7 @@
 //
 // The list of what to publish is DERIVED from the adapter's index
 // (`sendgridIndex`). A second list here would be one more place to forget to
-// update — and the oversight would be silent, which is exactly what ADR-0025
+// update — and the oversight would be silent, which is exactly what ADR-0018
 // requires preventing.
 package mailer
 

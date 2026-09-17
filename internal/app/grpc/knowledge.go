@@ -28,7 +28,7 @@ func NewKnowledgeServer(svc *knowledge.Service) *KnowledgeServer {
 // BuildContextPackage passes a zeroed budget: the ceiling is the service's,
 // chosen in the wiring. The contract has no budget field on purpose — the caller
 // is the sandbox provisioning, and letting it choose its own ceiling would turn
-// the cost governance (ADR-0011) into a suggestion.
+// the cost governance (ADR-0008) into a suggestion.
 func (s *KnowledgeServer) BuildContextPackage(ctx context.Context, req *dopv1.BuildContextPackageRequest) (*dopv1.ContextPackage, error) {
 	pkg, err := s.svc.BuildContextPackage(ctx, req.GetDemandId(), knowledge.Budget{})
 	if err != nil {
@@ -143,7 +143,7 @@ func artifactToProto(a *knowledge.Artifact) *dopv1.KnowledgeArtifact {
 
 // packageToProto invents no timestamp and no volatile id: the package enters the
 // prompt's cached prefix, and a byte that changes on every assembly burns the
-// cache discount in silence (ADR-0012 §1).
+// cache discount in silence (ADR-0008 §1).
 func packageToProto(p *knowledge.Package) *dopv1.ContextPackage {
 	if p == nil {
 		return nil

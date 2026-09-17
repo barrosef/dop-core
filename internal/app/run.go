@@ -66,7 +66,7 @@ func RunWorker(ctx context.Context, cfg *config.Config) error {
 	defer cleanup()
 
 	// The outbox's relay runs alongside the worker: it is what takes the event
-	// written in the transaction to the broker (ADR-0019).
+	// written in the transaction to the broker (ADR-0014).
 	relay := postgres.NewRelay(deps.Pool, deps.Bus, 100)
 	go func() {
 		if err := relay.Run(ctx, cfg.RelayInterval); err != nil && ctx.Err() == nil {
@@ -132,7 +132,7 @@ func RunLauncher(ctx context.Context, cfg *config.Config) error {
 
 // serveHealthHTTP is the plain-HTTP side of a process: the health check, and —
 // in the process that hosts the projects' root repositories — git's smart HTTP
-// and the platform-side API (ADR-0028). One port, because the sandboxes'
+// and the platform-side API (ADR-0021). One port, because the sandboxes'
 // egress allowlist names one address.
 func serveHealthHTTP(ctx context.Context, port int, extra ...struct {
 	prefix string

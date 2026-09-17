@@ -28,7 +28,7 @@ func NewIdentityServer(svc *identity.Service) *IdentityServer {
 // EnsureUser is the bootstrap: it runs BEFORE the person has a user, so no actor
 // can authorize it. What authorizes it is the token, and the token is also the
 // only acceptable source for who the person is — the request's fields describe
-// an identity the caller merely asserts (ADR-0029).
+// an identity the caller merely asserts (ADR-0022).
 //
 // The fields are IGNORED, not validated: an older client that still sends them
 // is served the token's values and never told its body went nowhere. That is on
@@ -128,7 +128,7 @@ func (s *IdentityServer) CreateAccount(ctx context.Context, req *dopv1.CreateAcc
 // anything, which is the very thing this message exists to undo.
 //
 // What stands in for that: only a signed caller reaches the core at all
-// (ADR-0029), and the domain caps sends per address.
+// (ADR-0022), and the domain caps sends per address.
 func (s *IdentityServer) SendEmailVerification(ctx context.Context, req *dopv1.SendEmailVerificationRequest) (*dopv1.SendEmailVerificationResponse, error) {
 	if err := s.svc.SendEmailVerification(ctx, req.GetEmail(), req.GetSubject(),
 		req.GetLink(), req.GetDisplayName()); err != nil {

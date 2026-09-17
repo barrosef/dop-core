@@ -1,6 +1,6 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- Knowledge: ADR-0009's three layers in ONE table.
+-- Knowledge: ADR-0006's three layers in ONE table.
 --
 -- A rule, an index and a memory are the same thing from storage's point of
 -- view — versioned text, with a scope and an owner — and differ in their CYCLE
@@ -49,7 +49,7 @@ CREATE TABLE knowledge_artifacts (
   object_ref   text NOT NULL DEFAULT '',
   size_bytes   int  NOT NULL DEFAULT 0,
   -- The cost estimated in tokens, measured on WRITE. It is what lets the
-  -- package's budget cut without opening each candidate's content (ADR-0012).
+  -- package's budget cut without opening each candidate's content (ADR-0008).
   est_tokens   int  NOT NULL DEFAULT 0,
 
   -- 1536 dimensions: the usual size of general-purpose text embeddings.

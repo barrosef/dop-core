@@ -1,6 +1,6 @@
 // Package workflow is the domain of the work flow: the typed sequence of stages
 // a demand goes through, and the inheritance chain that decides WHICH sequence
-// applies to each demand (ADR-0014).
+// applies to each demand (ADR-0010).
 //
 // House rule: this package knows nothing of Postgres, gRPC or any SDK. It
 // declares what it needs as a PORT (repository.go) and the composition root
@@ -10,7 +10,7 @@
 //
 //  1. A VERSION IS IMMUTABLE. Updating a flow CREATES a new version; the
 //     previous one stays as it is, forever. A demand in progress points at the
-//     version it froze on start (ADR-0014 §4) — changing that version in place
+//     version it froze on start (ADR-0010 §4) — changing that version in place
 //     would rewrite its past, and the history would stop explaining what
 //     happened.
 //  2. RESOLVING IS OVERLAYING, WITH PROVENANCE. A demand's effective flow is the
@@ -30,7 +30,7 @@ import (
 
 // ── the chain's scopes ───────────────────────────────────────────────────────
 
-// Scope is one level of the inheritance chain (ADR-0014 §3).
+// Scope is one level of the inheritance chain (ADR-0010 §3).
 type Scope string
 
 const (
@@ -100,7 +100,7 @@ func (r ScopeRef) String() string {
 // StageType is the stage's semantic type. The vocabulary belongs to the
 // PLATFORM: the type decides the renderer on screen and the agent's behaviour
 // (which artifact to produce, where to stop). A new type requires the platform
-// to evolve; a new composition does not (ADR-0014 §1) — and that is why an
+// to evolve; a new composition does not (ADR-0010 §1) — and that is why an
 // unknown type is a contract error, not user data.
 type StageType string
 
@@ -148,7 +148,7 @@ func ValidArtifactKind(a ArtifactKind) bool {
 
 // GateKind says whether the stage STOPS for somebody to decide. Two values, on
 // purpose: a gate with a conditional rule is a workflow engine, explicitly out
-// of v1 (ADR-0014, alternatives considered).
+// of v1 (ADR-0010, alternatives considered).
 type GateKind string
 
 const (
@@ -186,7 +186,7 @@ type StageAction struct {
 }
 
 // StageSpec is one stage. No conditionals, no parallelism, no DSL: v1 is
-// deliberately a sequence (ADR-0014 §2).
+// deliberately a sequence (ADR-0010 §2).
 type StageSpec struct {
 	// Key is the stage's address. A demand's advance is an EVENT, and the event
 	// points at the stage by key — which is why it is required and unique.
@@ -196,7 +196,7 @@ type StageSpec struct {
 	Artifacts []ArtifactKind
 	Gate      GateKind
 	Subtypes  []string      // e.g. test → aaa, e2e, integration
-	Actions   []StageAction // what fires on enter/exit — declaration, not a branch (ADR-0014)
+	Actions   []StageAction // what fires on enter/exit — declaration, not a branch (ADR-0010)
 }
 
 // Flow is a FROZEN version of a flow at one level of the chain.
@@ -278,7 +278,7 @@ type StageOrigin struct {
 // Contributors carries the levels that actually declared something, from the
 // most specific to the most generic; Origins answers stage by stage. Without
 // those two fields support has no way to explain a flow nobody remembers writing
-// (ADR-0014, consequences).
+// (ADR-0010, consequences).
 type EffectiveFlow struct {
 	Flow         Flow
 	Contributors []ScopeRef
@@ -309,7 +309,7 @@ func (e EffectiveFlow) OriginOf(key string) (ScopeRef, bool) {
 //   - the position belongs to whoever INTRODUCED the stage. Reordering what was
 //     inherited is not expressible in v1: whoever needs a different order
 //     declares the whole flow with their own keys. It is the same choice as
-//     ADR-0014 §2 — the structure stays simple and what is missing evolves on top
+//     ADR-0010 §2 — the structure stays simple and what is missing evolves on top
 //     of it, instead of being born as an ordering merge nobody can predict in
 //     their head.
 func MergeChain(levels []Flow) EffectiveFlow {
@@ -443,7 +443,7 @@ func (r *Report) warnf(format string, a ...any) {
 // WHICH stage and WHY — a validation message that does not locate the problem
 // forces the author to guess.
 //
-// On "cycle" and "orphan stage": v1's structure has no edges (ADR-0014 §2), so
+// On "cycle" and "orphan stage": v1's structure has no edges (ADR-0010 §2), so
 // the order is the sequence itself and the graph lives in the KEYS. A stage with
 // no key is genuinely orphaned — the advance event addresses by key, and no
 // event can point at it. A repeated key is the cycle — advancing by key goes
@@ -491,7 +491,7 @@ func Validate(f Flow) Report {
 		}
 
 		if !ValidStageType(st.Type) {
-			r.errf("stage %s has an unknown type %q: the type decides the renderer on screen and the agent\u2019s behaviour, and the platform cannot execute a type that does not exist (ADR-0014 §1)", where, st.Type)
+			r.errf("stage %s has an unknown type %q: the type decides the renderer on screen and the agent\u2019s behaviour, and the platform cannot execute a type that does not exist (ADR-0010 §1)", where, st.Type)
 		}
 		for _, a := range st.Artifacts {
 			if !ValidArtifactKind(a) {

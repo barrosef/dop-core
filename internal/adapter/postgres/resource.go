@@ -21,7 +21,7 @@ import (
 //     the caller;
 //   - every state change writes the event in the SAME transaction, through InTx
 //   - Emit. It is the transactional outbox: a commit ⇒ state and event, or
-//     neither (ADR-0019).
+//     neither (ADR-0014).
 type ResourceRepo struct{ pool *pgxpool.Pool }
 
 func NewResourceRepo(pool *pgxpool.Pool) *ResourceRepo { return &ResourceRepo{pool: pool} }

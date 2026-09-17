@@ -28,19 +28,19 @@ type AttentionItem_Kind int32
 
 const (
 	AttentionItem_KIND_UNSPECIFIED AttentionItem_Kind = 0
-	// A thread blocked waiting for the human's answer (ADR-0010).
+	// A thread blocked waiting for the human's answer (ADR-0007).
 	AttentionItem_KIND_THREAD_BLOCKED AttentionItem_Kind = 1
 	// A stage stopped at a human gate — a spec awaiting approval.
 	AttentionItem_KIND_GATE_PENDING AttentionItem_Kind = 2
-	// A PR awaiting review, with the evidence alongside (ADR-0007).
+	// A PR awaiting review, with the evidence alongside (ADR-0005).
 	AttentionItem_KIND_PR_REVIEW AttentionItem_Kind = 3
-	// A conflict the merge queue escalated to a human decision (ADR-0008).
+	// A conflict the merge queue escalated to a human decision (ADR-0005).
 	AttentionItem_KIND_MERGE_CONFLICT AttentionItem_Kind = 4
 	// A cross-cutting concern detected by the tech lead, with options and a
-	// recommendation ready (ADR-0015). It does NOT pause the demand already in
+	// recommendation ready (ADR-0011). It does NOT pause the demand already in
 	// motion.
 	AttentionItem_KIND_DIRECTIVE AttentionItem_Kind = 5
-	// A demand paused by a blown budget (ADR-0011).
+	// A demand paused by a blown budget (ADR-0008).
 	AttentionItem_KIND_BUDGET_EXCEEDED AttentionItem_Kind = 6
 	// A broken account integration — the work stops until somebody reconnects
 	// it.

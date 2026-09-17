@@ -3,7 +3,7 @@ package attention
 import "context"
 
 // Repository is the box's read side. There is no Create and no Resolve: an item
-// is born of an EVENT and dies of one (ADR-0006), and a port that offered direct
+// is born of an EVENT and dies of one (ADR-0004), and a port that offered direct
 // writes would be an invitation to create items by hand — and the box would stop
 // being a projection.
 type Repository interface {

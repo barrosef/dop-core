@@ -24,7 +24,7 @@ message Reviewer {
 }
 
 // A queue per repository: rebase → re-verification → merge, one at a time
-// (ADR-0008).
+// (ADR-0005).
 message MergeQueueEntry {
   enum State {
     STATE_UNSPECIFIED = 0;
@@ -43,7 +43,7 @@ message MergeQueueEntry {
 }
 
 // The developer's decision about a cross-cutting concern, applied by the agents
-// (ADR-0015).
+// (ADR-0011).
 message Directive {
   enum Kind {
     KIND_UNSPECIFIED      = 0;

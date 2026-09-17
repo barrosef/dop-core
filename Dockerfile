@@ -1,4 +1,4 @@
-# dop-core — ONE image, FOUR modes (ADR-0016).
+# dop-core — ONE image, FOUR modes (ADR-0012).
 # The mode is the first argument: serve | worker | sched | launcher.
 # One artifact, one pipeline: what runs in production is the same binary as locally.
 

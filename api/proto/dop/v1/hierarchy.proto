@@ -26,7 +26,7 @@ message Project {
   AuditStamp   audit     = 9;
 }
 
-// The provider belongs to the REPOSITORY, not to the project (ADR-0013).
+// The provider belongs to the REPOSITORY, not to the project (ADR-0009).
 message ProjectRepo {
   string      id           = 1;
   ResourceRef integration  = 2;

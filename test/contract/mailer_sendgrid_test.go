@@ -73,7 +73,7 @@ func TestMailerContractSendGrid(t *testing.T) {
 	})
 }
 
-// A template that is configured but ABSENT at the provider is ADR-0025's other
+// A template that is configured but ABSENT at the provider is ADR-0018's other
 // half of silence: the kind is in the index, the id is in the configuration, and
 // the `d-…` points at nothing. SendGrid answers 400; the adapter has to say it
 // was a content refusal, and not an unavailability — otherwise the worker keeps

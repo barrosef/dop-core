@@ -71,7 +71,7 @@ func (s *ExecutionServer) DescribeSandbox(ctx context.Context, req *dopv1.Descri
 // The call context arrives ALREADY filled in: the one who does that is the
 // StreamCallContext interceptor. Without it, the stream's multi-tenant isolation
 // would come to depend on the CallContext declared in the request's body — a
-// field the server does NOT read (ADR-0017, conv. 5).
+// field the server does NOT read (ADR-0013, conv. 5).
 func (s *ExecutionServer) StreamLogs(req *dopv1.StreamLogsRequest, stream dopv1.ExecutionService_StreamLogsServer) error {
 	ctx := stream.Context()
 

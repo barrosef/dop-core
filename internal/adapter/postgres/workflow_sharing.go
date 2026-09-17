@@ -240,7 +240,7 @@ func scanShare(row pgx.Row) (*workflow.Share, error) {
 
 // RevokeShare does the WHOLE revocation in one transaction: the share, the
 // copies rev.Adoptions reaches, their adoption records, and both events
-// (ADR-0019) — the same InTx/Emit pattern every other write in this package,
+// (ADR-0014) — the same InTx/Emit pattern every other write in this package,
 // and the workflow package beside it, already follows; see db.go and
 // outbox.go for where the pattern itself is defined.
 //

@@ -1,6 +1,6 @@
 -- +goose Up
 -- ════════════════════════════════════════════════════════════════════════════
--- Cost: measuring LLM usage, a budget per scope (ADR-0011/0012).
+-- Cost: measuring LLM usage, a budget per scope (ADR-0008/0012).
 --
 -- Three tables, and each exists for a different reason:
 --
@@ -35,14 +35,14 @@ CREATE TABLE cost_usage (
   account_id     uuid NOT NULL,
   -- No FK to demands: that table is born in another migration, and cost has to
   -- be measurable for work that belongs to no demand (a nightly job, batch
-  -- indexing — ADR-0012 §5). NULL here means "the account's consumption".
+  -- indexing — ADR-0008 §5). NULL here means "the account's consumption".
   demand_id      uuid,
   thread_id      text NOT NULL DEFAULT '',
   model          text NOT NULL,
   input_tokens          bigint NOT NULL DEFAULT 0,
   output_tokens         bigint NOT NULL DEFAULT 0,
   -- The two cache fields are the ModelRouter's calibration material (P-7) and
-  -- the detector of ADR-0012's silent invalidator: reading a cached prefix
+  -- the detector of ADR-0008's silent invalidator: reading a cached prefix
   -- costs ~0.1× of the input, and a zeroed cache_read on a repeated turn with a
   -- stable prefix is an ALERT, not a curiosity.
   cache_read_tokens     bigint NOT NULL DEFAULT 0,
@@ -111,7 +111,7 @@ CREATE INDEX cost_usage_keys_pruning_idx ON cost_usage_keys (occurred_at);
 -- ── budget ──────────────────────────────────────────────────────────────────
 -- The scope is (scope, scope_id): 'account' with the account's id, 'demand'
 -- with the demand's id. Two scopes and no more: the per-thread slice is derived
--- from the subagent's brief (ADR-0010), it is not a row here.
+-- from the subagent's brief (ADR-0007), it is not a row here.
 --
 -- spent_micros is accumulated, not recomputed: summing cost_usage on every
 -- record would become a scan of the system's largest table on the hot path. The

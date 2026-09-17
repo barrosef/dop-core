@@ -18,7 +18,7 @@ import (
 type Repository interface {
 	// Put writes the artifact and emits the event in the SAME transaction,
 	// honouring the idempotency key: repeating the same write returns the same
-	// artifact instead of creating a new version (ADR-0017/0019).
+	// artifact instead of creating a new version (ADR-0013/0019).
 	Put(ctx context.Context, a *Artifact, idem Idempotency) (*Artifact, error)
 
 	// IndexOf returns ONE of the project's repositories' map. (nil, nil) when it
@@ -42,7 +42,7 @@ type Repository interface {
 	SearchMemory(ctx context.Context, q MemoryQuery) ([]ScoredArtifact, error)
 
 	// RecordContextBuild records the assembly's MEASUREMENT as an event
-	// (ADR-0009 §3, ADR-0012 §1). It is not optional telemetry: "the package
+	// (ADR-0006 §3, ADR-0008 §1). It is not optional telemetry: "the package
 	// grows with the demand" needs a number, otherwise it is an impression — and
 	// a silent cut is exactly the defect nobody notices.
 	RecordContextBuild(ctx context.Context, accountID, demandID string, m PackageMetrics) error
@@ -139,9 +139,9 @@ type DemandContext struct {
 	// whole project.
 	Spec string
 	// Repos are the repositories the demand touches. It is the filter that keeps
-	// the index proportional to the demand (ADR-0009 §3).
+	// the index proportional to the demand (ADR-0006 §3).
 	Repos []string
 	// Findings are the findings already published on the demand — empty at the
-	// start, populated on a resume (ADR-0012 §3).
+	// start, populated on a resume (ADR-0008 §3).
 	Findings []Finding
 }

@@ -6,7 +6,7 @@
 // JSONB half. A stage's `Actions` travel through flow_versions.stages as a
 // document, and a document that silently drops a field looks exactly like a
 // flow that never declared one — which is the failure this file exists to
-// catch. reaction.DecideStage reads a FROZEN version (ADR-0014 §4), so
+// catch. reaction.DecideStage reads a FROZEN version (ADR-0010 §4), so
 // VersionOf is the read that actually matters, not only ByID.
 package integration
 

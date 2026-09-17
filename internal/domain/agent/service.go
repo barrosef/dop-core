@@ -18,7 +18,7 @@ import (
 //    the user talks about configuration, which is what it is.
 //
 // 1. CONTEXT AND THREAD. The package already arrives cut by token budget
-//    (ADR-0009 §3) and reports what was DROPPED — which does not vanish: it
+//    (ADR-0006 §3) and reports what was DROPPED — which does not vanish: it
 //    enters the prefix (the agent needs to know it is reading partial context)
 //    and becomes a message on the thread (the human needs to know why the reply
 //    came out the way it did).
@@ -28,19 +28,19 @@ import (
 //    into a cost. Here they are two in-process calls, and concurrency would buy
 //    microseconds at the price of a goroutine, a channel and two possible error
 //    orderings. It is sequential on purpose — it is one of the six gRPC round
-//    trips ADR-0023 went after.
+//    trips ADR-0016 went after.
 //
 // 2. ROUTING BELONGS TO THE COST DOMAIN, and its justification travels whole
-//    (ADR-0011 §3). What the runtime does is the half the policy cannot do:
+//    (ADR-0008 §3). What the runtime does is the half the policy cannot do:
 //    translate the CLASS into the ACTIVE provider's concrete name — the same
 //    policy × catalog separation as `cost/router.go`. When the thread's card
-//    declares a model (ADR-0010 §2), it wins: the card is that thread's frozen
+//    declares a model (ADR-0007 §2), it wins: the card is that thread's frozen
 //    contract, and changing its model midway would invalidate every previous
 //    turn's cached prefix, because cache is per model.
 //
 // 3. STABLE PREFIX FIRST, VOLATILE AFTER. See prompt.go.
 //
-// 3b. TOOLS COME FROM THE CARD (ADR-0010 §2), AND THE LOOP BELONGS HERE. The
+// 3b. TOOLS COME FROM THE CARD (ADR-0007 §2), AND THE LOOP BELONGS HERE. The
 //    card grants names; the runtime's catalog (tools.go) resolves what exists;
 //    the loop (toolloop.go) executes. Three things can go wrong before the first
 //    call, and all three BECOME WARNINGS instead of silence or an error: a
@@ -67,7 +67,7 @@ import (
 //    exactly what `cost.Service.RecordUsage` refuses to do by requiring the key.
 //    Whoever knows they are retrying is the client, and now they have to say so.
 //
-// 5. EVERY MESSAGE IS AN EVENT (ADR-0006), and that is how the cockpit finds
+// 5. EVERY MESSAGE IS AN EVENT (ADR-0004), and that is how the cockpit finds
 //    out: the WatchDemand that already exists delivers the events on its own.
 //    There is NO second streaming path here, on purpose — it would be a second
 //    source of truth for the same timeline.
@@ -77,7 +77,7 @@ import (
 //    core derives authorship from `ctxutil.Call`, so the cycle SWAPS the actor
 //    before publishing the reply and the finding. Recording an agent's utterance
 //    as a human's would make the event log — which is the demand's truth
-//    (ADR-0006) — lie about who did what, on a platform whose entire premise is
+//    (ADR-0004) — lie about who did what, on a platform whose entire premise is
 //    telling the two apart.
 //
 // 7. CONCLUDING REQUIRES PUBLISHING A FINDING (spec §1), AND REQUIRES HAVING
@@ -86,7 +86,7 @@ import (
 //    finding is durable — it goes to the project's memory and to its siblings'
 //    context — and publishing one written mid-work is worse than publishing none.
 //
-// 8. A BLOWN BUDGET PAUSES, IT DOES NOT KILL (ADR-0011 §2), AND NOW ON TWO
+// 8. A BLOWN BUDGET PAUSES, IT DOES NOT KILL (ADR-0008 §2), AND NOW ON TWO
 //    LEVELS. Between turns, as always: the turn that already ran is delivered
 //    whole and the NEXT one does not go out. And INSIDE the turn, which is new:
 //    blowing mid-loop stops the loop on the next round, with what already ran
@@ -103,7 +103,7 @@ type Service struct {
 	// sandbox is the ONLY optional port here. Nil = the agent converses and
 	// does not act; see Option and the Sandbox port.
 	sandbox Sandbox
-	// maxToolRounds is the tool-round cap per turn (ADR-0011).
+	// maxToolRounds is the tool-round cap per turn (ADR-0008).
 	maxToolRounds int
 }
 
@@ -127,7 +127,7 @@ func WithSandbox(s Sandbox) Option {
 // WithMaxToolRounds adjusts the tool-round cap per turn.
 //
 // A value <= 0 is IGNORED and the default applies. Accepting zero as "no cap"
-// would give whoever forgot to configure it exactly the behaviour ADR-0011
+// would give whoever forgot to configure it exactly the behaviour ADR-0008
 // forbids — and forgetting is the likeliest case.
 func WithMaxToolRounds(n int) Option {
 	return func(svc *Service) {
@@ -147,7 +147,7 @@ func WithMaxToolRounds(n int) Option {
 // Note what is NOT on the list: `ports.Clock`. This service stamps no instant —
 // whoever records a message, a consumption and a finding is the domain that owns
 // each, and each has its own clock. More than that: the prompt's prefix has to
-// be clock-free (ADR-0012 §1, prompt.go's layer 2), and a clock available on the
+// be clock-free (ADR-0008 §1, prompt.go's layer 2), and a clock available on the
 // service would be a permanent invitation to stamp the prefix.
 func NewService(providers Providers, knowledge Knowledge, routing Routing, conv Conversation,
 	opts ...Option) *Service {
@@ -186,11 +186,11 @@ type TurnRequest struct {
 	ThreadID string
 	Text     string
 	// TaskKind is an OPEN vocabulary: the router handles the unknown by falling
-	// back to the expensive option and SAYING that it did (ADR-0011 §3). Empty
+	// back to the expensive option and SAYING that it did (ADR-0008 §3). Empty
 	// is what does not pass — with no kind of work there is no decision to
 	// audit.
 	TaskKind string
-	// ResourceID is the `agent`-category resource (ADR-0013) serving this turn.
+	// ResourceID is the `agent`-category resource (ADR-0009) serving this turn.
 	// Empty = the account's default provider.
 	ResourceID string
 	// OperatorNote is the OPERATOR's intervention, coming from the attention
@@ -202,7 +202,7 @@ type TurnRequest struct {
 	// service's; a value HIGHER than the service's is ignored.
 	//
 	// Downwards only, and it is the decision that matters here: a cap the
-	// client can raise is not a cap, it is a suggestion — and ADR-0011 §2 does
+	// client can raise is not a cap, it is a suggestion — and ADR-0008 §2 does
 	// not ask for a suggestion. Whoever wants to spend more changes the
 	// installation's policy, where the change is visible, and not a request
 	// field nobody audits.
@@ -233,7 +233,7 @@ type TurnUsage struct {
 	CacheCreationKnown bool
 	// CostKnown false means there is no price table for this model. The cost
 	// does NOT become a consolation zero: a budget fed with zeros is the
-	// fiction ADR-0011 §2 exists to prevent.
+	// fiction ADR-0008 §2 exists to prevent.
 	CostKnown bool
 }
 
@@ -265,7 +265,7 @@ type TurnOutcome struct {
 	// the cap" is only actionable for whoever knows what the cap was.
 	MaxToolRounds int
 	// Paused: the budget blew and the demand becomes a decision item
-	// (ADR-0011 §2).
+	// (ADR-0008 §2).
 	Paused   bool
 	Notice   string
 	Budgets  []BudgetView
@@ -391,7 +391,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		ids = append(ids, note)
 	}
 
-	// 3. The tools granted to THIS thread (ADR-0010 §2). A granted name that
+	// 3. The tools granted to THIS thread (ADR-0007 §2). A granted name that
 	// does not exist in the catalog does not stop the turn: it becomes a
 	// warning, and the prompt's brief lists only what actually exists (see
 	// brief()).
@@ -412,7 +412,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		tools = nil
 	}
 
-	// 4. Stable prefix first, volatile after (ADR-0012 §1).
+	// 4. Stable prefix first, volatile after (ADR-0008 §1).
 	turn := BuildTurn(pkg, thread.Key, thread.Card, req.Text, req.OperatorNote,
 		req.MaxOutputTokens, tools)
 
@@ -545,7 +545,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, idempotencyKey s
 		Usage: TurnUsage{
 			// The sum of ALL the rounds, not the last: recording only the last
 			// would underestimate an N-round turn's spend by a factor of N, and
-			// a budget that is wrong is not a budget (ADR-0011 §2).
+			// a budget that is wrong is not a budget (ADR-0008 §2).
 			Usage:              res.totalUsage,
 			CostMicros:         res.totalCost,
 			Currency:           res.currency,
@@ -584,7 +584,7 @@ func (s *Service) roundCap(requested int) int {
 //
 // The rule, in three steps:
 //
-//  1. THE THREAD'S CARD first (ADR-0010 §2). Its name passes through INTACT: it
+//  1. THE THREAD'S CARD first (ADR-0007 §2). Its name passes through INTACT: it
 //     is a name from the agent integrations' menu, not a class, and translating
 //     it would undo the thread's frozen choice;
 //  2. otherwise, CLASS → THIS provider's catalog. It is the half the policy
@@ -632,5 +632,5 @@ func budgetNotice(a Accounting) string {
 	}
 	return "Budget blown on " + strings.Join(scopes, "; ") +
 		". This turn was delivered whole; the next one does not go out until somebody decides " +
-		"(raise the ceiling, cut scope or close) — ADR-0011 §2."
+		"(raise the ceiling, cut scope or close) — ADR-0008 §2."
 }

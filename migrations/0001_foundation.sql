@@ -92,7 +92,7 @@ CREATE TABLE invites (
 );
 CREATE INDEX invites_account_idx ON invites (account_id, status);
 
--- ── resources (ADR-0013) ────────────────────────────────────────────────────
+-- ── resources (ADR-0009) ────────────────────────────────────────────────────
 CREATE TYPE resource_kind AS ENUM ('integration', 'skill', 'workflow', 'git_flow');
 
 CREATE TABLE resources (
@@ -167,7 +167,7 @@ CREATE TABLE project_resources (
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
--- THE SPINE: the event log + the outbox (ADR-0006 and ADR-0019)
+-- THE SPINE: the event log + the outbox (ADR-0004 and ADR-0014)
 --
 -- The truth is the log. The dossier, the timeline, the audit trail, the metrics
 -- and the attention box are PROJECTIONS — reads, never writes of their own.
@@ -214,7 +214,7 @@ CREATE TABLE outbox (
 -- A partial index: the relay only sweeps what is left to publish.
 CREATE INDEX outbox_pending_idx ON outbox (occurred_at) WHERE published_at IS NULL;
 
--- Idempotency: repeating a write returns the same answer (ADR-0017).
+-- Idempotency: repeating a write returns the same answer (ADR-0013).
 CREATE TABLE idempotency (
   key          text PRIMARY KEY,
   request_hash text NOT NULL,

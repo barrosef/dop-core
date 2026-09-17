@@ -4,7 +4,7 @@ package contract_test
 //
 // The suite (mailer.go) runs once per adapter and proves each one delivers the
 // port. What it cannot say on its own is what only appears when you compare the
-// two — and that is where ADR-0025's defect lives: one provider falls behind and
+// two — and that is where ADR-0018's defect lives: one provider falls behind and
 // nothing turns red.
 
 import (
@@ -89,7 +89,7 @@ func TestThePublishCatalogCoversTheSendGridIndex(t *testing.T) {
 
 // Both templates of the SAME notice have to speak of the same data.
 //
-// It is the "two places for the same notice's template" ADR-0025 accepts as a
+// It is the "two places for the same notice's template" ADR-0018 accepts as a
 // cost. What it asks in return is that the suite stops one of them from falling
 // behind — and "falling behind" is not only absence: it is also SMTP starting to
 // show a field SendGrid ignores. This test does not compare HTML (they would be

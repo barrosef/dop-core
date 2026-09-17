@@ -294,7 +294,7 @@ func run(demand, repoID, commit string, kind delivery.CheckKind, out delivery.Ou
 	}
 }
 
-// green records the minimum package ADR-0007 requires: a passed acceptance plus
+// green records the minimum package ADR-0005 requires: a passed acceptance plus
 // the critic's opinion, both over the SAME commit.
 func green(t *testing.T, svc *delivery.Service, ctx context.Context, demand, repoID, commit string) {
 	t.Helper()
@@ -317,7 +317,7 @@ func openPR(t *testing.T, svc *delivery.Service, ctx context.Context, demand, re
 	return pr
 }
 
-// ── evidence of green (ADR-0007) ────────────────────────────────────────────
+// ── evidence of green (ADR-0005) ────────────────────────────────────────────
 
 func TestEvidenceWithNoRunIsNotGreen(t *testing.T) {
 	ev := delivery.Evidence{DemandID: "dem-1", RepoID: repo1, Commit: commit1}
@@ -339,7 +339,7 @@ func TestEvidenceFromAnotherCommitDoesNotCount(t *testing.T) {
 			run("dem-1", repo1, commit1, delivery.CheckCritic, delivery.OutcomePassed),
 		},
 	}
-	// It is ADR-0008's heart: yesterday's green is not today's green.
+	// It is ADR-0005's heart: yesterday's green is not today's green.
 	if ev.Green() {
 		t.Fatal("evidence from another commit must not approve the commit under review")
 	}
@@ -370,7 +370,7 @@ func TestEvidenceRequiresTheCriticsOpinion(t *testing.T) {
 		},
 	}
 	if ev.Green() {
-		t.Fatal("an acceptance with no critic opinion does not close ADR-0007 §3's gate")
+		t.Fatal("an acceptance with no critic opinion does not close ADR-0005 §3's gate")
 	}
 }
 
@@ -395,14 +395,14 @@ func TestAPRDoesNotOpenWithoutGreen(t *testing.T) {
 		DemandID: "dem-1", RepoID: repo1, SourceBranch: "feat/x", HeadCommit: commit1,
 	}, "idem-1")
 	if err == nil || errs.KindOf(err) != errs.KindPrecondition {
-		t.Fatalf("no green, no PR (ADR-0007); err was: %v", err)
+		t.Fatalf("no green, no PR (ADR-0005); err was: %v", err)
 	}
 	if !strings.Contains(err.Error(), "acceptance") {
 		t.Errorf("the refusal should say what is missing: %v", err)
 	}
 }
 
-// ── the queue refuses without evidence (ADR-0007 + ADR-0008) ────────────────
+// ── the queue refuses without evidence (ADR-0005 + ADR-0005) ────────────────
 
 func TestEnqueueWithoutAPRIsRefused(t *testing.T) {
 	svc, _, _ := cenario()
@@ -423,7 +423,7 @@ func TestEnqueueWithoutEvidenceOfGreenIsRefused(t *testing.T) {
 	pr := openPR(t, svc, ctx, "dem-1", repo1, commit1)
 
 	// ...and then the branch moved: the PR now points at a commit nobody
-	// verified. It is exactly the hole ADR-0008's re-verification closes.
+	// verified. It is exactly the hole ADR-0005's re-verification closes.
 	for i := range repo.prs {
 		if repo.prs[i].ID == pr.ID {
 			repo.prs[i].HeadCommit = commit2
@@ -519,7 +519,7 @@ func TestTheQueueIsAlwaysPerRepository(t *testing.T) {
 	}
 }
 
-// ── deterministic order (ADR-0008) ──────────────────────────────────────────
+// ── deterministic order (ADR-0005) ──────────────────────────────────────────
 
 // Two entries with the SAME priority must not tie: the per-repository sequence
 // always breaks it. A queue with ties is a queue whose order changes between
@@ -562,7 +562,7 @@ func TestQueueOrderIsDeterministicUnderATie(t *testing.T) {
 }
 
 func TestPriorityComesBeforeArrival(t *testing.T) {
-	// Diretriz de ordem preferencial (ADR-0015 §6) mexe na prioridade: quem
+	// Diretriz de ordem preferencial (ADR-0011 §6) mexe na prioridade: quem
 	// arrived later may merge earlier. Note that nobody STOPPED: the demand that
 	// lost its turn keeps running, it just merges later.
 	queue := delivery.SortQueue([]delivery.MergeQueueEntry{
@@ -591,7 +591,7 @@ func TestTheQueueDoesNotShowWhatAlreadyMerged(t *testing.T) {
 	}
 }
 
-// ── a conflict becomes a human decision item (ADR-0008 §2) ──────────────────
+// ── a conflict becomes a human decision item (ADR-0005 §2) ──────────────────
 
 func TestAConflictEscalatesWithItsReport(t *testing.T) {
 	svc, _, _ := cenario()
@@ -636,13 +636,13 @@ func TestTheQueueDoesNotSkipReverification(t *testing.T) {
 	e, _ := svc.EnqueueMerge(ctx, repo1, "dem-1", "idem-q1")
 
 	// "queued → merged" would skip the rebase and the re-verification, which is
-	// where the semantic break between parallel demands shows up (ADR-0008).
+	// where the semantic break between parallel demands shows up (ADR-0005).
 	if _, err := svc.AdvanceQueue(ctx, e.ID, delivery.StateMerged, "idem-x"); err == nil {
 		t.Fatal("the queue allowed a merge without going through rebase and re-verification")
 	}
 }
 
-// ── diretrizes (ADR-0015) ───────────────────────────────────────────────────
+// ── diretrizes (ADR-0011) ───────────────────────────────────────────────────
 
 func diretrizExemplo() delivery.Directive {
 	return delivery.Directive{
@@ -693,7 +693,7 @@ func TestADirectiveNeedsOptionsAndARecommendation(t *testing.T) {
 	}
 }
 
-// ADR-0015 §5's golden rule written as a TYPE: there is no value in the
+// ADR-0011 §5's golden rule written as a TYPE: there is no value in the
 // vocabulary that expresses stopping a demand.
 func TestTheCoordinationVocabularyHasNoPause(t *testing.T) {
 	for _, attempt := range []delivery.DirectiveKind{"pause", "block", "suspend", "wait", ""} {
@@ -742,7 +742,7 @@ func TestDecidingRequiresWhoAndWhy(t *testing.T) {
 	}
 
 	// An agent does not decide its own proposal: the techlead detects and
-	// escolhe (ADR-0015 §4).
+	// escolhe (ADR-0011 §4).
 	comoAgente := ctxutil.Into(context.Background(), ctxutil.Call{
 		AccountID: account, ActorID: "thread-7", ActorKind: ctxutil.ActorAgent})
 	if _, err := svc.DecideDirective(comoAgente, d.ID, map[string]any{
@@ -809,7 +809,7 @@ func TestDecidingADirectiveDoesNotInterruptARunningDemand(t *testing.T) {
 
 	// 1. The demand stays active — delivery only READS demands, there is no way to stop one.
 	if info, _ := dem.Demand(ctx, account, "dem-1"); !info.Active {
-		t.Error("the demand stopped because of an identified cross-cutting concern (ADR-0015 §5)")
+		t.Error("the demand stopped because of an identified cross-cutting concern (ADR-0011 §5)")
 	}
 	// 2. Its entry in the queue stays exactly where it was.
 	alive, _ := repo.QueueEntryByID(ctx, account, entry.ID)

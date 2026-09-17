@@ -62,7 +62,7 @@ func TestMailerContractOneSignal(t *testing.T) {
 //
 // Reading only the status code would record MailSent for a message that does
 // not exist — and the notification would be marked as handled, so nobody would
-// ever resend it. It is ADR-0025's silence wearing a success code.
+// ever resend it. It is ADR-0018's silence wearing a success code.
 func TestMailerOneSignalASuccessThatReachedNobodyIsNotASuccess(t *testing.T) {
 	url, _ := contract.NewOneSignalDouble(t, contract.FailureContent, oneSignalKey)
 	m := mailer.NewOneSignal(mailer.OneSignalConfig{

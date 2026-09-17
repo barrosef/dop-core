@@ -19,12 +19,12 @@
 //
 // ── Where the credential lives ──────────────────────────────────────────────
 //
-// The provider's key is a RESOURCE CREDENTIAL (ADR-0013): it lives in the vault,
+// The provider's key is a RESOURCE CREDENTIAL (ADR-0009): it lives in the vault,
 // behind `ports.SecretStore`, and the composition root resolves it
 // (internal/app/agentproviders.go). This package does NOT import
 // `ports.SecretStore`, does not receive a vault as a parameter and does not know
 // a vault exists — it receives the value ready-made in the constructor. It is
-// ADR-0023's entire point: the credential is read and used in the SAME process,
+// ADR-0016's entire point: the credential is read and used in the SAME process,
 // and crosses no network boundary at all.
 //
 // And the key, once inside, does not leave: it is captured in an authorization
@@ -36,7 +36,7 @@
 //
 // ── About deadlines and connections ─────────────────────────────────────────
 //
-// ADR-0023 recorded the change's price: "the core starts making LONG external
+// ADR-0016 recorded the change's price: "the core starts making LONG external
 // calls". A generation at high effort takes minutes, and a 30s deadline — which
 // is right for a git API call — would turn every expensive turn into a failure.
 // Hence the generous `DefaultTimeout`. The CONNECTION budget is solved by reusing

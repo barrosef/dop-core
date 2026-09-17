@@ -9,9 +9,9 @@
 //     would write a new cache entry every turn and read none. It is the error
 //     that does not fail, it only charges;
 //   - CACHE CREATION ACCOUNTING (D1): `cache_creation_input_tokens` and
-//     `cache_read_input_tokens` come separately, which is what ADR-0012 §1's
+//     `cache_read_input_tokens` come separately, which is what ADR-0008 §1's
 //     telemetry needs in order to report a silent invalidator;
-//   - THE FIVE EFFORT LEVELS (D4), including the `max` ADR-0007 requires on
+//   - THE FIVE EFFORT LEVELS (D4), including the `max` ADR-0005 requires on
 //     critical work.
 //
 // TOOLS, as this provider handles them (D7–D11):
@@ -33,7 +33,7 @@
 //
 //   - `thinking: adaptive`. The fixed reasoning-token budget (`budget_tokens`)
 //     was removed on the current models and returns a 400. What controls depth is
-//     `output_config.effort`, which is exactly ADR-0011 §3's second axis — the
+//     `output_config.effort`, which is exactly ADR-0008 §3's second axis — the
 //     two decisions fit with no translation;
 //   - AN OPERATOR MESSAGE WITH A FALLBACK. `role:"system"` in the middle of
 //     `messages` is the unforgeable channel and it preserves the prefix, but it
@@ -63,7 +63,7 @@ const (
 )
 
 // CatalogAnthropic is THIS provider's catalog: class → concrete name. It changes
-// when Anthropic ships a model; ADR-0011 §3's policy does not change with it —
+// when Anthropic ships a model; ADR-0008 §3's policy does not change with it —
 // it is `cost/router.go`'s policy × catalog separation, continued here.
 func CatalogAnthropic() map[agent.ModelClass]string {
 	return map[agent.ModelClass]string{
@@ -76,7 +76,7 @@ func CatalogAnthropic() map[agent.ModelClass]string {
 // PricesAnthropic is the price table, in MICROS per 1,000 tokens (USD).
 //
 // A cache read at 0.1× the input and a write at 1.25× — it is that ratio that
-// makes ADR-0012's saving worth the stable prefix's discipline, and it is what
+// makes ADR-0008's saving worth the stable prefix's discipline, and it is what
 // has to show up in the measurement.
 //
 // It is a STARTING table and it AGES: prices change, and when they do this is
@@ -112,7 +112,7 @@ type AnthropicConfig struct {
 	// without touching the turn's cycle.
 	APIBase string
 	// APIKey is the ALREADY RESOLVED value of the resource credential
-	// (ADR-0013). This package does not know `ports.SecretStore`.
+	// (ADR-0009). This package does not know `ports.SecretStore`.
 	APIKey string
 	// An empty Catalog uses CatalogAnthropic(). It exists because, when the
 	// provider comes configured on the account's resource, the catalog comes

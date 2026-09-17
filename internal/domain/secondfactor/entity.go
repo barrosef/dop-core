@@ -1,5 +1,5 @@
 // Package secondfactor is the domain of the second step of a sign-in
-// (ADR-0027).
+// (ADR-0020).
 //
 // It is the PLATFORM's, and not the identity provider's, for three reasons the
 // ADR develops: the provider does not do e-mail as a second factor, its MFA

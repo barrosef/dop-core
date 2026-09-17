@@ -30,7 +30,7 @@ message Demand {
   string     card_type    = 5;   // dynamic, from the provider
   string     provider_status = 6;
   DopStatus  dop_status   = 7;
-  // The flow's version FROZEN when it starts (ADR-0014).
+  // The flow's version FROZEN when it starts (ADR-0010).
   string     flow_id      = 8;
   int32      flow_version = 9;
   repeated DemandStage stages = 10;
@@ -58,7 +58,7 @@ message Artifact {
 }
 
 // One thread per agent — the developer talks without mixing timelines
-// (ADR-0010).
+// (ADR-0007).
 message Thread {
   string   id      = 1;
   DemandRef demand = 2;
@@ -110,12 +110,12 @@ service DemandService {
   //
   // The read existed only in the Go domain, and the edge had no way to show the
   // board of findings — which is what stops an agent (or a human) from redoing
-  // an investigation another has already concluded (ADR-0009). Reading through
+  // an investigation another has already concluded (ADR-0006). Reading through
   // the context package does not do: that one is truncated by token budget and
   // its assembly records a measurement event, so opening a screen would become a
   // cost line.
   rpc ListFindings (ListFindingsRequest) returns (ListFindingsResponse);
-  // Streaming: the BFF converts it into SSE (ADR-0017).
+  // Streaming: the BFF converts it into SSE (ADR-0013).
   rpc WatchDemand  (WatchDemandRequest)  returns (stream DemandEvent);
 }
 

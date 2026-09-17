@@ -38,7 +38,7 @@ func (s *Service) now() time.Time { return s.clock.Now() }
 // ── reads ────────────────────────────────────────────────────────────────────
 
 // List lists the account's visible flows. Content (flow, skill, git_flow) in an
-// organization account is OPEN within the account by default (ADR-0014 §6):
+// organization account is OPEN within the account by default (ADR-0010 §6):
 // whoever is in the account sees what the account wrote. A credential is risk, a
 // flow is knowledge.
 func (s *Service) List(ctx context.Context, scope Scope, ownerID string) ([]Flow, error) {
@@ -68,7 +68,7 @@ func (s *Service) Get(ctx context.Context, id string) (*Flow, error) {
 //
 // It is what a demand in progress consumes: it stored (id, version) on start and
 // has to keep seeing that document even after the flow has moved three versions
-// on (ADR-0014 §4).
+// on (ADR-0010 §4).
 func (s *Service) GetVersion(ctx context.Context, id string, version int32) (*Flow, error) {
 	accountID, err := ctxutil.MustAccount(ctx)
 	if err != nil {
@@ -423,7 +423,7 @@ func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) err
 
 // ── promotion ────────────────────────────────────────────────────────────────
 
-// Promote publishes the flow to a level ABOVE in the chain (ADR-0014 §5).
+// Promote publishes the flow to a level ABOVE in the chain (ADR-0010 §5).
 //
 // Three refusals, each closing a different hole:
 //
@@ -432,7 +432,7 @@ func (s *Service) BumpPin(ctx context.Context, flowID string, version int32) err
 //     account;
 //   - a target in the platform catalogue: inside an organization account, a
 //     lower-level flow is public WITHIN the account — never outside it. External
-//     sharing is explicitly out of v1 (ADR-0014 §7);
+//     sharing is explicitly out of v1 (ADR-0010 §7);
 //   - an actor without `manage`: publishing to the level above changes the flow
 //     of people who asked for nothing, and that is not any member's decision.
 func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targetID string) (*Flow, error) {
@@ -451,7 +451,7 @@ func (s *Service) Promote(ctx context.Context, flowID string, target Scope, targ
 		return nil, errs.Invalid("unknown target level: %q", target)
 	}
 	if target == ScopePlatform {
-		return nil, errs.Permission("the platform catalogue does not receive an account\u2019s flow: inside an organization account a lower-level flow is public WITHIN the account, never outside it (ADR-0014 §6 and §7)")
+		return nil, errs.Permission("the platform catalogue does not receive an account\u2019s flow: inside an organization account a lower-level flow is public WITHIN the account, never outside it (ADR-0010 §6 and §7)")
 	}
 
 	src, err := s.repo.ByID(ctx, accountID, flowID)
@@ -694,7 +694,7 @@ func (s *Service) Derive(ctx context.Context, rawRef string, target ScopeRef, id
 // already running, and that does not happen here: this decides which
 // adoptions the policy reaches and hands the whole thing to RevokeShare in
 // one call, which writes it — and, from Task 9, the events — in one
-// transaction (ADR-0019). Putting demand control in this service would make
+// transaction (ADR-0014). Putting demand control in this service would make
 // the flow domain a client of the demand domain over one decision.
 func (s *Service) Revoke(ctx context.Context, shareID string) error {
 	accountID, err := ctxutil.MustAccount(ctx)
@@ -790,7 +790,7 @@ func (s *Service) resolveOwner(ctx context.Context, accountID string, ref ScopeR
 
 // writeKey returns the write's idempotency key.
 //
-// Every write carries one (ADR-0017). When the contract does not bring the
+// Every write carries one (ADR-0013). When the contract does not bring the
 // client's key, it is DERIVED from what is being written: the same resend
 // produces the same key, collides on the unique index and returns what was
 // already written — instead of creating a twin flow or a duplicate version.

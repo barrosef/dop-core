@@ -25,7 +25,7 @@ type ScopeRef struct {
 // runs. A total order is what makes the decision reproducible; which of the two
 // comes first matters less than that it is always the same one.
 //
-// Create is idempotent by key (ADR-0017): repeating a creation returns the rule
+// Create is idempotent by key (ADR-0013): repeating a creation returns the rule
 // already written rather than a twin.
 //
 // The key is unique WITHIN AN ACCOUNT, not across the whole table — the

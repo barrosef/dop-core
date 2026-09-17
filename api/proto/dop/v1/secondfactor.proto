@@ -4,7 +4,7 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "google/protobuf/timestamp.proto";
 
-// The second factor (ADR-0027).
+// The second factor (ADR-0020).
 //
 // A service of its own, and not more RPCs on IdentityService, because they are
 // two questions: identity answers WHO the person is (the first factor); this one

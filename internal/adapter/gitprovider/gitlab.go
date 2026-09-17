@@ -51,10 +51,10 @@ type GitLabConfig struct {
 	// APIBase includes the /api/v4: "https://gitlab.com/api/v4" or
 	// "https://gitlab.internal/api/v4".
 	APIBase string
-	// Token is the ALREADY RESOLVED value of the resource credential (ADR-0013).
+	// Token is the ALREADY RESOLVED value of the resource credential (ADR-0009).
 	Token   string
 	ActorID string
-	// MergeMethod is the git flow's vocabulary (ADR-0013). GitLab does not
+	// MergeMethod is the git flow's vocabulary (ADR-0009). GitLab does not
 	// accept the method on the merge call — it is a PROJECT setting — but it
 	// does accept `squash`, which is the only translatable piece. See the
 	// conversion below.
@@ -237,7 +237,7 @@ func (g *GitLab) OpenPullRequest(ctx context.Context, spec delivery.OpenPRSpec) 
 			return delivery.ProviderPR{}, err
 		}
 		if existing != nil {
-			// Guarantee 4: no PUT of title/description — ADR-0007 §4's evidence
+			// Guarantee 4: no PUT of title/description — ADR-0005 §4's evidence
 			// package is not replaceable by a network retry.
 			return g.mrToPort(*existing), nil
 		}
@@ -444,7 +444,7 @@ func (g *GitLab) Merge(ctx context.Context, spec delivery.MergeSpec) (delivery.M
 // Note `squash_commit_sha`: with squash on, the commit that entered the base is
 // THAT one, and `merge_commit_sha` may come back empty. Reading only the second
 // would return Merged=true with an empty commit — guarantee 7 broken in silence,
-// and ADR-0008's queue recording a merge without saying what went in.
+// and ADR-0005's queue recording a merge without saying what went in.
 func (g *GitLab) mergeResult(mr glMR) delivery.MergeResult {
 	commit := mr.MergeCommitSHA
 	if commit == "" {
@@ -540,7 +540,7 @@ func computing(mr glMR) bool {
 // ── HasNativeQueue ───────────────────────────────────────────────────────────
 
 // HasNativeQueue says whether this project has a native merge train
-// (ADR-0008 §4).
+// (ADR-0005 §4).
 //
 // The source is the project's own `merge_trains_enabled`, and not the merge
 // trains API: that one requires a Developer role or higher, is a paid-plan
@@ -554,7 +554,7 @@ func computing(mr glMR) bool {
 // all. That is why the adapter tells absent from false with a pointer:
 //
 //   - present and true  → it has a native queue; DOP's steps aside;
-//   - present and false → it does not; DOP's orchestrates (ADR-0008 §4);
+//   - present and false → it does not; DOP's orchestrates (ADR-0005 §4);
 //   - ABSENT            → the installation offers no merge train at all, so
 //     there is nothing to duplicate either: `false`. This is the adapter's only
 //     inference, and it is conservative — it errs towards KEEPING DOP's queue,

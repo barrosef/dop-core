@@ -116,7 +116,7 @@ type AgentProviderEnv struct {
 	// This field was born from a probe: deleting Anthropic's breakpoint passed
 	// the entire suite. The prefix stayed in the right place, the order stayed
 	// right, and the bill would start arriving ~10× larger without a single red
-	// test — which is exactly the silent failure ADR-0012 §1 describes.
+	// test — which is exactly the silent failure ADR-0008 §1 describes.
 	CacheMarker string
 
 	// ToolMarker is the fragment that, in THIS provider's body, marks a tool's
@@ -249,7 +249,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 				t.Fatal("the turn's text did not go into the request")
 			}
 			if iPrefix > iTurn {
-				t.Fatalf("PREFIX AFTER THE VOLATILE PART (%d > %d): ADR-0012 §1's saving "+
+				t.Fatalf("PREFIX AFTER THE VOLATILE PART (%d > %d): ADR-0008 §1's saving "+
 					"breaks SILENTLY — nothing goes wrong, it just costs ~10× and shows up "+
 					"on the invoice", iPrefix, iTurn)
 			}
@@ -332,7 +332,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 			}
 			if r.Usage != want {
 				t.Fatalf("DOUBLE COUNTING (D2): expected the disjoint parts %+v, got %+v — "+
-					"summing inclusive fields inflates ADR-0011's measurement with nothing "+
+					"summing inclusive fields inflates ADR-0008's measurement with nothing "+
 					"failing", want, r.Usage)
 			}
 		})
@@ -381,7 +381,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 				}
 				if want != asked && len(r.Warnings) == 0 {
 					t.Fatalf("effort %q was DOWNGRADED to %q with no warning: on critical work "+
-						"(ADR-0007) that is a product decision, and whoever routed needs to know",
+						"(ADR-0005) that is a product decision, and whoever routed needs to know",
 						asked, want)
 				}
 			}
@@ -490,7 +490,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 			if e.ModelWithPrice == "" {
 				// An adapter with no table: the only honest answer is "I do not
 				// know" for EVERYTHING, including its own catalog. Zero would
-				// assert the call was free (ADR-0011 §2).
+				// assert the call was free (ADR-0008 §2).
 				for _, c := range []agent.ModelClass{agent.ClassCheap, agent.ClassMedium, agent.ClassStrong} {
 					if _, ok := info.PriceFor(info.ResolveModel(c)); ok {
 						t.Fatalf("the environment says it has no price table, but %q has a price", c)
@@ -531,7 +531,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 			}
 			if r.Data == nil {
 				t.Fatal("the structured output was not decoded: the domain would have to " +
-					"re-parse text, which is what ADR-0012 §2 avoids")
+					"re-parse text, which is what ADR-0008 §2 avoids")
 			}
 			if r.Data["reply"] != "answer to the human" {
 				t.Fatalf("the `reply` field came back as %v", r.Data["reply"])
@@ -590,7 +590,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 				t.Fatal("THE CACHE BREAKPOINT VANISHED: the adapter announces an explicit " +
 					"cache and does not mark the prefix. Nothing fails — the whole prefix " +
 					"starts being charged as new input on every turn (~10×), and only the " +
-					"invoice tells (ADR-0012 §1)")
+					"invoice tells (ADR-0008 §1)")
 			}
 			if iTurn := bytes.Index(body, []byte(sentinelTurn)); iMark > iTurn {
 				t.Fatalf("the breakpoint ended up AFTER the volatile text (%d > %d): marking "+
@@ -612,7 +612,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 				t.Fatal("THE OUTPUT SCHEMA DID NOT GO INTO THE REQUEST: the adapter announces " +
 					"structured output and does not ask for it. The decoding on our side keeps " +
 					"working while the model cooperates, and the provider's validation " +
-					"(ADR-0012 §2) becomes luck — with no red test")
+					"(ADR-0008 §2) becomes luck — with no red test")
 			}
 		})
 
@@ -625,7 +625,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 				t.Fatal("THE TURN'S OUTPUT CAP DID NOT REACH THE PROVIDER: the adapter is " +
 					"using a limit nobody asked for. A truncated answer would start coming out " +
 					"as StopReason=max_tokens with nothing in the system explaining why — and " +
-					"the cap is a cost lever (ADR-0011)")
+					"the cap is a cost lever (ADR-0008)")
 			}
 		})
 
@@ -670,7 +670,7 @@ func AgentProviderSuite(t *testing.T, name string, env func(t *testing.T) AgentP
 			if iTool > iTurn {
 				t.Fatalf("the declaration ended up AFTER the volatile text (%d > %d): a "+
 					"declaration is stable per thread and leaves the cacheable stretch when it "+
-					"goes to the end — nothing goes wrong, it just costs (ADR-0012 §1)", iTool, iTurn)
+					"goes to the end — nothing goes wrong, it just costs (ADR-0008 §1)", iTool, iTurn)
 			}
 		})
 

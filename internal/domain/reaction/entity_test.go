@@ -31,7 +31,7 @@ func TestTheActionVocabularyIsClosed(t *testing.T) {
 		}
 	}
 	// An action is CODE. A name outside the vocabulary is a contract error, not
-	// something a user typed — the same stance ADR-0014 takes on stage types.
+	// something a user typed — the same stance ADR-0010 takes on stage types.
 	for _, n := range []reaction.ActionName{"", "send_sms", "run_script", "OPEN_ATTENTION"} {
 		if reaction.ValidActionName(n) {
 			t.Fatalf("%q must not be accepted", n)

@@ -69,8 +69,8 @@ const memoryCandidates = 24
 
 // BuildContextPackage assembles the agent's carry-on luggage for a demand.
 //
-// This is where the token saving happens (ADR-0012): the package is SELECTED,
-// not dumped. The composition comes from ADR-0009 §3 — rules + the index OF THE
+// This is where the token saving happens (ADR-0008): the package is SELECTED,
+// not dumped. The composition comes from ADR-0006 §3 — rules + the index OF THE
 // DEMAND'S REPOSITORIES + relevant memories + findings already published — and
 // the cut criterion lives entirely in SelectPackage, which is a pure function.
 //
@@ -126,7 +126,7 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 	})
 	pkg.DemandID = demandID
 
-	// The assembly's measurement as an EVENT (ADR-0009 §3): with no number, "the
+	// The assembly's measurement as an EVENT (ADR-0006 §3): with no number, "the
 	// package grows with the demand" is an impression. Dropped comes along
 	// because "it fit" and "it fit because we threw away half the memory" are
 	// different facts.
@@ -145,7 +145,7 @@ func (s *Service) BuildContextPackage(ctx context.Context, demandID string, budg
 	return &pkg, nil
 }
 
-// WithRepositories wires the project's root repository (ADR-0028): where the
+// WithRepositories wires the project's root repository (ADR-0021): where the
 // TEXT of every artifact lives. Without it PutArtifact keeps the row and the
 // bucket, and the shelf is not written — which is the state before the ADR,
 // and it is loud in the log.
@@ -225,7 +225,7 @@ const (
 )
 
 // SearchMemory is the query the agent makes DURING execution: what did not fit
-// in the package comes in through here (ADR-0009 §3).
+// in the package comes in through here (ADR-0006 §3).
 //
 // An empty projectID searches account-scoped memory — the memory that applies to
 // every project. The inverse does not exist: one project's memory never appears
@@ -323,7 +323,7 @@ type PutInput struct {
 }
 
 // PutArtifact writes knowledge — it is the WRITE-BACK side of the cycle
-// (ADR-0009 §4): today's finding is tomorrow's demand's context.
+// (ADR-0006 §4): today's finding is tomorrow's demand's context.
 //
 // The decision that structures the method: where the content lives.
 //
@@ -399,7 +399,7 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 		a.Body = string(in.Content)
 	}
 
-	// The shelf (ADR-0028): the text lands in the project's root repository, at
+	// The shelf (ADR-0021): the text lands in the project's root repository, at
 	// the layout's path, as a platform commit on the actor's behalf. A rule of
 	// the ACCOUNT has no single project to land in — it reaches the shelf of
 	// each project through the manifest's regeneration, not through a commit
@@ -437,7 +437,7 @@ func (s *Service) PutArtifact(ctx context.Context, in PutInput) (*Artifact, erro
 	}
 
 	// The request's signature covers the IDENTITY and the CONTENT: repeating the
-	// key with different content is a conflict, not a repeat (ADR-0017).
+	// key with different content is a conflict, not a repeat (ADR-0013).
 	sum := sha256.Sum256(in.Content)
 	return s.repo.Put(ctx, a, Idempotency{
 		Key: strings.TrimSpace(in.IdempotencyKey),

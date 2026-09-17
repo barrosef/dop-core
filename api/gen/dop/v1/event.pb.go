@@ -31,7 +31,7 @@ type EventEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// A typed reference instead of a bare id: a tenant is never an anonymous
-	// string (ADR-0017). An event with no account (`identity.user.ensured`,
+	// string (ADR-0013). An event with no account (`identity.user.ensured`,
 	// migration 0003) is NOT transmitted to anyone, so this field is always filled
 	// in on the wire.
 	Account       *AccountRef            `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`

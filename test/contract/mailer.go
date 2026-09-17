@@ -21,7 +21,7 @@ import (
 //
 // ── The subtest that justifies the whole suite ──────────────────────────────
 //
-// `1_resolves_every_domain_kind`. ADR-0025 wrote down the consequence that
+// `1_resolves_every_domain_kind`. ADR-0018 wrote down the consequence that
 // demands a test: a notification kind may exist in the policy and have no
 // template at the provider, and that would fail in SILENCE — the event happens,
 // the consumer runs, nobody receives anything. Nothing else in the system turns
@@ -139,7 +139,7 @@ func MailerSuite(t *testing.T, name string, h MailerHarness) {
 					t.Errorf("the adapter does NOT resolve the %q notice: %v\n\n"+
 						"This would fail in SILENCE in production: the event happens, the "+
 						"consumer runs and nobody receives anything. Give this kind a template in this "+
-						"fornecedor (ADR-0025).", kind, err)
+						"fornecedor (ADR-0018).", kind, err)
 				}
 			}
 		})

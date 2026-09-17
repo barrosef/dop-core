@@ -35,7 +35,7 @@ func TestTheManifestComesFirstAndIsReadable(t *testing.T) {
 }
 
 func TestTheManifestSaysHowBigEachDocumentIs(t *testing.T) {
-	// Choosing what to open is a decision about budget (ADR-0011). Without the
+	// Choosing what to open is a decision about budget (ADR-0008). Without the
 	// number it is a guess.
 	files := knowledge.Library([]knowledge.Document{
 		{Section: knowledge.LibraryIndex, Name: "api.md", Title: "The API repo",

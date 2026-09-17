@@ -255,12 +255,12 @@ type Event struct {
 	RequestID string `json:"request_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	// Caller is the COMPONENT that signed the call — "bff", "collector"
-	// (ADR-0029). Empty when the call was proven only by a person's token.
+	// (ADR-0022). Empty when the call was proven only by a person's token.
 	Caller string `json:"caller,omitempty"`
 }
 
 // Handler processes an event. It MUST be idempotent: delivery is at-least-once
-// (ADR-0019). A returned error triggers a retry with backoff; past the ceiling,
+// (ADR-0014). A returned error triggers a retry with backoff; past the ceiling,
 // the DLQ.
 type Handler func(ctx context.Context, e Event) error
 
@@ -340,7 +340,7 @@ func ValidIsolationTier(t IsolationTier) bool {
 const SandboxWorkspacePath = "/workspace"
 
 // SandboxDocumentsPath is where the project's ROOT REPOSITORY is cloned inside
-// the sandbox (ADR-0028): the shelf — rules, repository maps, memories, and
+// the sandbox (ADR-0021): the shelf — rules, repository maps, memories, and
 // this demand's spec and plan — as a working copy, read-write.
 //
 // It is separate from the workspace on purpose. The workspace is the demand's
@@ -351,7 +351,7 @@ const SandboxWorkspacePath = "/workspace"
 const SandboxDocumentsPath = "/project"
 
 // SandboxTokenPath is where the sandbox finds its ONE credential: the token
-// that opens the project's root repository (ADR-0028 §3). A projected FILE and
+// that opens the project's root repository (ADR-0021 §3). A projected FILE and
 // not an environment variable — environ is inherited by every child process,
 // and the sandbox runs agent code.
 //
@@ -375,7 +375,7 @@ const SandboxSessionsPath = "/sessions"
 type SandboxCollector struct {
 	Image      string
 	CoreTarget string
-	// Key signs the collector's assertions (ADR-0029). It is mounted ONLY in the
+	// Key signs the collector's assertions (ADR-0022). It is mounted ONLY in the
 	// collector's container: the agent's never sees it.
 	Key       string
 	AccountID string
@@ -430,7 +430,7 @@ type SandboxSpec struct {
 	// what a sandbox raised for something other than measurement wants.
 	Collector SandboxCollector
 
-	// Repository is the project's root repository (ADR-0028). An empty CloneURL
+	// Repository is the project's root repository (ADR-0021). An empty CloneURL
 	// means no shelf — the right thing for a sandbox raised by the contract
 	// suite's lifecycle tests. With one, the adapter delivers the token at
 	// SandboxTokenPath and the clone URL in the environment, and the image's
@@ -506,7 +506,7 @@ type LogLine struct {
 //     agent code runs. A capability that does not map stays out (ADR-0001), and
 //     in this case staying out is also the safe choice: **exec has no field
 //     through which a credential could arrive**. The ONE credential a sandbox
-//     holds — the token to the project's root repository (ADR-0028 §3, the
+//     holds — the token to the project's root repository (ADR-0021 §3, the
 //     execution spec §5) — enters at provisioning as a projected file, never
 //     through exec, never as environ. It is the agent's own workbench key, not
 //     a third party's; a third party's credential has no path in here at all;
@@ -532,7 +532,7 @@ type ExecRequest struct {
 	TimeoutSeconds int
 	// MaxOutputBytes is the ceiling of EACH stream (stdout and stderr,
 	// separately). Zero uses DefaultExecMaxOutputBytes. Tool output becomes
-	// model context, and context is money (ADR-0011): an uncapped `cat` of a
+	// model context, and context is money (ADR-0008): an uncapped `cat` of a
 	// 200 MB log is not a memory problem, it is an invoice.
 	MaxOutputBytes int
 }
@@ -624,7 +624,7 @@ const (
 //     clearly as an absent one;
 //  19. the shelf is WRITABLE, and SHARED: a commit pushed from one sandbox is
 //     visible to a sandbox of the same project launched afterwards. It is what
-//     "collaborated between agents" means (ADR-0028);
+//     "collaborated between agents" means (ADR-0021);
 //  20. the shelf PERSISTS: what a sandbox pushed is still there after its own
 //     Suspend/Resume, and after its Destroy — the repository outlives the
 //     sandbox, it is the project's;
@@ -717,7 +717,7 @@ type SandboxLauncher interface {
 
 // RunnerDependency is a third party the application needs while it is verified:
 // a database, a cache, a broker. Always a PUBLISHED image, pulled and never
-// built (ADR-0030 §1).
+// built (ADR-0023 §1).
 //
 // It is reachable at `localhost:<port>`, on EVERY executor: on Kubernetes it is
 // a container of the same pod, and on Docker it joins the runner's network
@@ -740,7 +740,7 @@ type RunnerDependency struct {
 // and at which commit.
 //
 // The three travel together because none of them is useful alone — and because
-// the commit is what makes the evidence worth anything (ADR-0007: evidence that
+// the commit is what makes the evidence worth anything (ADR-0005: evidence that
 // does not say which code it ran on is not evidence).
 type RunnerRepository struct {
 	CloneURL string
@@ -816,7 +816,7 @@ type RunnerHandle struct {
 // What is NOT here is the same list as the sandbox's — no kubeconfig, no socket,
 // no compose file — plus one more: there is no image OF THE PROJECT. The runner
 // image is ours and carries the toolchains; the project arrives as a commit and
-// is built inside it. Nothing is ever pushed to a registry (ADR-0030).
+// is built inside it. Nothing is ever pushed to a registry (ADR-0023).
 type RunnerSpec struct {
 	RunnerHandle
 	AccountID    string
@@ -854,7 +854,7 @@ type RunnerStatus struct {
 }
 
 // VerificationRunner is where a verification runs, and where an application runs
-// at all (ADR-0030, `verification-runner.md`).
+// at all (ADR-0023, `verification-runner.md`).
 //
 // It is NOT the sandbox and the difference is the whole point. The sandbox is
 // the bench: a dirty working tree with whatever the agent installed along the
@@ -916,7 +916,7 @@ type RunnerStatus struct {
 //     ingress domain is known, exactly as for the sandbox;
 //   - BUILDING AND PUSHING AN IMAGE of the project. It is not missing, it is
 //     refused: the sequence this port exists to remove is `build → push → pull`
-//     (ADR-0030 §1);
+//     (ADR-0023 §1);
 //   - cpu/memory LIMITS, for the same reason the sandbox refuses them.
 //
 // A LIMIT worth knowing before it surprises somebody: the account's cache is one
@@ -924,7 +924,7 @@ type RunnerStatus struct {
 // the same node. On a single-node cluster that is free; on several, the second
 // run waits for a schedulable node. Making it ReadWriteMany would need a storage
 // class most installations do not have — the same wall that killed the shared
-// volume in ADR-0028.
+// volume in ADR-0021.
 type VerificationRunner interface {
 	// Start creates the environment and begins the sequence. It returns as soon
 	// as the run exists — a verification takes minutes, and a call that blocks
@@ -941,7 +941,7 @@ type VerificationRunner interface {
 
 // Mail is the INTENT to notify someone — never the notification artifact.
 //
-// Note what is NOT here: subject, body, HTML, `template_id`. ADR-0025 decided
+// Note what is NOT here: subject, body, HTML, `template_id`. ADR-0018 decided
 // that the template index, its resolution and its rendering live in the
 // ADAPTER, and this struct is what remains once that leaves: "THIS happened, to
 // THIS address, with THIS data". Rendering in the domain would look cleaner and
@@ -1008,7 +1008,7 @@ type MailReceipt struct {
 // title, a badge and a deep link; SMS has 160 characters and no formatting. A
 // single port would carry the union of all of it — with most fields never used —
 // or the lowest common denominator, losing what each channel does well. `Pusher`
-// and `SMSer` are born when there is push and SMS (ADR-0025).
+// and `SMSer` are born when there is push and SMS (ADR-0018).
 //
 // Guarantees verified by the contract suite, in EVERY adapter:
 //
@@ -1059,7 +1059,7 @@ type MailReceipt struct {
 //     blocker;
 //
 //  9. Send writes NOTHING and has no side effect beyond the send itself:
-//     recording what was dispatched belongs to the caller (ADR-0025), and an
+//     recording what was dispatched belongs to the caller (ADR-0018), and an
 //     adapter that also recorded would have two responsibilities, one of them
 //     impossible to test without a database;
 //
@@ -1130,14 +1130,14 @@ type SMSReceipt struct {
 	Reference string
 }
 
-// SMSer is the SMS CHANNEL — the port ADR-0025 left foreseen and ADR-0027
+// SMSer is the SMS CHANNEL — the port ADR-0018 left foreseen and ADR-0020
 // brought into being, when the second factor made SMS exist.
 //
 // It is a channel and not a notifier: what decides that a message goes out is
 // the domain. And unlike Mailer, its caller is NOT the Notifier — a
 // second-factor code is a CHALLENGE the person is waiting for, not a
 // notification that interrupts them, so it does not pass through the policy
-// table, the digest or the delay (ADR-0027 §3).
+// table, the digest or the delay (ADR-0020 §3).
 //
 // Guarantees verified by the contract suite, in EVERY adapter:
 //
@@ -1214,7 +1214,7 @@ type IDGenerator interface{ NewID() string }
 // ───────────────────────── ProjectRepository ─────────────────────────
 
 // ProjectRepository is the home of a project's knowledge: a git repository the
-// platform hosts, born with the project (ADR-0028).
+// platform hosts, born with the project (ADR-0021).
 //
 // It is a port for the usual reason — two adapters, one contract suite — and
 // for a specific one: WHERE the repositories live (a directory on the core's
@@ -1241,7 +1241,7 @@ type IDGenerator interface{ NewID() string }
 //  6. Read of a path that does not exist is KindNotFound; Read never invents;
 //  7. a push through the clone URL reaches the platform: OnPush is called with
 //     the project, the ref and the commits, AFTER the refs are updated — it is
-//     how a push becomes an event (ADR-0006), and how the manifest gets
+//     how a push becomes an event (ADR-0004), and how the manifest gets
 //     regenerated;
 //  8. a mirror set with SetMirror receives what is pushed, and the mirror's
 //     credential is resolved by the ADAPTER from the SecretStore — it never

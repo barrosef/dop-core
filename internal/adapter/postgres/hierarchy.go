@@ -75,7 +75,7 @@ func (r *HierarchyRepo) CreateWorkspace(ctx context.Context, w *hierarchy.Worksp
 		if err != nil {
 			return Translate(err, "workspace")
 		}
-		// The event in the SAME transaction — the transactional outbox (ADR-0019).
+		// The event in the SAME transaction — the transactional outbox (ADR-0014).
 		return Emit(ctx, tx, ports.Event{
 			AccountID: saved.AccountID, Aggregate: "workspace", AggregateID: saved.ID,
 			Type:    "dop.hierarchy.workspace.created",

@@ -469,7 +469,7 @@ func TestRevokeShareUnderProspectiveEmitsBothEventsAndTouchesNoCopy(t *testing.T
 	}
 
 	// The events reached the outbox in the SAME transaction — the whole point
-	// of Emit (ADR-0019).
+	// of Emit (ADR-0014).
 	var outboxed int
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM outbox o JOIN events e ON e.id = o.event_id

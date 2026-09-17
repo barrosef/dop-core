@@ -197,7 +197,7 @@ func (s *Service) EnrollCode(ctx context.Context, kind Kind, label, destination 
 		return nil, "", err
 	}
 
-	// An e-mail factor requires a VERIFIED address (ADR-0026's guarantee 5). An
+	// An e-mail factor requires a VERIFIED address (ADR-0019's guarantee 5). An
 	// unverified address as a second factor is not a second factor: it is the
 	// same unproven address the first factor already trusted.
 	if kind == KindEmail {
@@ -594,7 +594,7 @@ func (s *Service) assertMaySend(ctx context.Context, f *Factor) error {
 	return nil
 }
 
-// send is where the CHANNEL is used and the Notifier is not (ADR-0027 §3).
+// send is where the CHANNEL is used and the Notifier is not (ADR-0020 §3).
 func (s *Service) send(ctx context.Context, f *Factor, code string) error {
 	switch f.Kind {
 	case KindEmail:

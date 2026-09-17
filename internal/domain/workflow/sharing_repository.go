@@ -35,7 +35,7 @@ type SharingRepository interface {
 	// It is one call and not four because a crash between four calls leaves a
 	// share revoked with its copies untouched — a half-revocation nobody would
 	// notice until somebody used a flow that was supposed to be gone. The
-	// transaction and the outbox are the adapter's job (ADR-0019); the domain's
+	// transaction and the outbox are the adapter's job (ADR-0014); the domain's
 	// job is to decide WHAT the policy reaches and hand it over.
 	RevokeShare(ctx context.Context, accountID string, rev Revocation) error
 
@@ -68,7 +68,7 @@ type AccountFacts interface {
 
 	// HandleOf resolves an account's public handle — the identity fact the
 	// edge needs to render a publication's reference (@handle/slug@vN)
-	// server-side (see PublicationRef.String and ADR-0017): three clients
+	// server-side (see PublicationRef.String and ADR-0013): three clients
 	// assembling that string themselves is three places for it to drift.
 	HandleOf(ctx context.Context, accountID string) (string, error)
 }

@@ -24,7 +24,7 @@ type ProjectRepositoryEnv struct {
 }
 
 // ProjectRepositorySuite verifies the eight guarantees documented on the
-// ProjectRepository port (ADR-0028) — in EVERY adapter.
+// ProjectRepository port (ADR-0021) — in EVERY adapter.
 func ProjectRepositorySuite(t *testing.T, name string, newEnv func(t *testing.T) ProjectRepositoryEnv) {
 	t.Run(name, func(t *testing.T) {
 		ctx := context.Background()

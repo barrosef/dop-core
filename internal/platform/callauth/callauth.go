@@ -1,5 +1,5 @@
 // Package callauth is how the core stops believing a header and starts
-// verifying a signature (ADR-0029).
+// verifying a signature (ADR-0022).
 //
 // ── The two shapes, and why there are two ───────────────────────────────────
 //

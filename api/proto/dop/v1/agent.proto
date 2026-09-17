@@ -4,7 +4,7 @@ package dop.v1;
 import "dop/v1/common.proto";
 import "dop/v1/cost.proto";
 
-// Agent turn execution — the runtime lives in the CORE (ADR-0023).
+// Agent turn execution — the runtime lives in the CORE (ADR-0016).
 //
 // The provider's credential does NOT appear in this contract, in any field, in
 // any direction. It is the entire point of the decision: it is read from the
@@ -13,7 +13,7 @@ import "dop/v1/cost.proto";
 
 // The routing decision that applied on this turn, with the WHOLE justification.
 // Without it nobody audits "why did this demand run on the expensive model?"
-// (ADR-0011 §3).
+// (ADR-0008 §3).
 message TurnRouting {
   string task_kind = 1;   // mechanical | investigation | implementation | critic
   // The CLASS, and not only the name. It exists here because the network
@@ -23,19 +23,19 @@ message TurnRouting {
   string model       = 3;
   string effort      = 4;   // requested: low | medium | high | xhigh | max
   // The effort ACTUALLY applied. It may be LOWER than the one requested when
-  // the provider does not have the five levels (ADR-0022 D4) — and on critical
-  // work (ADR-0007) that difference is a product decision, not a detail.
+  // the provider does not have the five levels (ADR-0016 D4) — and on critical
+  // work (ADR-0005) that difference is a product decision, not a detail.
   string effort_applied = 5;
   string reason         = 6;
-  // The thread's card (ADR-0010 §2) beat the router.
+  // The thread's card (ADR-0007 §2) beat the router.
   bool from_agent_card  = 7;
 }
 
-// The turn's consumption, with the four parts DISJOINT (ADR-0022 D2).
+// The turn's consumption, with the four parts DISJOINT (ADR-0016 D2).
 //
 // Disjoint is the contract: input_tokens does NOT include what came from cache.
 // A provider that reports inclusively is normalized by the adapter — summing
-// inclusive fields would inflate ADR-0011's measurement with nothing failing.
+// inclusive fields would inflate ADR-0008's measurement with nothing failing.
 message TurnUsage {
   int64 input_tokens          = 1;
   int64 output_tokens         = 2;
@@ -43,13 +43,13 @@ message TurnUsage {
   int64 cache_creation_tokens = 4;
   Money cost                  = 5;
   // False = the provider does NOT report cache creation. The zero above then
-  // means "it cannot be known", never "nothing was written" (ADR-0022 D1).
+  // means "it cannot be known", never "nothing was written" (ADR-0016 D1).
   // Without this field, whoever reads the telemetry has no way to tell the two
   // apart.
   bool cache_creation_known = 6;
   // False = there is no price table for this model. The cost stays at zero for
   // LACK of a table, not because it was free — a budget fed with zeros is the
-  // fiction ADR-0011 §2 exists to prevent.
+  // fiction ADR-0008 §2 exists to prevent.
   bool cost_known = 7;
 }
 
@@ -74,13 +74,13 @@ message TurnOutcome {
   // and an empty published finding would be the durable record of nothing.
   TurnFinding finding = 8;
   TurnUsage   usage   = 9;
-  // The context package came TRUNCATED by token budget (ADR-0012). The warning
+  // The context package came TRUNCATED by token budget (ADR-0008). The warning
   // also enters the thread — a truncation that does not show up in the
   // conversation is the origin of a wrong conclusion nobody explains
   // afterwards.
   bool context_truncated = 10;
   // A blown budget: the demand PAUSES and becomes a decision item
-  // (ADR-0011 §2). The turn that already ran is delivered whole; it is the next
+  // (ADR-0008 §2). The turn that already ran is delivered whole; it is the next
   // one that does not go out.
   bool   paused = 11;
   string notice = 12;
@@ -105,13 +105,13 @@ message RunTurnRequest {
   // expensive option and SAYING that it did. Empty is what does not pass — with
   // no kind of work there is no decision to audit.
   string task_kind = 5;
-  // The `agent`-category resource (ADR-0013) that serves this turn. Empty = the
+  // The `agent`-category resource (ADR-0009) that serves this turn. Empty = the
   // account's provider, and only when there is a SINGLE one: with two, choosing
   // on our own would swap provider, price and cache in the middle of the
   // demand.
   string resource_id = 6;
   // The OPERATOR's intervention, coming from the attention box. It enters
-  // through the provider's authority channel, NEVER as user text (ADR-0022 D3):
+  // through the provider's authority channel, NEVER as user text (ADR-0016 D3):
   // flattening the two roles is the classic prompt-injection path.
   string operator_note     = 7;
   int32  max_output_tokens = 8;
@@ -119,6 +119,6 @@ message RunTurnRequest {
   // reply, finding) derive from it, so that repeating the request repeats ZERO
   // effects. Generating one here would turn a network retry into double
   // consumption — and a duplicate consumption collides with nothing, it would
-  // enter as legitimate spend (ADR-0011).
+  // enter as legitimate spend (ADR-0008).
   string idempotency_key = 9;
 }
