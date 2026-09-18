@@ -2,6 +2,8 @@
 
 The DOP platform's core: domain, state, transactions and events.
 
+Part of the [DOP platform](https://dop-t.com) — what it is, how it is built and where it stands: **[dop-t.com](https://dop-t.com)**.
+
 **One binary, four modes** (ADR-0012) — one artifact, one pipeline:
 
 | mode | role |
