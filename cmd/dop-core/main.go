@@ -15,11 +15,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/barrosef/dop-core/internal/app"
 	"github.com/barrosef/dop-core/internal/platform/config"
 	"github.com/barrosef/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/platform/tracing"
 )
+
+// version is stamped by the build (-ldflags "-X main.version=…"); "dev" when
+// it is not.
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -41,7 +47,25 @@ func main() {
 	defer stop()
 	ctx = logging.Into(ctx, log)
 
-	log.Info("starting", "grpc_port", cfg.GRPCPort, "secret_backend", cfg.SecretBackend)
+	// Traces (ADR-0024 §4): the exporter is configuration; with none, only the
+	// propagator is installed and the trace context still crosses the process.
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		Backend: cfg.TraceBackend, OTLPEndpoint: cfg.TraceOTLPEndpoint,
+		GCPProject: cfg.SecretProject, SampleRatio: cfg.TraceSampleRatio,
+		Service: "dop-core", Mode: mode, Version: version,
+	})
+	if err != nil {
+		log.Error("invalid tracing configuration", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flush)
+	}()
+
+	log.Info("starting", "grpc_port", cfg.GRPCPort, "secret_backend", cfg.SecretBackend,
+		"trace_backend", cfg.TraceBackend)
 
 	var runErr error
 	switch mode {
@@ -65,7 +89,7 @@ func main() {
 	case "seed":
 		runErr = app.RunSeed(ctx, cfg)
 	case "version":
-		fmt.Println("dop-core dev")
+		fmt.Println("dop-core " + version)
 		return
 	default:
 		usage()

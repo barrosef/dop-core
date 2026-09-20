@@ -24,7 +24,7 @@ func TestTheEnvelopeCarriesWhoCausedTheEvent(t *testing.T) {
 		Payload: []byte(`{}`), OccurredAt: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC),
 	}
 
-	raw := envelopeOf("ev-1", e, call)
+	raw := envelopeOf("ev-1", e, call, "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
 
 	var got map[string]any
 	if err := json.Unmarshal(raw, &got); err != nil {
@@ -33,6 +33,8 @@ func TestTheEnvelopeCarriesWhoCausedTheEvent(t *testing.T) {
 	for field, want := range map[string]string{
 		"actor_kind": "user", "actor_id": "u-1", "request_id": "req-1",
 		"session_id": "s-1", "caller": "bff", "aggregate_key": "acme",
+		// The trace crosses the outbox inside the envelope (ADR-0024 §4).
+		"traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
 	} {
 		if got[field] != want {
 			t.Errorf("%s: got %v, want %q", field, got[field], want)
@@ -63,7 +65,7 @@ func TestTheEnvelopeUnmarshalsIntoEventbusEnvelopeWithEveryFieldIntact(t *testin
 		Payload: []byte(`{"x":1}`), OccurredAt: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC),
 	}
 
-	raw := envelopeOf("ev-1", e, call)
+	raw := envelopeOf("ev-1", e, call, "")
 
 	var env eventbus.Envelope
 	if err := json.Unmarshal(raw, &env); err != nil {

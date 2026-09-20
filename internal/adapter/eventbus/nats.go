@@ -14,11 +14,15 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/barrosef/dop-core/internal/domain/event"
 	"github.com/barrosef/dop-core/internal/domain/ports"
 	"github.com/barrosef/dop-core/internal/platform/errs"
 	"github.com/barrosef/dop-core/internal/platform/logging"
+	"github.com/barrosef/dop-core/internal/platform/tracing"
 )
 
 const (
@@ -60,6 +64,7 @@ type Envelope struct {
 	RequestID    string          `json:"request_id,omitempty"`
 	SessionID    string          `json:"session_id,omitempty"`
 	Caller       string          `json:"caller,omitempty"`
+	TraceParent  string          `json:"traceparent,omitempty"`
 }
 
 // eventFrom builds the port's Event from the wire envelope. One function, used
@@ -78,6 +83,7 @@ func eventFrom(env Envelope, raw []byte) ports.Event {
 		ActorKind:    env.ActorKind,
 		ActorID:      env.ActorID,
 		RequestID:    env.RequestID,
+		TraceParent:  env.TraceParent,
 		SessionID:    env.SessionID,
 		Caller:       env.Caller,
 	}
@@ -230,10 +236,16 @@ func (n *NATS) Publish(ctx context.Context, e ports.Event) error {
 	}
 	// MsgId gives deduplication on the broker's side: the relay can republish
 	// without producing a double delivery within JetStream's dedup window.
+	header := nats.Header{jetstream.MsgIDHeader: []string{e.ID}}
+	// The trace crosses the broker in a header (ADR-0024 §4): the envelope's
+	// traceparent when the relay carries one, the current span's otherwise.
+	if tp := traceParentOf(ctx, payload); tp != "" {
+		header.Set("traceparent", tp)
+	}
 	_, err := n.js.PublishMsg(ctx, &nats.Msg{
 		Subject: e.Type,
 		Data:    payload,
-		Header:  nats.Header{jetstream.MsgIDHeader: []string{e.ID}},
+		Header:  header,
 	})
 	if err != nil {
 		return errs.Wrap(errs.KindUnavailable, err, "failed to publish to NATS")
@@ -272,7 +284,29 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 		// The handler receives the fields already unwrapped; Payload carries the
 		// whole envelope, for whoever wants the raw data.
 		e := eventFrom(env, msg.Data())
-		if err := h(ctx, e); err != nil {
+		// The consumer's span continues the producer's trace (ADR-0024 §4):
+		// the header first, the envelope as the fallback for a message
+		// published before the header existed.
+		tp := msg.Headers().Get("traceparent")
+		if tp == "" {
+			tp = env.TraceParent
+		}
+		hctx, span := tracing.Tracer().Start(tracing.WithTraceParent(ctx, tp),
+			"consume "+msg.Subject(),
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "nats"),
+				attribute.String("messaging.destination.name", msg.Subject()),
+				attribute.String("messaging.consumer.group.name", durable),
+				attribute.String("dop.event.id", e.ID),
+			))
+		err := h(hctx, e)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+		if err != nil {
 			md, _ := msg.Metadata()
 			attempts := 1
 			if md != nil {
@@ -356,4 +390,17 @@ func StreamInfo(ctx context.Context, n *NATS) (string, error) {
 	}
 	return fmt.Sprintf("stream=%s msgs=%d bytes=%d consumers=%d",
 		info.Config.Name, info.State.Msgs, info.State.Bytes, info.State.Consumers), nil
+}
+
+// traceParentOf picks the trace context a publication carries: the envelope's
+// (the request that wrote the event, relayed later by a process with no span)
+// or, failing that, the publisher's own span.
+func traceParentOf(ctx context.Context, payload []byte) string {
+	var env struct {
+		TraceParent string `json:"traceparent"`
+	}
+	if json.Unmarshal(payload, &env) == nil && env.TraceParent != "" {
+		return env.TraceParent
+	}
+	return tracing.TraceParent(ctx)
 }

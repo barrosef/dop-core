@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -35,6 +36,10 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 	defer cleanup()
 
 	srv := grpc.NewServer(
+		// The server span is opened by the stats handler BEFORE the
+		// interceptors run, so the logging interceptor's lines already carry
+		// the trace (ADR-0024 §4).
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(UnaryLogging(), UnaryCallContext(deps.CallAuth), UnaryRecover()),
 		grpc.ChainStreamInterceptor(StreamLogging(), StreamCallContext(deps.CallAuth)),
 	)

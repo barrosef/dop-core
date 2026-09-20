@@ -65,13 +65,9 @@ type Deps struct {
 func Build(ctx context.Context, cfg *config.Config) (*Deps, func(), error) {
 	log := logging.From(ctx)
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "failed to open the Postgres pool")
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, nil, errs.Wrap(errs.KindUnavailable, err, "Postgres unreachable")
+		return nil, nil, err
 	}
 
 	bus, err := eventbus.NewNATS(ctx, cfg.NATSUrl)

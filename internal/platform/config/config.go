@@ -248,6 +248,11 @@ type Config struct {
 	// SeedProfile names the seed subdirectory the worker applies after the
 	// root seeds (ADR-0024 §3): "local" for development, empty in production.
 	SeedProfile string
+	// Tracing (ADR-0024 §4): the backend, the OTLP endpoint for the otlp
+	// backend, and the sampling ratio. "" means no export.
+	TraceBackend      string
+	TraceOTLPEndpoint string
+	TraceSampleRatio  float64
 	// SchemaWait is how long `serve` waits for the worker to bring the
 	// database up to the binary's schema before giving up (ADR-0024 §2).
 	SchemaWait time.Duration
@@ -336,10 +341,13 @@ func Load(mode string) (*Config, error) {
 		CockpitBaseURL:      env("COCKPIT_BASE_URL", ""),
 		DigestDelay: time.Duration(
 			envInt("DIGEST_DELAY_SECONDS", 900)) * time.Second,
-		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
-		LogLevel:      env("LOG_LEVEL", "info"),
-		SeedProfile:   env("DOP_SEED_PROFILE", ""),
-		SchemaWait:    time.Duration(envInt("SCHEMA_WAIT_SECONDS", 90)) * time.Second,
+		RelayInterval:     time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
+		LogLevel:          env("LOG_LEVEL", "info"),
+		SeedProfile:       env("DOP_SEED_PROFILE", ""),
+		TraceBackend:      env("TRACE_BACKEND", ""),
+		TraceOTLPEndpoint: env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		TraceSampleRatio:  envFloat("TRACE_SAMPLE_RATIO", 1),
+		SchemaWait:        time.Duration(envInt("SCHEMA_WAIT_SECONDS", 90)) * time.Second,
 	}
 	// Template ids come through one variable PER KIND, not in a
 	// separator-joined string: a flattened list fails silently when somebody
@@ -406,6 +414,15 @@ func Load(mode string) (*Config, error) {
 		return nil, fmt.Errorf("unknown MAIL_BACKEND: %q (use onesignal, sendgrid or smtp)", c.MailBackend)
 	}
 	return c, nil
+}
+
+func envFloat(k string, def float64) float64 {
+	if v := os.Getenv(k); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
 }
 
 func env(k, def string) string {

@@ -14,11 +14,15 @@ RUN go mod download
 
 COPY . .
 
+# The version is stamped into the binary (`dop-core version`, the trace
+# resource); the build-arg is what dop-infra's image-core passes.
+ARG VERSION=dev
+
 # CGO off: a static binary, it runs in an image with no system libc and does not
 # depend on the C resolver (the pure-Go resolver works with the cluster's DNS).
 # -trimpath takes the build machine's path out of the binary — a reproducible build.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-      -trimpath -ldflags "-s -w" \
+      -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/dop-core ./cmd/dop-core
 
 # ── runtime ──────────────────────────────────────────────────────────────────

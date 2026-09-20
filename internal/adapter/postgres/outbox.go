@@ -19,6 +19,7 @@ import (
 	"github.com/barrosef/dop-core/internal/domain/ports"
 	"github.com/barrosef/dop-core/internal/platform/ctxutil"
 	"github.com/barrosef/dop-core/internal/platform/errs"
+	"github.com/barrosef/dop-core/internal/platform/tracing"
 )
 
 type Outbox struct{ pool *pgxpool.Pool }
@@ -63,7 +64,7 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 		return errs.Wrap(errs.KindInternal, err, "failed to write the event")
 	}
 
-	env := envelopeOf(id, e, call)
+	env := envelopeOf(id, e, call, tracing.TraceParent(ctx))
 
 	// The same transaction. It is the entire point of the pattern.
 	if _, err := tx.Exec(ctx, `
@@ -79,7 +80,7 @@ func Emit(ctx context.Context, tx pgx.Tx, e ports.Event) error {
 // envelopeOf builds the wire envelope the relay publishes. Extracted from Emit
 // so the fields that cross can be asserted without a database: this is the
 // boundary where the context used to be silently dropped.
-func envelopeOf(id string, e ports.Event, call ctxutil.Call) []byte {
+func envelopeOf(id string, e ports.Event, call ctxutil.Call, traceparent string) []byte {
 	env, _ := json.Marshal(map[string]any{
 		"id": id, "account_id": e.AccountID, "aggregate": e.Aggregate,
 		"aggregate_id": e.AggregateID, "aggregate_key": e.AggregateKey,
@@ -87,7 +88,8 @@ func envelopeOf(id string, e ports.Event, call ctxutil.Call) []byte {
 		"occurred_at": e.OccurredAt,
 		"actor_kind":  string(call.ActorKind), "actor_id": call.ActorID,
 		"request_id": call.RequestID, "session_id": call.SessionID,
-		"caller": call.Caller,
+		"caller":      call.Caller,
+		"traceparent": traceparent,
 	})
 	return env
 }

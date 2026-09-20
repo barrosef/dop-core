@@ -257,6 +257,10 @@ type Event struct {
 	// Caller is the COMPONENT that signed the call — "bff", "collector"
 	// (ADR-0022). Empty when the call was proven only by a person's token.
 	Caller string `json:"caller,omitempty"`
+	// TraceParent is the W3C trace context of the request that wrote the
+	// event (ADR-0024 §4). It crosses the outbox inside the envelope so that a
+	// consumer's span is a child of the request's, not a new root.
+	TraceParent string `json:"traceparent,omitempty"`
 }
 
 // Handler processes an event. It MUST be idempotent: delivery is at-least-once

@@ -8,6 +8,8 @@ package logging
 import (
 	"context"
 	"log/slog"
+
+	"github.com/barrosef/dop-core/internal/platform/tracing"
 	"os"
 	"strings"
 )
@@ -15,6 +17,8 @@ import (
 // Canonical fields — the same in the core and in the BFF.
 const (
 	FieldRequestID  = "request_id"
+	FieldTraceID    = "trace_id"
+	FieldSpanID     = "span_id"
 	FieldAccountID  = "account_id"
 	FieldActorID    = "actor_id"
 	FieldActorKind  = "actor_kind"
@@ -80,9 +84,17 @@ func Into(ctx context.Context, l *slog.Logger) context.Context {
 }
 
 // From retrieves the logger from the context; returns the default if absent.
+//
+// When a span is active, the logger it returns carries trace_id and span_id
+// (ADR-0024 §4): every line written under a request joins the trace without
+// the call site knowing a span exists.
 func From(ctx context.Context) *slog.Logger {
-	if l, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
-		return l
+	l, ok := ctx.Value(ctxKey{}).(*slog.Logger)
+	if !ok {
+		l = slog.Default()
 	}
-	return slog.Default()
+	if traceID, spanID := tracing.IDs(ctx); traceID != "" {
+		return l.With(slog.String(FieldTraceID, traceID), slog.String(FieldSpanID, spanID))
+	}
+	return l
 }
