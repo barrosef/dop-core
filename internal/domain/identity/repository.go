@@ -20,6 +20,19 @@ type Repository interface {
 	// and two subjects agreeing on a claim are not the same person.
 	UserByVerifiedEmail(ctx context.Context, email string) (*User, error)
 
+	// The onboarding journey's writes (spec 2026-09-20 §4). personalAccountID
+	// travels with the two phone operations because the events they emit must
+	// land in the person's own box, and the adapter has no way to find it.
+	UpdateProfile(ctx context.Context, u *User, personalAccountID string) (*User, error)
+	// SetPhoneVerified writes only when users.phone == phone; otherwise it is a
+	// no-op with no error — a factor on another number is not the contact one.
+	SetPhoneVerified(ctx context.Context, userID, phone string, at time.Time, personalAccountID string) error
+	SetOnboardingStep(ctx context.Context, userID string, step Step, status StepStatus) (*User, error)
+	SetOnboardedAt(ctx context.Context, userID string, at time.Time) (*User, error)
+	// UpdateAccountProfile: an empty handle or display name is untouched.
+	UpdateAccountProfile(ctx context.Context, accountID, handle, displayName string) (*Account, error)
+	SetAccountPlan(ctx context.Context, accountID, planKey string) (*Account, error)
+
 	// Accounts and memberships
 	AccountByID(ctx context.Context, id string) (*Account, error)
 	AccountByHandle(ctx context.Context, handle string) (*Account, error)

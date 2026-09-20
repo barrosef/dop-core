@@ -13,6 +13,9 @@ type Repository interface {
 	// Workspaces
 	ListWorkspaces(ctx context.Context, accountID string) ([]Workspace, error)
 	WorkspaceByID(ctx context.Context, accountID, id string) (*Workspace, error)
+	// WorkspaceByKey is NotFound when the account has no workspace with that
+	// key. It exists for the personal workspace's idempotence.
+	WorkspaceByKey(ctx context.Context, accountID, key string) (*Workspace, error)
 	CreateWorkspace(ctx context.Context, w *Workspace) (*Workspace, error)
 	UpdateWorkspace(ctx context.Context, w *Workspace) (*Workspace, error)
 

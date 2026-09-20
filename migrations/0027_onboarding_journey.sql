@@ -48,6 +48,11 @@ ALTER TABLE users
 ALTER TABLE accounts
   ADD COLUMN plan_key text REFERENCES plan_catalog(key);
 
+-- A workspace key is unique within its account. It was a convention until the
+-- personal workspace (D-3) needed it as a constraint: two logins racing to
+-- create it must produce one row, and only the index can promise that.
+CREATE UNIQUE INDEX workspaces_account_key_uniq ON workspaces (account_id, key) WHERE key IS NOT NULL;
+
 INSERT INTO plan_catalog (key, name, tagline, features, sort) VALUES
   ('free',       'Free',       'Try the platform on your own projects.',
      '["1 workspace","3 projects","community support"]', 10),
@@ -94,6 +99,7 @@ ON CONFLICT (key) DO UPDATE SET
   sort = EXCLUDED.sort, active = true;
 
 -- +goose Down
+DROP INDEX workspaces_account_key_uniq;
 ALTER TABLE accounts DROP COLUMN plan_key;
 ALTER TABLE users
   DROP COLUMN birth_date, DROP COLUMN locale, DROP COLUMN timezone,

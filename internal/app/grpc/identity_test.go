@@ -228,3 +228,25 @@ func (s *stubIdentityRepo) RevokeInvite(context.Context, string, string) (*ident
 func (s *stubIdentityRepo) InvitesOfAccount(context.Context, string) ([]identity.Invite, error) {
 	panic("stubIdentityRepo: InvitesOfAccount is not used by these tests")
 }
+
+// The onboarding journey's writes: this stub serves the RPC translation tests
+// above, none of which reach them, so they answer "unsupported" loudly rather
+// than pretending.
+func (s *stubIdentityRepo) UpdateProfile(context.Context, *identity.User, string) (*identity.User, error) {
+	return nil, errs.Internal("not in this stub")
+}
+func (s *stubIdentityRepo) SetPhoneVerified(context.Context, string, string, time.Time, string) error {
+	return errs.Internal("not in this stub")
+}
+func (s *stubIdentityRepo) SetOnboardingStep(context.Context, string, identity.Step, identity.StepStatus) (*identity.User, error) {
+	return nil, errs.Internal("not in this stub")
+}
+func (s *stubIdentityRepo) SetOnboardedAt(context.Context, string, time.Time) (*identity.User, error) {
+	return nil, errs.Internal("not in this stub")
+}
+func (s *stubIdentityRepo) UpdateAccountProfile(context.Context, string, string, string) (*identity.Account, error) {
+	return nil, errs.Internal("not in this stub")
+}
+func (s *stubIdentityRepo) SetAccountPlan(context.Context, string, string) (*identity.Account, error) {
+	return nil, errs.Internal("not in this stub")
+}

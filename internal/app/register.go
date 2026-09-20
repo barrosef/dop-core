@@ -16,6 +16,7 @@ import (
 	"github.com/barrosef/dop-core/internal/domain/agent"
 	"github.com/barrosef/dop-core/internal/domain/agentmetrics"
 	"github.com/barrosef/dop-core/internal/domain/attention"
+	"github.com/barrosef/dop-core/internal/domain/catalog"
 	"github.com/barrosef/dop-core/internal/domain/cost"
 	"github.com/barrosef/dop-core/internal/domain/delivery"
 	"github.com/barrosef/dop-core/internal/domain/demand"
@@ -72,6 +73,14 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 
 	hierarchySvc := hierarchy.NewService(postgres.NewHierarchyRepo(deps.Pool))
 	dopv1.RegisterHierarchyServiceServer(srv, appgrpc.NewHierarchyServer(hierarchySvc))
+	// The personal account is born with its workspace (onboarding spec D-3):
+	// identity asks hierarchy through a port, wired here like the step-up gate.
+	identitySvc.WithWorkspaces(personalWorkspaces{hierarchySvc})
+
+	// The catalogues the onboarding journey reads — and the one question
+	// identity asks them before recording a plan.
+	catalogSvc := catalog.NewService(postgres.NewCatalogRepo(deps.Pool))
+	identitySvc.WithPlans(catalogSvc)
 
 	// The SecretStore arrives here already chosen by configuration (wire.go):
 	// the resource domain stores a credential without knowing whether the vault
@@ -82,6 +91,9 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// service, which needs identity. It is the same cycle the step-up gate has,
 	// resolved the same way: a port on one side, the wiring here.
 	identitySvc.WithGrants(resourceSvc)
+	// The journey's "code" step is done only when a git integration exists;
+	// the resource service answers the count directly (identity.Connections).
+	identitySvc.WithConnections(resourceSvc)
 	dopv1.RegisterResourceServiceServer(srv, appgrpc.NewResourceServer(resourceSvc))
 
 	// Live events: ONE subscription on the bus per process, with an in-memory

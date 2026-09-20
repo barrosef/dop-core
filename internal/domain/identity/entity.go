@@ -54,9 +54,27 @@ type User struct {
 	Name          string
 	AvatarURL     string
 	Providers     []string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// What the onboarding journey records on the person (spec 2026-09-20 §4).
+	// BirthDate is optional and arrives from no provider; Phone is E.164 and
+	// PhoneVerifiedAt is written only by the second factor's confirmation of a
+	// factor whose destination is this phone.
+	BirthDate       *time.Time
+	Locale          string
+	Timezone        string
+	Phone           string
+	PhoneVerifiedAt *time.Time
+	Onboarding      Onboarding
+	OnboardedAt     *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
+
+// PhoneVerified is the predicate the box and the journey read; the timestamp
+// is kept because "since when" is a question somebody will ask.
+func (u User) PhoneVerified() bool { return u.PhoneVerifiedAt != nil }
+
+// Onboarded says the journey was completed once. It is never reset.
+func (u User) Onboarded() bool { return u.OnboardedAt != nil }
 
 type Account struct {
 	ID             string
@@ -72,8 +90,11 @@ type Account struct {
 	// same way it does not know Postgres — the vocabulary is validated at the
 	// service boundary, not by the type.
 	DefaultRevocationPolicy string
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	// PlanKey is the plan the journey recorded (spec D-6). Empty until chosen;
+	// the vocabulary is the catalogue's, validated at the service boundary.
+	PlanKey   string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // IsVerified unlocks domain-based joining, the badge and handle disputes

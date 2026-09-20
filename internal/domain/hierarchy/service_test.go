@@ -126,7 +126,22 @@ func (f *fakeRepo) WorkspaceByID(_ context.Context, accountID, id string) (*hier
 	return &cp, nil
 }
 
+func (f *fakeRepo) WorkspaceByKey(_ context.Context, accountID, key string) (*hierarchy.Workspace, error) {
+	for _, w := range f.workspaces {
+		if w.AccountID == accountID && w.Key == key {
+			cp := *w
+			return &cp, nil
+		}
+	}
+	return nil, errs.NotFound("workspace")
+}
+
 func (f *fakeRepo) CreateWorkspace(_ context.Context, w *hierarchy.Workspace) (*hierarchy.Workspace, error) {
+	for _, cur := range f.workspaces {
+		if w.Key != "" && cur.AccountID == w.AccountID && cur.Key == w.Key {
+			return nil, errs.New(errs.KindAlreadyExists, "workspace already exists")
+		}
+	}
 	w.ID = f.id("ws")
 	cp := *w
 	f.workspaces[w.ID] = &cp
@@ -444,5 +459,24 @@ func TestUpdateWorkspaceDoesNotChangeAccounts(t *testing.T) {
 	}
 	if repo.workspaces[ws.ID].Name != "Digital Platform" {
 		t.Error("the name should have been updated")
+	}
+}
+
+func TestEnsurePersonalWorkspaceIsIdempotent(t *testing.T) {
+	repo := newFakeRepo()
+	svc := hierarchy.NewService(repo)
+	ctx := context.Background()
+	if err := svc.EnsurePersonalWorkspace(ctx, "acct-1", "Personal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.EnsurePersonalWorkspace(ctx, "acct-1", "Renamed later"); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := repo.ListWorkspaces(ctx, "acct-1")
+	if len(list) != 1 || list[0].Key != hierarchy.PersonalWorkspaceKey || list[0].Name != "Personal" {
+		t.Errorf("expected one personal workspace named by the first call: %+v", list)
+	}
+	if err := svc.EnsurePersonalWorkspace(ctx, "", "Personal"); err == nil {
+		t.Error("an empty account should be refused")
 	}
 }

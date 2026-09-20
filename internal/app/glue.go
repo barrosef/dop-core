@@ -15,6 +15,7 @@ import (
 	"github.com/barrosef/dop-core/internal/domain/ports"
 	"github.com/barrosef/dop-core/internal/domain/secondfactor"
 	"github.com/barrosef/dop-core/internal/domain/workflow"
+	"github.com/barrosef/dop-core/internal/platform/ctxutil"
 )
 
 // The glue between domains.
@@ -273,3 +274,17 @@ func (u secondFactorUsers) PersonalAccountOf(ctx context.Context, userID string)
 }
 
 var _ secondfactor.Users = secondFactorUsers{}
+
+// ── hierarchy → identity ────────────────────────────────────────────────────
+
+// personalWorkspaces gives identity the ONE thing it needs from hierarchy: a
+// personal workspace that exists. It runs the call with the account in the
+// context because EnsureUser has none yet, and hierarchy's writes read it from
+// there.
+type personalWorkspaces struct{ h *hierarchy.Service }
+
+func (p personalWorkspaces) EnsurePersonalWorkspace(ctx context.Context, accountID, name string) error {
+	call, _ := ctxutil.From(ctx)
+	call.AccountID = accountID
+	return p.h.EnsurePersonalWorkspace(ctxutil.Into(ctx, call), accountID, name)
+}

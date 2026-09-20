@@ -22,17 +22,31 @@ type IdentityRepo struct{ pool *pgxpool.Pool }
 
 func NewIdentityRepo(pool *pgxpool.Pool) *IdentityRepo { return &IdentityRepo{pool: pool} }
 
-const userCols = `id, subject, email, email_verified, name, avatar_url, providers, created_at, updated_at`
+const userCols = `id, subject, email, email_verified, name, avatar_url, providers,
+	birth_date, COALESCE(locale,''), COALESCE(timezone,''), COALESCE(phone,''),
+	phone_verified_at, onboarding, onboarded_at, created_at, updated_at`
 
 func scanUser(row pgx.Row) (*identity.User, error) {
 	var u identity.User
 	var email, name, avatar *string
+	var onboarding []byte
 	err := row.Scan(&u.ID, &u.Subject, &email, &u.EmailVerified, &name, &avatar,
-		&u.Providers, &u.CreatedAt, &u.UpdatedAt)
+		&u.Providers, &u.BirthDate, &u.Locale, &u.Timezone, &u.Phone,
+		&u.PhoneVerifiedAt, &onboarding, &u.OnboardedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	u.Email, u.Name, u.AvatarURL = deref(email), deref(name), deref(avatar)
+	u.Onboarding = identity.Onboarding{}
+	if len(onboarding) > 0 {
+		var raw map[string]string
+		if err := json.Unmarshal(onboarding, &raw); err != nil {
+			return nil, err
+		}
+		for k, v := range raw {
+			u.Onboarding[identity.Step(k)] = identity.StepStatus(v)
+		}
+	}
 	return &u, nil
 }
 
@@ -139,14 +153,14 @@ func (r *IdentityRepo) UpsertUser(ctx context.Context, u *identity.User) (*ident
 // before).
 const accountCols = `id, kind, handle, display_name,
 	COALESCE(legal_id,''), COALESCE(legal_name,''), COALESCE(verified_domain,''),
-	default_revocation_policy::text,
+	default_revocation_policy::text, COALESCE(plan_key,''),
 	created_at, updated_at`
 
 func scanAccount(row pgx.Row) (*identity.Account, error) {
 	var a identity.Account
 	var kind string
 	if err := row.Scan(&a.ID, &kind, &a.Handle, &a.DisplayName,
-		&a.LegalID, &a.LegalName, &a.VerifiedDomain, &a.DefaultRevocationPolicy,
+		&a.LegalID, &a.LegalName, &a.VerifiedDomain, &a.DefaultRevocationPolicy, &a.PlanKey,
 		&a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -546,4 +560,140 @@ func (r *IdentityRepo) RecordVerificationRequest(ctx context.Context, email, sub
 		INSERT INTO email_verification_requests (email, subject) VALUES ($1, $2)`,
 		email, subject)
 	return Translate(err, "the verification message record")
+}
+
+// ── the onboarding journey (spec 2026-09-20) ────────────────────────────────
+
+// The two identity events the attention box listens to (attention/rules.go).
+// They carry the PERSONAL account so the item lands in the box the person
+// sees; identity resolves it and hands it in, because this adapter has no
+// business knowing which of the user's accounts is the personal one.
+const (
+	evPhoneAdded    = "dop.identity.user.phone_added"
+	evPhoneVerified = "dop.identity.user.phone_verified"
+)
+
+// maskPhone keeps the last four digits: enough for the person to recognise
+// the number in the box, not enough to be a phone number in a log.
+func maskPhone(phone string) string {
+	if len(phone) <= 4 {
+		return phone
+	}
+	return "…" + phone[len(phone)-4:]
+}
+
+// UpdateProfile writes the editable profile. A phone that changed arrives
+// unverified — `phone_verified_at` is cleared in the same statement — and
+// raises `user.phone_added` for the reminder.
+func (r *IdentityRepo) UpdateProfile(ctx context.Context, u *identity.User, personalAccountID string) (*identity.User, error) {
+	var saved *identity.User
+	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		var previous string
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(phone,'') FROM users WHERE id = $1 FOR UPDATE`, u.ID).
+			Scan(&previous); err != nil {
+			return Translate(err, "user")
+		}
+		row := tx.QueryRow(ctx, `
+			UPDATE users
+			   SET name = NULLIF($2,''), birth_date = $3, locale = NULLIF($4,''),
+			       timezone = NULLIF($5,''), phone = NULLIF($6,''),
+			       phone_verified_at = CASE WHEN COALESCE(phone,'') = $6 THEN phone_verified_at ELSE NULL END,
+			       updated_at = now()
+			 WHERE id = $1
+			 RETURNING `+userCols,
+			u.ID, u.Name, u.BirthDate, u.Locale, u.Timezone, u.Phone)
+		var err error
+		saved, err = scanUser(row)
+		if err != nil {
+			return Translate(err, "user")
+		}
+		if saved.Phone == "" || saved.Phone == previous {
+			return nil
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: personalAccountID, Aggregate: "user", AggregateID: saved.ID,
+			Type:    evPhoneAdded,
+			Payload: mustJSON(map[string]any{"phone_masked": maskPhone(saved.Phone)}),
+		})
+	})
+	return saved, err
+}
+
+// SetPhoneVerified writes only when the confirmed destination IS the contact
+// phone. Zero rows is not an error: a second factor on another number proves
+// nothing about this one, and the caller (the second factor) must not fail
+// its own confirmation over it.
+func (r *IdentityRepo) SetPhoneVerified(ctx context.Context, userID, phone string, at time.Time, personalAccountID string) error {
+	return InTx(ctx, r.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE users SET phone_verified_at = $3, updated_at = now()
+			 WHERE id = $1 AND phone = $2 AND phone_verified_at IS NULL`, userID, phone, at)
+		if err != nil {
+			return Translate(err, "user")
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		return Emit(ctx, tx, ports.Event{
+			AccountID: personalAccountID, Aggregate: "user", AggregateID: userID,
+			Type:    evPhoneVerified,
+			Payload: mustJSON(map[string]any{"phone_masked": maskPhone(phone)}),
+		})
+	})
+}
+
+func (r *IdentityRepo) SetOnboardingStep(ctx context.Context, userID string, step identity.Step, status identity.StepStatus) (*identity.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx, `
+		UPDATE users
+		   SET onboarding = onboarding || jsonb_build_object($2::text, $3::text), updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+userCols, userID, string(step), string(status)))
+	if err != nil {
+		return nil, Translate(err, "user")
+	}
+	return u, nil
+}
+
+func (r *IdentityRepo) SetOnboardedAt(ctx context.Context, userID string, at time.Time) (*identity.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx, `
+		UPDATE users SET onboarded_at = COALESCE(onboarded_at, $2), updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+userCols, userID, at))
+	if err != nil {
+		return nil, Translate(err, "user")
+	}
+	return u, nil
+}
+
+// UpdateAccountProfile: an empty handle or display name is untouched. A taken
+// handle comes back as the same refusal CreateAccount gives, keyed for the
+// person.
+func (r *IdentityRepo) UpdateAccountProfile(ctx context.Context, accountID, handle, displayName string) (*identity.Account, error) {
+	a, err := scanAccount(r.pool.QueryRow(ctx, `
+		UPDATE accounts
+		   SET handle = COALESCE(NULLIF($2,''), handle),
+		       display_name = COALESCE(NULLIF($3,''), display_name),
+		       updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+accountCols, accountID, handle, displayName))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == codeUniqueViolation {
+			return nil, errs.Conflict("handle %q is taken", handle).
+				WithCode(identity.KeyHandleTaken, map[string]any{"handle": handle})
+		}
+		return nil, Translate(err, "account")
+	}
+	return a, nil
+}
+
+func (r *IdentityRepo) SetAccountPlan(ctx context.Context, accountID, planKey string) (*identity.Account, error) {
+	a, err := scanAccount(r.pool.QueryRow(ctx, `
+		UPDATE accounts SET plan_key = $2, updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+accountCols, accountID, planKey))
+	if err != nil {
+		return nil, Translate(err, "account")
+	}
+	return a, nil
 }

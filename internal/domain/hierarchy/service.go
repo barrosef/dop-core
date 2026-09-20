@@ -72,6 +72,41 @@ func (s *Service) CreateWorkspace(ctx context.Context, name, key, description st
 	})
 }
 
+// PersonalWorkspaceKey marks the workspace a personal account is born with
+// (onboarding spec 2026-09-20 D-3). Keys are uppercase by this domain's rule.
+const PersonalWorkspaceKey = "PERSONAL"
+
+// EnsurePersonalWorkspace creates the account's personal workspace once. It is
+// called by identity on every login, so it has to be cheap when the workspace
+// exists (one indexed read) and idempotent when two logins race (the second
+// insert loses on the unique key and is read back as the winner).
+//
+// It takes the account as an argument rather than from the context because it
+// runs inside EnsureUser, before the call has an active account.
+func (s *Service) EnsurePersonalWorkspace(ctx context.Context, accountID, name string) error {
+	if accountID == "" {
+		return errs.Invalid("account not provided")
+	}
+	if _, err := s.repo.WorkspaceByKey(ctx, accountID, PersonalWorkspaceKey); err == nil {
+		return nil
+	} else if errs.KindOf(err) != errs.KindNotFound {
+		return err
+	}
+	name = strings.TrimSpace(name)
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	_, err := s.repo.CreateWorkspace(ctx, &Workspace{
+		AccountID: accountID,
+		Name:      name,
+		Key:       PersonalWorkspaceKey,
+	})
+	if errs.KindOf(err) == errs.KindAlreadyExists {
+		return nil
+	}
+	return err
+}
+
 // UpdateWorkspace ignores whatever account arrives in the argument and uses the
 // context's: a workspace's account is not changed by an update.
 func (s *Service) UpdateWorkspace(ctx context.Context, in Workspace) (*Workspace, error) {

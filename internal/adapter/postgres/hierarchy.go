@@ -62,6 +62,15 @@ func (r *HierarchyRepo) WorkspaceByID(ctx context.Context, accountID, id string)
 	return w, nil
 }
 
+func (r *HierarchyRepo) WorkspaceByKey(ctx context.Context, accountID, key string) (*hierarchy.Workspace, error) {
+	w, err := scanWorkspace(r.pool.QueryRow(ctx,
+		`SELECT `+workspaceCols+` FROM workspaces WHERE account_id = $1 AND key = $2`, accountID, key))
+	if err != nil {
+		return nil, Translate(err, "workspace")
+	}
+	return w, nil
+}
+
 func (r *HierarchyRepo) CreateWorkspace(ctx context.Context, w *hierarchy.Workspace) (*hierarchy.Workspace, error) {
 	var saved *hierarchy.Workspace
 	err := InTx(ctx, r.pool, func(tx pgx.Tx) error {

@@ -153,6 +153,31 @@ func (s *Service) List(ctx context.Context, kind Kind) ([]Resource, error) {
 	return out, nil
 }
 
+// CountIntegrations answers identity.Connections for the onboarding journey:
+// how many git and how many task-manager integrations the account holds. It
+// reads the account's rows with no visibility filter on purpose — the journey
+// asks about the PERSONAL account, whose only member is its owner, and a count
+// is not a listing.
+func (s *Service) CountIntegrations(ctx context.Context, accountID string) (git, tasks int, err error) {
+	all, err := s.repo.List(ctx, accountID, KindIntegration)
+	if err != nil {
+		return 0, 0, err
+	}
+	for i := range all {
+		spec, err := ParseIntegration(all[i].Config)
+		if err != nil {
+			continue // a row that fails to parse was refused at write time; it is not a connection
+		}
+		switch spec.Category {
+		case CategoryGit:
+			git++
+		case CategoryTaskManager:
+			tasks++
+		}
+	}
+	return git, tasks, nil
+}
+
 func (s *Service) Get(ctx context.Context, id string) (*Resource, error) {
 	a, err := s.who(ctx)
 	if err != nil {

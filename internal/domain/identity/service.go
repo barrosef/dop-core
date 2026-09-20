@@ -15,11 +15,43 @@ import (
 
 // Service concentrates the identity rules. It takes only PORTS.
 type Service struct {
-	repo   Repository
-	clock  ports.Clock
-	stepUp StepUpGate
-	grants Grants
-	mailer ports.Mailer
+	repo        Repository
+	clock       ports.Clock
+	stepUp      StepUpGate
+	grants      Grants
+	mailer      ports.Mailer
+	workspaces  WorkspaceProvisioner
+	plans       Plans
+	connections Connections
+}
+
+// WorkspaceProvisioner is how the personal account gets its workspace at birth
+// (spec 2026-09-20 D-3) without identity importing hierarchy — the same shape
+// as StepUpGate and Grants: a port here, the wiring in the composition root.
+type WorkspaceProvisioner interface {
+	// EnsurePersonalWorkspace is idempotent: it creates the workspace with the
+	// personal key once and answers nil forever after.
+	EnsurePersonalWorkspace(ctx context.Context, accountID, name string) error
+}
+
+// PersonalWorkspaceName is what the workspace is called at birth. The person
+// has no locale yet on first login, so the core stores the English default and
+// the cockpit renders `key == personal` through i18n.
+const PersonalWorkspaceName = "Personal"
+
+// WithWorkspaces wires the provisioner. Without it EnsureUser creates no
+// workspace — explicit, like the other optional collaborators, so the domain
+// tests that do not care keep passing.
+func (s *Service) WithWorkspaces(w WorkspaceProvisioner) *Service {
+	s.workspaces = w
+	return s
+}
+
+func (s *Service) ensurePersonalWorkspace(ctx context.Context, accountID string) error {
+	if s.workspaces == nil {
+		return nil
+	}
+	return s.workspaces.EnsurePersonalWorkspace(ctx, accountID, PersonalWorkspaceName)
 }
 
 // StepUpGate is the second factor's gate, in the narrowest possible shape: one
@@ -197,12 +229,21 @@ func (s *Service) EnsureUser(ctx context.Context, p ports.Principal) (*User, *Ac
 	}
 	for i := range accounts {
 		if accounts[i].Kind == AccountPersonal {
+			// The workspace is ensured on EVERY login, not only at birth: an
+			// account created before D-3 existed gains its workspace on the
+			// next sign-in, and the check is one indexed read.
+			if err := s.ensurePersonalWorkspace(ctx, accounts[i].ID); err != nil {
+				return nil, nil, err
+			}
 			return saved, &accounts[i], nil
 		}
 	}
 
 	personal, err := s.createPersonalAccount(ctx, saved)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.ensurePersonalWorkspace(ctx, personal.ID); err != nil {
 		return nil, nil, err
 	}
 	return saved, personal, nil
