@@ -33,6 +33,13 @@ const (
 	IdentityService_RemoveMembership_FullMethodName      = "/dop.v1.IdentityService/RemoveMembership"
 	IdentityService_ListInvites_FullMethodName           = "/dop.v1.IdentityService/ListInvites"
 	IdentityService_GetInvite_FullMethodName             = "/dop.v1.IdentityService/GetInvite"
+	IdentityService_UpdateProfile_FullMethodName         = "/dop.v1.IdentityService/UpdateProfile"
+	IdentityService_GetOnboarding_FullMethodName         = "/dop.v1.IdentityService/GetOnboarding"
+	IdentityService_RecordOnboardingStep_FullMethodName  = "/dop.v1.IdentityService/RecordOnboardingStep"
+	IdentityService_CompleteOnboarding_FullMethodName    = "/dop.v1.IdentityService/CompleteOnboarding"
+	IdentityService_CheckHandle_FullMethodName           = "/dop.v1.IdentityService/CheckHandle"
+	IdentityService_UpdatePersonalAccount_FullMethodName = "/dop.v1.IdentityService/UpdatePersonalAccount"
+	IdentityService_SetPlan_FullMethodName               = "/dop.v1.IdentityService/SetPlan"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -68,6 +75,19 @@ type IdentityServiceClient interface {
 	// whoever opens the link may not be a member of anything yet — that is the
 	// point of an invite. It requires a session all the same.
 	GetInvite(ctx context.Context, in *GetInviteRequest, opts ...grpc.CallOption) (*InvitePreview, error)
+	// ── the onboarding journey (spec 2026-09-20) ──────────────────────────
+	// All of these are about the ACTOR and nobody else; none takes a user id.
+	// They need a session, not an active account: the journey runs before the
+	// cockpit has picked one.
+	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*User, error)
+	GetOnboarding(ctx context.Context, in *GetOnboardingRequest, opts ...grpc.CallOption) (*OnboardingState, error)
+	RecordOnboardingStep(ctx context.Context, in *RecordOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingState, error)
+	CompleteOnboarding(ctx context.Context, in *CompleteOnboardingRequest, opts ...grpc.CallOption) (*OnboardingState, error)
+	CheckHandle(ctx context.Context, in *CheckHandleRequest, opts ...grpc.CallOption) (*HandleAvailability, error)
+	// UpdatePersonalAccount edits the actor's PERSONAL account, whatever the
+	// active one is; SetPlan records the choice on it.
+	UpdatePersonalAccount(ctx context.Context, in *UpdatePersonalAccountRequest, opts ...grpc.CallOption) (*Account, error)
+	SetPlan(ctx context.Context, in *SetPlanRequest, opts ...grpc.CallOption) (*Account, error)
 }
 
 type identityServiceClient struct {
@@ -218,6 +238,76 @@ func (c *identityServiceClient) GetInvite(ctx context.Context, in *GetInviteRequ
 	return out, nil
 }
 
+func (c *identityServiceClient) UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*User, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(User)
+	err := c.cc.Invoke(ctx, IdentityService_UpdateProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) GetOnboarding(ctx context.Context, in *GetOnboardingRequest, opts ...grpc.CallOption) (*OnboardingState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingState)
+	err := c.cc.Invoke(ctx, IdentityService_GetOnboarding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) RecordOnboardingStep(ctx context.Context, in *RecordOnboardingStepRequest, opts ...grpc.CallOption) (*OnboardingState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingState)
+	err := c.cc.Invoke(ctx, IdentityService_RecordOnboardingStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) CompleteOnboarding(ctx context.Context, in *CompleteOnboardingRequest, opts ...grpc.CallOption) (*OnboardingState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OnboardingState)
+	err := c.cc.Invoke(ctx, IdentityService_CompleteOnboarding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) CheckHandle(ctx context.Context, in *CheckHandleRequest, opts ...grpc.CallOption) (*HandleAvailability, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HandleAvailability)
+	err := c.cc.Invoke(ctx, IdentityService_CheckHandle_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) UpdatePersonalAccount(ctx context.Context, in *UpdatePersonalAccountRequest, opts ...grpc.CallOption) (*Account, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Account)
+	err := c.cc.Invoke(ctx, IdentityService_UpdatePersonalAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *identityServiceClient) SetPlan(ctx context.Context, in *SetPlanRequest, opts ...grpc.CallOption) (*Account, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Account)
+	err := c.cc.Invoke(ctx, IdentityService_SetPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
@@ -251,6 +341,19 @@ type IdentityServiceServer interface {
 	// whoever opens the link may not be a member of anything yet — that is the
 	// point of an invite. It requires a session all the same.
 	GetInvite(context.Context, *GetInviteRequest) (*InvitePreview, error)
+	// ── the onboarding journey (spec 2026-09-20) ──────────────────────────
+	// All of these are about the ACTOR and nobody else; none takes a user id.
+	// They need a session, not an active account: the journey runs before the
+	// cockpit has picked one.
+	UpdateProfile(context.Context, *UpdateProfileRequest) (*User, error)
+	GetOnboarding(context.Context, *GetOnboardingRequest) (*OnboardingState, error)
+	RecordOnboardingStep(context.Context, *RecordOnboardingStepRequest) (*OnboardingState, error)
+	CompleteOnboarding(context.Context, *CompleteOnboardingRequest) (*OnboardingState, error)
+	CheckHandle(context.Context, *CheckHandleRequest) (*HandleAvailability, error)
+	// UpdatePersonalAccount edits the actor's PERSONAL account, whatever the
+	// active one is; SetPlan records the choice on it.
+	UpdatePersonalAccount(context.Context, *UpdatePersonalAccountRequest) (*Account, error)
+	SetPlan(context.Context, *SetPlanRequest) (*Account, error)
 	mustEmbedUnimplementedIdentityServiceServer()
 }
 
@@ -302,6 +405,27 @@ func (UnimplementedIdentityServiceServer) ListInvites(context.Context, *ListInvi
 }
 func (UnimplementedIdentityServiceServer) GetInvite(context.Context, *GetInviteRequest) (*InvitePreview, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInvite not implemented")
+}
+func (UnimplementedIdentityServiceServer) UpdateProfile(context.Context, *UpdateProfileRequest) (*User, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateProfile not implemented")
+}
+func (UnimplementedIdentityServiceServer) GetOnboarding(context.Context, *GetOnboardingRequest) (*OnboardingState, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOnboarding not implemented")
+}
+func (UnimplementedIdentityServiceServer) RecordOnboardingStep(context.Context, *RecordOnboardingStepRequest) (*OnboardingState, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordOnboardingStep not implemented")
+}
+func (UnimplementedIdentityServiceServer) CompleteOnboarding(context.Context, *CompleteOnboardingRequest) (*OnboardingState, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteOnboarding not implemented")
+}
+func (UnimplementedIdentityServiceServer) CheckHandle(context.Context, *CheckHandleRequest) (*HandleAvailability, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckHandle not implemented")
+}
+func (UnimplementedIdentityServiceServer) UpdatePersonalAccount(context.Context, *UpdatePersonalAccountRequest) (*Account, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePersonalAccount not implemented")
+}
+func (UnimplementedIdentityServiceServer) SetPlan(context.Context, *SetPlanRequest) (*Account, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPlan not implemented")
 }
 func (UnimplementedIdentityServiceServer) mustEmbedUnimplementedIdentityServiceServer() {}
 func (UnimplementedIdentityServiceServer) testEmbeddedByValue()                         {}
@@ -576,6 +700,132 @@ func _IdentityService_GetInvite_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_UpdateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).UpdateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_UpdateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).UpdateProfile(ctx, req.(*UpdateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_GetOnboarding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOnboardingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).GetOnboarding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_GetOnboarding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).GetOnboarding(ctx, req.(*GetOnboardingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_RecordOnboardingStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordOnboardingStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).RecordOnboardingStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_RecordOnboardingStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).RecordOnboardingStep(ctx, req.(*RecordOnboardingStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_CompleteOnboarding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteOnboardingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).CompleteOnboarding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_CompleteOnboarding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).CompleteOnboarding(ctx, req.(*CompleteOnboardingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_CheckHandle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckHandleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).CheckHandle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_CheckHandle_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).CheckHandle(ctx, req.(*CheckHandleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_UpdatePersonalAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePersonalAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).UpdatePersonalAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_UpdatePersonalAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).UpdatePersonalAccount(ctx, req.(*UpdatePersonalAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IdentityService_SetPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).SetPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_SetPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).SetPlan(ctx, req.(*SetPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityService_ServiceDesc is the grpc.ServiceDesc for IdentityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -638,6 +888,34 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInvite",
 			Handler:    _IdentityService_GetInvite_Handler,
+		},
+		{
+			MethodName: "UpdateProfile",
+			Handler:    _IdentityService_UpdateProfile_Handler,
+		},
+		{
+			MethodName: "GetOnboarding",
+			Handler:    _IdentityService_GetOnboarding_Handler,
+		},
+		{
+			MethodName: "RecordOnboardingStep",
+			Handler:    _IdentityService_RecordOnboardingStep_Handler,
+		},
+		{
+			MethodName: "CompleteOnboarding",
+			Handler:    _IdentityService_CompleteOnboarding_Handler,
+		},
+		{
+			MethodName: "CheckHandle",
+			Handler:    _IdentityService_CheckHandle_Handler,
+		},
+		{
+			MethodName: "UpdatePersonalAccount",
+			Handler:    _IdentityService_UpdatePersonalAccount_Handler,
+		},
+		{
+			MethodName: "SetPlan",
+			Handler:    _IdentityService_SetPlan_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

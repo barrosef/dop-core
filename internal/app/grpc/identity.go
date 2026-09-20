@@ -237,9 +237,16 @@ func userToProto(u *identity.User) *dopv1.User {
 	if u == nil {
 		return nil
 	}
+	birth := ""
+	if u.BirthDate != nil {
+		birth = u.BirthDate.Format("2006-01-02")
+	}
 	return &dopv1.User{
 		Id: u.ID, Email: u.Email, Name: u.Name, AvatarUrl: u.AvatarURL,
 		Providers: u.Providers,
+		Locale:    u.Locale, Timezone: u.Timezone, Phone: u.Phone,
+		PhoneVerified: u.PhoneVerified(), Onboarded: u.Onboarded(),
+		BirthDate: birth, EmailVerified: u.EmailVerified,
 		Audit: &dopv1.AuditStamp{
 			CreatedAt: timestamppb.New(u.CreatedAt),
 			UpdatedAt: timestamppb.New(u.UpdatedAt),
@@ -258,6 +265,7 @@ func accountToProto(a *identity.Account) *dopv1.Account {
 	return &dopv1.Account{
 		Id: a.ID, Kind: kind, Handle: a.Handle, DisplayName: a.DisplayName,
 		LegalId: a.LegalID, LegalName: a.LegalName, VerifiedDomain: a.VerifiedDomain,
+		PlanKey: a.PlanKey,
 		Audit: &dopv1.AuditStamp{
 			CreatedAt: timestamppb.New(a.CreatedAt),
 			UpdatedAt: timestamppb.New(a.UpdatedAt),

@@ -28,6 +28,7 @@ const (
 	ResourceService_RevokeGrant_FullMethodName      = "/dop.v1.ResourceService/RevokeGrant"
 	ResourceService_ListMemberGrants_FullMethodName = "/dop.v1.ResourceService/ListMemberGrants"
 	ResourceService_SetCredential_FullMethodName    = "/dop.v1.ResourceService/SetCredential"
+	ResourceService_CheckResource_FullMethodName    = "/dop.v1.ResourceService/CheckResource"
 )
 
 // ResourceServiceClient is the client API for ResourceService service.
@@ -46,6 +47,10 @@ type ResourceServiceClient interface {
 	ListMemberGrants(ctx context.Context, in *ListMemberGrantsRequest, opts ...grpc.CallOption) (*ListMemberGrantsResponse, error)
 	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(ctx context.Context, in *SetCredentialRequest, opts ...grpc.CallOption) (*SetCredentialResponse, error)
+	// CheckResource probes the integration's credential with the provider
+	// (onboarding spec 2026-09-20 §5). `operated` false means the platform has no
+	// adapter for that provider: nothing was tried, the credential is stored.
+	CheckResource(ctx context.Context, in *CheckResourceRequest, opts ...grpc.CallOption) (*CheckResult, error)
 }
 
 type resourceServiceClient struct {
@@ -146,6 +151,16 @@ func (c *resourceServiceClient) SetCredential(ctx context.Context, in *SetCreden
 	return out, nil
 }
 
+func (c *resourceServiceClient) CheckResource(ctx context.Context, in *CheckResourceRequest, opts ...grpc.CallOption) (*CheckResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckResult)
+	err := c.cc.Invoke(ctx, ResourceService_CheckResource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ResourceServiceServer is the server API for ResourceService service.
 // All implementations must embed UnimplementedResourceServiceServer
 // for forward compatibility.
@@ -162,6 +177,10 @@ type ResourceServiceServer interface {
 	ListMemberGrants(context.Context, *ListMemberGrantsRequest) (*ListMemberGrantsResponse, error)
 	// The credential is written to the SecretStore; the value never comes back on a read.
 	SetCredential(context.Context, *SetCredentialRequest) (*SetCredentialResponse, error)
+	// CheckResource probes the integration's credential with the provider
+	// (onboarding spec 2026-09-20 §5). `operated` false means the platform has no
+	// adapter for that provider: nothing was tried, the credential is stored.
+	CheckResource(context.Context, *CheckResourceRequest) (*CheckResult, error)
 	mustEmbedUnimplementedResourceServiceServer()
 }
 
@@ -198,6 +217,9 @@ func (UnimplementedResourceServiceServer) ListMemberGrants(context.Context, *Lis
 }
 func (UnimplementedResourceServiceServer) SetCredential(context.Context, *SetCredentialRequest) (*SetCredentialResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetCredential not implemented")
+}
+func (UnimplementedResourceServiceServer) CheckResource(context.Context, *CheckResourceRequest) (*CheckResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckResource not implemented")
 }
 func (UnimplementedResourceServiceServer) mustEmbedUnimplementedResourceServiceServer() {}
 func (UnimplementedResourceServiceServer) testEmbeddedByValue()                         {}
@@ -382,6 +404,24 @@ func _ResourceService_SetCredential_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ResourceService_CheckResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourceServiceServer).CheckResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourceService_CheckResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourceServiceServer).CheckResource(ctx, req.(*CheckResourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ResourceService_ServiceDesc is the grpc.ServiceDesc for ResourceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -424,6 +464,10 @@ var ResourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetCredential",
 			Handler:    _ResourceService_SetCredential_Handler,
+		},
+		{
+			MethodName: "CheckResource",
+			Handler:    _ResourceService_CheckResource_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

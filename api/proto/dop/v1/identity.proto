@@ -11,6 +11,15 @@ message User {
   string   avatar_url     = 4;
   repeated string providers = 5;  // password, google.com, github.com, linkedin.com
   AuditStamp audit        = 6;
+  // What the onboarding journey records (spec 2026-09-20 §4). birth_date is an
+  // ISO date or empty; phone is E.164 or empty.
+  string locale         = 7;
+  string timezone       = 8;
+  string phone          = 9;
+  bool   phone_verified = 10;
+  bool   onboarded      = 11;
+  string birth_date     = 12;
+  bool   email_verified = 13;
 }
 
 message Account {
@@ -28,6 +37,8 @@ message Account {
   string legal_name      = 11;
   string verified_domain = 12;  // empty = not verified
   AuditStamp audit       = 20;
+  // The plan the onboarding journey recorded (spec D-6). Empty until chosen.
+  string plan_key        = 21;
 }
 
 enum Role {
@@ -99,7 +110,54 @@ service IdentityService {
   // whoever opens the link may not be a member of anything yet — that is the
   // point of an invite. It requires a session all the same.
   rpc GetInvite      (GetInviteRequest)      returns (InvitePreview);
+
+  // ── the onboarding journey (spec 2026-09-20) ──────────────────────────
+  // All of these are about the ACTOR and nobody else; none takes a user id.
+  // They need a session, not an active account: the journey runs before the
+  // cockpit has picked one.
+  rpc UpdateProfile        (UpdateProfileRequest)        returns (User);
+  rpc GetOnboarding        (GetOnboardingRequest)        returns (OnboardingState);
+  rpc RecordOnboardingStep (RecordOnboardingStepRequest) returns (OnboardingState);
+  rpc CompleteOnboarding   (CompleteOnboardingRequest)   returns (OnboardingState);
+  rpc CheckHandle          (CheckHandleRequest)          returns (HandleAvailability);
+  // UpdatePersonalAccount edits the actor's PERSONAL account, whatever the
+  // active one is; SetPlan records the choice on it.
+  rpc UpdatePersonalAccount(UpdatePersonalAccountRequest) returns (Account);
+  rpc SetPlan              (SetPlanRequest)              returns (Account);
 }
+
+message UpdateProfileRequest {
+  // Absent = untouched. An empty string clears phone, locale and timezone;
+  // an empty name is refused; an empty birth_date clears it.
+  optional string name       = 1;
+  optional string birth_date = 2;
+  optional string locale     = 3;
+  optional string timezone   = 4;
+  optional string phone      = 5;
+}
+message GetOnboardingRequest {}
+message OnboardingStep {
+  string step   = 1;  // profile | contact | code | tasks | plan
+  string status = 2;  // done | skipped | pending
+}
+message OnboardingState {
+  repeated OnboardingStep steps = 1;   // every step, in journey order
+  string current             = 2;      // "" once complete
+  bool   complete            = 3;
+  bool   email_verified      = 4;
+  string phone               = 5;
+  bool   phone_verified      = 6;
+  int32  code_connections    = 7;
+  int32  task_connections    = 8;
+  string plan_key            = 9;
+  string personal_account_id = 10;
+}
+message RecordOnboardingStepRequest { string step = 1; string status = 2; }
+message CompleteOnboardingRequest {}
+message CheckHandleRequest { string handle = 1; }
+message HandleAvailability { string handle = 1; bool available = 2; string suggestion = 3; }
+message UpdatePersonalAccountRequest { string handle = 1; string display_name = 2; }
+message SetPlanRequest { string plan_key = 1; }
 
 message ListInvitesRequest  { reserved 1; }
 message ListInvitesResponse { repeated Invite invites = 1; }

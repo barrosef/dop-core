@@ -1,0 +1,36 @@
+syntax = "proto3";
+package dop.v1;
+
+// The catalogues the onboarding journey reads (spec 2026-09-20 D-4, D-6).
+// Read-only: the rows arrive with the migrations. A session is required, an
+// active account is not.
+service CatalogService {
+  rpc ListPlans     (ListPlansRequest)     returns (ListPlansResponse);
+  rpc ListProviders (ListProvidersRequest) returns (ListProvidersResponse);
+}
+
+message Plan {
+  string key     = 1;
+  string name    = 2;
+  string tagline = 3;
+  repeated string features = 4;
+  int32  sort    = 5;
+}
+
+message Provider {
+  string key             = 1;
+  string category        = 2;  // git | task_manager
+  string name            = 3;
+  string credential_kind = 4;
+  repeated string permissions = 5;
+  bool   needs_base_url  = 6;
+  bool   operated        = 7;
+  string docs_url        = 8;
+  string brand_color     = 9;
+  int32  sort            = 10;
+}
+
+message ListPlansRequest {}
+message ListPlansResponse { repeated Plan plans = 1; }
+message ListProvidersRequest {}
+message ListProvidersResponse { repeated Provider providers = 1; }

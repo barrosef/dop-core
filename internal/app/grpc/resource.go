@@ -116,6 +116,16 @@ func (s *ResourceServer) SetCredential(ctx context.Context, req *dopv1.SetCreden
 	return &dopv1.SetCredentialResponse{CredentialRef: ref}, nil
 }
 
+// CheckResource probes the credential (onboarding spec 2026-09-20 §5). The
+// secret is resolved and used inside the service; nothing of it comes out.
+func (s *ResourceServer) CheckResource(ctx context.Context, req *dopv1.CheckResourceRequest) (*dopv1.CheckResult, error) {
+	res, err := s.svc.Check(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	return &dopv1.CheckResult{Operated: res.Operated, Ok: res.OK, Identity: res.Identity, Message: res.Message}, nil
+}
+
 // ── conversions ──────────────────────────────────────────────────────────────
 
 func resourceToProto(r *resource.Resource) *dopv1.Resource {

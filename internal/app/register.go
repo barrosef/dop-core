@@ -80,6 +80,7 @@ func RegisterServices(ctx context.Context, srv *grpc.Server, deps *Deps) error {
 	// The catalogues the onboarding journey reads — and the one question
 	// identity asks them before recording a plan.
 	catalogSvc := catalog.NewService(postgres.NewCatalogRepo(deps.Pool))
+	dopv1.RegisterCatalogServiceServer(srv, appgrpc.NewCatalogServer(catalogSvc))
 	identitySvc.WithPlans(catalogSvc)
 
 	// The SecretStore arrives here already chosen by configuration (wire.go):

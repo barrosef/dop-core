@@ -74,6 +74,10 @@ service ResourceService {
   rpc ListMemberGrants(ListMemberGrantsRequest) returns (ListMemberGrantsResponse);
   // The credential is written to the SecretStore; the value never comes back on a read.
   rpc SetCredential  (SetCredentialRequest)  returns (SetCredentialResponse);
+  // CheckResource probes the integration's credential with the provider
+  // (onboarding spec 2026-09-20 §5). `operated` false means the platform has no
+  // adapter for that provider: nothing was tried, the credential is stored.
+  rpc CheckResource  (CheckResourceRequest)  returns (CheckResult);
 }
 
 message ListResourcesRequest  { reserved 1; Resource.Kind kind = 2; PageRequest page = 3; }
@@ -96,3 +100,11 @@ message ListMemberGrantsRequest  { reserved 1; string user_id = 2; }
 message ListMemberGrantsResponse { repeated ResourceGrant grants = 1; }
 message SetCredentialRequest  { reserved 1; string resource_id = 2; bytes secret = 3; }
 message SetCredentialResponse { string credential_ref = 1; }
+
+message CheckResourceRequest { reserved 1; string id = 2; }
+message CheckResult {
+  bool   operated = 1;
+  bool   ok       = 2;
+  string identity = 3;  // who the provider says the token belongs to
+  string message  = 4;
+}
