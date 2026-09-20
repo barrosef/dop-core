@@ -72,6 +72,9 @@ type ghFakePR struct {
 // exactly what GitHub does, including for a private repository the token cannot
 // see (the documentation is explicit: a 404 instead of a 403 "to avoid
 // confirming the existence of private repositories").
+// FakeLogin is who the sentinel token belongs to, on both fakes.
+const FakeLogin = "octo-dev"
+
 const (
 	GHRepoOK             = "dop/plataforma"
 	GHRepoWithQueue      = "dop/with-queue"
@@ -151,6 +154,13 @@ func (f *GitHubFake) route(w http.ResponseWriter, r *http.Request) {
 	p := strings.Trim(r.URL.Path, "/")
 	if p == "graphql" {
 		f.graphql(w, r)
+		return
+	}
+	if p == "user" && r.Method == http.MethodGet {
+		// Documented: GET /user answers the authenticated user; `login` is
+		// the field the check reads.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"login": FakeLogin, "id": 1})
 		return
 	}
 	seg := strings.Split(p, "/")

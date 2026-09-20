@@ -249,3 +249,28 @@ func TestGitProviderGitLabTrainTriState(t *testing.T) {
 		t.Errorf("expected %s, got %s: %v", errs.KindPermission, k, err)
 	}
 }
+
+// Whoami is outside the delivery port: it is the credential check of the
+// onboarding journey, and it is proven here because the fakes already know
+// which token is good and which is not.
+func TestWhoamiAnswersTheLoginAndRefusesABadToken(t *testing.T) {
+	gh := contract.NewGitHubFake(t, fakeToken)
+	good := gitprovider.NewGitHub(gitprovider.GitHubConfig{APIBase: gh.URL(), GraphQLURL: gh.GraphQLURL(), Token: fakeToken, ActorID: testActor})
+	if login, err := good.Whoami(context.Background()); err != nil || login != contract.FakeLogin {
+		t.Errorf("GitHub Whoami = %q, %v; want %q", login, err, contract.FakeLogin)
+	}
+	bad := gitprovider.NewGitHub(gitprovider.GitHubConfig{APIBase: gh.URL(), GraphQLURL: gh.GraphQLURL(), Token: "nope", ActorID: testActor})
+	if _, err := bad.Whoami(context.Background()); errs.KindOf(err) != errs.KindUnauthorized {
+		t.Errorf("GitHub with a bad token should be Unauthorized, got %v", err)
+	}
+
+	gl := contract.NewGitLabFake(t, fakeToken)
+	goodGL := gitprovider.NewGitLab(gitprovider.GitLabConfig{APIBase: gl.URL(), Token: fakeToken, ActorID: testActor})
+	if login, err := goodGL.Whoami(context.Background()); err != nil || login != contract.FakeLogin {
+		t.Errorf("GitLab Whoami = %q, %v; want %q", login, err, contract.FakeLogin)
+	}
+	badGL := gitprovider.NewGitLab(gitprovider.GitLabConfig{APIBase: gl.URL(), Token: "nope", ActorID: testActor})
+	if _, err := badGL.Whoami(context.Background()); errs.KindOf(err) != errs.KindUnauthorized {
+		t.Errorf("GitLab with a bad token should be Unauthorized, got %v", err)
+	}
+}

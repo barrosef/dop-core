@@ -723,3 +723,60 @@ func TestTheSweepTakesEveryGrantOfTheMemberAndNobodyElses(t *testing.T) {
 		t.Errorf("the sweep took somebody else's grants: %d left", len(stayed))
 	}
 }
+
+// ── Check ────────────────────────────────────────────────────────────────────
+
+type fakeChecker struct {
+	provider string
+	secret   string
+	result   resource.CheckResult
+}
+
+func (c *fakeChecker) Check(_ context.Context, spec resource.IntegrationSpec, secret []byte) (resource.CheckResult, error) {
+	c.provider, c.secret = spec.Provider, string(secret)
+	return c.result, nil
+}
+
+func TestCheckRefusesWithoutCredential(t *testing.T) {
+	svc, _, _, _ := scenario()
+	ctx := asActor("owner")
+	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
+	_, err := svc.Check(ctx, integ.ID)
+	if errs.KindOf(err) != errs.KindPrecondition {
+		t.Errorf("an integration with no credential cannot be checked, got %v", err)
+	}
+}
+
+func TestCheckPassesTheResolvedSecretToTheChecker(t *testing.T) {
+	svc, _, _, _ := scenario()
+	checker := &fakeChecker{result: resource.CheckResult{Operated: true, OK: true, Identity: "octo-dev"}}
+	svc.WithChecker(checker)
+	ctx := asActor("owner")
+	integ, _ := svc.Create(ctx, resource.KindIntegration, "github", integrationConfig())
+	if _, err := svc.SetCredential(ctx, integ.ID, []byte("ghp_token")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.Check(ctx, integ.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checker.provider != "github" || checker.secret != "ghp_token" {
+		t.Errorf("the checker should receive the provider and the RESOLVED secret: %+v", checker)
+	}
+	if !res.OK || res.Identity != "octo-dev" {
+		t.Errorf("the checker's answer should come back as is: %+v", res)
+	}
+	// A developer with `use` may check; a viewer may not.
+	if _, err := svc.Check(asActor("view"), integ.ID); err == nil {
+		t.Error("a viewer with no grant should not check a credential")
+	}
+}
+
+func TestCheckOnNonIntegrationIsRefused(t *testing.T) {
+	svc, _, _, _ := scenario()
+	ctx := asActor("owner")
+	skill, _ := svc.Create(ctx, resource.KindSkill, "revisar-pr", nil)
+	if _, err := svc.Check(ctx, skill.ID); errs.KindOf(err) != errs.KindPrecondition {
+		t.Errorf("a content resource has no credential to check, got %v", err)
+	}
+}

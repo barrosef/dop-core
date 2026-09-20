@@ -580,6 +580,27 @@ func (g *GitHub) classifyRefusal(ctx context.Context, owner, name string, n int,
 // the rules, the adapter does not KNOW — and answering `false` would be
 // asserting "you may orchestrate on top" without having looked, with two queues
 // merging the same repository as the prize.
+// Whoami answers with the login the token belongs to — the credential check
+// of the onboarding journey (spec 2026-09-20 §5). It is the cheapest call a
+// token can make and it fails the way the port promises: a 401 is
+// KindUnauthorized, with no provider text.
+func (g *GitHub) Whoami(ctx context.Context) (string, error) {
+	code, body, err := g.rest.do(ctx, http.MethodGet, "/user", nil)
+	if err != nil {
+		return "", err
+	}
+	if code >= 300 {
+		return "", g.rest.fail(code, explainGH(body), "reading the token's user")
+	}
+	var me struct {
+		Login string `json:"login"`
+	}
+	if err := g.rest.decode(body, &me, "reading the token's user"); err != nil {
+		return "", err
+	}
+	return me.Login, nil
+}
+
 func (g *GitHub) HasNativeQueue(ctx context.Context, repoExternalID string) (bool, error) {
 	owner, name, err := repoParts(repoExternalID)
 	if err != nil {

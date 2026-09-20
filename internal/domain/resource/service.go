@@ -17,6 +17,7 @@ import (
 // executor, which resolves the SecretRef through the SecretStore itself. There
 // is no read path by which a secret comes back out of an RPC (ADR-0001).
 type Service struct {
+	checker CredentialChecker
 	repo    Repository
 	access  Access
 	secrets ports.SecretStore
@@ -449,4 +450,69 @@ func (s *Service) SetCredential(ctx context.Context, resourceID string, secret [
 		return "", err
 	}
 	return saved.CredentialRef, nil
+}
+
+// ── checking a credential (onboarding spec 2026-09-20 §5) ───────────────────
+
+// CheckResult is what a credential check answers. Operated=false is the
+// honest case: the platform has no adapter for this provider, the credential
+// is stored, nothing was tried. OK is meaningful only when Operated is true.
+type CheckResult struct {
+	Operated bool
+	OK       bool
+	Identity string // who the provider says the token belongs to
+	Message  string // a sentence for the person, in English; the edge translates the Kind
+}
+
+// CredentialChecker probes a provider with the RESOLVED secret. Declared here
+// and satisfied in the composition root, which is the only place that knows
+// GitHub, GitLab and the vault at once (the same reasoning as gitProviders).
+type CredentialChecker interface {
+	Check(ctx context.Context, spec IntegrationSpec, secret []byte) (CheckResult, error)
+}
+
+// WithChecker wires the prober. Without it Check answers "not operated" for
+// everything — explicit, so a domain test needs no HTTP.
+func (s *Service) WithChecker(c CredentialChecker) *Service {
+	s.checker = c
+	return s
+}
+
+// Check resolves the integration's credential from the vault and asks the
+// checker whether it works. The secret is read HERE, in the core, and handed
+// to the checker ready-made; it enters no result, no event and no error.
+func (s *Service) Check(ctx context.Context, resourceID string) (CheckResult, error) {
+	a, err := s.who(ctx)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	r, err := s.authorize(ctx, a, resourceID, LevelUse)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if !r.HasCredential() {
+		return CheckResult{}, errs.Precondition("a resource of kind %q has no credential", r.Kind).
+			WithCode(KeyKindHasNoCredential, map[string]any{"kind": string(r.Kind)})
+	}
+	spec, err := ParseIntegration(r.Config)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if r.CredentialRef == "" {
+		return CheckResult{}, errs.Precondition("integration %q has no credential to check", r.Name).
+			WithCode(KeyCredentialMissing, nil)
+	}
+	value, err := s.secrets.Get(ctx, SecretRefFor(a.accountID, r.ID))
+	if err != nil {
+		return CheckResult{}, errs.Wrap(errs.KindUnavailable, err,
+			"failed to read the credential of resource %s", r.ID)
+	}
+	if len(value) == 0 {
+		return CheckResult{}, errs.Precondition("integration %q has no credential to check", r.Name).
+			WithCode(KeyCredentialMissing, nil)
+	}
+	if s.checker == nil {
+		return CheckResult{Operated: false, Message: "no credential checker is wired"}, nil
+	}
+	return s.checker.Check(ctx, spec, []byte(value))
 }

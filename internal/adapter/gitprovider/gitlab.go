@@ -141,6 +141,24 @@ type glMR struct {
 	} `json:"diff_refs"`
 }
 
+// Whoami answers with the username the token belongs to — see GitHub's.
+func (g *GitLab) Whoami(ctx context.Context) (string, error) {
+	code, body, err := g.rest.do(ctx, http.MethodGet, "/user", nil)
+	if err != nil {
+		return "", err
+	}
+	if code >= 300 {
+		return "", g.rest.fail(code, explainGL(body), "reading the token's user")
+	}
+	var me struct {
+		Username string `json:"username"`
+	}
+	if err := g.rest.decode(body, &me, "reading the token's user"); err != nil {
+		return "", err
+	}
+	return me.Username, nil
+}
+
 // explainGL flattens GitLab's error body.
 //
 // Three different formats in the same API, all seen in production:

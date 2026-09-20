@@ -212,6 +212,7 @@ const (
 	KeyGrantMissing          = "resource.grant.id_missing"
 	KeyOnlyManagersSeeGrants = "resource.grant.only_managers_read"
 	KeyCredentialEmpty       = "resource.credential.empty"
+	KeyCredentialMissing     = "resource.credential.missing"
 	KeyKindHasNoCredential   = "resource.credential.kind_unsupported"
 )
 

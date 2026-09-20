@@ -121,6 +121,11 @@ func (f *GitLabFake) route(w http.ResponseWriter, r *http.Request) {
 	// become a 404. It is the same trap as on the client side, on the other end
 	// of the wire.
 	p := strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/v4"), "/")
+	if p == "user" && r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"username": FakeLogin, "id": 1})
+		return
+	}
 	seg := strings.Split(p, "/")
 	if len(seg) < 2 || seg[0] != "projects" {
 		f.fail(w, http.StatusNotFound, "404 Not Found")
