@@ -92,6 +92,8 @@ func attentionKindToProto(k attention.Kind) dopv1.AttentionItem_Kind {
 		return dopv1.AttentionItem_KIND_BUDGET_EXCEEDED
 	case attention.KindIntegrationBroken:
 		return dopv1.AttentionItem_KIND_INTEGRATION_BROKEN
+	case attention.KindContactPhoneUnverified:
+		return dopv1.AttentionItem_KIND_CONTACT_PHONE_UNVERIFIED
 	default:
 		return dopv1.AttentionItem_KIND_UNSPECIFIED
 	}

@@ -300,6 +300,8 @@ func (n *NATS) Subscribe(ctx context.Context, stream, durable string, subjects [
 				attribute.String("messaging.consumer.group.name", durable),
 				attribute.String("dop.event.id", e.ID),
 			))
+		// The consumer's logger carries the trace, once (logging.WithTrace).
+		hctx = logging.Into(hctx, logging.WithTrace(hctx, log))
 		err := h(hctx, e)
 		if err != nil {
 			span.RecordError(err)

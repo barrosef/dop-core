@@ -20,7 +20,7 @@ import (
 func UnaryLogging() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
 		start := time.Now()
-		log := logging.From(ctx).With("rpc", info.FullMethod)
+		log := logging.WithTrace(ctx, logging.From(ctx)).With("rpc", info.FullMethod)
 		if c, ok := ctxutil.From(ctx); ok {
 			log = log.With(
 				logging.FieldRequestID, c.RequestID,
@@ -45,7 +45,7 @@ func UnaryLogging() grpc.UnaryServerInterceptor {
 func StreamLogging() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, h grpc.StreamHandler) error {
 		start := time.Now()
-		log := logging.From(ss.Context()).With("rpc", info.FullMethod, "stream", true)
+		log := logging.WithTrace(ss.Context(), logging.From(ss.Context())).With("rpc", info.FullMethod, "stream", true)
 		err := h(srv, ss)
 		ms := time.Since(start).Milliseconds()
 		if err != nil {

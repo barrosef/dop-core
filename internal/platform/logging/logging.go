@@ -85,14 +85,21 @@ func Into(ctx context.Context, l *slog.Logger) context.Context {
 
 // From retrieves the logger from the context; returns the default if absent.
 //
-// When a span is active, the logger it returns carries trace_id and span_id
-// (ADR-0024 §4): every line written under a request joins the trace without
-// the call site knowing a span exists.
+// A logger placed in the context by an entry point (the gRPC interceptor, the
+// event consumer) already carries the trace (see WithTrace); one taken from
+// the default is given it here, so a line written where nobody installed a
+// logger still joins the trace (ADR-0024 §4).
 func From(ctx context.Context) *slog.Logger {
-	l, ok := ctx.Value(ctxKey{}).(*slog.Logger)
-	if !ok {
-		l = slog.Default()
+	if l, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
+		return l
 	}
+	return WithTrace(ctx, slog.Default())
+}
+
+// WithTrace returns the logger with the active span's ids, or the logger
+// untouched when there is no span. Entry points call it ONCE, when they
+// install the logger, so the ids appear exactly once per line.
+func WithTrace(ctx context.Context, l *slog.Logger) *slog.Logger {
 	if traceID, spanID := tracing.IDs(ctx); traceID != "" {
 		return l.With(slog.String(FieldTraceID, traceID), slog.String(FieldSpanID, spanID))
 	}

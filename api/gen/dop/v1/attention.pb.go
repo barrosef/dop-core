@@ -45,6 +45,9 @@ const (
 	// A broken account integration — the work stops until somebody reconnects
 	// it.
 	AttentionItem_KIND_INTEGRATION_BROKEN AttentionItem_Kind = 7
+	// A reminder about the person, not about work: the contact phone given in
+	// the onboarding journey and never confirmed (spec 2026-09-20 D-8).
+	AttentionItem_KIND_CONTACT_PHONE_UNVERIFIED AttentionItem_Kind = 8
 )
 
 // Enum value maps for AttentionItem_Kind.
@@ -58,16 +61,18 @@ var (
 		5: "KIND_DIRECTIVE",
 		6: "KIND_BUDGET_EXCEEDED",
 		7: "KIND_INTEGRATION_BROKEN",
+		8: "KIND_CONTACT_PHONE_UNVERIFIED",
 	}
 	AttentionItem_Kind_value = map[string]int32{
-		"KIND_UNSPECIFIED":        0,
-		"KIND_THREAD_BLOCKED":     1,
-		"KIND_GATE_PENDING":       2,
-		"KIND_PR_REVIEW":          3,
-		"KIND_MERGE_CONFLICT":     4,
-		"KIND_DIRECTIVE":          5,
-		"KIND_BUDGET_EXCEEDED":    6,
-		"KIND_INTEGRATION_BROKEN": 7,
+		"KIND_UNSPECIFIED":              0,
+		"KIND_THREAD_BLOCKED":           1,
+		"KIND_GATE_PENDING":             2,
+		"KIND_PR_REVIEW":                3,
+		"KIND_MERGE_CONFLICT":           4,
+		"KIND_DIRECTIVE":                5,
+		"KIND_BUDGET_EXCEEDED":          6,
+		"KIND_INTEGRATION_BROKEN":       7,
+		"KIND_CONTACT_PHONE_UNVERIFIED": 8,
 	}
 )
 
@@ -528,7 +533,7 @@ var File_dop_v1_attention_proto protoreflect.FileDescriptor
 
 const file_dop_v1_attention_proto_rawDesc = "" +
 	"\n" +
-	"\x16dop/v1/attention.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x04\n" +
+	"\x16dop/v1/attention.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x92\x05\n" +
 	"\rAttentionItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12,\n" +
 	"\aaccount\x18\x02 \x01(\v2\x12.dop.v1.AccountRefR\aaccount\x12.\n" +
@@ -543,7 +548,7 @@ const file_dop_v1_attention_proto_rawDesc = "" +
 	"\topened_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\bopenedAt\x12;\n" +
 	"\vresolved_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"resolvedAt\"\xc4\x01\n" +
+	"resolvedAt\"\xe7\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13KIND_THREAD_BLOCKED\x10\x01\x12\x15\n" +
@@ -552,7 +557,8 @@ const file_dop_v1_attention_proto_rawDesc = "" +
 	"\x13KIND_MERGE_CONFLICT\x10\x04\x12\x12\n" +
 	"\x0eKIND_DIRECTIVE\x10\x05\x12\x18\n" +
 	"\x14KIND_BUDGET_EXCEEDED\x10\x06\x12\x1b\n" +
-	"\x17KIND_INTEGRATION_BROKEN\x10\a\"\x9b\x01\n" +
+	"\x17KIND_INTEGRATION_BROKEN\x10\a\x12!\n" +
+	"\x1dKIND_CONTACT_PHONE_UNVERIFIED\x10\b\"\x9b\x01\n" +
 	"\x14ListAttentionRequest\x12)\n" +
 	"\x10include_resolved\x18\x02 \x01(\bR\x0fincludeResolved\x12)\n" +
 	"\x06demand\x18\x03 \x01(\v2\x11.dop.v1.DemandRefR\x06demand\x12'\n" +

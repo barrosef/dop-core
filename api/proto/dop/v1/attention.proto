@@ -45,6 +45,9 @@ message AttentionItem {
     // A broken account integration — the work stops until somebody reconnects
     // it.
     KIND_INTEGRATION_BROKEN = 7;
+    // A reminder about the person, not about work: the contact phone given in
+    // the onboarding journey and never confirmed (spec 2026-09-20 D-8).
+    KIND_CONTACT_PHONE_UNVERIFIED = 8;
   }
 
   string     id      = 1;
