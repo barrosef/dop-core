@@ -78,8 +78,11 @@ func Setup(ctx context.Context, cfg Config) (func(context.Context) error, error)
 		return nil, fmt.Errorf("unknown TRACE_BACKEND %q (use none, otlp or gcp)", cfg.Backend)
 	}
 
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
-		semconv.SchemaURL,
+	// Schemaless on purpose: resource.Default() carries the SDK's semconv
+	// schema URL and Merge refuses two different ones. Pinning ours to the
+	// SDK's version would break on every SDK upgrade; naming no schema never
+	// does, and the attribute keys are the stable part anyway.
+	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
 		semconv.ServiceName(cfg.Service),
 		semconv.ServiceVersion(cfg.Version),
 		attribute.String("dop.mode", cfg.Mode),
