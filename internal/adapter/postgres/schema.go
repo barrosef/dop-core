@@ -152,6 +152,19 @@ func (s *Schema) Baseline(ctx context.Context, version int64) error {
 		return err
 	}
 	defer db.Close()
+	// An EMPTY database is not a baseline case either: marking migrations as
+	// applied on a database that never ran them is how a fresh environment
+	// ends up with a version and no tables. 0001 creates `users`; its absence
+	// means "run up", never "baseline".
+	var hasUsers bool
+	if err := db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')`).
+		Scan(&hasUsers); err != nil {
+		return errs.Wrap(errs.KindUnavailable, err, "failed to inspect the database")
+	}
+	if !hasUsers {
+		return errs.Precondition("the database is empty; run `migrate up`, not baseline")
+	}
 	ms, err := goose.CollectMigrations(".", 0, version)
 	if err != nil {
 		return err
