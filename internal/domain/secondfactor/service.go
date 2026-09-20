@@ -23,6 +23,10 @@ import (
 type Users interface {
 	UserProfile(ctx context.Context, userID string) (email, name string, emailVerified bool, err error)
 	PersonalAccountOf(ctx context.Context, userID string) (string, error)
+	// PhoneVerified tells identity that this person proved possession of
+	// this number (onboarding spec 2026-09-20 D-7). Identity decides whether
+	// the number is the contact phone; this domain only reports the proof.
+	PhoneVerified(ctx context.Context, userID, destination string) error
 }
 
 // vaultKind is the SecretRef's Kind for a TOTP seed. Fixed: the domain does not
@@ -257,6 +261,15 @@ func (s *Service) Confirm(ctx context.Context, factorID, challengeID, code strin
 		return nil, err
 	}
 	logging.From(ctx).Info("second factor confirmed", "kind", string(f.Kind), "factor_id", f.ID)
+
+	// An SMS factor is also a proof about the person's phone. Reporting it is
+	// best effort: the factor IS active, and a reminder that fails to close is
+	// not a reason to tell the person their confirmation failed.
+	if f.Kind == KindSMS {
+		if err := s.users.PhoneVerified(ctx, userID, f.Destination); err != nil {
+			logging.From(ctx).Warn("phone verification not recorded", "factor_id", f.ID, "error", err.Error())
+		}
+	}
 
 	// Confirming steps the SESSION up: the person proved possession seconds ago,
 	// in this session. Asking again would add nothing and would cost a second

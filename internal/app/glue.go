@@ -273,6 +273,10 @@ func (u secondFactorUsers) PersonalAccountOf(ctx context.Context, userID string)
 	return u.id.PersonalAccountOf(ctx, userID)
 }
 
+func (u secondFactorUsers) PhoneVerified(ctx context.Context, userID, destination string) error {
+	return u.id.MarkPhoneVerified(ctx, userID, destination)
+}
+
 var _ secondfactor.Users = secondFactorUsers{}
 
 // ── hierarchy → identity ────────────────────────────────────────────────────

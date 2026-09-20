@@ -23,6 +23,9 @@ const (
 	KindDirective         Kind = "directive"
 	KindBudgetExceeded    Kind = "budget_exceeded"
 	KindIntegrationBroken Kind = "integration_broken"
+	// A reminder about the person, not about work: the contact phone given in
+	// the onboarding journey and never confirmed (spec 2026-09-20 D-8).
+	KindContactPhoneUnverified Kind = "contact_phone_unverified"
 )
 
 // Item is a pending matter that requires a HUMAN DECISION.
@@ -93,6 +96,9 @@ var impact = map[Kind]int{
 	KindDirective: 60,
 	// A conversation waiting on an answer.
 	KindThreadBlocked: 70,
+	// A reminder never outranks work: it sits below everything a demand can
+	// raise, and age alone lifts it within its band.
+	KindContactPhoneUnverified: 80,
 }
 
 // ImpactOf returns the kind's impact. An unknown kind lands at the END of the
@@ -131,5 +137,6 @@ func Kinds() []Kind {
 	return []Kind{
 		KindMergeConflict, KindIntegrationBroken, KindBudgetExceeded,
 		KindGatePending, KindPRReview, KindDirective, KindThreadBlocked,
+		KindContactPhoneUnverified,
 	}
 }

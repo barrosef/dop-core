@@ -195,6 +195,16 @@ func (r *memRepo) PolicyOf(_ context.Context, _ string) (secondfactor.Policy, er
 type fakeUsers struct {
 	email    string
 	verified bool
+	// phones records what Confirm reported; a pointer so the fixture's copy
+	// and the test's read the same slice.
+	phones *[]string
+}
+
+func (u fakeUsers) PhoneVerified(_ context.Context, _ string, destination string) error {
+	if u.phones != nil {
+		*u.phones = append(*u.phones, destination)
+	}
+	return nil
 }
 
 func (u fakeUsers) UserProfile(context.Context, string) (string, string, bool, error) {
@@ -821,5 +831,33 @@ func TestConfirmingStepsTheSessionUp(t *testing.T) {
 	// And only THIS session: confirming is not a master key.
 	if err := f.svc.RequireStepUp(ctxOf("sess-2")); err == nil {
 		t.Error("confirming stepped up another session too")
+	}
+}
+
+func TestConfirmingAnSMSFactorReportsThePhone(t *testing.T) {
+	var phones []string
+	f := newFixture(t, fakeUsers{email: "dev@dop.local", verified: true, phones: &phones})
+	ctx := ctxOf("sess-1")
+
+	factor, challengeID, err := f.svc.EnrollCode(ctx, secondfactor.KindSMS, "iPhone", "+5511999999999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := codeFromText(t, f.sms.sent[0].text)
+	if _, err := f.svc.Confirm(ctx, factor.ID, challengeID, code); err != nil {
+		t.Fatal(err)
+	}
+	if len(phones) != 1 || phones[0] != "+5511999999999" {
+		t.Errorf("identity should be told the UNMASKED number once, got %v", phones)
+	}
+
+	// A TOTP factor says nothing about a phone.
+	enr, _ := f.svc.EnrollTOTP(ctx, "app")
+	totpCode, _ := totp.Code(enr.Secret, f.clock.t)
+	if _, err := f.svc.Confirm(ctx, enr.Factor.ID, enr.ChallengeID, totpCode); err != nil {
+		t.Fatal(err)
+	}
+	if len(phones) != 1 {
+		t.Errorf("a TOTP confirmation must not report a phone: %v", phones)
 	}
 }

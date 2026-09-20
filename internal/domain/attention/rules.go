@@ -19,6 +19,7 @@ const (
 	EvMergeConflict     = "dop.delivery.merge.conflict_escalated"
 	EvDirectiveProposed = "dop.delivery.directive.proposed"
 	EvBudgetExceeded    = "dop.cost.budget.exceeded"
+	EvPhoneAdded        = "dop.identity.user.phone_added"
 )
 
 // Event types that CLOSE an item.
@@ -29,6 +30,7 @@ const (
 	EvDirectiveDecide = "dop.delivery.directive.decided"
 	EvMergeState      = "dop.delivery.merge.state_changed"
 	EvBudgetSet       = "dop.cost.budget.set"
+	EvPhoneVerified   = "dop.identity.user.phone_verified"
 )
 
 // Translation keys for what the box SHOWS. They live next to the rule that
@@ -40,13 +42,14 @@ const (
 	KeyMergeConflict  = "attention.merge_conflict.title"
 	KeyDirective      = "attention.directive.title"
 	KeyBudgetExceeded = "attention.budget_exceeded.title"
+	KeyContactPhone   = "attention.contact_phone_unverified.title"
 )
 
 // Subjects is what the consumer subscribes to. Subscribing to `dop.>` and
 // discarding 90% would waste deliveries; subscribing too broadly is also noise,
 // just network noise.
 func Subjects() []string {
-	return []string{"dop.demand.>", "dop.delivery.>", "dop.cost.>"}
+	return []string{"dop.demand.>", "dop.delivery.>", "dop.cost.>", "dop.identity.>"}
 }
 
 // Event is the minimum the rule needs to know about an event. It exists so this
@@ -134,7 +137,18 @@ func Apply(e Event) Decision {
 			"Budget exceeded — demand paused",
 			str(e.Payload, "scope", ""))
 
+	case EvPhoneAdded:
+		// The one item that is about the person and not about a demand: the
+		// journey recorded a phone that was never confirmed (D-8). It targets
+		// the user, so the cockpit leads to the contact screen.
+		return open(e, KindContactPhoneUnverified, "user", e.AggregateID,
+			KeyContactPhone, map[string]any{"phone": str(e.Payload, "phone_masked", "")},
+			"Confirm your phone number", str(e.Payload, "phone_masked", ""))
+
 	// ── closing ─────────────────────────────────────────────────────────────
+
+	case EvPhoneVerified:
+		return closeFor(KindContactPhoneUnverified, "user", e.AggregateID)
 
 	case EvThreadResumed, EvThreadConcluded:
 		return closeFor(KindThreadBlocked, "thread", threadID(e))

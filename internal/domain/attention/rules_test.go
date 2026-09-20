@@ -68,6 +68,7 @@ func TestEveryOpenedItemCarriesATranslationKey(t *testing.T) {
 		ev(attention.EvMergeConflict, map[string]any{"pull_request_id": "pr-1"}),
 		ev(attention.EvDirectiveProposed, map[string]any{"directive_id": "dir-1"}),
 		ev(attention.EvBudgetExceeded, map[string]any{"demand_id": "dem-1"}),
+		ev(attention.EvPhoneAdded, map[string]any{"phone_masked": "…9999"}),
 	}
 	for _, e := range cases {
 		d := attention.Apply(e)
@@ -129,6 +130,7 @@ func TestSubjectsCoverEveryHandledEvent(t *testing.T) {
 		attention.EvThreadResumed, attention.EvThreadConcluded,
 		attention.EvGateDecided, attention.EvDirectiveDecide,
 		attention.EvMergeState, attention.EvBudgetSet,
+		attention.EvPhoneAdded, attention.EvPhoneVerified,
 	}
 	for _, kind := range handled {
 		if !coveredBySomeSubject(kind, attention.Subjects()) {
@@ -152,3 +154,25 @@ func coveredBySomeSubject(kind string, subjects []string) bool {
 }
 
 var _ = time.Now
+
+func TestPhoneAddedOpensAReminderAndVerifiedClosesIt(t *testing.T) {
+	added := ev(attention.EvPhoneAdded, map[string]any{"phone_masked": "…9999"})
+	added.AggregateID = "usr-1"
+	d := attention.Apply(added)
+	if d.Open == nil || d.Open.Kind != attention.KindContactPhoneUnverified {
+		t.Fatalf("phone_added should open a reminder: %+v", d)
+	}
+	if d.Open.TargetKind != "user" || d.Open.TargetID != "usr-1" {
+		t.Errorf("the reminder should lead to the user: %+v", d.Open)
+	}
+	if d.Open.AccountID != added.AccountID {
+		t.Errorf("the item must land in the event's account (the personal one)")
+	}
+
+	verified := ev(attention.EvPhoneVerified, nil)
+	verified.AggregateID = "usr-1"
+	c := attention.Apply(verified)
+	if c.Close == nil || c.Close.Kind != attention.KindContactPhoneUnverified || c.Close.TargetID != "usr-1" {
+		t.Errorf("phone_verified should close the reminder for that user: %+v", c)
+	}
+}
