@@ -57,6 +57,13 @@ func main() {
 		// The only mode that does NOT run in the platform's namespace: it runs
 		// beside the agent, in the sandbox's pod (P-23 phase 1).
 		runErr = app.RunCollector(ctx, cfg)
+	case "migrate":
+		// Applies the embedded migrations (ADR-0024 §2). The worker does this
+		// at boot; this mode exists for an operator: `status`, and the
+		// one-time `baseline` of a database migrated by hand.
+		runErr = app.RunMigrate(ctx, cfg, os.Args[2:])
+	case "seed":
+		runErr = app.RunSeed(ctx, cfg)
 	case "version":
 		fmt.Println("dop-core dev")
 		return
@@ -84,6 +91,8 @@ modes:
   launcher   sandbox provisioning on the execution cluster
   collector  follows the agent's session file and pushes its consumption —
              the only mode that runs INSIDE a sandbox, beside the agent
+  migrate    [up|status|baseline <version>] — the embedded migrations
+  seed       the embedded seeds (root + DOP_SEED_PROFILE)
   version    version
 `)
 }

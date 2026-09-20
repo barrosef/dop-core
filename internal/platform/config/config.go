@@ -244,6 +244,13 @@ type Config struct {
 
 	RelayInterval time.Duration
 	LogLevel      string
+
+	// SeedProfile names the seed subdirectory the worker applies after the
+	// root seeds (ADR-0024 §3): "local" for development, empty in production.
+	SeedProfile string
+	// SchemaWait is how long `serve` waits for the worker to bring the
+	// database up to the binary's schema before giving up (ADR-0024 §2).
+	SchemaWait time.Duration
 }
 
 func Load(mode string) (*Config, error) {
@@ -331,6 +338,8 @@ func Load(mode string) (*Config, error) {
 			envInt("DIGEST_DELAY_SECONDS", 900)) * time.Second,
 		RelayInterval: time.Duration(envInt("RELAY_INTERVAL_MS", 500)) * time.Millisecond,
 		LogLevel:      env("LOG_LEVEL", "info"),
+		SeedProfile:   env("DOP_SEED_PROFILE", ""),
+		SchemaWait:    time.Duration(envInt("SCHEMA_WAIT_SECONDS", 90)) * time.Second,
 	}
 	// Template ids come through one variable PER KIND, not in a
 	// separator-joined string: a flattened list fails silently when somebody

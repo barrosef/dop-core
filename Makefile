@@ -6,7 +6,7 @@ export PATH := $(PATH):$(HOME)/go/bin
 # wired to share one value.
 CONTEXT := k3d-dop-local
 
-.PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker guard migrate
+.PHONY: proto proto-breaking build test test-integration test-contract-integration lint run-serve run-worker guard migrate seed
 
 proto:            ## generate Go from the .proto files (the source of truth — ADR-0013)
 	cd api/proto && buf lint && buf generate
@@ -68,10 +68,19 @@ guard:
 		exit 1; \
 	fi
 
-migrate: guard    ## apply the migrations to the local Postgres
-	@for f in migrations/*.sql; do \
-	  echo "applying $$f"; \
-	  kubectl cp $$f dop-local/postgres-0:/tmp/m.sql; \
-	  kubectl exec -n dop-local postgres-0 -- sh -c \
-	    "sed -n '/-- +goose Up/,/-- +goose Down/p' /tmp/m.sql | grep -v goose > /tmp/up.sql && psql -U dop -d dop -f /tmp/up.sql" ; \
-	done
+migrate: guard    ## apply the embedded migrations to the local Postgres (ADR-0024)
+	@# The binary applies its own migrations and records them in
+	@# goose_db_version; the worker does the same at boot. This target exists
+	@# for the developer who changed a migration and wants it applied NOW,
+	@# without restarting the worker. `make migrate ARGS=status` lists;
+	@# `ARGS="baseline 27"` is the one-time bootstrap of a hand-migrated database.
+	@kubectl -n dop-local port-forward svc/postgres 15432:5432 >/dev/null 2>&1 & \
+	  pf=$$!; sleep 2; \
+	  DATABASE_URL="postgres://dop:dop-local-dev@127.0.0.1:15432/dop?sslmode=disable" \
+	    go run ./cmd/dop-core migrate $(ARGS); rc=$$?; kill $$pf; exit $$rc
+
+seed: guard       ## apply the embedded seeds (root + DOP_SEED_PROFILE=local) to the local Postgres
+	@kubectl -n dop-local port-forward svc/postgres 15432:5432 >/dev/null 2>&1 & \
+	  pf=$$!; sleep 2; \
+	  DATABASE_URL="postgres://dop:dop-local-dev@127.0.0.1:15432/dop?sslmode=disable" \
+	  DOP_SEED_PROFILE=local go run ./cmd/dop-core seed; rc=$$?; kill $$pf; exit $$rc

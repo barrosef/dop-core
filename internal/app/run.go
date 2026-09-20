@@ -12,6 +12,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/barrosef/dop-core/internal/adapter/clock"
 	"github.com/barrosef/dop-core/internal/adapter/eventbus"
 	"github.com/barrosef/dop-core/internal/adapter/postgres"
 	"github.com/barrosef/dop-core/internal/platform/config"
@@ -19,8 +20,14 @@ import (
 )
 
 // RunServe brings up the domain's gRPC server.
+//
+// It never migrates (ADR-0024 §2): several instances would race. It waits for
+// the worker to have done so, and refuses a database newer than itself.
 func RunServe(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
+	if err := postgres.NewSchema(cfg.DatabaseURL).WaitFor(ctx, clock.NewSystem(), cfg.SchemaWait); err != nil {
+		return err
+	}
 	deps, cleanup, err := Build(ctx, cfg)
 	if err != nil {
 		return err
@@ -57,13 +64,27 @@ func RunServe(ctx context.Context, cfg *config.Config) error {
 }
 
 // RunWorker consumes events and builds projections.
+//
+// It is the single-instance process, so it is the one that migrates and seeds
+// before doing anything else (ADR-0024 §2–3). A failed migration stops the
+// worker here, loudly, instead of a consumer failing on a missing column.
 func RunWorker(ctx context.Context, cfg *config.Config) error {
 	log := logging.From(ctx)
+	schema := postgres.NewSchema(cfg.DatabaseURL)
+	if err := schema.Up(ctx); err != nil {
+		return err
+	}
+	if v, err := schema.Current(ctx); err == nil {
+		log.Info("schema up to date", "version", v)
+	}
 	deps, cleanup, err := Build(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	if err := postgres.Seed(ctx, deps.Pool, cfg.SeedProfile); err != nil {
+		return err
+	}
 
 	// The outbox's relay runs alongside the worker: it is what takes the event
 	// written in the transaction to the broker (ADR-0014).
