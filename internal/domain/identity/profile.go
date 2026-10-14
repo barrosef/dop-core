@@ -46,6 +46,7 @@ type ProfilePatch struct {
 	Locale         *string
 	Timezone       *string
 	Phone          *string
+	PhoneWhatsApp  *bool
 }
 
 // UpdateProfile validates and writes the actor's profile. A changed phone
@@ -99,6 +100,9 @@ func (s *Service) UpdateProfile(ctx context.Context, patch ProfilePatch) (*User,
 				WithCode(KeyPhoneInvalid, nil)
 		}
 		u.Phone = ph
+	}
+	if patch.PhoneWhatsApp != nil {
+		u.PhoneWhatsApp = *patch.PhoneWhatsApp
 	}
 	personalID, err := s.PersonalAccountOf(ctx, u.ID)
 	if err != nil {

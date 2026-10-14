@@ -24,7 +24,7 @@ func NewIdentityRepo(pool *pgxpool.Pool) *IdentityRepo { return &IdentityRepo{po
 
 const userCols = `id, subject, email, email_verified, name, avatar_url, providers,
 	birth_date, COALESCE(locale,''), COALESCE(timezone,''), COALESCE(phone,''),
-	phone_verified_at, onboarding, onboarded_at, created_at, updated_at`
+	phone_whatsapp, phone_verified_at, onboarding, onboarded_at, created_at, updated_at`
 
 func scanUser(row pgx.Row) (*identity.User, error) {
 	var u identity.User
@@ -32,7 +32,7 @@ func scanUser(row pgx.Row) (*identity.User, error) {
 	var onboarding []byte
 	err := row.Scan(&u.ID, &u.Subject, &email, &u.EmailVerified, &name, &avatar,
 		&u.Providers, &u.BirthDate, &u.Locale, &u.Timezone, &u.Phone,
-		&u.PhoneVerifiedAt, &onboarding, &u.OnboardedAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.PhoneWhatsApp, &u.PhoneVerifiedAt, &onboarding, &u.OnboardedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -596,12 +596,12 @@ func (r *IdentityRepo) UpdateProfile(ctx context.Context, u *identity.User, pers
 		row := tx.QueryRow(ctx, `
 			UPDATE users
 			   SET name = NULLIF($2,''), birth_date = $3, locale = NULLIF($4,''),
-			       timezone = NULLIF($5,''), phone = NULLIF($6,''),
+			       timezone = NULLIF($5,''), phone = NULLIF($6,''), phone_whatsapp = $7,
 			       phone_verified_at = CASE WHEN COALESCE(phone,'') = $6 THEN phone_verified_at ELSE NULL END,
 			       updated_at = now()
 			 WHERE id = $1
 			 RETURNING `+userCols,
-			u.ID, u.Name, u.BirthDate, u.Locale, u.Timezone, u.Phone)
+			u.ID, u.Name, u.BirthDate, u.Locale, u.Timezone, u.Phone, u.PhoneWhatsApp)
 		var err error
 		saved, err = scanUser(row)
 		if err != nil {

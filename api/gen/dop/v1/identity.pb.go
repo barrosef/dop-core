@@ -198,6 +198,9 @@ type User struct {
 	Onboarded     bool   `protobuf:"varint,11,opt,name=onboarded,proto3" json:"onboarded,omitempty"`
 	BirthDate     string `protobuf:"bytes,12,opt,name=birth_date,json=birthDate,proto3" json:"birth_date,omitempty"`
 	EmailVerified bool   `protobuf:"varint,13,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
+	// The person says this phone is also their WhatsApp. Independent of
+	// phone_verified.
+	PhoneWhatsapp bool `protobuf:"varint,14,opt,name=phone_whatsapp,json=phoneWhatsapp,proto3" json:"phone_whatsapp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -319,6 +322,13 @@ func (x *User) GetBirthDate() string {
 func (x *User) GetEmailVerified() bool {
 	if x != nil {
 		return x.EmailVerified
+	}
+	return false
+}
+
+func (x *User) GetPhoneWhatsapp() bool {
+	if x != nil {
+		return x.PhoneWhatsapp
 	}
 	return false
 }
@@ -671,6 +681,7 @@ type UpdateProfileRequest struct {
 	Locale        *string `protobuf:"bytes,3,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
 	Timezone      *string `protobuf:"bytes,4,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"`
 	Phone         *string `protobuf:"bytes,5,opt,name=phone,proto3,oneof" json:"phone,omitempty"`
+	PhoneWhatsapp *bool   `protobuf:"varint,6,opt,name=phone_whatsapp,json=phoneWhatsapp,proto3,oneof" json:"phone_whatsapp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -738,6 +749,13 @@ func (x *UpdateProfileRequest) GetPhone() string {
 		return *x.Phone
 	}
 	return ""
+}
+
+func (x *UpdateProfileRequest) GetPhoneWhatsapp() bool {
+	if x != nil && x.PhoneWhatsapp != nil {
+		return *x.PhoneWhatsapp
+	}
+	return false
 }
 
 type GetOnboardingRequest struct {
@@ -2376,7 +2394,7 @@ var File_dop_v1_identity_proto protoreflect.FileDescriptor
 
 const file_dop_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\x15dop/v1/identity.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfc\x02\n" +
+	"\x15dop/v1/identity.proto\x12\x06dop.v1\x1a\x13dop/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa3\x03\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
@@ -2393,7 +2411,8 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\tonboarded\x18\v \x01(\bR\tonboarded\x12\x1d\n" +
 	"\n" +
 	"birth_date\x18\f \x01(\tR\tbirthDate\x12%\n" +
-	"\x0eemail_verified\x18\r \x01(\bR\remailVerified\"\xee\x02\n" +
+	"\x0eemail_verified\x18\r \x01(\bR\remailVerified\x12%\n" +
+	"\x0ephone_whatsapp\x18\x0e \x01(\bR\rphoneWhatsapp\"\xee\x02\n" +
 	"\aAccount\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x14.dop.v1.Account.KindR\x04kind\x12\x16\n" +
@@ -2435,19 +2454,21 @@ const file_dop_v1_identity_proto_rawDesc = "" +
 	"\x0eSTATUS_REVOKED\x10\x04\"Z\n" +
 	"\x11ResourceGrantSpec\x12/\n" +
 	"\bresource\x18\x01 \x01(\v2\x13.dop.v1.ResourceRefR\bresource\x12\x14\n" +
-	"\x05level\x18\x02 \x01(\tR\x05level\"\xe6\x01\n" +
+	"\x05level\x18\x02 \x01(\tR\x05level\"\xa5\x02\n" +
 	"\x14UpdateProfileRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\"\n" +
 	"\n" +
 	"birth_date\x18\x02 \x01(\tH\x01R\tbirthDate\x88\x01\x01\x12\x1b\n" +
 	"\x06locale\x18\x03 \x01(\tH\x02R\x06locale\x88\x01\x01\x12\x1f\n" +
 	"\btimezone\x18\x04 \x01(\tH\x03R\btimezone\x88\x01\x01\x12\x19\n" +
-	"\x05phone\x18\x05 \x01(\tH\x04R\x05phone\x88\x01\x01B\a\n" +
+	"\x05phone\x18\x05 \x01(\tH\x04R\x05phone\x88\x01\x01\x12*\n" +
+	"\x0ephone_whatsapp\x18\x06 \x01(\bH\x05R\rphoneWhatsapp\x88\x01\x01B\a\n" +
 	"\x05_nameB\r\n" +
 	"\v_birth_dateB\t\n" +
 	"\a_localeB\v\n" +
 	"\t_timezoneB\b\n" +
-	"\x06_phone\"\x16\n" +
+	"\x06_phoneB\x11\n" +
+	"\x0f_phone_whatsapp\"\x16\n" +
 	"\x14GetOnboardingRequest\"<\n" +
 	"\x0eOnboardingStep\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x12\x16\n" +

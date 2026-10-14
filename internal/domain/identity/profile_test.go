@@ -130,3 +130,36 @@ func mustActor(ctx context.Context) string {
 }
 
 var _ = ports.Principal{}
+
+func boolp(b bool) *bool { return &b }
+
+func TestUpdateProfileWhatsAppIsIndependentOfTheNumber(t *testing.T) {
+	svc := identity.NewService(newFakeRepo(), fixedClock{now})
+	ctx, u, _ := signedUp(t, svc, "sub-1")
+	saved, err := svc.UpdateProfile(ctx, identity.ProfilePatch{Phone: str("+5511999999999"), PhoneWhatsApp: boolp(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.PhoneWhatsApp {
+		t.Fatal("the flag must be stored with the number")
+	}
+	// A nil field is untouched, even when the number changes.
+	saved, err = svc.UpdateProfile(ctx, identity.ProfilePatch{Phone: str("+5511777777777")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.PhoneWhatsApp {
+		t.Error("a changed number must not reset the flag")
+	}
+	// Verification says nothing about WhatsApp, and vice versa.
+	if err := svc.MarkPhoneVerified(ctx, u.ID, "+5511777777777"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err = svc.UpdateProfile(ctx, identity.ProfilePatch{PhoneWhatsApp: boolp(false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.PhoneWhatsApp || !saved.PhoneVerified() {
+		t.Errorf("flag and verification must be independent: %+v", saved)
+	}
+}

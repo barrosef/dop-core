@@ -245,6 +245,7 @@ func userToProto(u *identity.User) *dopv1.User {
 		Id: u.ID, Email: u.Email, Name: u.Name, AvatarUrl: u.AvatarURL,
 		Providers: u.Providers,
 		Locale:    u.Locale, Timezone: u.Timezone, Phone: u.Phone,
+		PhoneWhatsapp: u.PhoneWhatsApp,
 		PhoneVerified: u.PhoneVerified(), Onboarded: u.Onboarded(),
 		BirthDate: birth, EmailVerified: u.EmailVerified,
 		Audit: &dopv1.AuditStamp{

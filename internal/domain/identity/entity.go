@@ -57,11 +57,14 @@ type User struct {
 	// What the onboarding journey records on the person (spec 2026-09-20 §4).
 	// BirthDate is optional and arrives from no provider; Phone is E.164 and
 	// PhoneVerifiedAt is written only by the second factor's confirmation of a
-	// factor whose destination is this phone.
+	// factor whose destination is this phone. PhoneWhatsApp is the person's
+	// own statement that the number is also their WhatsApp; it is independent
+	// of verification and survives a change of number.
 	BirthDate       *time.Time
 	Locale          string
 	Timezone        string
 	Phone           string
+	PhoneWhatsApp   bool
 	PhoneVerifiedAt *time.Time
 	Onboarding      Onboarding
 	OnboardedAt     *time.Time

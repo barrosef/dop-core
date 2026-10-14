@@ -20,6 +20,9 @@ message User {
   bool   onboarded      = 11;
   string birth_date     = 12;
   bool   email_verified = 13;
+  // The person says this phone is also their WhatsApp. Independent of
+  // phone_verified.
+  bool   phone_whatsapp = 14;
 }
 
 message Account {
@@ -134,6 +137,7 @@ message UpdateProfileRequest {
   optional string locale     = 3;
   optional string timezone   = 4;
   optional string phone      = 5;
+  optional bool   phone_whatsapp = 6;
 }
 message GetOnboardingRequest {}
 message OnboardingStep {

@@ -18,6 +18,8 @@ func (s *IdentityServer) UpdateProfile(ctx context.Context, req *dopv1.UpdatePro
 		Locale:   req.Locale,
 		Timezone: req.Timezone,
 		Phone:    req.Phone,
+
+		PhoneWhatsApp: req.PhoneWhatsapp,
 	}
 	if req.BirthDate != nil {
 		if *req.BirthDate == "" {
