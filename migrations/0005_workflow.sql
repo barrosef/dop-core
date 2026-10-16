@@ -103,6 +103,7 @@ ALTER TABLE flows ADD CONSTRAINT flows_versao_corrente_existe
 -- BEFORE propagating to the children, and the orphaned version may go with it.
 -- Without that distinction, deleting an account would become impossible — the
 -- protection would turn into a bug.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assert_flow_version_congelada() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -113,6 +114,7 @@ BEGIN
   END IF;
   RAISE EXCEPTION 'a flow version is immutable: changing a flow GENERATES a new version (ADR-0010 §4)';
 END $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER flow_versions_imutaveis
   BEFORE UPDATE OR DELETE ON flow_versions

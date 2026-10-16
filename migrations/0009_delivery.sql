@@ -105,6 +105,7 @@ CREATE UNIQUE INDEX pull_requests_idem_idx
 -- nobody foresaw — a backfill, an operations script, a call-ordering bug. A
 -- business rule NO operation may violate does not live in the application
 -- alone.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assert_pr_tem_verde() RETURNS trigger AS $$
 DECLARE acceptance int; critic int; red int;
 BEGIN
@@ -129,6 +130,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 -- On the UPDATE of head_commit too: the branch moving on must not smuggle
 -- unverified code into a PR that already exists.
@@ -225,6 +227,7 @@ CREATE UNIQUE INDEX directives_idem_idx
 -- recommending nothing), and every instruction of every option belongs to the
 -- COORDINATION vocabulary. A directive telling somebody to "pause demand 1"
 -- never reaches the database.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assert_diretriz_coordena_sem_pausar() RETURNS trigger AS $$
 DECLARE acao text;
 BEGIN
@@ -248,6 +251,7 @@ BEGIN
   END LOOP;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER directives_coordenacao_guard
   BEFORE INSERT OR UPDATE OF options, recommended ON directives

@@ -57,6 +57,7 @@ CREATE INDEX memberships_account_idx ON memberships (account_id);
 
 -- Invariant: every account has at least one active owner. Checked by a trigger
 -- because it is a business rule NO operation may violate (spec §5).
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assert_account_has_owner() RETURNS trigger AS $$
 DECLARE owners int;
 BEGIN
@@ -70,6 +71,7 @@ BEGIN
   END IF;
   RETURN COALESCE(NEW, OLD);
 END $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE CONSTRAINT TRIGGER memberships_owner_guard
   AFTER UPDATE OR DELETE ON memberships

@@ -70,6 +70,7 @@ CREATE INDEX sandboxes_ociosos_idx
 -- through a path nobody foresaw. The destruction took the workspace with it —
 -- resurrecting the row would make the system assert that work exists which no
 -- longer does.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION assert_sandbox_destruicao_irreversivel() RETURNS trigger AS $$
 BEGIN
   IF OLD.state = 'destroyed' AND NEW.state <> 'destroyed' THEN
@@ -77,6 +78,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER sandboxes_destruicao_guard
   BEFORE UPDATE ON sandboxes
